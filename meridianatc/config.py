@@ -563,6 +563,10 @@ class AiConfig:
     # Below this confidence the answer is discarded and the controller asks the
     # pilot to say again, which is safer than acting on a guess.
     min_confidence: float = 0.55
+    # Let the model rephrase approved transmissions: opt-in, and every number
+    # and name in the render is checked against the approved wording before it
+    # is ever said. Off means the phraseology's words are the ones spoken.
+    phrasing: bool = False
 
 
 describe(
@@ -582,6 +586,8 @@ describe(
                       unit="s", restart=True, advanced=True),
     min_confidence=Setting("understanding", "understanding", min=0, max=1,
                            step=0.05, restart=True, advanced=True),
+    phrasing=Setting("understanding", "understanding", restart=True,
+                     advanced=True, when="ai.provider!=none"),
 )
 
 

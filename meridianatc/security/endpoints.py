@@ -48,7 +48,11 @@ def is_allowed(provider: str, url: str | None) -> bool:
     port = uri.port
     if port is not None and port != (443 if scheme in ("https", "wss") else 80):
         return False
-    return uri.path.rstrip("/").lower() == path.rstrip("/").lower()
+    # The path must be under the pinned prefix on a boundary, so
+    # /api/v1beta does not pass for /api/v1.
+    pinned = path.rstrip("/").lower()
+    actual = uri.path.rstrip("/").lower()
+    return actual == pinned or actual.startswith(pinned + "/")
 
 
 def allowed_url(provider: str, url: str | None) -> str | None:

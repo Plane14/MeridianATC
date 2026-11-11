@@ -314,6 +314,14 @@ class Engine:
             ),
             min_confidence=self.config.ai.min_confidence,
         )
+        # Opt-in natural rephrasing of approved transmissions. The provider
+        # is the understanding one -- there is no second model -- and the
+        # renderer is only built when the pilot asked for it and the
+        # provider speaks.
+        self.phrasing = None
+        if self.config.ai.phrasing and self.understanding.provider is not None:
+            from .llm.rendering import PhrasingRenderer
+            self.phrasing = PhrasingRenderer(self.understanding.provider)
         self.brain = ControllerBrain(
             self.navdb, self._base_phraseology(),
             strict_icao_digits=self.config.atc.strict_icao_digits,
@@ -3457,6 +3465,10 @@ class Engine:
             return
         if not atis:
             self._atc_said_at = time.monotonic()
+        if self.phrasing is not None:
+            # The renderer may only rephrase what was approved; a rejected
+            # render falls back to the deterministic words inside render().
+            text = self.phrasing.render(text)
         spoken = self.spoken_form(text)
         altitude = self.state.altitude_ft
         radio_fx = self.config.audio.radio_effects
