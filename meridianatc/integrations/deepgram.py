@@ -28,7 +28,6 @@ from __future__ import annotations
 import io
 import logging
 import time
-from dataclasses import dataclass
 
 import numpy as np
 import requests
@@ -133,7 +132,7 @@ class DeepgramRecognizer:
         self.api_key = api_key
         self.model = model or DEFAULT_STT_MODEL
         self.base_url = (base_url or BASE_URL).rstrip("/")
-        self.languages = [l.lower()[:2] for l in (languages or ["en"])]
+        self.languages = [lang.lower()[:2] for lang in (languages or ["en"])]
         self.language = self.languages[0] if len(self.languages) == 1 else None
         self.user_keyterms = list(keyterms)
         self.callsign = ""
@@ -151,7 +150,7 @@ class DeepgramRecognizer:
         return True
 
     def set_languages(self, languages: list[str]) -> bool:
-        wanted = [l.lower()[:2] for l in languages if l] or ["en"]
+        wanted = [lang.lower()[:2] for lang in languages if lang] or ["en"]
         if wanted == self.languages:
             return False
         self.languages = wanted

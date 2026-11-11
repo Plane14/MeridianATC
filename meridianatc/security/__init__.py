@@ -12,9 +12,9 @@ Three small pieces, each a port of the StormATC feature of the same name:
   key or an Authorization header before a record is written.
 """
 
-from .secrets import SecretStore, InMemorySecretStore, default_store, mask
-from .redact import redact, RedactingFilter
 from . import endpoints
+from .redact import RedactingFilter, redact
+from .secrets import InMemorySecretStore, SecretStore, default_store, mask
 
 __all__ = [
     "SecretStore", "InMemorySecretStore", "default_store", "mask",

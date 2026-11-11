@@ -1,0 +1,27 @@
+[project]
+name = "meridianatc"
+version = "1.0.0"
+description = "Voice-driven ATC companion for MSFS 2024 (merged WilcoATC + StormATC feature set)"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C90", "SIM"]
+# The inherited tree has its own conventions; these only bite the new ports.
+ignore = [
+    "E501",
+    "W291", "W293",
+    "C901",   # complexity: pre-existing functions predate the lint rule
+    "E741",   # single-letter names occur throughout the inherited code
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]

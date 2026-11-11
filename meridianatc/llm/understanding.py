@@ -27,7 +27,11 @@ from typing import Any
 
 from ..atc.intents import IntentParser, ParsedIntent
 from .base import (
-    LLMResult, build_prompt, build_system_prompt, parse_response, to_parsed_intent,
+    LLMResult,
+    build_prompt,
+    build_system_prompt,
+    parse_response,
+    to_parsed_intent,
 )
 
 log = logging.getLogger(__name__)

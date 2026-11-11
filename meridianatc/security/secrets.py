@@ -20,6 +20,7 @@ permissions and a warning is logged once; the contract is unchanged.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import ctypes.wintypes as w
 import json
@@ -177,10 +178,8 @@ class SecretStore:
         temp = self.path.with_suffix(self.path.suffix + ".tmp")
         temp.write_bytes(raw)
         if not self._protected:
-            try:
+            with contextlib.suppress(OSError):
                 os.chmod(temp, 0o600)
-            except OSError:
-                pass
         os.replace(temp, self.path)
 
 

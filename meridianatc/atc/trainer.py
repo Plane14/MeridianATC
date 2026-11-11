@@ -29,7 +29,9 @@ class VoiceTrainer:
     def __init__(self, folder: Path):
         self.folder = Path(folder)
         self.folder.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
+        # RLock, not Lock: add_keyterm takes it and then reads ``keyterms``,
+        # which takes it again -- a plain Lock would deadlock there.
+        self._lock = threading.RLock()
         self._keyterms_path = self.folder / "keyterms.json"
         self._corrections_path = self.folder / "corrections.json"
         self._keyterms: list[str] | None = None
