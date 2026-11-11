@@ -366,7 +366,11 @@ class AutonomousFlight:
             light = getattr(getattr(self.session, "profile", None),
                             "kind", "") in ("piston_single", "piston_twin",
                                             "light")
-            self._perf = fly.performance_for(code, light=light)
+            base = fly.performance_for(code, light=light)
+            title = getattr(getattr(self.session, "aircraft", None),
+                            "title", "") or ""
+            from .autofly import override
+            self._perf = override(code, title, base)
         return self._perf
 
     def _compute_speeds(self, state=None) -> vspeeds.Speeds:

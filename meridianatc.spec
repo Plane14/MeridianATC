@@ -68,6 +68,10 @@ datas = [
     # The first officer's checklists, one file per class of aeroplane, and
     # the README a pilot writes their own from (atc/checklist_files.py).
     (str(ROOT / "meridianatc" / "atc" / "checklists"), "meridianatc/atc/checklists"),
+    # The per-add-on autofly performance profiles (atc/autofly.py).
+    (str(ROOT / "meridianatc" / "atc" / "autofly"), "meridianatc/atc/autofly"),
+    # The LLM prompt set the renderer and the intent parser read.
+    (str(ROOT / "prompts"), "prompts"),
     # Where each GSX passenger's walk is in its animation, read beside
     # integrations/groundvehicles.py. Without it nobody is asked to walk.
     (str(ROOT / "meridianatc" / "integrations" / "walks.json"),

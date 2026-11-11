@@ -415,3 +415,25 @@ class TestSurface:
         from meridianatc.atc.surface import locate, progress
         assert not locate(None, 0, 0).found
         assert progress(None, 0, 0, ["B"]) == {}
+
+
+class TestAutofly:
+    """atc/autofly.py: per-add-on performance overrides from the shipped
+    StormATC profile data."""
+
+    def test_a320_title_match(self):
+        from meridianatc.atc.autofly import override
+        from meridianatc.atc import flying as fly
+        perf = override("A320", "FlyByWire A320neo", fly.AIRLINER)
+        assert perf.rotate_kt == 130.0 and perf.climb_kt == 180.0
+
+    def test_c172(self):
+        from meridianatc.atc.autofly import override
+        from meridianatc.atc import flying as fly
+        perf = override("C172", "Cessna 172 Skyhawk", fly.LIGHT)
+        assert perf.rotate_kt > 0 and perf != fly.LIGHT
+
+    def test_no_match_passthrough(self):
+        from meridianatc.atc.autofly import override
+        from meridianatc.atc import flying as fly
+        assert override("B738", "PMDG 737-800", fly.AIRLINER) is fly.AIRLINER
