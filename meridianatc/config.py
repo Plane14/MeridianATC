@@ -209,6 +209,12 @@ describe(
 
 @dataclass
 class SpeechConfig:
+    # whisper (local, default) | deepgram (hosted, needs a saved key).
+    stt_engine: str = "whisper"
+    deepgram_model: str = "nova-3"
+    deepgram_voice: str = "aura-2-orpheus-en"
+    # Stored under DPAPI (security.secrets), never written to this file.
+    deepgram_key: str = ""
     # Read as its multilingual twin whatever is written here (audio/stt.py
     # engine_model): the pilot may speak any language the radio is worked in.
     model: str = "small"
@@ -245,7 +251,14 @@ SPEECH_MODELS = ("tiny.en", "base.en", "small.en", "small", "medium",
 
 describe(
     SpeechConfig,
-    model=Setting("radio", "recogniser", choices=SPEECH_MODELS, restart=True),
+    stt_engine=Setting("radio", "recogniser",
+                       choices=("whisper", "deepgram"), restart=True),
+    deepgram_model=Setting("radio", "recogniser", restart=True,
+                           advanced=True, when="speech.stt_engine=deepgram"),
+    deepgram_key=Setting("radio", "recogniser", kind="secret", restart=True,
+                         when="speech.stt_engine=deepgram"),
+    model=Setting("radio", "recogniser", choices=SPEECH_MODELS, restart=True,
+                  when="speech.stt_engine=whisper"),
     device=Setting("radio", "recogniser", choices=("cpu", "cuda", "auto"),
                    restart=True, advanced=True),
     compute_type=Setting("radio", "recogniser",
@@ -555,14 +568,16 @@ class AiConfig:
 describe(
     AiConfig,
     provider=Setting("understanding", "understanding",
-                     choices=("none", "ollama", "anthropic"), restart=True),
+                     choices=("none", "ollama", "anthropic", "openrouter",
+                              "openai", "groq", "deepseek", "custom"),
+                     restart=True),
     model=Setting("understanding", "understanding", restart=True,
                   when="ai.provider!=none"),
     host=Setting("understanding", "understanding", restart=True,
                  advanced=True, when="ai.provider=ollama"),
     # Never sent back to the panel: shown as set or not set.
     api_key=Setting("understanding", "understanding", kind="secret",
-                    restart=True, when="ai.provider=anthropic"),
+                    restart=True, when="ai.provider!=none"),
     timeout_s=Setting("understanding", "understanding", min=1, max=120,
                       unit="s", restart=True, advanced=True),
     min_confidence=Setting("understanding", "understanding", min=0, max=1,
@@ -660,8 +675,10 @@ class GsxConfig:
     """
 
     enabled: bool = True
-    # "auto" tries the file first if one is named, then MobiFlight.
-    # "file", "mobiflight" and "off" pin it.
+    # "auto" tries the file first if one is named, then plain SimConnect
+    # (which reads L: variables natively since MSFS 2020 SU12 and throughout
+    # MSFS 2024), then MobiFlight for machines where that does not reach.
+    # "file", "direct", "mobiflight" and "off" pin it.
     bridge: str = "auto"
     # A JSON file of local variable names to numbers, written by whatever you
     # already run. Leave empty to skip it.
@@ -695,7 +712,7 @@ describe(
     voice=Setting("traffic", "ground", label="set.ground_voice",
                   help="set.ground_voice_why"),
     bridge=Setting("traffic", "ground",
-                   choices=("auto", "file", "mobiflight", "off"),
+                   choices=("auto", "file", "direct", "mobiflight", "off"),
                    restart=True, advanced=True),
     lvar_file=Setting("traffic", "ground", kind="path", restart=True,
                       advanced=True, when="gsx.bridge!=mobiflight"),

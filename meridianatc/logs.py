@@ -428,6 +428,10 @@ def configure(config=None, *, force: bool = False) -> Path:
             pass
     root.setLevel(min(level, console_level))
     root.addFilter(SessionFilter())
+    # Last-line defence: a credential-shaped string never reaches a sink,
+    # whatever a call site attached to its record.
+    from .security.redact import RedactingFilter
+    root.addFilter(RedactingFilter())
 
     max_bytes = int(getattr(settings, "max_bytes", 4_000_000) or 4_000_000)
     backups = int(getattr(settings, "backups", 5) or 5)

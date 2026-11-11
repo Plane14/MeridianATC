@@ -1,0 +1,944 @@
+{
+  "_comment": "Converted from StormATC data/flightchecklists/a320-neo.json (Airbus A320neo). Verification steps keep their challenge and note rather than a guessed simvar check.",
+  "source": "StormATC Airbus A320neo checklist set",
+  "match": [
+    "a320",
+    "a320-neo",
+    "a320neo",
+    "airbus",
+    "neo"
+  ],
+  "checklists": {
+    "preflight": {
+      "title": {
+        "en": "preflight"
+      },
+      "items": [
+        {
+          "challenge": "Weather Briefing (METAR / TAF / Sigmet)",
+          "response": "weather.",
+          "accept": [
+            "check"
+          ],
+          "note": "Check departure, enroute, destination, and alternate weather."
+        },
+        {
+          "challenge": "NOTAMs",
+          "response": "check",
+          "accept": [
+            "check"
+          ],
+          "note": "Check for runway closures, navigation aid outages, and airspace restrictions."
+        },
+        {
+          "challenge": "OFP / SimBrief Flight Plan",
+          "response": "alternates.",
+          "accept": [
+            "check"
+          ],
+          "note": "Generate and review Operational Flight Plan - route, fuel, winds, alternates."
+        },
+        {
+          "challenge": "Fuel Planning",
+          "response": "extra.",
+          "accept": [
+            "check"
+          ],
+          "note": "Block fuel includes taxi, trip, contingency (5%), alternate, final reserve (30 min), and extra."
+        },
+        {
+          "challenge": "Weight & Balance / Loadsheet",
+          "response": "(cg%).",
+          "accept": [
+            "check"
+          ],
+          "note": "Verify ZFW, TOW, and LW are within limits. Check trim setting (CG%)."
+        },
+        {
+          "challenge": "Battery 1 & 2",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "External Power",
+          "response": "available).",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ON (if available)."
+        },
+        {
+          "challenge": "APU Master Switch",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "APU Start",
+          "response": "min).",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "ON - wait for AVAIL light on ECAM (~1 min)."
+        },
+        {
+          "challenge": "APU Bleed",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Crew Oxygen",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "ADIRS 1, 2, 3",
+          "response": "min).",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "NAV - do not move aircraft during alignment (~7 min)."
+        },
+        {
+          "challenge": "Navigation Lights",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Seat Belts Sign",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Fuel Pumps",
+          "response": "tanks).",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ON (Wing tanks)."
+        },
+        {
+          "challenge": "Parking Brake",
+          "response": "set.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Beacon Light",
+          "response": "start.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ON - signal to ground crew that engines will start."
+        },
+        {
+          "challenge": "Doors",
+          "response": "page).",
+          "accept": [
+            "check"
+          ],
+          "note": "CLOSED (check ECAM DOOR page)."
+        },
+        {
+          "challenge": "Thrust Levers",
+          "response": "idle.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Pack Switches",
+          "response": "start.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "OFF - reduces APU bleed load during engine start."
+        },
+        {
+          "challenge": "Engine Mode Selector",
+          "response": "ign/start.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Engine Master 2",
+          "response": "first).",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ON (start right engine first)."
+        },
+        {
+          "challenge": "Engine 2 N2",
+          "response": "idle.",
+          "accept": [
+            "check"
+          ],
+          "note": "MONITOR - wait for stable idle."
+        },
+        {
+          "challenge": "Engine Master 1",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Engine 1 N2",
+          "response": "idle.",
+          "accept": [
+            "check"
+          ],
+          "note": "MONITOR - wait for stable idle."
+        },
+        {
+          "challenge": "Engine Mode Selector",
+          "response": "stabilised.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "NORM - return to NORM after both engines stabilised."
+        },
+        {
+          "challenge": "Engine Bleeds",
+          "response": "(both).",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ON (Both)."
+        },
+        {
+          "challenge": "Pack Switches",
+          "response": "(both).",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ON (Both)."
+        },
+        {
+          "challenge": "APU Bleed",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "APU Master",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Generator Switches",
+          "response": "2).",
+          "accept": [
+            "check"
+          ],
+          "note": "VERIFY ON (GEN 1 & 2)."
+        },
+        {
+          "challenge": "Flight Controls",
+          "response": "deflection).",
+          "accept": [
+            "check"
+          ],
+          "note": "CHECK (full deflection)."
+        },
+        {
+          "challenge": "Pitch Trim",
+          "response": "value.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET FOR TAKEOFF - check loadsheet for trim value."
+        },
+        {
+          "challenge": "Rudder Trim",
+          "response": "zero.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Ground Spoilers",
+          "response": "arm.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flaps",
+          "response": "3).",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET for takeoff (CONF 1+F, 2, or 3)."
+        },
+        {
+          "challenge": "Auto Brake",
+          "response": "max.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Taxi Light",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Parking Brake",
+          "response": "release.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flight Controls",
+          "response": "checked.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flight Instruments",
+          "response": "checked.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Briefing",
+          "response": "procedures.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "CONFIRMED - review departure, SID, engine failure procedures."
+        },
+        {
+          "challenge": "Flaps",
+          "response": "setting.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "CONFIRM T/O setting."
+        },
+        {
+          "challenge": "V-Speeds",
+          "response": "v2.",
+          "accept": [
+            "check"
+          ],
+          "note": "CONFIRM V1, VR, V2."
+        },
+        {
+          "challenge": "Transponder",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "AUTO / ON, ALT RPTG ON."
+        },
+        {
+          "challenge": "ECAM Memo",
+          "response": "blue.",
+          "accept": [
+            "check"
+          ],
+          "note": "CHECK - T/O NO BLUE."
+        },
+        {
+          "challenge": "Landing Lights",
+          "response": "(both).",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ON (Both)."
+        },
+        {
+          "challenge": "Brakes",
+          "response": "hold.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Thrust Levers",
+          "response": "thrust.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ADVANCE to 50% N1 - stabilise engines before applying takeoff thrust."
+        },
+        {
+          "challenge": "Brakes",
+          "response": "release.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Thrust Levers",
+          "response": "toga.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "FLX/MCT or TOGA."
+        },
+        {
+          "challenge": "FMA",
+          "response": "rwy.",
+          "accept": [
+            "check"
+          ],
+          "note": "VERIFY - MAN FLX (or MAN TOGA), SRS, RWY."
+        },
+        {
+          "challenge": "80 Knots",
+          "response": "callout.",
+          "accept": [
+            "check"
+          ],
+          "note": "CROSS-CHECK speed - callout."
+        },
+        {
+          "challenge": "V1",
+          "response": "fly.",
+          "accept": [
+            "check"
+          ],
+          "note": "CALLOUT - committed to fly."
+        },
+        {
+          "challenge": "Rotate at VR",
+          "response": "up.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "SMOOTH backstick - pitch 15 deg nose up."
+        },
+        {
+          "challenge": "Positive Climb",
+          "response": "confirmed.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Landing Gear",
+          "response": "up.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Thrust Reduction Altitude",
+          "response": "detent.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "THRUST LEVERS to CL detent."
+        },
+        {
+          "challenge": "Autopilot 1",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flaps",
+          "response": "0.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "RETRACT to 0 - retract incrementally as speed builds: 2 -> 1 -> 0."
+        },
+        {
+          "challenge": "Speed Brakes",
+          "response": "disarm.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Baro Reference",
+          "response": "altitude.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET STD above transition altitude."
+        },
+        {
+          "challenge": "Altitude on FCU",
+          "response": "level.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET cleared cruise level."
+        },
+        {
+          "challenge": "Altitude",
+          "response": "fl.",
+          "accept": [
+            "check"
+          ],
+          "note": "VERIFY level at cruise FL."
+        },
+        {
+          "challenge": "Autopilot",
+          "response": "speed.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ON - managed speed."
+        },
+        {
+          "challenge": "ECAM - Engine Parameters",
+          "response": "normal.",
+          "accept": [
+            "check"
+          ],
+          "note": "CHECK - all normal."
+        },
+        {
+          "challenge": "Fuel Quantity & Balance",
+          "response": "kg.",
+          "accept": [
+            "check"
+          ],
+          "note": "CHECK - monitor fuel burn vs flight plan. Max imbalance ~1,500 kg."
+        },
+        {
+          "challenge": "ATIS / Airport Information",
+          "response": "level.",
+          "accept": [
+            "check"
+          ],
+          "note": "OBTAINED - note QNH, wind, runway in use, transition level."
+        },
+        {
+          "challenge": "Approach Briefing",
+          "response": "procedure.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "COMPLETED - review approach chart, minimums, missed approach procedure."
+        },
+        {
+          "challenge": "Auto Brake",
+          "response": "med).",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET (LO or MED)."
+        },
+        {
+          "challenge": "ILS Frequency",
+          "response": "pfds.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET and IDENTIFIED - verify on both PFDs."
+        },
+        {
+          "challenge": "APPR Button on FCU",
+          "response": "modes.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "PRESS when cleared for approach - arms LOC and G/S modes."
+        },
+        {
+          "challenge": "Flaps",
+          "response": "full).",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET incrementally (1, 2, 3, FULL)."
+        },
+        {
+          "challenge": "Landing Gear",
+          "response": "required.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "DOWN - select DOWN when established on localiser or as required."
+        },
+        {
+          "challenge": "Ground Spoilers",
+          "response": "arm.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Landing Gear",
+          "response": "greens.",
+          "accept": [
+            "check"
+          ],
+          "note": "CONFIRM DOWN - 3 greens."
+        },
+        {
+          "challenge": "Auto Brake",
+          "response": "armed.",
+          "accept": [
+            "check"
+          ],
+          "note": "CONFIRM ARMED."
+        },
+        {
+          "challenge": "Stable Approach",
+          "response": "go-around.",
+          "accept": [
+            "check"
+          ],
+          "note": "VERIFY - if not stabilised by 1,000 ft AGL, execute go-around."
+        },
+        {
+          "challenge": "Autopilot",
+          "response": "ap1).",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "OFF (disconnect AP1)."
+        },
+        {
+          "challenge": "VAPP",
+          "response": "speed.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "MAINTAIN approach speed."
+        },
+        {
+          "challenge": "Flare (~30 ft)",
+          "response": "rate.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "GENTLE backstick - reduce descent rate."
+        },
+        {
+          "challenge": "Thrust Levers",
+          "response": "ft.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "IDLE at ~10-20 ft."
+        },
+        {
+          "challenge": "Touchdown",
+          "response": "gently.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "MAIN GEAR first - hold pitch attitude, lower nose gently."
+        },
+        {
+          "challenge": "Ground Spoilers",
+          "response": "deployed.",
+          "accept": [
+            "check"
+          ],
+          "note": "VERIFY DEPLOYED."
+        },
+        {
+          "challenge": "Reverse Thrust",
+          "response": "up).",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SELECT REV (both levers up)."
+        },
+        {
+          "challenge": "70 Knots",
+          "response": "reversers.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "REVERSE IDLE - stow reversers."
+        },
+        {
+          "challenge": "Flaps",
+          "response": "0.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "RETRACT to 0."
+        },
+        {
+          "challenge": "Ground Spoilers",
+          "response": "disarm.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Parking Brake",
+          "response": "set.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Engine Master 1",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Engine Master 2",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "ADIRS",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ALL OFF."
+        },
+        {
+          "challenge": "APU Master",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Battery 1 & 2",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        }
+      ]
+    }
+  }
+}

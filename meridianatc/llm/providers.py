@@ -192,6 +192,84 @@ class AnthropicProvider:
 # --------------------------------------------------------------------------
 
 
+class OpenAICompatibleProvider:
+    """One provider class for every OpenAI-shaped chat endpoint.
+
+    StormATC shipped five -- OpenRouter, OpenAI, Groq, DeepSeek and a custom
+    base-URL -- that differed only in endpoint, auth header and default
+    model. The OpenAI-compatible chat-completions body is the same for all
+    of them, so one class with the endpoint pinned per name carries them
+    all. The endpoint is the provider's official one by default and, per
+    the endpoint policy, cannot be redirected away by the server.
+    """
+
+    #: Official endpoints per provider name; ``custom`` takes ``host``.
+    ENDPOINTS = {
+        "openrouter": "https://openrouter.ai/api/v1/chat/completions",
+        "openai": "https://api.openai.com/v1/chat/completions",
+        "groq": "https://api.groq.com/openai/v1/chat/completions",
+        "deepseek": "https://api.deepseek.com/chat/completions",
+    }
+    DEFAULT_MODELS = {
+        "openrouter": "google/gemini-3-flash-preview",
+        "openai": "gpt-5.2",
+        "groq": "openai/gpt-oss-20b",
+        "deepseek": "deepseek-chat",
+    }
+
+    def __init__(self, provider: str, api_key: str, model: str = "",
+                 host: str = "", timeout_s: float = 12.0):
+        from ..security.endpoints import is_allowed
+
+        self.provider = (provider or "openrouter").strip().lower()
+        self.name = self.provider
+        self.api_key = api_key
+        self.model = model or self.DEFAULT_MODELS.get(self.provider, "")
+        if self.provider == "custom":
+            base = (host or "").rstrip("/")
+            if not base or not is_allowed("custom", base):
+                raise ValueError(
+                    "custom provider needs an allowlisted https host")
+            self.url = f"{base}/chat/completions"
+        else:
+            self.url = self.ENDPOINTS[self.provider]
+        self.timeout_s = timeout_s
+        self._session = requests.Session()
+        self._session.max_redirects = 0
+
+    def available(self) -> bool:
+        from ..security.endpoints import is_allowed
+
+        return bool(self.api_key) and is_allowed(self.provider, self.url)
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Authorization": f"Bearer {self.api_key}",
+                   "Content-Type": "application/json"}
+        if self.provider == "openrouter":
+            headers.update({"HTTP-Referer": "https://meridianatc.local",
+                            "X-Title": "MeridianATC"})
+        return headers
+
+    def chat(self, messages: list[dict[str, str]],
+             max_tokens: int = 700) -> str:
+        """One completion round-trip; an exception propagates on failure."""
+        body = {"model": self.model, "messages": messages,
+                "temperature": 0.1, "max_tokens": max_tokens,
+                "stream": False}
+        response = self._session.post(
+            self.url, json=body, headers=self._headers(),
+            timeout=self.timeout_s, allow_redirects=False)
+        response.raise_for_status()
+        return (response.json()["choices"][0]["message"]["content"]
+                or "").strip()
+
+    def classify(self, prompt: str, system: str) -> str:
+        """The contract the understanding layer calls on every provider."""
+        return self.chat(
+            [{"role": "system", "content": system},
+             {"role": "user", "content": prompt}])
+
+
 def build_provider(kind: str, **options):
     """Construct a provider by name, or ``None`` when the AI layer is off."""
     kind = (kind or "none").strip().lower()
@@ -209,7 +287,16 @@ def build_provider(kind: str, **options):
             api_key=options.get("api_key") or None,
             timeout_s=float(options.get("timeout_s", 12.0)),
         )
-    raise ValueError(f"Unknown AI provider {kind!r}. Use none, ollama or anthropic.")
+    if kind in OpenAICompatibleProvider.ENDPOINTS or kind == "custom":
+        return OpenAICompatibleProvider(
+            provider=kind,
+            api_key=options.get("api_key") or "",
+            model=options.get("model") or "",
+            host=options.get("host") or "",
+            timeout_s=float(options.get("timeout_s", 12.0)),
+        )
+    raise ValueError(f"Unknown AI provider {kind!r}")
 
 
-__all__ = ["OllamaProvider", "AnthropicProvider", "build_provider"]
+__all__ = ["OllamaProvider", "AnthropicProvider", "OpenAICompatibleProvider",
+           "build_provider"]

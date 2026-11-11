@@ -97,6 +97,8 @@ class Synthesizer:
         gpu: bool = False,
         hq_model: str = "standard",
         hq_takes: int = 2,
+        deepgram_key: str = "",
+        deepgram_voice: str = "",
     ):
         # The cloning tier is reachable two ways, and the casting has to know
         # about both: named outright, or through ``auto`` when the pilot has
@@ -126,7 +128,10 @@ class Synthesizer:
         # decides which piece of code turns that into a waveform.
         self.backends = backends or default_registry(
             self.registry, prefer=self.registry.engine, allow_gpu=bool(gpu),
-            hq_model=hq_model, hq_takes=hq_takes)
+            hq_model=hq_model, hq_takes=hq_takes,
+            deepgram_key=deepgram_key, deepgram_voice=deepgram_voice)
+        self._deepgram_key = deepgram_key
+        self._deepgram_voice = deepgram_voice
         self._lock = threading.Lock()
         self._cache: dict[str, Transmission] = {}
         self._cache_order: list[str] = []
@@ -260,7 +265,9 @@ class Synthesizer:
                                  engine=engine, hq=hq, hq_model=hq_model)
         backends = default_registry(
             registry, prefer=registry.engine, allow_gpu=bool(gpu),
-            hq_model=hq_model, hq_takes=hq_takes)
+            hq_model=hq_model, hq_takes=hq_takes,
+            deepgram_key=self._deepgram_key,
+            deepgram_voice=self._deepgram_voice)
         with self._lock:
             self.registry = registry
             self.backends = backends

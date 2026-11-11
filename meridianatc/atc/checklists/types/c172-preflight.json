@@ -1,0 +1,71 @@
+{
+  "_comment": "Converted from StormATC data/flightchecklists/c172-preflight.json (Cessna 172 Preflight). Verification steps keep their challenge and note rather than a guessed simvar check.",
+  "source": "StormATC Cessna 172 Preflight checklist set",
+  "match": [
+    "172",
+    "c172",
+    "c172-preflight",
+    "cessna",
+    "preflight"
+  ],
+  "checklists": {
+    "preflight": {
+      "title": {
+        "en": "preflight"
+      },
+      "items": [
+        {
+          "challenge": "Cabin",
+          "response": "in.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "Verify ignition off, seats/belts secured, circuit breakers in."
+        },
+        {
+          "challenge": "Fuel",
+          "response": "caps.",
+          "accept": [
+            "check"
+          ],
+          "note": "Check fuel quantity, quality, vents, and filler caps."
+        },
+        {
+          "challenge": "Empennage",
+          "response": "removed.",
+          "accept": [
+            "check"
+          ],
+          "note": "Check horizontal stabilizer, elevator, rudder, trim tab, tie-down removed."
+        },
+        {
+          "challenge": "Right Wing",
+          "response": "sump.",
+          "accept": [
+            "check"
+          ],
+          "note": "Check aileron, flap, wing tie-down, pitot tube, fuel tank, fuel sump."
+        },
+        {
+          "challenge": "Nose",
+          "response": "tire.",
+          "accept": [
+            "check"
+          ],
+          "note": "Check propeller, cowling, oil level, landing light, nose wheel tire."
+        },
+        {
+          "challenge": "Left Wing",
+          "response": "aileron.",
+          "accept": [
+            "check"
+          ],
+          "note": "Check pitot tube removal, fuel tank, fuel sump, wing tie-down, flap, aileron."
+        }
+      ]
+    }
+  }
+}

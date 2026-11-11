@@ -9,10 +9,11 @@ thing feel scripted rather than watched.
 Two ways in, in order of preference.
 
 *The variables themselves.* GSX's ``FSDT_GSX_*`` local variables say exactly
-where each service has got to. Reading a local variable needs a bridge -- the
-simulator does not expose them over plain SimConnect -- and the usual one is
-the MobiFlight WASM module, which many people already have installed for other
-add-ons. If it is there, this uses it.
+where each service has got to. On MSFS 2020 SU12 and later -- all of MSFS
+2024 -- plain SimConnect reads ``L:`` variables in an ordinary data
+definition, and that direct path is tried first because it needs nothing
+installed. Where it does not reach, the usual bridge is the MobiFlight WASM
+module, which many people already have installed for other add-ons.
 
 *What the aeroplane is doing.* Failing that, the ordinary simulator variables
 still say a great deal: an aeroplane moving backwards on the ground with the
@@ -55,8 +56,9 @@ The walk is driven from :meth:`GsxLink.poll`, which the situation loop is
 already calling, because GSX draws each menu in its own time and nothing here
 may block waiting for it.
 
-That needs a bridge that can write, which in practice means MobiFlight. With
-no such bridge -- or with a GSX that does not offer a push at this stand --
+That needs a bridge that can write, which means the direct SimConnect path
+or MobiFlight. With no such bridge -- or with a GSX that does not offer a
+push at this stand --
 the simulator's own pushback is used instead, which is the built-in tug and is
 also what GSX drives when it is set to take the default pushback over. There
 is no such fallback for boarding or catering: those are GSX or nothing, and

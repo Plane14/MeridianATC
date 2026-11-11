@@ -1,0 +1,723 @@
+{
+  "_comment": "Converted from StormATC data/flightchecklists/douglas-dc-3.json (Douglas DC-3). Verification steps keep their challenge and note rather than a guessed simvar check.",
+  "source": "StormATC Douglas DC-3 checklist set",
+  "match": [
+    "douglas",
+    "douglas-dc-3"
+  ],
+  "checklists": {
+    "preflight": {
+      "title": {
+        "en": "preflight"
+      },
+      "items": [
+        {
+          "challenge": "Weather Briefing",
+          "response": "weather.",
+          "accept": [
+            "check"
+          ],
+          "note": "Check departure, enroute, destination weather."
+        },
+        {
+          "challenge": "NOTAMs",
+          "response": "closures.",
+          "accept": [
+            "check"
+          ],
+          "note": "Check for runway closures."
+        },
+        {
+          "challenge": "Flight Plan",
+          "response": "verify.",
+          "accept": [
+            "check"
+          ],
+          "note": "LOAD and verify."
+        },
+        {
+          "challenge": "Fuel Planning",
+          "response": "reserves.",
+          "accept": [
+            "check"
+          ],
+          "note": "Calculate block fuel plus reserves."
+        },
+        {
+          "challenge": "Weight & Balance / Loadsheet",
+          "response": "limits.",
+          "accept": [
+            "check"
+          ],
+          "note": "Verify within limits."
+        },
+        {
+          "challenge": "Performance - Takeoff Speeds",
+          "response": "calculated.",
+          "accept": [
+            "value",
+            "check"
+          ],
+          "note": "V1, VR, V2 calculated."
+        },
+        {
+          "challenge": "Battery",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "External Power",
+          "response": "available.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ON if available."
+        },
+        {
+          "challenge": "APU",
+          "response": "start.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "APU Bleed",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Navigation Lights",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Seat Belts Sign",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Fuel Pumps",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "FMC - Route",
+          "response": "verify.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ENTER and verify."
+        },
+        {
+          "challenge": "FMC - Performance",
+          "response": "speeds.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ENTER fuel, weights, speeds."
+        },
+        {
+          "challenge": "FCU Altitude",
+          "response": "altitude.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET initial climb altitude."
+        },
+        {
+          "challenge": "Transponder",
+          "response": "stby.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET - STBY."
+        },
+        {
+          "challenge": "Parking Brake",
+          "response": "set.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Doors",
+          "response": "closed.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Thrust Levers",
+          "response": "idle.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Packs",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Engine Master",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "N2",
+          "response": "idle.",
+          "accept": [
+            "check"
+          ],
+          "note": "MONITOR - stable idle."
+        },
+        {
+          "challenge": "Engine Bleeds",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Packs",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "APU Bleed",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Generators",
+          "response": "online.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flight Controls",
+          "response": "checked.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Briefing",
+          "response": "confirmed.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Flaps",
+          "response": "setting.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "CONFIRM T/O setting."
+        },
+        {
+          "challenge": "V-Speeds",
+          "response": "v2.",
+          "accept": [
+            "check"
+          ],
+          "note": "CONFIRM V1, VR, V2."
+        },
+        {
+          "challenge": "ATC Clearance",
+          "response": "obtained.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Landing Lights",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Brakes",
+          "response": "hold.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Thrust Levers",
+          "response": "thrust.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "TAKEOFF THRUST."
+        },
+        {
+          "challenge": "Brakes",
+          "response": "release.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Rotate at VR",
+          "response": "backstick.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "SMOOTH backstick."
+        },
+        {
+          "challenge": "Positive Climb",
+          "response": "confirmed.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Landing Gear",
+          "response": "up.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Thrust Levers",
+          "response": "detent.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "CLIMB DETENT."
+        },
+        {
+          "challenge": "Flaps",
+          "response": "retract.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Baro Reference",
+          "response": "std.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET STD."
+        },
+        {
+          "challenge": "Altitude",
+          "response": "fl.",
+          "accept": [
+            "check"
+          ],
+          "note": "VERIFY level at cruise FL."
+        },
+        {
+          "challenge": "Autopilot",
+          "response": "speed.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ON - managed speed."
+        },
+        {
+          "challenge": "Engine Parameters",
+          "response": "check.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Fuel Quantity",
+          "response": "imbalance.",
+          "accept": [
+            "check"
+          ],
+          "note": "CHECK - monitor imbalance."
+        },
+        {
+          "challenge": "ATIS",
+          "response": "obtained.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "FMC - Approach",
+          "response": "approach.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET QNH, approach."
+        },
+        {
+          "challenge": "Approach Briefing",
+          "response": "completed.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Auto Brake",
+          "response": "set.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "ATC Clearance",
+          "response": "obtained.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Altitude",
+          "response": "altitude.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET cleared altitude."
+        },
+        {
+          "challenge": "Landing Lights",
+          "response": "ft.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ON below 10,000 ft."
+        },
+        {
+          "challenge": "APPR Mode",
+          "response": "cleared.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ARM when cleared."
+        },
+        {
+          "challenge": "Flaps",
+          "response": "check",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET incrementally."
+        },
+        {
+          "challenge": "Landing Gear",
+          "response": "down.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Ground Spoilers",
+          "response": "arm.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Stable Approach",
+          "response": "agl.",
+          "accept": [
+            "check"
+          ],
+          "note": "VERIFY at 1,000 ft AGL."
+        },
+        {
+          "challenge": "Flare",
+          "response": "backstick.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "GENTLE backstick."
+        },
+        {
+          "challenge": "Thrust Levers",
+          "response": "flare.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "IDLE at flare."
+        },
+        {
+          "challenge": "Touchdown",
+          "response": "first.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "MAIN GEAR first."
+        },
+        {
+          "challenge": "Reverse Thrust",
+          "response": "required.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SELECT as required."
+        },
+        {
+          "challenge": "Flaps",
+          "response": "0.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "RETRACT to 0."
+        },
+        {
+          "challenge": "Ground Spoilers",
+          "response": "disarm.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Landing Lights",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Parking Brake",
+          "response": "set.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Engine Master",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Seat Belts Sign",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Beacon Light",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Fuel Pumps",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Navigation Lights",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Avionics",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Battery",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        }
+      ]
+    }
+  }
+}

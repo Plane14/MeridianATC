@@ -1204,6 +1204,14 @@ def _apply_settings(engine: Engine, payload: dict) -> set[str]:
     accepted = _check_all(payload)
     changed: set[str] = set()
     for path, value in accepted.items():
+        if path in SECRETS:
+            # A credential is written to the DPAPI store, never to
+            # config.yaml: a settings file syncs, prints and backups well,
+            # none of which a key should survive.
+            from ..security.secrets import default_store
+            default_store().set(path, str(value))
+            changed.add(path)
+            continue
         if cfg.get_path(engine.config, path) == value:
             continue
         cfg.set_path(engine.config, path, value)

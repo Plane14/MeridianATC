@@ -58,6 +58,7 @@ from .integrations.groundvehicles import SimVehicles
 from .integrations.facilities import SimFacilities
 from .integrations import gsx
 from .integrations.gsx import GsxLink
+from .security.secrets import resolve_secret
 from .integrations.simaircraft import SimAircraft
 from .integrations.network import OnlineNetwork
 from .atc.arrival import ArrivalWatch
@@ -209,6 +210,8 @@ class Engine:
             gpu=self.config.voice.gpu,
             hq_model=self.config.voice.hq_model,
             hq_takes=self.config.voice.hq_takes,
+            deepgram_key=resolve_secret(self.config, "speech.deepgram_key"),
+            deepgram_voice=self.config.speech.deepgram_voice,
         )
         # Said once. Without voices every single transmission fails, and a
         # transcript filling with the same red line is noise rather than
@@ -223,17 +226,26 @@ class Engine:
             code.lower()[:2] for code in (self.config.speech.languages or [])
         ]
         self.languages = self.pinned_languages or ["en"]
-        self.recognizer = Recognizer(
-            # Where the flight will go is not known at startup, so the model
-            # has to be one that can hear anything. Pinning the languages to
-            # English is what keeps the smaller English-only model.
-            model_size=engine_model(self.config),
-            device=self.config.speech.device,
-            compute_type=self.config.speech.compute_type,
-            beam_size=self.config.speech.beam_size,
-            languages=self.languages,
-            detection_threshold=self.config.speech.detection_threshold,
-        )
+        if self.config.speech.stt_engine == "deepgram":
+            from .integrations.deepgram import DeepgramRecognizer
+            self.recognizer = DeepgramRecognizer(
+                api_key=resolve_secret(self.config, "speech.deepgram_key"),
+                model=self.config.speech.deepgram_model,
+                languages=self.languages,
+            )
+        else:
+            self.recognizer = Recognizer(
+                # Where the flight will go is not known at startup, so the
+                # model has to be one that can hear anything. Pinning the
+                # languages to English is what keeps the smaller
+                # English-only model.
+                model_size=engine_model(self.config),
+                device=self.config.speech.device,
+                compute_type=self.config.speech.compute_type,
+                beam_size=self.config.speech.beam_size,
+                languages=self.languages,
+                detection_threshold=self.config.speech.detection_threshold,
+            )
         # Never a download from here: the setup screen fetches the model with
         # its own bar. Missing, the recogniser says so (SpeechModelMissing).
         self.recognizer.allow_download = False
@@ -296,7 +308,8 @@ class Engine:
                 self.config.ai.provider,
                 model=self.config.ai.model,
                 host=self.config.ai.host,
-                api_key=self.config.ai.api_key,
+                api_key=resolve_secret(self.config, "ai.api_key",
+                                       env="ANTHROPIC_API_KEY"),
                 timeout_s=self.config.ai.timeout_s,
             ),
             min_confidence=self.config.ai.min_confidence,

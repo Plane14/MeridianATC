@@ -21,7 +21,9 @@ from .registry import BackendRegistry
 def default_registry(voice_registry=None, prefer: str = "auto",
                      allow_gpu: bool = False,
                      hq_model: str = "standard",
-                     hq_takes: int = 2) -> BackendRegistry:
+                     hq_takes: int = 2,
+                     deepgram_key: str = "",
+                     deepgram_voice: str = "") -> BackendRegistry:
     """The engines this build ships with, in the order they are preferred.
 
     Supertonic first: ten speakers of each sex in every language a
@@ -59,6 +61,10 @@ def default_registry(voice_registry=None, prefer: str = "auto",
     registry.register(SupertonicTTS(root / SUPERTONIC_DIR) if root is not None
                       else SupertonicTTS())
     registry.register(PiperTTS(voice_registry))
+    if deepgram_key:
+        from ...integrations.deepgram import DeepgramTTS
+        registry.register(DeepgramTTS(api_key=deepgram_key,
+                                      voice=deepgram_voice))
     registry.register(ChatterboxTTS(root, variant=hq_model, takes=hq_takes))
     return registry
 

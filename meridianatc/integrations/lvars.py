@@ -1,9 +1,14 @@
 """Reading a local variable out of the simulator, and writing one back.
 
 Local variables -- the ``L:`` namespace -- are how add-ons like GSX publish
-what they are doing, and they are the one thing plain SimConnect cannot read.
-Getting at them needs something inside the simulator to hand them out. Two
-things commonly are:
+what they are doing. Since MSFS 2020 SU12 (and throughout MSFS 2024) plain
+SimConnect reads them: ``SimConnect_AddToDataDefinition`` accepts a datum
+named ``L:NAME`` in an ordinary definition, and the value arrives like any
+other simulation variable. That is :class:`DirectBridge`, and on any
+up-to-date simulator it needs nothing installed at all.
+
+Two other ways remain for where direct definitions cannot reach -- an older
+simulator, or an add-on that wants its own channel:
 
 *The MobiFlight WASM module.* A small add-on many people already have for
 hardware panels. It exposes a SimConnect *client data* channel: you write the
@@ -15,13 +20,15 @@ name to number, refreshed as often as whatever writes it likes. It exists
 because it cannot fail in an interesting way, and because it lets somebody with
 FSUIPC, a Lua script or a bespoke gauge feed this program in five lines.
 
-Both are optional and both fail quietly. A bridge that cannot connect reports
+All are optional and all fail quietly. A bridge that cannot connect reports
 that it has nothing, and the caller carries on with what the aeroplane itself
 says.
 
-Writing is the same channel in the other direction, and only MobiFlight has
-it: the module takes a line of the simulator's own calculator code, so setting
-a variable is ``1 (>L:NAME)`` handed over as a command. A file cannot do it --
+Writing is the same channel in the other direction, and the direct bridge
+has it too: a definition bound to ``L:NAME`` is set with
+``SimConnect_SetDataOnSimObject``. So does MobiFlight -- the module takes a
+line of the simulator's own calculator code, so setting a variable is
+``1 (>L:NAME)`` handed over as a command. A file cannot do it --
 this program reads that file and does not own it -- so :attr:`Bridge.can_write`
 exists to be asked rather than discovered by a write that quietly does
 nothing. It is what lets :mod:`meridianatc.integrations.gsx` ask for a service
@@ -298,6 +305,17 @@ def _declare(dll) -> None:
     dll.SimConnect_GetNextDispatch.argtypes = [
         w.HANDLE, ctypes.POINTER(ctypes.POINTER(_Recv)),
         ctypes.POINTER(w.DWORD)]
+    # The ordinary data path, which is how L: variables are read and written
+    # directly since SU12 -- no module involved.
+    dll.SimConnect_AddToDataDefinition.argtypes = [
+        w.HANDLE, w.DWORD, ctypes.c_char_p, ctypes.c_char_p, w.DWORD,
+        ctypes.c_float, w.DWORD]
+    dll.SimConnect_RequestDataOnSimObject.argtypes = [
+        w.HANDLE, w.DWORD, w.DWORD, w.DWORD, w.DWORD, w.DWORD, w.DWORD,
+        w.DWORD, w.DWORD]
+    dll.SimConnect_SetDataOnSimObject.argtypes = [
+        w.HANDLE, w.DWORD, w.DWORD, w.DWORD, w.DWORD, w.DWORD,
+        ctypes.c_void_p]
 
 
 class MobiFlightBridge(Bridge):
@@ -657,17 +675,300 @@ class MobiFlightBridge(Bridge):
         self._shut()
 
 
+# --------------------------------------------------------------------------
+# plain SimConnect data definitions (SU12 and later, all of MSFS 2024)
+# --------------------------------------------------------------------------
+#
+# A datum named "L:NAME" in an AddToDataDefinition call is a local variable.
+# No module, no calculator code, no channel: the simulator answers a request
+# with SIMCONNECT_RECV_SIMOBJECT_DATA like any other variable, and
+# SetDataOnSimObject writes it. This is what the SDK documents at
+# SimConnect_AddToDataDefinition, and it is the bridge to prefer wherever the
+# simulator is new enough -- which is checked rather than assumed, because a
+# definition a pre-SU12 simulator never heard of is refused with an
+# exception, not a crash.
+
+SIMCONNECT_OBJECT_ID_USER = 0
+#: SIMCONNECT_PERIOD_SECOND: a value a second is enough for a tug.
+_PERIOD_SECOND = 4
+#: SIMCONNECT_DATATYPE_FLOAT64: a double, the wrapper's default unit type.
+_DATATYPE_FLOAT64 = 4
+_REQUEST_DEFAULT = 0
+_SET_DEFAULT = 0
+
+# Our own ids, in a range apart from the MobiFlight ones above.
+_DEF_LVAR_DIRECT = 4000
+_REQ_LVAR_DIRECT = 4000
+_DEF_LVAR_PROBE = 4999
+_REQ_LVAR_PROBE = 4999
+
+# How long open() gives the simulator to refuse the probe definition.
+_PROBE_WAIT_S = 0.8
+
+
+class DirectBridge(Bridge):
+    """Local variables through ordinary SimConnect data definitions.
+
+    The same contract as the module bridge -- :meth:`read` answers what is
+    known, :meth:`write` sets a variable -- over the path every supported
+    simulator already has. It is tried before MobiFlight on ``auto`` because
+    it is strictly simpler: no add-on to install, no handshake, no shared
+    channel two clients can collide on.
+    """
+
+    name = "simconnect"
+    PUMP_S = 0.05
+
+    def __init__(self, dll_path: str = "", dll=None, handle=None):
+        self.dll_path = dll_path
+        self._dll = dll
+        self._handle = handle
+        self._own_connection = dll is None
+        self._ready = False
+        self._failed = False
+        self.trouble = ""
+        self._stop = threading.Event()
+        self._pump: threading.Thread | None = None
+        self._lock = threading.Lock()
+        self._registered: list[str] = []
+        self._values: dict[str, float] = {}
+        # The probe's verdict: an exception naming our definition means the
+        # simulator predates L: support and this bridge has nothing.
+        self._probe_refused = False
+        self._probe_heard = False
+
+    def open(self) -> bool:
+        if self._ready:
+            return True
+        if self._failed:
+            return False
+        try:
+            if self._own_connection:
+                found = find_simconnect(self.dll_path)
+                if found is None:
+                    self.trouble = "no SimConnect library was found"
+                    self._failed = True
+                    return False
+                self._dll = ctypes.WinDLL(str(found))
+                _declare(self._dll)
+                handle = w.HANDLE()
+                if self._dll.SimConnect_Open(
+                        ctypes.byref(handle), b"MeridianATC LVars",
+                        None, 0, None, 0) != 0:
+                    self.trouble = "the simulator is not running"
+                    self._failed = True
+                    return False
+                self._handle = handle
+            self._start_pump()
+            if not self._probe():
+                self.trouble = ("this simulator does not accept L: data "
+                                "definitions")
+                self._failed = True
+                self.close()
+                return False
+        except Exception as exc:
+            log.info("the direct lvar bridge could not start", exc_info=True)
+            self.trouble = f"the channel could not be opened ({exc})"
+            self._shut()
+            self._failed = True
+            return False
+        self._ready = True
+        return True
+
+    def _probe(self) -> bool:
+        """Whether this simulator takes L: variables in a data definition.
+
+        A pre-SU12 simulator refuses the definition with an exception
+        message; a modern one either answers with data or simply keeps the
+        request pending. So: ask for a name nothing else defines, and read
+        the dispatch queue briefly for a refusal.
+        """
+        dll, handle = self._dll, self._handle
+        if dll.SimConnect_AddToDataDefinition(
+                handle, _DEF_LVAR_PROBE, b"L:MERIDIANATC_PROBE",
+                b"number", _DATATYPE_FLOAT64, 0.0, 0) != 0:
+            return False
+        dll.SimConnect_RequestDataOnSimObject(
+            handle, _REQ_LVAR_PROBE, _DEF_LVAR_PROBE,
+            SIMCONNECT_OBJECT_ID_USER, _PERIOD_SECOND, _REQUEST_DEFAULT,
+            0, 0, 0)
+        deadline = time.monotonic() + _PROBE_WAIT_S
+        while time.monotonic() < deadline and not self._probe_refused:
+            time.sleep(self.PUMP_S)
+        # Stop the probe's periodic request; it has done its job.
+        try:
+            dll.SimConnect_RequestDataOnSimObject(
+                handle, _REQ_LVAR_PROBE, _DEF_LVAR_PROBE,
+                SIMCONNECT_OBJECT_ID_USER, 0, _REQUEST_DEFAULT, 0, 0, 0)
+        except Exception:
+            pass
+        return not self._probe_refused
+
+    @property
+    def available(self) -> bool:
+        return self._ready and not self._failed
+
+    @property
+    def can_write(self) -> bool:
+        return self.available
+
+    # -- the pump -----------------------------------------------------
+
+    def _start_pump(self) -> None:
+        if self._pump is not None:
+            return
+        self._stop.clear()
+        self._pump = threading.Thread(target=self._run, name="lvars-direct",
+                                      daemon=True)
+        self._pump.start()
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                while self.pump_once():
+                    pass
+            except Exception:
+                log.debug("the direct lvar pump raised", exc_info=True)
+            self._stop.wait(self.PUMP_S)
+
+    def pump_once(self) -> bool:
+        if self._dll is None or self._handle is None:
+            return False
+        data = ctypes.POINTER(_Recv)()
+        size = w.DWORD()
+        if self._dll.SimConnect_GetNextDispatch(
+                self._handle, ctypes.byref(data), ctypes.byref(size)) != 0:
+            return False
+        if not data:
+            return False
+        which = data.contents.dwID
+        if which == _RECV_SIMOBJECT_DATA:
+            self._heard(ctypes.cast(data,
+                                    ctypes.POINTER(_ClientData)).contents)
+        elif which == _RECV_QUIT:
+            self._ready = False
+        elif which == _RECV_EXCEPTION:
+            refused = ctypes.cast(data,
+                                  ctypes.POINTER(_ClientData)).contents
+            request = int(refused.dwRequestID)
+            if request in (_REQ_LVAR_PROBE,):
+                self._probe_refused = True
+            else:
+                log.debug("SimConnect refused a direct lvar request %s",
+                          request)
+        return True
+
+    def _heard(self, message) -> None:
+        carried = max(0, int(message.dwSize) - _PAYLOAD_AT)
+        if carried < 8:
+            return
+        request = int(message.dwRequestID)
+        if request == _REQ_LVAR_PROBE:
+            self._probe_heard = True
+            return
+        index = request - _REQ_LVAR_DIRECT
+        value = struct.unpack("<d", bytes(message.data[:8]))[0]
+        with self._lock:
+            if not (0 <= index < len(self._registered)):
+                return
+            self._values[self._registered[index]] = float(value)
+
+    # -- the contract --------------------------------------------------
+
+    def register(self, names) -> bool:
+        if not self.open():
+            return False
+        with self._lock:
+            wanted = [n for n in names if n not in self._registered]
+            start = len(self._registered)
+            self._registered.extend(wanted)
+        dll, handle = self._dll, self._handle
+        for offset, name in enumerate(wanted, start=start):
+            datum = f"L:{name}".encode("ascii", "ignore")
+            try:
+                if dll.SimConnect_AddToDataDefinition(
+                        handle, _DEF_LVAR_DIRECT + offset, datum,
+                        b"number", _DATATYPE_FLOAT64, 0.0, 0) != 0:
+                    raise OSError("the definition was refused")
+                dll.SimConnect_RequestDataOnSimObject(
+                    handle, _REQ_LVAR_DIRECT + offset,
+                    _DEF_LVAR_DIRECT + offset, SIMCONNECT_OBJECT_ID_USER,
+                    _PERIOD_SECOND, _REQUEST_DEFAULT, 0, 0, 0)
+            except Exception:
+                log.debug("could not subscribe to %s", name, exc_info=True)
+                self._failed = True
+                return False
+        return True
+
+    def read(self, names=None) -> dict:
+        if names:
+            self.register(names)
+        if not self.available:
+            return {}
+        with self._lock:
+            found = dict(self._values)
+        if names is not None:
+            wanted = set(names)
+            found = {n: v for n, v in found.items() if n in wanted}
+        return found
+
+    def write(self, name: str, value: float) -> bool:
+        """Set a local variable on the user object.
+
+        The variable is defined first if it has not been, because
+        ``SetDataOnSimObject`` writes the fields a definition declares --
+        and the definition is also the probe that keeps this honest: a name
+        the simulator refuses fails the call rather than writing into air.
+        """
+        if not self.open() or not self.register([name]):
+            return False
+        with self._lock:
+            try:
+                index = self._registered.index(name)
+            except ValueError:
+                return False
+        payload = ctypes.c_double(float(value))
+        try:
+            return self._dll.SimConnect_SetDataOnSimObject(
+                self._handle, _DEF_LVAR_DIRECT + index,
+                SIMCONNECT_OBJECT_ID_USER, _SET_DEFAULT, 1, 8,
+                ctypes.cast(ctypes.byref(payload), ctypes.c_void_p)) == 0
+        except Exception:
+            log.debug("could not set L:%s", name, exc_info=True)
+            return False
+
+    # -- shutting down -------------------------------------------------
+
+    def _shut(self) -> None:
+        if self._own_connection and self._dll is not None and self._handle:
+            try:
+                self._dll.SimConnect_Close(self._handle)
+            except Exception:
+                pass
+        self._handle = None
+
+    def close(self) -> None:
+        self._ready = False
+        self._stop.set()
+        pump, self._pump = self._pump, None
+        if pump is not None and pump.is_alive():
+            pump.join(timeout=1.0)
+        self._shut()
+
+
 def open_bridge(kind: str = "auto", path: str = "", simconnect=None,
                 client: str = "MeridianATC") -> Bridge:
     """The best bridge available, or one that politely has nothing.
 
     ``auto`` prefers a file if one is configured and present, because a file
-    that exists was put there on purpose, and otherwise tries MobiFlight.
+    that exists was put there on purpose; then plain SimConnect, which needs
+    nothing installed on any modern simulator; and MobiFlight last, for the
+    machines where direct definitions do not reach.
 
     ``simconnect`` is the session flying the aeroplane. It is accepted and
-    not used: the MobiFlight channel needs its own connection and its own
-    message pump, and borrowing this one meant the values were delivered to a
-    dispatcher that drops them.
+    not used: both live bridges run their own connection and message pump,
+    and borrowing this one meant the values were delivered to a dispatcher
+    that drops them.
     """
     kind = (kind or "auto").lower()
 
@@ -677,18 +978,25 @@ def open_bridge(kind: str = "auto", path: str = "", simconnect=None,
             return bridge
 
     nothing = Bridge()
+    if kind in ("direct", "simconnect", "auto"):
+        bridge = DirectBridge()
+        if bridge.open():
+            return bridge
+        nothing.trouble = bridge.trouble
+        bridge.close()
+
     if kind in ("mobiflight", "auto"):
         bridge = MobiFlightBridge(client=client)
         if bridge.open():
             return bridge
         # Why it did not work travels with the nothing, so that the
         # diagnostic can name the actual cause rather than the commonest one.
-        nothing.trouble = bridge.trouble
+        nothing.trouble = bridge.trouble or nothing.trouble
         bridge.close()
 
     return nothing
 
 
-__all__ = ["Bridge", "FileBridge", "MobiFlightBridge", "open_bridge",
-           "find_simconnect", "MF_COMMAND", "MF_RESPONSE", "MF_LVARS",
-           "MESSAGE_SIZE", "MAX_VARS", "VALUE_SIZE"]
+__all__ = ["Bridge", "FileBridge", "DirectBridge", "MobiFlightBridge",
+           "open_bridge", "find_simconnect", "MF_COMMAND", "MF_RESPONSE",
+           "MF_LVARS", "MESSAGE_SIZE", "MAX_VARS", "VALUE_SIZE"]

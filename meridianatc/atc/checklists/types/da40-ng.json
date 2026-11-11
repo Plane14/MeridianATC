@@ -1,0 +1,836 @@
+{
+  "_comment": "Converted from StormATC data/flightchecklists/da40-ng.json (Diamond DA40 NG (G1000 NXi)). Verification steps keep their challenge and note rather than a guessed simvar check.",
+  "source": "StormATC Diamond DA40 NG (G1000 NXi) checklist set",
+  "match": [
+    "da40",
+    "da40-ng",
+    "diamond",
+    "g1000",
+    "nxi"
+  ],
+  "checklists": {
+    "preflight": {
+      "title": {
+        "en": "preflight"
+      },
+      "items": [
+        {
+          "challenge": "Weather Briefing (METAR / TAF)",
+          "response": "forecast.",
+          "accept": [
+            "check"
+          ],
+          "note": "Check current conditions and forecast."
+        },
+        {
+          "challenge": "NOTAMs",
+          "response": "check",
+          "accept": [
+            "check"
+          ],
+          "note": "Check for runway closures and airspace restrictions."
+        },
+        {
+          "challenge": "Fuel Required",
+          "response": "reserve.",
+          "accept": [
+            "check"
+          ],
+          "note": "Calculate fuel required for trip plus reserve."
+        },
+        {
+          "challenge": "Weight & Balance",
+          "response": "limits.",
+          "accept": [
+            "check"
+          ],
+          "note": "Verify within limits."
+        },
+        {
+          "challenge": "Pitot Tube Cover",
+          "response": "blockage.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "Remove - check for pitot blockage."
+        },
+        {
+          "challenge": "Parking Brake",
+          "response": "set.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Control Wheel Lock",
+          "response": "remove.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ]
+        },
+        {
+          "challenge": "MAGNETOS Switch",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "MASTER Switch",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Fuel Quantity",
+          "response": "visually.",
+          "accept": [
+            "check"
+          ],
+          "note": "CHECK VISUALLY."
+        },
+        {
+          "challenge": "Control Surfaces",
+          "response": "movement.",
+          "accept": [
+            "check"
+          ],
+          "note": "CHECK freedom of movement."
+        },
+        {
+          "challenge": "Fuel Tank Sumps",
+          "response": "check",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "DRAIN and check for contamination."
+        },
+        {
+          "challenge": "Oil Level",
+          "response": "secure.",
+          "accept": [
+            "check"
+          ],
+          "note": "CHECK AND SECURE."
+        },
+        {
+          "challenge": "Propeller and Spinner",
+          "response": "security.",
+          "accept": [
+            "check"
+          ],
+          "note": "CHECK for nicks and security."
+        },
+        {
+          "challenge": "Tires",
+          "response": "condition.",
+          "accept": [
+            "check"
+          ],
+          "note": "CHECK inflation and condition."
+        },
+        {
+          "challenge": "Preflight Inspection",
+          "response": "complete.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Seats and Seat Belts",
+          "response": "lock.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ADJUST and LOCK."
+        },
+        {
+          "challenge": "Brakes",
+          "response": "set.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "TEST and SET."
+        },
+        {
+          "challenge": "Circuit Breakers",
+          "response": "in.",
+          "accept": [
+            "check"
+          ],
+          "note": "CHECK IN."
+        },
+        {
+          "challenge": "Electrical Equipment",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "AVIONICS Switch",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "FUEL SELECTOR",
+          "response": "both.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Mixture",
+          "response": "cutoff.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "IDLE CUTOFF."
+        },
+        {
+          "challenge": "Throttle",
+          "response": "inch.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "OPEN 1/4 INCH."
+        },
+        {
+          "challenge": "Mixture",
+          "response": "rich.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "IDLE CUTOFF then FULL RICH."
+        },
+        {
+          "challenge": "Propeller Area",
+          "response": "clear.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "MASTER Switch",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "BEACON Light",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "MAGNETOS Switch",
+          "response": "starts.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "START - release when engine starts."
+        },
+        {
+          "challenge": "Mixture",
+          "response": "rich.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "ADVANCE SMOOTHLY TO RICH."
+        },
+        {
+          "challenge": "Oil Pressure",
+          "response": "arc.",
+          "accept": [
+            "check"
+          ],
+          "note": "CHECK - verify increases into green arc."
+        },
+        {
+          "challenge": "AVIONICS Switch",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Parking Brake",
+          "response": "set.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flight Controls",
+          "response": "correct.",
+          "accept": [
+            "check"
+          ],
+          "note": "FREE and CORRECT."
+        },
+        {
+          "challenge": "Flight Instruments",
+          "response": "check.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Altimeters",
+          "response": "set.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Fuel Quantity",
+          "response": "check.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Mixture",
+          "response": "rich.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Fuel Selector",
+          "response": "both.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET BOTH."
+        },
+        {
+          "challenge": "Trim",
+          "response": "takeoff.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET FOR TAKEOFF."
+        },
+        {
+          "challenge": "Throttle",
+          "response": "magnetos.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "1800 RPM - check magnetos."
+        },
+        {
+          "challenge": "Throttle",
+          "response": "idle.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "COM / NAV Frequencies",
+          "response": "set.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Transponder",
+          "response": "set.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flaps",
+          "response": "takeoff.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET FOR TAKEOFF."
+        },
+        {
+          "challenge": "Strobe Lights",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Brakes",
+          "response": "release.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Throttle",
+          "response": "full.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Mixture",
+          "response": "rich.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Elevator",
+          "response": "speed.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "LIFT NOSEWHEEL AT ROTATION SPEED."
+        },
+        {
+          "challenge": "Climb Speed",
+          "response": "rate.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "CLIMB AT BEST RATE."
+        },
+        {
+          "challenge": "Flaps",
+          "response": "altitude.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "RETRACT AT SAFE ALTITUDE."
+        },
+        {
+          "challenge": "Airspeed",
+          "response": "speed.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "CLIMB SPEED."
+        },
+        {
+          "challenge": "Throttle",
+          "response": "full.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Mixture",
+          "response": "rich.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Power",
+          "response": "cruise.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "SET FOR CRUISE."
+        },
+        {
+          "challenge": "Trim",
+          "response": "adjust.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Mixture",
+          "response": "economy.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "LEAN for economy."
+        },
+        {
+          "challenge": "Fuel",
+          "response": "monitor.",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Power",
+          "response": "reduce.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Mixture",
+          "response": "adjust.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Altimeters",
+          "response": "set.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Fuel Selector",
+          "response": "both.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Seats and Seat Belts",
+          "response": "locked.",
+          "accept": [
+            "check"
+          ],
+          "note": "SECURED and LOCKED."
+        },
+        {
+          "challenge": "Fuel Selector",
+          "response": "both.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Mixture",
+          "response": "rich.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Landing Lights",
+          "response": "on.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Autopilot",
+          "response": "installed).",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "OFF (if installed)."
+        },
+        {
+          "challenge": "Airspeed",
+          "response": "speed.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "APPROACH SPEED."
+        },
+        {
+          "challenge": "Flaps",
+          "response": "desired.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "AS DESIRED."
+        },
+        {
+          "challenge": "Touchdown",
+          "response": "first.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "MAIN WHEELS FIRST."
+        },
+        {
+          "challenge": "Landing Roll",
+          "response": "gently.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "LOWER NOSEWHEEL GENTLY."
+        },
+        {
+          "challenge": "Braking",
+          "response": "required.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ],
+          "note": "AS REQUIRED."
+        },
+        {
+          "challenge": "Flaps",
+          "response": "up.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Parking Brake",
+          "response": "set.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Throttle",
+          "response": "idle.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Electrical Equipment",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "AVIONICS Switch",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Mixture",
+          "response": "cutoff.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "IDLE CUTOFF."
+        },
+        {
+          "challenge": "MAGNETOS Switch",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "MASTER Switch",
+          "response": "off.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Control Lock",
+          "response": "install.",
+          "accept": [
+            "complete",
+            "check",
+            "on",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Fuel Selector",
+          "response": "right.",
+          "accept": [
+            "set",
+            "on",
+            "off",
+            "check"
+          ],
+          "note": "LEFT or RIGHT."
+        }
+      ]
+    }
+  }
+}
