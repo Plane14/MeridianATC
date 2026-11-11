@@ -614,6 +614,19 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
              "text": t.text, "intent": t.intent}
             for t in store.transcript(session, limit=500)]}
 
+    @app.post("/api/checklist")
+    async def checklist(payload: dict) -> dict:
+        """Start a named checklist with the first officer."""
+        name = str((payload or {}).get("name") or "").strip()
+        if not name:
+            return {"ok": False}
+        titles = engine.crew.checklist_titles()
+        if name not in titles:
+            return {"ok": False,
+                    "error": f"no checklist called {name!r}"}
+        await asyncio.to_thread(engine.crew.checklists.start, name)
+        return {"ok": True, "checklist": name}
+
     @app.get("/api/surface")
     async def surface() -> dict:
         """Where the aeroplane is on the airport's taxi graph.
@@ -2273,6 +2286,9 @@ def snapshot(engine: Engine) -> dict[str, Any]:
             for code in engine.languages
         ],
         "language": engine.last_language,
+        # The checklist names this aeroplane's book holds, for the desktop
+        # shell's Checklists screen.
+        "checklists": sorted(engine.crew.checklist_titles().keys()),
         "worked_here": (
             languages_for(station.ident) if station else engine.languages
         ),

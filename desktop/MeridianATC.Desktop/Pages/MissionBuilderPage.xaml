@@ -1,0 +1,59 @@
+<Page x:Class="MeridianATC.Desktop.Pages.MissionBuilderPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Title="Mission Builder" Background="Transparent">
+    <ScrollViewer>
+        <StackPanel Margin="24">
+            <TextBlock Style="{StaticResource Heading}" Text="Mission Builder"/>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource Body}" Margin="0,0,0,10"
+                               Text="Continuous flights: the engine picks a destination inside the range band each time you land and builds the next leg."/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,12,0">
+                            <TextBlock Foreground="#FF8A95A5" Text="Min range (NM)"/>
+                            <TextBox x:Name="MinNm" Padding="8" Margin="0,2,0,8"
+                                     Background="#FF1B222D" Foreground="#FFDDE5EE"
+                                     BorderBrush="#FF2A3441" BorderThickness="1"
+                                     Text="30"/>
+                            <TextBlock Foreground="#FF8A95A5" Text="Service time (min)"/>
+                            <TextBox x:Name="ServiceMin" Padding="8" Margin="0,2,0,0"
+                                     Background="#FF1B222D" Foreground="#FFDDE5EE"
+                                     BorderBrush="#FF2A3441" BorderThickness="1"
+                                     Text="30"/>
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Foreground="#FF8A95A5" Text="Max range (NM)"/>
+                            <TextBox x:Name="MaxNm" Padding="8" Margin="0,2,0,8"
+                                     Background="#FF1B222D" Foreground="#FFDDE5EE"
+                                     BorderBrush="#FF2A3441" BorderThickness="1"
+                                     Text="150"/>
+                            <TextBlock Foreground="#FF8A95A5" Text="Reserve factor"/>
+                            <TextBox x:Name="Reserve" Padding="8" Margin="0,2,0,0"
+                                     Background="#FF1B222D" Foreground="#FFDDE5EE"
+                                     BorderBrush="#FF2A3441" BorderThickness="1"
+                                     Text="1.2"/>
+                        </StackPanel>
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <Button Style="{StaticResource AccentButton}"
+                                Content="Start mission" Click="Start_Click"/>
+                        <Button Margin="8,0,0,0" Style="{StaticResource GhostButton}"
+                                Content="Plan next leg" Click="Next_Click"/>
+                        <Button Margin="8,0,0,0" Style="{StaticResource GhostButton}"
+                                Content="Stop" Click="Stop_Click"/>
+                    </StackPanel>
+                    <TextBlock x:Name="Status" Margin="0,10,0,0"
+                               Foreground="#FF8A95A5"/>
+                    <ListBox x:Name="Legs" Background="Transparent"
+                             BorderThickness="0" Foreground="#FFB8C2CE"
+                             MaxHeight="240" Margin="0,8,0,0"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

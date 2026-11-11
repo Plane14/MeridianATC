@@ -1,0 +1,70 @@
+<Page x:Class="MeridianATC.Desktop.Pages.RadioPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Title="Radio" Background="Transparent">
+    <ScrollViewer>
+        <StackPanel Margin="24">
+            <TextBlock Style="{StaticResource Heading}" Text="Radio"/>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Foreground="#FF8A95A5" Margin="0,0,0,6"
+                               Text="COM1"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="FreqBox" Padding="8"
+                                 Background="#FF1B222D" Foreground="#FFDDE5EE"
+                                 BorderBrush="#FF2A3441" BorderThickness="1"
+                                 ToolTip="Frequency in MHz, e.g. 118.310"/>
+                        <Button Grid.Column="1" Margin="8,0,0,0"
+                                Style="{StaticResource AccentButton}"
+                                Content="Tune" Click="Tune_Click"/>
+                        <Button Grid.Column="2" Margin="6,0,0,0"
+                                Style="{StaticResource GhostButton}"
+                                Content="Standby" Click="Standby_Click"/>
+                        <Button Grid.Column="3" Margin="6,0,0,0"
+                                Style="{StaticResource GhostButton}"
+                                Content="Swap" Click="Swap_Click"/>
+                    </Grid>
+                    <TextBlock x:Name="TuneResult" Margin="0,6,0,0"
+                               Foreground="#FF8A95A5"/>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                <StackPanel>
+                    <TextBlock Foreground="#FF8A95A5" Margin="0,0,0,6"
+                               Text="Squawk"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="SquawkBox" Padding="8" MaxLength="4"
+                                 Background="#FF1B222D" Foreground="#FFDDE5EE"
+                                 BorderBrush="#FF2A3441" BorderThickness="1"/>
+                        <Button Grid.Column="1" Margin="8,0,0,0"
+                                Style="{StaticResource AccentButton}"
+                                Content="Set" Click="Squawk_Click"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                <StackPanel>
+                    <TextBlock Foreground="#FF8A95A5" Margin="0,0,0,6"
+                               Text="Stations in range"/>
+                    <ListBox x:Name="Stations" Background="Transparent"
+                             BorderThickness="0" Foreground="#FFB8C2CE"
+                             MaxHeight="300"
+                             MouseDoubleClick="Stations_DoubleClick"/>
+                    <TextBlock Foreground="#FF55606F" FontSize="11"
+                               Margin="0,6,0,0"
+                               Text="Double-click a station to tune it."/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

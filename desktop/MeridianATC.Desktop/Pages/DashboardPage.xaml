@@ -1,0 +1,86 @@
+<Page x:Class="MeridianATC.Desktop.Pages.DashboardPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Title="Dashboard" Background="Transparent">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24">
+            <TextBlock Style="{StaticResource Heading}" Text="Dashboard"/>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource Body}"
+                               Text="The engine is authoritative; everything here is read from it."
+                               Margin="0,0,0,8"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,8,0">
+                            <TextBlock Foreground="#FF8A95A5" Text="Callsign"/>
+                            <TextBlock x:Name="Callsign" FontSize="16"
+                                       FontWeight="SemiBold" Text="—"/>
+                        </StackPanel>
+                        <StackPanel Margin="0,0,8,0">
+                            <TextBlock Foreground="#FF8A95A5" Text="Phase"/>
+                            <TextBlock x:Name="Phase" FontSize="16"
+                                       FontWeight="SemiBold" Text="—"/>
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Foreground="#FF8A95A5" Text="Frequency"/>
+                            <TextBlock x:Name="Frequency" FontSize="16"
+                                       FontWeight="SemiBold" Text="—"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                <StackPanel>
+                    <TextBlock Foreground="#FF8A95A5" Margin="0,0,0,6"
+                               Text="Guidance — what to say next (never a clearance)"/>
+                    <TextBlock x:Name="HintTitle" FontWeight="SemiBold"
+                               FontSize="14" Text=""/>
+                    <TextBlock x:Name="HintDetail" Style="{StaticResource Body}"
+                               Margin="0,4,0,0"/>
+                    <TextBlock x:Name="HintExample" Foreground="#FF7FA8E0"
+                               FontStyle="Italic" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                <StackPanel>
+                    <TextBlock Foreground="#FF8A95A5" Margin="0,0,0,6"
+                               Text="Type a transmission (or hold PTT and speak)"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="SayBox" Padding="8"
+                                 Background="#FF1B222D" Foreground="#FFDDE5EE"
+                                 BorderBrush="#FF2A3441" BorderThickness="1"/>
+                        <Button Grid.Column="1" Style="{StaticResource AccentButton}"
+                                Margin="8,0,0,0" Content="Send"
+                                Click="Send_Click"/>
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button Style="{StaticResource GhostButton}"
+                                Content="Autonomous flight"
+                                Click="Autonomous_Click"/>
+                        <TextBlock x:Name="AutonomousState"
+                                   VerticalAlignment="Center" Margin="10,0,0,0"
+                                   Foreground="#FF8A95A5" Text="off"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                <StackPanel>
+                    <TextBlock Foreground="#FF8A95A5" Margin="0,0,0,6"
+                               Text="Radio log"/>
+                    <ListBox x:Name="Log" Background="Transparent"
+                             BorderThickness="0" Foreground="#FFB8C2CE"
+                             MaxHeight="220"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

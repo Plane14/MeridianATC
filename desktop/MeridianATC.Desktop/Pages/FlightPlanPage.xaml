@@ -1,0 +1,54 @@
+<Page x:Class="MeridianATC.Desktop.Pages.FlightPlanPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Title="Flight Plan" Background="Transparent">
+    <ScrollViewer>
+        <StackPanel Margin="24">
+            <TextBlock Style="{StaticResource Heading}" Text="Flight Plan"/>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,12,0">
+                            <TextBlock Foreground="#FF8A95A5" Text="Callsign"/>
+                            <TextBox x:Name="Callsign" Padding="8" Margin="0,2,0,8"
+                                     Background="#FF1B222D" Foreground="#FFDDE5EE"
+                                     BorderBrush="#FF2A3441" BorderThickness="1"/>
+                            <TextBlock Foreground="#FF8A95A5" Text="Departure ICAO"/>
+                            <TextBox x:Name="Departure" Padding="8" Margin="0,2,0,8"
+                                     Background="#FF1B222D" Foreground="#FFDDE5EE"
+                                     BorderBrush="#FF2A3441" BorderThickness="1"/>
+                            <TextBlock Foreground="#FF8A95A5" Text="Destination ICAO"/>
+                            <TextBox x:Name="Destination" Padding="8" Margin="0,2,0,0"
+                                     Background="#FF1B222D" Foreground="#FFDDE5EE"
+                                     BorderBrush="#FF2A3441" BorderThickness="1"/>
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Foreground="#FF8A95A5" Text="Aircraft type"/>
+                            <TextBox x:Name="AircraftType" Padding="8" Margin="0,2,0,8"
+                                     Background="#FF1B222D" Foreground="#FFDDE5EE"
+                                     BorderBrush="#FF2A3441" BorderThickness="1"/>
+                            <TextBlock Foreground="#FF8A95A5" Text="Cruise altitude (ft)"/>
+                            <TextBox x:Name="Cruise" Padding="8" Margin="0,2,0,8"
+                                     Background="#FF1B222D" Foreground="#FFDDE5EE"
+                                     BorderBrush="#FF2A3441" BorderThickness="1"/>
+                        </StackPanel>
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <Button Style="{StaticResource AccentButton}"
+                                Content="Apply" Click="Apply_Click"/>
+                        <Button Margin="8,0,0,0"
+                                Style="{StaticResource GhostButton}"
+                                Content="Import SimBrief"
+                                Click="Simbrief_Click"/>
+                        <TextBlock x:Name="Result" VerticalAlignment="Center"
+                                   Margin="12,0,0,0" Foreground="#FF8A95A5"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

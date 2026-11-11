@@ -1,0 +1,73 @@
+<Page x:Class="MeridianATC.Desktop.Pages.SettingsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Title="Settings" Background="Transparent">
+    <ScrollViewer>
+        <StackPanel Margin="24">
+            <TextBlock Style="{StaticResource Heading}" Text="Settings"/>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Foreground="#FF8A95A5" Margin="0,0,0,6"
+                               Text="AI understanding provider"/>
+                    <ComboBox x:Name="Provider" Padding="6"
+                              Background="#FF1B222D" Foreground="#FFDDE5EE">
+                        <ComboBoxItem Content="none" IsSelected="True"/>
+                        <ComboBoxItem Content="ollama"/>
+                        <ComboBoxItem Content="anthropic"/>
+                        <ComboBoxItem Content="openrouter"/>
+                        <ComboBoxItem Content="openai"/>
+                        <ComboBoxItem Content="groq"/>
+                        <ComboBoxItem Content="deepseek"/>
+                    </ComboBox>
+                    <TextBlock Foreground="#FF8A95A5" Margin="0,10,0,4"
+                               Text="Model"/>
+                    <TextBox x:Name="Model" Padding="8"
+                             Background="#FF1B222D" Foreground="#FFDDE5EE"
+                             BorderBrush="#FF2A3441" BorderThickness="1"/>
+                    <TextBlock Foreground="#FF8A95A5" Margin="0,10,0,4"
+                               Text="API key (stored in the OS secret store, never in config)"/>
+                    <PasswordBox x:Name="ApiKey" Padding="8"
+                                 Background="#FF1B222D" Foreground="#FFDDE5EE"
+                                 BorderBrush="#FF2A3441" BorderThickness="1"/>
+                    <CheckBox x:Name="Phrasing" Margin="0,12,0,0"
+                              Foreground="#FFB8C2CE"
+                              Content="Rephrase approved transmissions naturally (facts are validated; deterministic wording is the fallback)"/>
+                    <CheckBox x:Name="Offline" Margin="0,8,0,0"
+                              Foreground="#FFB8C2CE"
+                              Content="Offline mode — nothing may reach the network"/>
+                    <CheckBox x:Name="Consent" Margin="0,8,0,0"
+                              Foreground="#FFB8C2CE"
+                              Content="I consent to cloud speech/understanding services receiving my transmissions"/>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                <StackPanel>
+                    <TextBlock Foreground="#FF8A95A5" Margin="0,0,0,6"
+                               Text="Speech recogniser"/>
+                    <ComboBox x:Name="SttEngine" Padding="6"
+                              Background="#FF1B222D" Foreground="#FFDDE5EE">
+                        <ComboBoxItem Content="whisper" IsSelected="True"/>
+                        <ComboBoxItem Content="deepgram"/>
+                    </ComboBox>
+                    <TextBlock Foreground="#FF8A95A5" Margin="0,10,0,4"
+                               Text="Deepgram model"/>
+                    <TextBox x:Name="DeepgramModel" Padding="8"
+                             Background="#FF1B222D" Foreground="#FFDDE5EE"
+                             BorderBrush="#FF2A3441" BorderThickness="1"
+                             Text="nova-3"/>
+                    <TextBlock Foreground="#FF8A95A5" Margin="0,10,0,4"
+                               Text="Deepgram key (secret store)"/>
+                    <PasswordBox x:Name="DeepgramKey" Padding="8"
+                                 Background="#FF1B222D" Foreground="#FFDDE5EE"
+                                 BorderBrush="#FF2A3441" BorderThickness="1"/>
+                </StackPanel>
+            </Border>
+            <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                <Button Style="{StaticResource AccentButton}"
+                        Content="Save" Click="Save_Click"/>
+                <TextBlock x:Name="Result" VerticalAlignment="Center"
+                           Margin="12,0,0,0" Foreground="#FF8A95A5"/>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

@@ -25,6 +25,51 @@ ATC   Delta twelve thirty four, readback correct.
 
 ---
 
+## 🧩 What this build adds
+
+MeridianATC merges the WilcoATC engine and the StormATC feature set into one
+program. On top of everything above it adds:
+
+* **Deepgram speech**, optionally — a cloud STT/TTS backend alongside the
+  local Whisper/Kokoro engines, with the aviation keyterm profile StormATC
+  shipped (pushback, squawk, localizer…) plus your own keyterms.
+* **Five LLM providers** for pilot-intent understanding: Ollama (local),
+  Anthropic, and OpenAI-compatible OpenRouter, OpenAI, Groq, DeepSeek or a
+  custom endpoint. All optional; the rules parser is the default.
+* **Opt-in LLM phrasing**: the deterministic engine still composes every
+  transmission; when `ai.phrasing` is on, a provider may rephrase the
+  *approved* words naturally — and every number, callsign, runway and
+  frequency in the render is checked against the approved facts before it
+  is ever said. A rejected render falls back to the deterministic wording.
+* **A voice trainer**: keyterms the recogniser should listen harder for,
+  and "when you heard X, I meant Y" corrections applied to every transcript.
+* **Continuous flights / Mission Builder**: land, and the engine picks the
+  next destination inside your range band and builds the next leg.
+* **A guidance advisor**: a non-authoritative "what to say next" hint that
+  can never grant or change a clearance.
+* **SQLite history**: every flight and its radio transcript, persisted and
+  browsable at `/api/history`.
+* **DPAPI secrets, endpoint allow-listing, log redaction and an offline
+  kill-switch**: keys live in the OS credential store, credentialed calls are
+  pinned to each provider's official endpoint, secrets never reach a log
+  line, and `network.offline` means nothing can reach out.
+* **Surface training indicators**: where you are on the airport's taxi
+  graph — the stand, the taxiway you're on, the next named taxiway on your
+  clearance, and the metres left to the clearance limit.
+* **66 converted checklists**: StormATC's per-aircraft checklists converted
+  to the engine's challenge/response format and matched on the simulator
+  title.
+* **A WPF desktop shell** (`desktop/`) covering dashboard, radio, flight
+  plan, checklists, flight monitor, mission builder, transcript, settings,
+  diagnostics and first-run consent — a client of the engine's local API,
+  never a second brain.
+
+The rule StormATC held, still held: **the simulator is the source of truth,
+the deterministic engine decides what is permitted, and a language model may
+only help understand or rephrase — never decide.**
+
+---
+
 ## 🎯 What it gets right
 
 **Frequencies are real, and they match your radio.** 24,977 published ATC
