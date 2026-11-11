@@ -664,6 +664,26 @@ class Engine:
         # last. Short: it is what a panel shows, not an archive, and the log
         # files are where a transmission goes to be kept.
         self.transcript: deque = deque(maxlen=200)
+        # The durable transcript (StormATC's session history, ported):
+        # SQLite in the data root, opened lazily by the flight that begins.
+        self.history = None
+        try:
+            from .history import History
+            from .paths import data_root
+            self.history = History(data_root() / "history.db")
+        except Exception:
+            log.debug("history unavailable", exc_info=True)
+        # StormATC's voice trainer and mission builder, on the same root.
+        from .atc.continuous import ContinuousFlights
+        from .atc.trainer import VoiceTrainer
+        self.trainer = VoiceTrainer(data_root() / "trainer")
+        self.continuous = ContinuousFlights(self.navdb)
+        # The corrections the trainer taught are applied to every heard
+        # transcript before the parser sees it, and its keyterms ride on the
+        # recogniser's context.
+        recognizer = getattr(self, "recognizer", None)
+        if recognizer is not None and hasattr(recognizer, "user_keyterms"):
+            recognizer.user_keyterms = self.trainer.keyterms
         # The traffic goes quiet for a moment after anybody else transmits, so
         # two aeroplanes are never heard talking over each other.
         self._frequency_clear_at = 0.0
@@ -902,6 +922,19 @@ class Engine:
                 "at": time.time(), "kind": kind,
                 "speaker": speaker, "text": text,
             })
+            if self.history is not None:
+                # The durable copy: who, what, and on which station, into the
+                # session the flight opened. Nothing here reaches back into
+                # the engine.
+                try:
+                    station = getattr(self, "current_station", None)
+                    self.history.record(
+                        who=speaker or kind, text=text,
+                        station=getattr(station, "ident", ""),
+                        intent=key or "",
+                        meta=dict(params))
+                except Exception:
+                    log.debug("history write failed", exc_info=True)
         try:
             self.on_event(Event(kind, text, speaker, key=key, action=action,
                                 params={k: str(v) for k, v in params.items()}))
@@ -1797,6 +1830,19 @@ class Engine:
         )
         session.phase = Phase.PREFLIGHT if self.state.on_ground else Phase.ENROUTE
         self.session = session
+
+        if self.history is not None:
+            try:
+                self.history.open_session(
+                    departure=getattr(departure, "ident", "") or "",
+                    destination=getattr(destination, "ident", "")
+                    or flight.destination or "",
+                    callsign=callsign.spoken_full
+                    if hasattr(callsign, "spoken_full") else str(callsign),
+                    aircraft=type_code or "",
+                    rules="ifr" if session.ifr else "vfr")
+            except Exception:
+                log.debug("history session open failed", exc_info=True)
 
         self.understanding.set_callsign(aircraft.variants())
         # A new flight is a new crew: whatever the last one had already said
@@ -3009,6 +3055,11 @@ class Engine:
             with timed("recognition", warn_over_ms=4000):
                 transcript = self.recognizer.transcribe(
                     captured.audio, captured.sample_rate)
+            # The trainer's "when you heard X, I meant Y" pairs apply to the
+            # raw text before anything else reads it.
+            corrected = self.trainer.apply(transcript.text)
+            if corrected != transcript.text:
+                transcript = replace(transcript, text=corrected)
             if transcript.empty:
                 self.emit("info", "Transmission was unreadable.",
                           key="log.unreadable")

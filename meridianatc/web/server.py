@@ -592,6 +592,117 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         kept = list(engine.transcript)[-max(1, min(limit, 200)):]
         return {"transmissions": kept}
 
+    @app.get("/api/history")
+    async def history(limit: int = 50, session: int = 0) -> dict:
+        """Past flights and their transcripts, from the history database.
+
+        Without ``session`` this is the session list, newest first; with it,
+        that flight's exchanges in the order they happened.
+        """
+        store = getattr(engine, "history", None)
+        if store is None:
+            return {"sessions": [], "transcript": []}
+        if not session:
+            return {"sessions": [
+                {"id": s.id, "started_at": s.started_at,
+                 "ended_at": s.ended_at, "departure": s.departure,
+                 "destination": s.destination, "callsign": s.callsign,
+                 "aircraft": s.aircraft, "rules": s.rules}
+                for s in store.sessions(limit=max(1, min(limit, 200)))]}
+        return {"transcript": [
+            {"id": t.id, "at": t.at, "who": t.who, "station": t.station,
+             "text": t.text, "intent": t.intent}
+            for t in store.transcript(session, limit=500)]}
+
+    @app.get("/api/guidance")
+    async def guidance() -> dict:
+        """The non-authoritative next-call hint (StormATC's advisor, ported).
+
+        It only ever describes what the session already knows; it cannot
+        grant, extend, or withhold a clearance.
+        """
+        from ..atc.guidance import for_session
+
+        session = getattr(engine, "session", None)
+        plan_known = bool(getattr(session, "flight_plan", None)
+                          or getattr(session, "destination", None))
+        aircraft = getattr(session, "aircraft", None)
+        callsign = getattr(getattr(aircraft, "callsign", None),
+                           "spoken_full", "") or ""
+        hint = for_session(session, plan_known=plan_known,
+                           spoken_callsign=callsign)
+        return {"title": hint.title, "detail": hint.detail,
+                "example": hint.example}
+
+    @app.post("/api/mission")
+    async def mission(payload: dict) -> dict:
+        """Start, stop, or plan the next leg of a continuous mission."""
+        from ..atc.continuous import MissionRequest
+
+        body = payload or {}
+        action = str(body.get("action") or "start").lower()
+        if action == "stop":
+            engine.continuous.stop()
+            return {"running": False}
+        if action == "start":
+            request = MissionRequest(
+                min_nm=float(body.get("min_nm") or 30),
+                max_nm=float(body.get("max_nm") or 150),
+                service_minutes=int(body.get("service_minutes") or 30),
+                reserve_factor=float(body.get("reserve_factor") or 1.2),
+                flight_rules=str(body.get("flight_rules") or "ifr"))
+            errors = engine.continuous.start(request)
+            if errors:
+                return {"ok": False, "errors": errors}
+            return {"ok": True, "running": True}
+        if action == "next":
+            state = engine.state
+            session = getattr(engine, "session", None)
+            airport = getattr(session, "destination", None) or \
+                getattr(session, "departure", None)
+            leg = engine.continuous.plan_next_leg(
+                state.latitude, state.longitude,
+                getattr(airport, "ident", "") or "",
+                getattr(getattr(session, "aircraft", None) or object(),
+                        "callsign", "") if session else "")
+            if leg is None:
+                return {"ok": False}
+            return {"ok": True, "leg": {
+                "number": leg.number, "departure": leg.departure,
+                "destination": leg.destination, "distance_nm": leg.distance_nm,
+                "callsign": leg.callsign}}
+        return {"ok": False, "error": f"unknown action {action!r}"}
+
+    @app.get("/api/mission")
+    async def mission_state() -> dict:
+        return {"running": engine.continuous.running,
+                "last_route": engine.continuous.last_route,
+                "legs": [{"number": l.number, "departure": l.departure,
+                          "destination": l.destination,
+                          "distance_nm": l.distance_nm}
+                         for l in engine.continuous.legs]}
+
+    @app.get("/api/trainer")
+    async def trainer() -> dict:
+        t = getattr(engine, "trainer", None)
+        return {"keyterms": t.keyterms if t else [],
+                "corrections": t.corrections if t else {}}
+
+    @app.post("/api/trainer")
+    async def trainer_update(payload: dict) -> dict:
+        t = getattr(engine, "trainer", None)
+        if t is None:
+            return {"ok": False}
+        body = payload or {}
+        for term in body.get("add_keyterms") or []:
+            t.add_keyterm(term)
+        for term in body.get("remove_keyterms") or []:
+            t.remove_keyterm(term)
+        for heard, meant in (body.get("corrections") or {}).items():
+            t.correct(heard, meant)
+        return {"ok": True, "keyterms": t.keyterms,
+                "corrections": t.corrections}
+
     # The installer is per-app rather than per-request: it owns a worker
     # thread and a 1.5 GB download, and two of those must never exist at once.
     # Every change it reports goes out on the same socket the panel is already
