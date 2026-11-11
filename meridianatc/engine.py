@@ -196,7 +196,8 @@ class Engine:
 
         self.weather_provider = WeatherProvider(
             refresh_s=self.config.weather.refresh_s,
-            online=self.config.weather.online,
+            online=self.config.weather.online
+            and not self.config.network.offline,
         )
         self.synth = Synthesizer(
             voice_dir=_resolve(self.config.voice.voice_dir),
@@ -226,7 +227,9 @@ class Engine:
             code.lower()[:2] for code in (self.config.speech.languages or [])
         ]
         self.languages = self.pinned_languages or ["en"]
-        if self.config.speech.stt_engine == "deepgram":
+        if self.config.speech.stt_engine == "deepgram" \
+                and not self.config.network.offline \
+                and self.config.network.cloud_consent:
             from .integrations.deepgram import DeepgramRecognizer
             self.recognizer = DeepgramRecognizer(
                 api_key=resolve_secret(self.config, "speech.deepgram_key"),
@@ -302,10 +305,17 @@ class Engine:
 
         # Rules first; the AI layer only sees what they could not classify.
         self.parser = IntentParser()
+        # A cloud provider named without consent (or in offline mode) is
+        # built as "none": the deterministic parser then carries it all.
+        ai_provider = self.config.ai.provider
+        cloud = ai_provider not in ("", "none", "ollama", "custom")
+        if self.config.network.offline \
+                or (cloud and not self.config.network.cloud_consent):
+            ai_provider = "none"
         self.understanding = Understanding(
             self.parser,
             build_provider(
-                self.config.ai.provider,
+                ai_provider,
                 model=self.config.ai.model,
                 host=self.config.ai.host,
                 api_key=resolve_secret(self.config, "ai.api_key",
@@ -319,7 +329,9 @@ class Engine:
         # renderer is only built when the pilot asked for it and the
         # provider speaks.
         self.phrasing = None
-        if self.config.ai.phrasing and self.understanding.provider is not None:
+        if self.config.ai.phrasing and not self.config.network.offline \
+                and self.config.network.cloud_consent \
+                and self.understanding.provider is not None:
             from .llm.rendering import PhrasingRenderer
             self.phrasing = PhrasingRenderer(self.understanding.provider)
         self.brain = ControllerBrain(
@@ -601,8 +613,12 @@ class Engine:
         self._busy = threading.Lock()
         # Who is really on the frequency, where a network is configured. The
         # one thing this program must never do is talk over a person.
-        self.online = OnlineNetwork(config.network.provider,
-                                    config.network.refresh_s)
+        # Offline mode: nothing that can reach out is registered -- the poll
+        # is configured as "none" rather than merely unpolled, so there is no
+        # object that could be asked.
+        self.online = OnlineNetwork(
+            "none" if config.network.offline else config.network.provider,
+            config.network.refresh_s)
         self.human: Any = None
         self._last_com1 = 0.0
         self._reported_empty = 0.0

@@ -614,6 +614,33 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
              "text": t.text, "intent": t.intent}
             for t in store.transcript(session, limit=500)]}
 
+    @app.get("/api/surface")
+    async def surface() -> dict:
+        """Where the aeroplane is on the airport's taxi graph.
+
+        The simulator's own layout data, interpreted -- never simulated: the
+        stand, the taxiway edge, and along it how far, plus the remaining
+        metres to the issued route's clearance limit when one was given.
+        """
+        from ..atc.surface import locate, progress
+
+        state = engine.state
+        session = getattr(engine, "session", None)
+        airport = getattr(session, "departure", None) \
+            if getattr(session, "phase", None) is not None \
+            and getattr(session.phase, "value", "") in (
+                "preflight", "cleared", "pushback", "taxi_out",
+                "holding_short") else getattr(session, "destination", None)
+        layout = engine.ground_layout(
+            getattr(airport, "ident", "") or "") if airport else None
+        pos = locate(layout, state.latitude, state.longitude)
+        route = progress(layout, state.latitude, state.longitude,
+                         getattr(session, "taxi_route", []) or []) \
+            if layout else {}
+        return {"found": pos.found, "stand": pos.stand,
+                "taxiway": pos.taxiway, "along": pos.along,
+                "offset_m": pos.offset_m, **route}
+
     @app.get("/api/guidance")
     async def guidance() -> dict:
         """The non-authoritative next-call hint (StormATC's advisor, ported).

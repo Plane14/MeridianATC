@@ -1336,6 +1336,16 @@ class NetworkConfig:
     # Read the online controller's own ATIS for a field rather than generating
     # one. Theirs is the real one -- it is the runway they are actually using.
     use_online_atis: bool = True
+    # A hard network kill-switch (StormATC's offline mode): nothing that can
+    # reach out is registered or called -- no weather fetches, no online
+    # controller polls, no SimBrief pulls, no cloud speech or models. The
+    # local engines carry the whole program, which is the way it ships.
+    offline: bool = False
+    # The first-run consent (StormATC's CloudServicesConsentGiven): set when
+    # the pilot has been told what each remote service is and said yes.
+    # Cloud features stay off until this is given -- an imported config that
+    # names a cloud provider without it gets "none".
+    cloud_consent: bool = False
 
 
 describe(
@@ -1347,6 +1357,10 @@ describe(
                       when="network.provider!=none"),
     use_online_atis=Setting("radio", "network",
                             when="network.provider!=none"),
+    offline=Setting("radio", "network", restart=True,
+                    label="set.offline", help="set.offline_why"),
+    cloud_consent=Setting("radio", "network", restart=True,
+                          label="set.consent", help="set.consent_why"),
 )
 
 
