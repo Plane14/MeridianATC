@@ -1,0 +1,15 @@
+# Joystick / yoke push-to-talk button support
+pygame-ce>=2.4
+
+# The AI understanding layer, if you point it at the Claude API.
+# Not needed for the local Ollama provider, which is reached over plain HTTP,
+# and not needed at all if you leave ai.provider set to "none".
+anthropic>=1.0
+
+# Building the printed phrasebook with scripts/make_manual.py. Not needed to
+# fly; the PDF is a document, not part of the radio.
+fpdf2>=2.8
+
+# The voice-cloning tier is not here: installing chatterbox-tts with its own
+# dependencies takes numpy below 2 and breaks Kokoro. See requirements-hq.txt
+# for the two commands that install it beside everything else.

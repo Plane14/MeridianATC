@@ -1,0 +1,1630 @@
+"""Where aircraft state comes from.
+
+Three sources implement the same interface:
+
+* :class:`SimConnectSource` talks to Microsoft Flight Simulator. It is the real
+  one, and it is deliberately forgiving: MSFS variables change names between
+  versions, wrappers disagree about units, and a variable that is missing must
+  degrade to a sensible default rather than crash a flight in progress.
+
+* :class:`ManualSource` is driven by the operator, for testing the whole ATC
+  stack -- voices, frequencies, phraseology -- with no simulator installed.
+
+* :class:`ReplaySource` plays back a recorded flight, which is what makes the
+  test suite able to check a whole departure without a human at the controls.
+"""
+
+from __future__ import annotations
+
+import ctypes
+import logging
+import math
+import threading
+import time
+from dataclasses import dataclass, replace
+from typing import Iterable, Protocol
+
+from .state import AircraftState, normalize_angle
+from .serial import serialize
+
+log = logging.getLogger(__name__)
+
+
+class StateSource(Protocol):
+    """Anything that can report the current aircraft state."""
+
+    def connect(self) -> bool: ...
+    def read(self) -> AircraftState: ...
+    def close(self) -> None: ...
+    @property
+    def connected(self) -> bool: ...
+
+
+class RadioWriter(Protocol):
+    """A source the radios can also be set *through*.
+
+    Reading the aeroplane is not enough once the panel is the thing you tune
+    from. A frequency picked on the Frequencies screen has to end up in the
+    aircraft's radio, or the pilot is talking to a controller their own COM1
+    has never heard of -- and the moment they touch the radio stack in the
+    cockpit, whatever they had picked here is gone.
+    """
+
+    def set_com(self, mhz: float, radio: int = 1,
+                standby: bool = False) -> bool: ...
+    def swap_com(self, radio: int = 1) -> bool: ...
+    def set_nav(self, mhz: float, radio: int = 1) -> bool: ...
+    def pushback(self) -> bool: ...
+    def set_squawk(self, code: str) -> bool: ...
+
+
+# --------------------------------------------------------------------------
+# frequency decoding
+# --------------------------------------------------------------------------
+
+
+def decode_frequency(raw) -> float:
+    """Turn whatever SimConnect returned into MHz.
+
+    The same variable comes back as MHz, kHz, Hz or packed BCD depending on the
+    unit the wrapper asked for and the simulator version, and all four are
+    plausible-looking numbers. Each is recognised by its magnitude, and BCD by
+    the fact that its nibbles decode to a valid airband channel.
+    """
+    if raw is None:
+        return 0.0
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return 0.0
+    if value <= 0:
+        return 0.0
+
+    # Already MHz.
+    if 118.0 <= value <= 136.999:
+        return round(value, 3)
+    # kHz, e.g. 121900.
+    if 118000.0 <= value <= 136999.0:
+        return round(value / 1000.0, 3)
+    # Hz.
+    if 118_000_000.0 <= value <= 136_999_999.0:
+        return round(value / 1_000_000.0, 3)
+
+    # BCD16: 0x2190 means 121.90, with the leading "1" implied.
+    packed = int(value)
+    if 0 < packed <= 0xFFFF:
+        digits = []
+        for shift in (12, 8, 4, 0):
+            nibble = (packed >> shift) & 0xF
+            if nibble > 9:
+                digits = []
+                break
+            digits.append(str(nibble))
+        if digits:
+            candidate = float(f"1{digits[0]}{digits[1]}.{digits[2]}{digits[3]}")
+            if 118.0 <= candidate <= 136.999:
+                return round(candidate, 3)
+    # BCD32, used for 8.33 kHz channels: every digit, four of them after
+    # the point -- 0x01286050 is 128.6050, as a running 2024 gave for Centennial
+    # Delivery. The digits were read one place to the right, as 286.050, and
+    # the radio decoded as tuned to nothing.
+    if 0 < packed <= 0xFFFFFFFF:
+        digits = []
+        for shift in (28, 24, 20, 16, 12, 8, 4, 0):
+            nibble = (packed >> shift) & 0xF
+            if nibble > 9:
+                digits = []
+                break
+            digits.append(str(nibble))
+        if len(digits) == 8:
+            candidate_text = f"{digits[1]}{digits[2]}{digits[3]}.{digits[4]}{digits[5]}{digits[6]}"
+            try:
+                candidate = float(candidate_text)
+            except ValueError:
+                candidate = 0.0
+            if 118.0 <= candidate <= 136.999:
+                return round(candidate, 3)
+    return 0.0
+
+
+def decode_nav_frequency(raw) -> float:
+    """A NAV receiver's frequency as MHz, whatever unit it came back in.
+
+    ``decode_frequency`` knows only the COM airband; a NAV radio also
+    covers the VOR/LOC band (108-117.95 MHz) and, where the aircraft has
+    one, the NDB band below 2 MHz. Magnitude decides, as there.
+    """
+    if raw is None:
+        return 0.0
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return 0.0
+    if value <= 0:
+        return 0.0
+    # MHz already: VOR/LOC tops out at 117.95 and an NDB at 0.535, so
+    # nothing a NAV radio says is between about 120 and 100,000 -- which
+    # is what keeps a kHz figure like 500 (an NDB) out of this branch.
+    if 0.1 <= value <= 130.0:
+        return round(value, 4)
+    # kHz.
+    if 100.0 <= value <= 2_000_000.0:
+        return round(value / 1000.0, 4)
+    # Hz.
+    if 100_000.0 <= value <= 2_000_000_000.0:
+        return round(value / 1_000_000.0, 4)
+    # BCD, the same packing the COM decoder knows.
+    return decode_frequency(raw)
+
+
+def encode_bcd16(mhz: float) -> int:
+    """A COM frequency as the packed BCD the older SimConnect events want.
+
+    ``COM_RADIO_SET`` reads its parameter as four BCD nibbles with the leading
+    ``1`` implied: 121.900 goes in as 0x2190. It is a 25 kHz world -- the last
+    nibble only has room for one digit -- so an 8.33 channel has to go through
+    the Hz event instead, and :func:`encode_hz` is what that one takes.
+    """
+    channel = round(float(mhz) * 1000.0)          # kHz
+    digits = f"{channel:06d}"                     # e.g. "121900"
+    if not digits.startswith("1"):
+        return 0
+    packed = 0
+    for digit in digits[1:5]:                     # "2190"
+        packed = (packed << 4) | int(digit)
+    return packed
+
+
+def encode_hz(mhz: float) -> int:
+    """A COM frequency in whole Hz, for ``COM_RADIO_SET_HZ``.
+
+    The newer event, and the only one that can express an 8.33 kHz channel.
+    Tried first for that reason; the BCD one is the fallback for a simulator
+    or an aircraft that does not have it.
+    """
+    return int(round(float(mhz) * 1_000_000.0))
+
+
+def encode_squawk(code: str) -> int:
+    """A transponder code as the BCD ``XPNDR_SET`` wants."""
+    text = "".join(c for c in str(code) if c.isdigit())[:4].rjust(4, "0")
+    if any(c not in "01234567" for c in text):
+        return 0
+    packed = 0
+    for digit in text:
+        packed = (packed << 4) | int(digit)
+    return packed
+
+
+def decode_squawk(raw) -> str:
+    """Transponder code, from BCD or a plain integer."""
+    if raw is None:
+        return "1200"
+    try:
+        value = int(float(raw))
+    except (TypeError, ValueError):
+        return "1200"
+    if 0 <= value <= 7777:
+        text = f"{value:04d}"
+        if all(c in "01234567" for c in text):
+            return text
+    digits = []
+    for shift in (12, 8, 4, 0):
+        nibble = (value >> shift) & 0xF
+        if nibble > 7:
+            return "1200"
+        digits.append(str(nibble))
+    return "".join(digits)
+
+
+def _text(raw) -> str:
+    if raw is None:
+        return ""
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8", errors="replace").strip("\x00 ").strip()
+    return str(raw).strip("\x00 ").strip()
+
+
+def _simvar_name(request_name: str) -> str:
+    """The SimConnect variable a request-table name stands for.
+
+    The request table's ``FUEL_TANK_CENTER_QUANTITY`` is the SDK's
+    ``FUEL TANK CENTER QUANTITY``: underscores in the name are spaces in
+    the variable. An ``:index`` tail is a real index, left as it is.
+    """
+    name, _, index = request_name.partition(":")
+    spaced = name.replace("_", " ")
+    return f"{spaced}:{index}" if index else spaced
+
+
+# --------------------------------------------------------------------------
+# SimConnect
+# --------------------------------------------------------------------------
+
+# Aircraft title fragments mapped to ICAO type designators. The sim reports a
+# marketing title ("Boeing 737 MAX 8 Asobo"), not a type code, and the type is
+# needed for the wake-turbulence suffix and the GA manufacturer callsign.
+TITLE_TO_TYPE: tuple[tuple[str, str], ...] = (
+    ("737 max 8", "B38M"), ("737 max", "B38M"), ("737-800", "B738"),
+    ("737-700", "B737"), ("737-900", "B739"), ("737", "B738"),
+    ("747-8", "B748"), ("747", "B744"),
+    ("757", "B752"), ("767", "B763"),
+    ("777-300", "B77W"), ("777-200", "B772"), ("777", "B77W"),
+    ("787-10", "B78X"), ("787-9", "B789"), ("787-8", "B788"), ("787", "B789"),
+    ("a319", "A319"), ("a320neo", "A20N"), ("a320", "A320"), ("a321neo", "A21N"),
+    ("a321", "A321"), ("a330", "A333"), ("a340", "A343"), ("a350", "A359"),
+    ("a380", "A388"),
+    ("crj 700", "CRJ7"), ("crj 900", "CRJ9"), ("crj 550", "CRJ5"), ("crj", "CRJ7"),
+    ("e170", "E170"), ("e175", "E75L"), ("e190", "E190"), ("e195", "E195"),
+    ("embraer 175", "E75L"), ("embraer 190", "E190"),
+    ("atr 42", "AT43"), ("atr 72", "AT76"), ("atr", "AT76"),
+    ("dash 8", "DH8D"), ("q400", "DH8D"),
+    ("cessna 152", "C152"), ("cessna 172", "C172"), ("152", "C152"),
+    ("172", "C172"), ("182", "C182"), ("208", "C208"), ("caravan", "C208"),
+    ("citation cj4", "C25C"), ("citation longitude", "C700"), ("citation", "C25C"),
+    ("cirrus sr22", "SR22"), ("sr22", "SR22"), ("sr20", "SR20"),
+    ("tbm 930", "TBM9"), ("tbm", "TBM9"),
+    ("pilatus pc-12", "PC12"), ("pc-12", "PC12"), ("pc-6", "PC6T"),
+    ("king air", "B350"), ("baron", "BE58"), ("bonanza", "BE36"),
+    ("da40", "DA40"), ("da62", "DA62"), ("diamond da40", "DA40"),
+    ("bonanza g36", "BE36"), ("longitude", "C700"),
+    ("cub", "PA18"), ("piper", "P28A"), ("archer", "P28A"), ("arrow", "P28R"),
+    ("mooney", "M20P"), ("husky", "BL8"), ("icon a5", "A5"),
+    ("vision jet", "SF50"), ("sf50", "SF50"),
+    ("global 7500", "GL7T"), ("longitude", "C700"),
+    ("h125", "AS50"), ("cabri", "CBRI"), ("h145", "EC45"),
+)
+
+
+def type_from_title(title: str, model: str = "") -> str:
+    """Best-effort ICAO type designator from the sim's aircraft title."""
+    text = f"{title} {model}".lower()
+    for fragment, code in TITLE_TO_TYPE:
+        if fragment in text:
+            return code
+    return ""
+
+
+class SimConnectSource:
+    """Reads aircraft state from Microsoft Flight Simulator over SimConnect."""
+
+    # Variable name, attribute, the unit the wrapper actually returns, and how
+    # often it is worth asking.
+    #
+    # The units are declared here rather than guessed from the value, because
+    # guessing is not safe. SimConnect's native unit for a heading is radians
+    # and for a position is degrees, and a longitude of 2.38 (Paris) is a
+    # perfectly plausible radian value as well as a real longitude -- a
+    # heuristic that converts it puts the aircraft in the Pacific. Every unit
+    # below is taken from the wrapper's own request table.
+    #
+    #   deg    degrees already, only wrapped into 0-360
+    #   rad    radians, converted to degrees
+    #   raw    a number used as-is (feet, knots, feet/minute, millibars ...)
+    #
+    # The last column is the tier, and it is what makes the panel keep up.
+    # The wrapper does one blocking round trip per variable -- it clears the
+    # cached value, sends a request, and sleeps until the answer arrives --
+    # so asking for all thirty-five costs about half a second, and a
+    # situation loop that wants to run four times a second instead ran twice
+    # a second with two seconds of lag behind it.
+    #
+    # So only the things that actually move are asked for every time. The
+    # aircraft's title does not change four times a second; neither does the
+    # parking brake, the ambient temperature or the flight number. Those are
+    # rotated a few per pass, which keeps every one of them within a second
+    # or so of the truth at a fraction of the cost.
+    #
+    #   fast   every read: position, motion, and the radio you are on
+    #   slow   a few per read, in rotation
+    REQUESTS: tuple[tuple[str, str, str, str], ...] = (
+        ("PLANE_LATITUDE", "latitude", "raw", "fast"),            # Degrees
+        ("PLANE_LONGITUDE", "longitude", "raw", "fast"),          # Degrees
+        ("PLANE_ALTITUDE", "altitude_ft", "raw", "fast"),         # Feet
+        ("INDICATED_ALTITUDE", "indicated_altitude_ft", "raw", "slow"),
+        ("PLANE_ALT_ABOVE_GROUND", "altitude_agl_ft", "raw", "fast"),
+        ("PLANE_HEADING_DEGREES_TRUE", "heading_true", "rad", "fast"),
+        ("PLANE_HEADING_DEGREES_MAGNETIC", "heading_magnetic", "rad", "slow"),
+        ("GPS_GROUND_TRUE_TRACK", "track_true", "rad", "slow"),
+        ("GROUND_VELOCITY", "ground_speed_kt", "raw", "fast"),    # Knots
+        ("AIRSPEED_INDICATED", "indicated_airspeed_kt", "raw", "fast"),
+        ("AIRSPEED_TRUE", "true_airspeed_kt", "raw", "slow"),
+        ("VERTICAL_SPEED", "vertical_speed_fpm", "raw", "fast"),  # feet/minute
+        ("SIM_ON_GROUND", "on_ground", "bool", "fast"),
+        ("COM_ACTIVE_FREQUENCY:1", "com1_active", "freq", "fast"),    # MHz
+        ("COM_STANDBY_FREQUENCY:1", "com1_standby", "freq", "slow"),
+        ("COM_ACTIVE_FREQUENCY:2", "com2_active", "freq", "slow"),
+        ("COM_STANDBY_FREQUENCY:2", "com2_standby", "freq", "slow"),
+        ("COM_RECEIVE_ALL", "com2_receive", "bool", "slow"),
+        ("TRANSPONDER_CODE:1", "transponder_code", "squawk", "slow"),  # BCO16
+        ("ATC_ID", "callsign", "text", "slow"),
+        ("ATC_AIRLINE", "airline", "text", "slow"),
+        ("ATC_FLIGHT_NUMBER", "flight_number", "text", "slow"),
+        ("ATC_MODEL", "type_code", "text", "slow"),
+        ("TITLE", "title", "text", "slow"),
+        ("GENERAL_ENG_COMBUSTION:1", "engines_running", "bool", "slow"),
+        ("BRAKE_PARKING_POSITION", "parking_brake", "bool", "slow"),
+        ("GEAR_HANDLE_POSITION", "gear_down", "bool", "slow"),
+        ("FLAPS_HANDLE_INDEX", "flaps_index", "int", "slow"),
+        # For the crew rather than for the controller. Both are standard
+        # variables present on nearly every aircraft; one that does not model
+        # a seatbelt sign simply reports it off for the whole flight, which
+        # is what wilcoatc.atc.crew allows for.
+        ("CABIN_SEATBELTS_ALERT_SWITCH", "seatbelt_sign", "bool", "slow"),
+        ("LIGHT_BEACON", "beacon_light", "bool", "slow"),
+        # The model's class, for the first officer: it does not change in a
+        # flight, so it rides the slow rotation like the title.
+        ("ENGINE_TYPE", "engine_type", "int", "slow"),
+        ("NUMBER_OF_ENGINES", "engine_count", "int", "slow"),
+        ("CATEGORY", "category", "text", "slow"),
+        # What the first officer checks a checklist answer against. Slow:
+        # with these the rotation is about three seconds round, which is
+        # why a value is read again on its own (read_now) before the first
+        # officer says it disagrees.
+        ("LIGHT_LANDING", "landing_light", "bool", "slow"),
+        ("LIGHT_TAXI", "taxi_light", "bool", "slow"),
+        ("LIGHT_NAV", "nav_light", "bool", "slow"),
+        ("LIGHT_STROBE", "strobe_light", "bool", "slow"),
+        ("KOHLSMAN_SETTING_MB", "kohlsman_hpa", "raw", "slow"),      # Millibars
+        ("FUEL_TANK_SELECTOR:1", "fuel_selector", "int", "slow"),    # Enum
+        ("GENERAL_ENG_MIXTURE_LEVER_POSITION:1", "mixture_pct", "raw", "slow"),
+        ("AUTOPILOT_MASTER", "autopilot", "bool", "slow"),
+        ("GPS_DRIVES_NAV1", "gps_drives_nav1", "bool", "slow"),
+        ("PITOT_HEAT", "pitot_heat", "bool", "slow"),
+        ("FUEL_TOTAL_QUANTITY", "fuel_total_gal", "raw", "slow"),    # Gallons
+        ("SPOILERS_ARMED", "spoilers_armed", "bool", "slow"),
+        ("AVIONICS_MASTER_SWITCH", "avionics_master", "bool", "slow"),
+        ("ELECTRICAL_MASTER_BATTERY", "battery_master", "bool", "slow"),
+        # Whether the radio has power, for the controller rather than the
+        # crew (Engine.radio_powered): COM STATUS is 0 working, 1 not fitted,
+        # 2 no electricity, 3 failed; the main bus is the second opinion.
+        ("COM_STATUS:1", "com1_status", "int", "slow"),
+        ("ELECTRICAL_MAIN_BUS_VOLTAGE", "main_bus_volts", "raw", "slow"),
+        # Not in the wrapper's table: defined by define_our_variables.
+        ("TRANSPONDER_STATE:1", "transponder_state", "int", "slow"),
+        ("DESIGN_TAKEOFF_SPEED", "design_takeoff_kt", "raw", "slow"),
+        ("DESIGN_SPEED_MIN_ROTATION", "min_rotation_kt", "raw", "slow"),
+        # The model's own performance figures (MSFS "Design Performance"
+        # variables). They are the aeroplane's, not a class's: where a
+        # model declares them the first officer's targets come from here,
+        # and where it does not they stay zero and the class stands.
+        # Speeds come back in the wrapper's feet-per-second and are
+        # converted; the rest are already in the unit wanted. UNVERIFIED
+        # on a running 2024: not every add-on publishes them.
+        ("ESTIMATED_CRUISE_SPEED", "estimated_cruise_kt", "fps_kt",
+         "slow"),
+        ("TYPICAL_DESCENT_RATE", "typical_descent_fpm", "raw", "slow"),
+        ("DESIGN_SPEED_VS0", "design_vs0_kt", "fps_kt", "slow"),
+        ("DESIGN_SPEED_VS1", "design_vs1_kt", "fps_kt", "slow"),
+        ("DESIGN_SPEED_VC", "design_vc_kt", "fps_kt", "slow"),
+        ("MIN_DRAG_VELOCITY", "min_drag_kt", "fps_kt", "slow"),
+        ("AIRSPEED_BARBER_POLE", "barber_pole_kt", "raw", "slow"),
+        ("BARBER_POLE_MACH", "barber_pole_mach", "raw", "slow"),
+        ("MACH_MAX_OPERATE", "mach_max_operate", "raw", "slow"),
+        ("TOTAL_WEIGHT", "total_weight_lb", "raw", "slow"),
+        ("MAX_GROSS_WEIGHT", "max_gross_weight_lb", "raw", "slow"),
+        ("ATC_HEAVY", "atc_heavy", "bool", "slow"),
+        ("ATC_SUGGESTED_MIN_RWY_TAKEOFF", "suggested_runway_takeoff_ft",
+         "raw", "slow"),
+        ("ATC_SUGGESTED_MIN_RWY_LANDING", "suggested_runway_landing_ft",
+         "raw", "slow"),
+        # Rotorcraft: torque for the collective limit, lateral trim for
+        # the wings-level hover. "Percent scalar 16K" and "Percent Over
+        # 100" are the kinds _convert's pct rule already knows.
+        # UNVERIFIED on a running 2024.
+        ("ENG_TORQUE_PERCENT:1", "eng_torque_pct", "pct", "slow"),
+        ("ROTOR_LATERAL_TRIM_PCT", "rotor_lateral_trim_pct", "pct",
+         "slow"),
+        # The callouts. The bank every read, because "bank" is about a
+        # moment; the needles and the selected speed in the rotation, a
+        # needle coming alive being worth a second or two of lag.
+        ("PLANE_BANK_DEGREES", "bank_deg", "signed_rad", "fast"),
+        ("NAV_HAS_LOCALIZER:1", "nav1_has_localizer", "bool", "slow"),
+        ("NAV_CDI:1", "nav1_cdi", "raw", "slow"),
+        ("NAV_HAS_GLIDE_SLOPE:1", "nav1_has_glideslope", "bool", "slow"),
+        ("NAV_GSI:1", "nav1_gsi", "raw", "slow"),
+        ("NAV ACTIVE FREQUENCY:1", "nav1_freq", "navfreq", "slow"),
+        ("AUTOPILOT_AIRSPEED_HOLD_VAR", "ap_airspeed_kt", "raw", "slow"),
+        # Whether an autothrottle is actually driving the levers -- the
+        # FO's throttle servo checks it before touching them, and the
+        # managed engage arms the AT only while this reads false.
+        ("AUTOTHROTTLE_ACTIVE", "autothrottle", "bool", "slow"),
+        # The notices: power, and the fuel either side and by weight.
+        ("GENERAL_ENG_THROTTLE_LEVER_POSITION:1", "throttle_pct", "throttle", "slow"),
+        ("FUEL_LEFT_QUANTITY", "fuel_left_gal", "raw", "slow"),     # Gallons
+        ("FUEL_RIGHT_QUANTITY", "fuel_right_gal", "raw", "slow"),   # Gallons
+        ("FUEL_TOTAL_QUANTITY_WEIGHT", "fuel_total_lb", "raw", "slow"),  # lb
+        # What the tanks can hold and what of that cannot be used, for
+        # the turnaround's refuelling and the FO's reserve calculation.
+        # NEW FUEL SYSTEM distinguishes the 2024 [FUEL_SYSTEM] models --
+        # whose tank variables are model-named -- from the legacy [FUEL]
+        # ones, which these names still reach. UNVERIFIED on a running
+        # 2024 for models that publish neither.
+        ("FUEL_TOTAL_CAPACITY", "fuel_capacity_gal", "raw", "slow"),  # Gallons
+        ("UNUSABLE_FUEL_QUANTITY", "fuel_unusable_gal", "raw", "slow"),  # Gallons
+        ("NEW_FUEL_SYSTEM", "new_fuel_system", "bool", "slow"),
+        ("ESTIMATED_FUEL_FLOW", "est_fuel_flow_pph", "raw", "slow"),  # lb/h
+        ("AIRSPEED_MACH", "airspeed_mach", "raw", "slow"),
+        # Combustion per engine past the first, for the engine-out
+        # detection a single engines_running flag cannot do on a twin.
+        # The wrapper's indexed lookup handles the :2/:3/:4 slide.
+        ("GENERAL_ENG_COMBUSTION:2", "eng2_combustion", "bool", "slow"),
+        ("GENERAL_ENG_COMBUSTION:3", "eng3_combustion", "bool", "slow"),
+        ("GENERAL_ENG_COMBUSTION:4", "eng4_combustion", "bool", "slow"),
+        # The helicopter's own instruments (MSFS 2024 Helicopter
+        # Variables). Slow like the rest of the configuration: the
+        # autonomous rotorcraft controller reads them on demand
+        # (read_now), and a checklist check can wait a few seconds.
+        # Most are the wrapper's own HelicopterSpecificData entries;
+        # OUR_VARIABLES adds the four it does not have.
+        ("COLLECTIVE_POSITION", "collective_position", "pct", "slow"),
+        ("ROTOR_RPM_PCT", "rotor_rpm_pct", "pct", "slow"),
+        ("NUM_OF_MAIN_ROTORS", "num_main_rotors", "int", "slow"),
+        ("TAIL_ROTOR_PEDAL_POSITION", "tail_rotor_pedal_position", "pct",
+         "slow"),
+        ("ROTOR_BRAKE_ACTIVE", "rotor_brake_active", "bool", "slow"),
+        ("ROTOR_BRAKE_HANDLE_POS", "rotor_brake_handle_pos", "pct", "slow"),
+        ("ROTOR_BRAKE_AVAILABLE", "rotor_brake_available", "bool", "slow"),
+        ("ROTOR_CLUTCH_ACTIVE", "rotor_clutch_active", "bool", "slow"),
+        ("ROTOR_GOV_TARGET_PCT:1", "rotor_gov_target_pct", "pct", "slow"),
+        ("AMBIENT_WIND_DIRECTION", "ambient_wind_direction", "deg", "slow"),
+        ("AMBIENT_WIND_VELOCITY", "ambient_wind_velocity", "raw", "slow"),  # Knots
+        ("AMBIENT_TEMPERATURE", "ambient_temperature_c", "raw", "slow"),    # Celsius
+        ("AMBIENT_VISIBILITY", "ambient_visibility_m", "raw", "slow"),      # Meters
+        ("SEA_LEVEL_PRESSURE", "sea_level_pressure_hpa", "raw", "slow"),    # Millibars
+        # What the airframe is in: cloud and precipitation flags, the ice
+        # it has accreted, and TAT -- the figure icing decisions are made
+        # on, since it is warmer than ambient at speed.
+        ("AMBIENT_IN_CLOUD", "ambient_in_cloud", "bool", "slow"),
+        ("AMBIENT_PRECIP_STATE", "ambient_precip_state", "int", "slow"),
+        ("STRUCTURAL_ICE_PCT", "structural_ice_pct", "pct", "slow"),
+        ("TOTAL_AIR_TEMPERATURE", "total_air_temperature_c", "raw", "slow"),
+        # The wind in the aeroplane's axes, knots: the only per-second
+        # gust, crosswind and downdraft evidence there is to read.
+        ("AIRCRAFT_WIND_X", "aircraft_wind_x_kt", "raw", "slow"),
+        ("AIRCRAFT_WIND_Y", "aircraft_wind_y_kt", "raw", "slow"),
+        ("AIRCRAFT_WIND_Z", "aircraft_wind_z_kt", "raw", "slow"),
+        # Meters on the wire, feet in the state.
+        ("PRESSURE_ALTITUDE", "pressure_altitude_ft", "m_ft", "slow"),
+        # The tug: whether the stand can push at all, whether one has been
+        # asked for and is still coming, and whether it is on the
+        # nosewheel. The autonomous pushback reads all three because the
+        # request event is a toggle -- a second one while the tug is still
+        # coming cancels it, so whether to send another has to be read
+        # rather than guessed from how long it has been quiet.
+        ("PUSHBACK_AVAILABLE", "pushback_available", "bool", "slow"),
+        ("PUSHBACK_WAIT", "pushback_wait", "bool", "slow"),
+        ("PUSHBACK_ATTACHED", "pushback_attached", "bool", "slow"),
+    )
+
+    def __init__(self, poll_interval: float = 0.25, request_timeout_ms: int = 400,
+                 dll_path: str = ""):
+        self.poll_interval = poll_interval
+        self.request_timeout_ms = request_timeout_ms
+        # A SimConnect library to prefer over the wrapper's bundled one
+        # (sim.simconnect_dll); the 2024 SDK's is found on its own.
+        self.dll_path = dll_path
+        self._sim = None
+        self._requests = None
+        self._connected = False
+        self._missing: set[str] = set()
+        # How often each variable that has never answered has been asked.
+        self._silent: dict[str, int] = {}
+        self._state = AircraftState()
+        self._lock = threading.Lock()
+        # Events are mapped to the simulator once each and kept. Mapping is a
+        # round trip, and tuning a radio should not pay for one.
+        self._events: dict[bytes, object] = {}
+        # The two tiers, split once rather than on every read.
+        self._fast = tuple((n, a, k) for n, a, k, tier in self.REQUESTS
+                           if tier == "fast")
+        self._slow = tuple((n, a, k) for n, a, k, tier in self.REQUESTS
+                           if tier != "fast")
+        self._next_slow = 0
+        # Whether the next read takes every variable rather than a slice.
+        self._full_sweep = True
+        # The latest value of every variable, whichever tier it came from, so
+        # a read that only refreshed some of them still returns a whole
+        # aircraft.
+        self._values: dict[str, object] = {}
+        self._empty_reads = 0
+        # Whether the simulator has ever told us the flight was running. The
+        # wrapper's flag starts False and only turns True on a SimStart
+        # event, so connecting to a sim that is already flying leaves it
+        # False for ever -- which means "not running" is only evidence of
+        # anything once it has been True at least once.
+        self._seen_running = False
+        # Which of the two ways of setting a frequency works, per radio and
+        # per active/standby. Not one answer for the whole simulator: MSFS
+        # 2024 takes COM_RADIO_SET_HZ for the active frequency and does not
+        # recognise COM_STBY_RADIO_SET_HZ at all, so a single flag learned
+        # from the active radio silently breaks the standby one.
+        self._freq_event_style: dict[tuple[int, bool], str] = {}
+        # One data definition per written variable, made on first use. A
+        # variable the simulator does not have fails its first write and is
+        # remembered as unwritable rather than asked for again every tick.
+        self._writers: dict[str, object] = {}
+        self._unwritable: set[str] = set()
+        # Replies to RequestSystemState, keyed by request ID, parked here by
+        # the wrapped state handler until somebody asks for them. The reply
+        # arrives on the wrapper's dispatch thread, so both sides take this
+        # little lock.
+        self._system_state: dict[int, str] = {}
+        self._system_state_lock = threading.Lock()
+
+    @property
+    def connected(self) -> bool:
+        return self._connected
+
+    # The call the 2024 library has and the wrapper's bundled 2020 one does
+    # not: AI aircraft created in a livery (see integrations.ailiveries).
+    LIVERY_CALL = "SimConnect_AICreateNonATCAircraft_EX1"
+
+    def _open(self, SimConnect):
+        """The session, on the 2024 SDK's library where there is one.
+
+        The wrapper loads its own bundled SimConnect.dll, which is 2020's:
+        it talks to 2024 well enough, but it has no call to create an AI
+        aircraft in a livery, so every detailed aeroplane was drawn in the
+        model's house colours. The wrapper takes another library by path
+        and works unchanged on it (measured: position, radios, title read
+        the same). Anything that goes wrong with that library falls back
+        to the bundled one, which is what this always used.
+        """
+        library = None
+        try:
+            from ..integrations.facilities import find_simconnect
+
+            found = find_simconnect(self.dll_path)
+            if found is not None and hasattr(ctypes.WinDLL(str(found)),
+                                             self.LIVERY_CALL):
+                library = str(found)
+        except Exception:
+            library = None
+        if library is not None:
+            try:
+                session = SimConnect(library_path=library)
+                log.info("simulator session on %s", library)
+                return session
+            except Exception:
+                log.info("the SimConnect library at %s would not connect; "
+                         "using the bundled one", library, exc_info=True)
+        return SimConnect()
+
+    def connect(self) -> bool:
+        try:
+            from SimConnect import AircraftRequests, SimConnect
+        except ImportError:
+            log.warning("SimConnect package not installed; sim link unavailable")
+            return False
+        try:
+            self._sim = self._open(SimConnect)
+            # One call at a time on this session, whichever thread makes it
+            # (see wilcoatc.sim.serial).
+            serialize(self._sim.dll)
+            self._requests = AircraftRequests(self._sim, _time=self.request_timeout_ms)
+            self.define_our_variables(self._requests)
+            self._capture_system_state(self._sim)
+            self._connected = True
+            # A reconnection is to a different simulator session: the event
+            # handles from the last one are stale, and a variable that was
+            # missing from the last aircraft may be present in this one.
+            self._events.clear()
+            self._freq_event_style.clear()
+            self._writers.clear()
+            self._unwritable.clear()
+            self._missing.clear()
+            self._silent.clear()
+            self._values.clear()
+            self._empty_reads = 0
+            self._next_slow = 0
+            self._full_sweep = True
+            self._seen_running = False
+            log.info("connected to the simulator")
+            return True
+        except Exception as exc:
+            log.info("simulator not available: %s", exc)
+            self._sim = None
+            self._requests = None
+            self._connected = False
+            return False
+
+    # The variables the wrapper's request table does not have, in its own
+    # format: description, SimConnect name, the unit asked for, settable.
+    # The speeds are asked for in knots, which SimConnect converts to
+    # whatever the variable's own unit is. UNVERIFIED on a running 2024:
+    # the names are the SDK's simulation variables reference.
+    OUR_VARIABLES: dict[str, list] = {
+        "TRANSPONDER_STATE:index": [
+            "Transponder mode: 0 off, 1 standby, 2 test, 3 on, 4 alt",
+            b"TRANSPONDER STATE:index", b"Enum", "N"],
+        "DESIGN_TAKEOFF_SPEED": [
+            "The model's design takeoff speed",
+            b"DESIGN TAKEOFF SPEED", b"Knots", "N"],
+        "DESIGN_SPEED_MIN_ROTATION": [
+            "The model's minimum rotation speed",
+            b"DESIGN SPEED MIN ROTATION", b"Knots", "N"],
+        # The MSFS 2024 helicopter variables (SDK "Helicopter
+        # Variables") the wrapper's own HelicopterSpecificData does not
+        # have. Percent-over-100 natively, asked for as Percent and
+        # renormalised in _convert all the same. UNVERIFIED on a
+        # running 2024.
+        "NUM_OF_MAIN_ROTORS": [
+            "How many main rotors the helicopter has",
+            b"NUM OF MAIN ROTORS", b"Number", "N"],
+        "TAIL_ROTOR_PEDAL_POSITION": [
+            "The tail rotor pedals, per cent",
+            b"TAIL ROTOR PEDAL POSITION", b"Percent", "N"],
+        "ROTOR_BRAKE_AVAILABLE": [
+            "Whether the model has a rotor brake",
+            b"ROTOR BRAKE AVAILABLE", b"Bool", "N"],
+        "ROTOR_GOV_TARGET_PCT:index": [
+            "The governor's target RPM, per cent of nominal",
+            b"ROTOR GOV TARGET PCT:index", b"Percent", "N"],
+        # Fuel beyond the legacy [FUEL]-section names: what of the
+        # capacity can never be burned, whether the model is a 2024
+        # [FUEL_SYSTEM] one, and the fuel-system tank variables the
+        # turnaround refuels through on those. The tank index is a
+        # position in the model's fuel system, not a named legacy tank.
+        # UNVERIFIED on a running 2024: whether QUANTITY is writable per
+        # tank is up to the model.
+        "UNUSABLE_FUEL_QUANTITY": [
+            "The fuel that can never be drawn",
+            b"UNUSABLE FUEL QUANTITY", b"Gallons", "N"],
+        "NEW_FUEL_SYSTEM": [
+            "Whether the model uses the [FUEL_SYSTEM] section",
+            b"NEW FUEL SYSTEM", b"Bool", "N"],
+        "FUELSYSTEM_TANK_QUANTITY:index": [
+            "Fuel in one fuel-system tank",
+            b"FUELSYSTEM TANK QUANTITY:index", b"Gallons", "Y"],
+        "FUELSYSTEM_TANK_CAPACITY:index": [
+            "Capacity of one fuel-system tank",
+            b"FUELSYSTEM TANK CAPACITY:index", b"Gallons", "N"],
+        "FUELSYSTEM_TANK_COUNT": [
+            "How many fuel-system tanks the model has",
+            b"FUELSYSTEM TANK COUNT", b"Number", "N"],
+        # The pushback service on the user's own stand (SDK Services
+        # Variables): whether the parking space offers a tug, whether one
+        # has been asked for and is still coming, and whether it is
+        # attached. UNVERIFIED on a running 2024.
+        "PUSHBACK_AVAILABLE": [
+            "Whether a push back is available on the parking space",
+            b"PUSHBACK AVAILABLE", b"Bool", "N"],
+        "PUSHBACK_WAIT": [
+            "Whether a pushback has been asked for and is still coming",
+            b"PUSHBACK WAIT", b"Bool", "N"],
+        "PUSHBACK_ATTACHED": [
+            "Whether the pushback tug is attached to the aircraft",
+            b"PUSHBACK ATTACHED", b"Bool", "N"],
+    }
+
+    @classmethod
+    def define_our_variables(cls, requests) -> None:
+        """Add :data:`OUR_VARIABLES` to one session's request table.
+
+        On that session's helper object, not on the wrapper's class, so
+        nothing outside this program sees the table change.
+        """
+        helper = getattr(requests, "MiscellaneousData", None)
+        if helper is None:
+            return
+        helper.list = {**type(helper).list, **cls.OUR_VARIABLES}
+
+    def read_now(self, attribute: str):
+        """One variable, read now rather than when the rotation reaches it.
+
+        For the first officer, who is about to say the aeroplane disagrees
+        with the pilot and must not say it off a value three seconds old.
+        None when the simulator has no answer, which is never an objection.
+        """
+        if not self._connected:
+            return None
+        for name, attr, kind, _tier in self.REQUESTS:
+            if attr == attribute:
+                if self._fetch(name, attr, kind):
+                    return self._values[attr]
+                return None
+        return None
+
+    # ------------------------------------------------------------------
+
+    def _get(self, name: str):
+        if self._requests is None or name in self._missing:
+            return None
+        try:
+            return self._requests.get(name)
+        except Exception as exc:
+            # A variable that is not present in this sim version should be
+            # asked for once, not every quarter second for the whole flight.
+            self._missing.add(name)
+            log.debug("simvar %s unavailable: %s", name, exc)
+            return None
+
+    # How many of the slowly-changing variables are refreshed per read. Four
+    # covers the whole set in six passes, which at a quarter-second interval
+    # is a second and a half -- well inside the time it takes a parking brake
+    # or an aircraft title to matter.
+    SLOW_PER_READ = 4
+
+    def read(self) -> AircraftState:
+        if not self._connected:
+            return AircraftState(connected=False, source="simconnect")
+
+        # Everything that moves, every time.
+        fresh = 0
+        for name, attribute, kind in self._fast:
+            if self._fetch(name, attribute, kind):
+                fresh += 1
+
+        # And everything else. The first read after connecting takes the lot,
+        # because the flight is built from it: the callsign, the aircraft
+        # type and the transponder are all in the slow tier, and a session
+        # started from a state that has not got round to them yet is a
+        # session with no aeroplane in it. After that they rotate.
+        if self._full_sweep:
+            for name, attribute, kind in self._slow:
+                self._fetch(name, attribute, kind)
+            self._full_sweep = False
+        elif self._slow:
+            for _ in range(min(self.SLOW_PER_READ, len(self._slow))):
+                name, attribute, kind = self._slow[self._next_slow]
+                self._next_slow = (self._next_slow + 1) % len(self._slow)
+                self._fetch(name, attribute, kind)
+
+        if not fresh and not self._values:
+            # The connection object exists but the sim has gone away.
+            self._connected = False
+            return AircraftState(connected=False, source="simconnect")
+        if not fresh:
+            # Nothing that moves came back. One empty pass is a hiccup; a run
+            # of them is the simulator having gone.
+            self._empty_reads += 1
+            if self._empty_reads >= self.EMPTY_READS_BEFORE_GONE:
+                self._connected = False
+                return AircraftState(connected=False, source="simconnect")
+        else:
+            self._empty_reads = 0
+
+        state = AircraftState(connected=True, source="simconnect")
+        for attribute, value in self._values.items():
+            setattr(state, attribute, value)
+        state.paused = self._is_paused()
+        self._derive(state)
+        with self._lock:
+            self._state = state
+        return state
+
+    # How many reads in a row may come back with nothing moving before the
+    # simulator is taken to have gone. A single empty pass happens: the sim
+    # pauses, a menu opens, a variable is momentarily unavailable.
+    EMPTY_READS_BEFORE_GONE = 8
+
+    def _is_paused(self) -> bool:
+        """Whether the flight is stopped, or the user is in the menus.
+
+        Read from the two system events SimConnect actually sends -- Paused
+        and SimStop, the latter documented as firing when the user is
+        navigating the interface -- rather than from a camera-state number,
+        because those are renumbered between simulator versions and a magic
+        number that means "menu" in one release means a cockpit view in the
+        next.
+
+        Deliberately one-sided: it answers no unless there is positive
+        evidence. A false yes silences the radio and freezes the flight,
+        which is far worse than the thing it is fixing.
+        """
+        sim = self._sim
+        if sim is None:
+            return False
+        if getattr(sim, "paused", False):
+            return True
+        # SimStart has to have been seen before its absence means anything.
+        if getattr(sim, "running", False):
+            self._seen_running = True
+            return False
+        return self._seen_running
+
+    # How many silences a variable that has never answered gets, while
+    # others do, before it is no longer asked. The wrapper waits out its
+    # whole timeout for a variable the simulator does not know, on every
+    # pass of the rotation; three of the checklist variables are defined
+    # here and not measured on a 2024 yet.
+    SILENT_BEFORE_MISSING = 5
+
+    def _fetch(self, name: str, attribute: str, kind: str) -> bool:
+        """Read one variable and keep it. True if a value came back."""
+        if name in self._missing:
+            return False
+        raw = self._get(name)
+        if raw is None:
+            # Only a variable that has never answered, and only while the
+            # simulator is answering others: one in its menus answers
+            # nothing, and that is not everything being missing.
+            if attribute not in self._values and self._values:
+                silent = self._silent.get(name, 0) + 1
+                self._silent[name] = silent
+                if silent >= self.SILENT_BEFORE_MISSING:
+                    self._missing.add(name)
+                    log.info("simvar %s never answered; no longer asked", name)
+            return False
+        try:
+            self._values[attribute] = self._convert(raw, kind, attribute)
+        except Exception:
+            log.debug("could not convert %s=%r", name, raw, exc_info=True)
+            return False
+        return True
+
+    @staticmethod
+    def _convert(raw, kind: str, attribute: str):
+        if kind == "text":
+            return _text(raw)
+        if kind == "freq":
+            return decode_frequency(raw)
+        if kind == "navfreq":
+            return decode_nav_frequency(raw)
+        if kind == "squawk":
+            return decode_squawk(raw)
+        if kind == "bool":
+            return bool(float(raw))
+        if kind == "int":
+            return int(float(raw))
+        if kind == "rad":
+            return normalize_angle(float(raw), source_is_radians=True)
+        if kind == "signed_rad":
+            # A bank, either side of zero, and kept so (the 0-360 wrap
+            # above would make a slight left bank 359 degrees). Which side
+            # is positive is UNVERIFIED and not relied on: the bank call is
+            # about its size.
+            return math.degrees(float(raw))
+        if kind == "deg":
+            return normalize_angle(float(raw), source_is_radians=False)
+        if kind == "pct":
+            # Percent-over-100 variables can come back on the 0-16384
+            # scale when a wrapper or a version ignores the requested
+            # unit; anything over 100 can only be that scale.
+            value = float(raw)
+            return value / 163.84 if value > 100.0 else value
+        if kind == "throttle":
+            # The throttle lever variable reads back percent x100 on the
+            # 2024 SDK's SimConnect -- a 20% lever reports 2000 -- while
+            # writes take percent plainly. Anything over 100 can only be
+            # that doubled scale.
+            value = float(raw)
+            return value / 100.0 if value > 100.0 else value
+        if kind == "fps_kt":
+            # The design-performance speeds are asked for in the
+            # wrapper's native feet per second.
+            return float(raw) * 1.94384449
+        if kind == "m_ft":
+            return float(raw) * 3.28084
+        return float(raw)
+
+    @staticmethod
+    def _derive(state: AircraftState) -> None:
+        """Fill in what the sim does not report directly."""
+        if not state.type_code or len(state.type_code) > 4:
+            derived = type_from_title(state.title, state.type_code)
+            if derived:
+                state.type_code = derived
+        state.type_code = (state.type_code or "").upper()
+
+        # ATC_ID is the tail number; the airline callsign has to be rebuilt
+        # from the airline and flight number when the aircraft is a liveried
+        # airliner rather than a private registration.
+        state.tail_number = state.callsign
+        if state.airline and state.flight_number:
+            state.callsign = _radio_callsign(
+                state.callsign, state.airline, state.flight_number,
+                state.type_code)
+
+        if not state.track_true:
+            state.track_true = state.heading_true
+        if state.altitude_agl_ft <= 0 and state.on_ground:
+            state.altitude_agl_ft = 0.0
+
+    # ------------------------------------------------------------------
+    # writing back: the panel is a radio too
+    # ------------------------------------------------------------------
+
+    def _event(self, name: bytes):
+        """Map a SimConnect event once, and keep it.
+
+        A name this simulator does not know comes back as None from the
+        wrapper, which is remembered as None rather than asked for again --
+        ``COM_RADIO_SET_HZ`` does not exist on every version and the fallback
+        has to be decided once, not on every keystroke.
+        """
+        if name in self._events:
+            return self._events[name]
+        found = None
+        if self._sim is not None:
+            try:
+                found = self._sim.map_to_sim_event(name)
+            except Exception as exc:
+                log.debug("could not map event %s: %s", name, exc)
+        self._events[name] = found
+        return found
+
+    def _send(self, name: bytes, value: int) -> bool:
+        event = self._event(name)
+        if event is None or self._sim is None:
+            return False
+        try:
+            from SimConnect.Enum import DWORD
+        except Exception:                              # pragma: no cover
+            try:
+                from ctypes import c_ulong as DWORD
+            except Exception:
+                return False
+        try:
+            return bool(self._sim.send_event(event, DWORD(int(value) & 0xFFFFFFFF)))
+        except Exception as exc:
+            log.debug("event %s failed: %s", name, exc)
+            return False
+
+    # Which event sets which radio, in both the Hz and the BCD form.
+    _COM_EVENTS: dict[tuple[int, bool], tuple[bytes, bytes]] = {
+        (1, False): (b"COM_RADIO_SET_HZ", b"COM_RADIO_SET"),
+        (1, True): (b"COM_STBY_RADIO_SET_HZ", b"COM_STBY_RADIO_SET"),
+        (2, False): (b"COM2_RADIO_SET_HZ", b"COM2_RADIO_SET"),
+        (2, True): (b"COM2_STBY_RADIO_SET_HZ", b"COM2_STBY_RADIO_SET"),
+    }
+
+    # The simulator variable each radio reads back from, so a write can be
+    # checked rather than assumed.
+    _COM_VARIABLES: dict[tuple[int, bool], str] = {
+        (1, False): "COM_ACTIVE_FREQUENCY:1",
+        (1, True): "COM_STANDBY_FREQUENCY:1",
+        (2, False): "COM_ACTIVE_FREQUENCY:2",
+        (2, True): "COM_STANDBY_FREQUENCY:2",
+    }
+
+    # How long to wait for a radio to show the frequency that was just sent
+    # to it, while working out which event this simulator understands.
+    CONFIRM_S = 1.2
+    CONFIRM_STEP_S = 0.15
+
+    def set_com(self, mhz: float, radio: int = 1, standby: bool = False) -> bool:
+        """Put a frequency into the aircraft's radio.
+
+        There are two events for this and no way to ask which one a
+        simulator has. Sending an event it does not recognise is not an
+        error: the call succeeds, the exception arrives later on a channel
+        nothing here is reading, and the radio simply does not move. So the
+        first write to each radio is *checked* -- sent, then read back -- and
+        the encoding that actually moved the needle is remembered for the
+        rest of the session.
+
+        Per radio, and per active-versus-standby, because they genuinely
+        differ: MSFS 2024 takes ``COM_RADIO_SET_HZ`` for the active frequency
+        and does not know ``COM_STBY_RADIO_SET_HZ`` at all. One flag learned
+        from the active radio is how the standby quietly stopped working.
+
+        The Hz form is tried first wherever it is not yet known, because it
+        is the only one that can express an 8.33 kHz channel; the packed BCD
+        fallback is a 25 kHz event and rounds to the nearest channel it can
+        say.
+        """
+        if not self._connected:
+            return False
+        try:
+            value = float(mhz)
+        except (TypeError, ValueError):
+            return False
+        if not (118.0 <= value <= 136.999):
+            return False
+
+        key = (int(radio), bool(standby))
+        hz_event, bcd_event = self._COM_EVENTS.get(key, (b"", b""))
+        if not hz_event:
+            return False
+
+        known = self._freq_event_style.get(key)
+        if known == "hz":
+            return self._send(hz_event, encode_hz(value))
+        if known == "bcd":
+            packed = encode_bcd16(value)
+            return bool(packed) and self._send(bcd_event, packed)
+
+        # Not known yet: try each and see which one the radio obeys.
+        #
+        # A radio that is already on the wanted frequency teaches nothing --
+        # it reads back correctly whether or not the event did anything, and
+        # believing that is how the standby radio came to be "learned" from a
+        # write that never landed. So the probe is skipped, the event is sent
+        # anyway because it costs nothing, and the next tune to a different
+        # frequency is what settles the question.
+        if self._reads(key, value):
+            self._send(hz_event, encode_hz(value))
+            return True
+
+        if self._send(hz_event, encode_hz(value)) and self._took(key, value):
+            self._freq_event_style[key] = "hz"
+            return True
+        packed = encode_bcd16(value)
+        if packed and self._send(bcd_event, packed) and self._took(key, value):
+            self._freq_event_style[key] = "bcd"
+            return True
+        return False
+
+    def _reads(self, key: tuple[int, bool], wanted: float) -> bool:
+        """Whether a radio is already showing a frequency."""
+        name = self._COM_VARIABLES.get(key, "")
+        if not name:
+            return False
+        found = decode_frequency(self._get(name))
+        return bool(found) and abs(found - wanted) < 0.013
+
+    def _took(self, key: tuple[int, bool], wanted: float) -> bool:
+        """Whether the radio actually moved to the frequency just sent.
+
+        The tolerance is a 25 kHz step, because the BCD event cannot express
+        anything finer and a radio that rounded to the nearest channel it has
+        did what it was asked.
+        """
+        name = self._COM_VARIABLES.get(key, "")
+        if not name:
+            return False
+        deadline = time.monotonic() + self.CONFIRM_S
+        while time.monotonic() < deadline:
+            time.sleep(self.CONFIRM_STEP_S)
+            found = decode_frequency(self._get(name))
+            if found and abs(found - wanted) < 0.013:
+                return True
+        return False
+
+    def pushback(self) -> bool:
+        """Start the simulator's own pushback.
+
+        One event, unchecked, unlike the radios: there is no variable that
+        reads back "a tug is attached", so there is nothing to confirm it
+        against. GSX takes this over when it is set to, which is why it is
+        worth sending even at a stand GSX is working.
+        """
+        if not self._connected:
+            return False
+        return self._send(b"TOGGLE_PUSHBACK", 0)
+
+    def swap_com(self, radio: int = 1) -> bool:
+        """Swap active and standby, the way the button on the radio does."""
+        if not self._connected:
+            return False
+        name = b"COM_STBY_RADIO_SWAP" if int(radio) == 1 else b"COM2_RADIO_SWAP"
+        return self._send(name, 0)
+
+    # Which event sets which NAV radio, in both the Hz and the BCD form.
+    # UNVERIFIED against a running simulator: the names are the SDK's
+    # (NAV1_RADIO_SET_HZ takes whole Hz, NAV1_RADIO_SET the BCD16 packing
+    # with the leading "1" implied, so it only reaches the 108-117.95 MHz
+    # band). The same learn-once-and-verify pattern as set_com applies.
+    _NAV_EVENTS: dict[int, tuple[bytes, bytes]] = {
+        1: (b"NAV1_RADIO_SET_HZ", b"NAV1_RADIO_SET"),
+        2: (b"NAV2_RADIO_SET_HZ", b"NAV2_RADIO_SET"),
+    }
+
+    _NAV_VARIABLES: dict[int, str] = {
+        1: "NAV ACTIVE FREQUENCY:1",
+        2: "NAV ACTIVE FREQUENCY:2",
+    }
+
+    def set_nav(self, mhz: float, radio: int = 1) -> bool:
+        """Put a frequency into the aircraft's NAV radio.
+
+        VOR, localizer and -- where the band is tuned -- NDB, in MHz. The
+        Hz event is tried first because it is the only one that can say an
+        NDB frequency; the BCD one is the fallback for the 108-117.95 MHz
+        band. Whether it took is read back off ``NAV ACTIVE FREQUENCY``,
+        not assumed, exactly as the COM radios are.
+        """
+        if not self._connected:
+            return False
+        try:
+            value = float(mhz)
+        except (TypeError, ValueError):
+            return False
+        if not (0.1 <= value <= 118.0):
+            return False
+
+        pair = self._NAV_EVENTS.get(int(radio))
+        variable = self._NAV_VARIABLES.get(int(radio), "")
+        if pair is None or not variable:
+            return False
+        hz_event, bcd_event = pair
+        key = ("nav", int(radio))
+
+        known = self._freq_event_style.get(key)
+        if known == "hz":
+            return self._send(hz_event, round(value * 1_000_000.0))
+        if known == "bcd":
+            packed = encode_bcd16(value)
+            return bool(packed) and self._send(bcd_event, packed)
+
+        if self._nav_reads(variable, value):
+            self._send(hz_event, round(value * 1_000_000.0))
+            return True
+        if self._send(hz_event, round(value * 1_000_000.0)) \
+                and self._nav_took(variable, value):
+            self._freq_event_style[key] = "hz"
+            return True
+        packed = encode_bcd16(value)
+        if packed and self._send(bcd_event, packed) \
+                and self._nav_took(variable, value):
+            self._freq_event_style[key] = "bcd"
+            return True
+        return False
+
+    def _nav_reads(self, variable: str, wanted: float) -> bool:
+        """Whether the NAV radio is already showing a frequency."""
+        found = decode_nav_frequency(self._get(variable))
+        return bool(found) and abs(found - wanted) < 0.005
+
+    def _nav_took(self, variable: str, wanted: float) -> bool:
+        """Whether the NAV radio moved to the frequency just sent."""
+        deadline = time.monotonic() + self.CONFIRM_S
+        while time.monotonic() < deadline:
+            time.sleep(self.CONFIRM_STEP_S)
+            found = decode_nav_frequency(self._get(variable))
+            if found and abs(found - wanted) < 0.005:
+                return True
+        return False
+
+    def set_squawk(self, code: str) -> bool:
+        """Set the transponder, so an assigned code is dialled in for you."""
+        if not self._connected:
+            return False
+        packed = encode_squawk(code)
+        if not packed and str(code).strip("0"):
+            return False
+        return self._send(b"XPNDR_SET", packed)
+
+    def set_variable(self, name: str, value: float,
+                     unit: str = "Number") -> bool:
+        """Write a simulation variable on the user's aircraft.
+
+        For what no event reaches: the throttle lever's position, a fuel
+        selector, a trim. Each name gets one data definition, made on first
+        use; a name the simulator refuses is remembered in ``_unwritable``
+        so the caller's fallback is tried instead of asking every tick.
+        ``unit`` is what the value is in -- the definition is the write's
+        unit too, so gallons ask for "Gallons", not a bare "Number".
+        Returns False when there is no answer, which is never an error --
+        the First Officer flies by events where this cannot write.
+        """
+        if not self._connected or self._sim is None or name in self._unwritable:
+            return False
+        try:
+            from SimConnect import Request
+        except ImportError:
+            return False
+        writer = self._writers.get(name)
+        if writer is None:
+            writer = Request((name.encode(), unit.encode()), self._sim,
+                             _dec=name, _settable=True)
+            self._writers[name] = writer
+        try:
+            writer.value = float(value)
+            # The setter swallows a refused definition, so the flag is the
+            # only answer there is: False until AddToDataDefinition has
+            # been accepted, which is the write's first failure point.
+            if getattr(writer, "defined", False):
+                return True
+            self._unwritable.add(name)
+            self._writers.pop(name, None)
+            return False
+        except Exception as exc:
+            log.debug("simvar write %s failed: %s", name, exc)
+            self._unwritable.add(name)
+            self._writers.pop(name, None)
+            return False
+
+    # ------------------------------------------------------------------
+    # the plan the simulator itself is flying
+    # ------------------------------------------------------------------
+
+    # The request ID "FlightPlan" answers are asked for under. Any value no
+    # other request uses would do; this one is the word's own letters.
+    _FLIGHT_PLAN_REQUEST_ID = 0x464C4E          # "FLN"
+
+    def _capture_system_state(self, sim) -> None:
+        """Keep system-state replies instead of printing them.
+
+        The wrapper routes ``SIMCONNECT_RECV_ID_SYSTEM_STATE`` to
+        ``handle_state_event``, which it writes as a demonstration
+        (``print``) and forgets. The reply to a ``RequestSystemState``
+        call is the only way to learn the loaded plan's path, so the
+        handler is wrapped on this session and the string kept by request
+        ID until :meth:`loaded_flight_plan` comes back for it.
+        """
+        original = getattr(sim, "handle_state_event", None)
+        if original is None or getattr(original, "_wilco_captured", False):
+            return
+        keep = self._system_state
+        lock = self._system_state_lock
+
+        def capture(state):
+            try:
+                text = bytes(state.szString).split(b"\x00", 1)[0].decode(
+                    "utf-8", errors="replace")
+                with lock:
+                    keep[int(state.dwRequestID)] = text
+            except Exception:
+                pass
+            return original(state)
+
+        capture._wilco_captured = True
+        sim.handle_state_event = capture
+
+    # How long to wait for the FlightPlan reply. It normally comes back on
+    # the next frame's dispatch, but a first request on a session can take
+    # a moment; two seconds is long enough to have an answer without making
+    # the situation loop noticeably late.
+    _SYSTEM_STATE_WAIT_S = 2.0
+
+    def loaded_flight_plan(self) -> str | None:
+        """The path of the flight plan the simulator has loaded, or "".
+
+        ``RequestSystemState("FlightPlan")`` is the documented way to ask:
+        the reply's ``szString`` carries the full path of the active .pln,
+        which is "" when none is loaded. The reply is asynchronous -- it
+        arrives on the wrapper's dispatch thread -- so this waits briefly
+        for it, and returns None rather than an empty path when the
+        simulator never answered (an old SimConnect, a blocked session).
+        "" and None are deliberately different: "" is "no plan", None is
+        "no answer".
+        """
+        sim = self._sim
+        if not self._connected or sim is None:
+            return None
+        request_id = self._FLIGHT_PLAN_REQUEST_ID
+        with self._system_state_lock:
+            self._system_state.pop(request_id, None)
+        try:
+            hr = sim.dll.RequestSystemState(
+                sim.hSimConnect, request_id, b"FlightPlan")
+        except Exception:
+            log.debug("RequestSystemState failed", exc_info=True)
+            return None
+        if not sim.IsHR(hr, 0):
+            return None
+        deadline = time.monotonic() + self._SYSTEM_STATE_WAIT_S
+        while time.monotonic() < deadline:
+            with self._system_state_lock:
+                found = self._system_state.pop(request_id, None)
+            if found is not None:
+                return found
+            if not self._connected:
+                return None
+            time.sleep(0.05)
+        return None
+
+    def request_flight_plan(self) -> bool:
+        """Ask for the active plan's path without waiting for the answer.
+
+        The non-blocking half of :meth:`loaded_flight_plan`, for callers on
+        a loop that cannot hold for the reply: this issues the request and
+        :meth:`flight_plan_reply` picks the answer up when the wrapper's
+        dispatch thread has brought it in.
+        """
+        sim = self._sim
+        if not self._connected or sim is None:
+            return False
+        try:
+            hr = sim.dll.RequestSystemState(
+                sim.hSimConnect, self._FLIGHT_PLAN_REQUEST_ID, b"FlightPlan")
+        except Exception:
+            log.debug("RequestSystemState failed", exc_info=True)
+            return False
+        return bool(sim.IsHR(hr, 0))
+
+    def flight_plan_reply(self) -> str | None:
+        """The newest captured ``FlightPlan`` reply, once.
+
+        "" is a real answer -- the simulator has no active plan; None is
+        no answer yet (or one already taken). The reply stays available
+        until asked for, so a caller polling at its own rate cannot miss
+        one that arrived between its ticks.
+        """
+        with self._system_state_lock:
+            return self._system_state.pop(self._FLIGHT_PLAN_REQUEST_ID, None)
+
+    # ------------------------------------------------------------------
+    # fuel
+    # ------------------------------------------------------------------
+
+    # The legacy [FUEL]-section tanks, paired (capacity, quantity), in the
+    # order a real fueller would service them: centre first, then the
+    # mains, then the auxiliaries. Capacities and quantities are in the
+    # wrapper's own request table, so they read through ``_get`` by name.
+    _LEGACY_TANKS: tuple[tuple[str, str], ...] = (
+        ("FUEL_TANK_CENTER_CAPACITY", "FUEL_TANK_CENTER_QUANTITY"),
+        ("FUEL_TANK_LEFT_MAIN_CAPACITY", "FUEL_TANK_LEFT_MAIN_QUANTITY"),
+        ("FUEL_TANK_RIGHT_MAIN_CAPACITY", "FUEL_TANK_RIGHT_MAIN_QUANTITY"),
+        ("FUEL_TANK_CENTER2_CAPACITY", "FUEL_TANK_CENTER2_QUANTITY"),
+        ("FUEL_TANK_CENTER3_CAPACITY", "FUEL_TANK_CENTER3_QUANTITY"),
+        ("FUEL_TANK_LEFT_AUX_CAPACITY", "FUEL_TANK_LEFT_AUX_QUANTITY"),
+        ("FUEL_TANK_RIGHT_AUX_CAPACITY", "FUEL_TANK_RIGHT_AUX_QUANTITY"),
+        ("FUEL_TANK_LEFT_TIP_CAPACITY", "FUEL_TANK_LEFT_TIP_QUANTITY"),
+        ("FUEL_TANK_RIGHT_TIP_CAPACITY", "FUEL_TANK_RIGHT_TIP_QUANTITY"),
+        ("FUEL_TANK_EXTERNAL1_CAPACITY", "FUEL_TANK_EXTERNAL1_QUANTITY"),
+        ("FUEL_TANK_EXTERNAL2_CAPACITY", "FUEL_TANK_EXTERNAL2_QUANTITY"),
+    )
+
+    def fuel_tanks(self) -> list[tuple[str, float, float]]:
+        """(variable name, capacity, quantity) per tank, in gallons.
+
+        Which names is the model's: a 2024 [FUEL_SYSTEM] aircraft has its
+        tanks under ``FUELSYSTEM TANK <index>``, a legacy one under
+        ``FUEL TANK <name>``. Capacity may come back 0 on a model that
+        reports the quantity alone; the tank still counts, because a
+        capacity of 0 is a model that does not publish it, not a tank
+        that holds nothing.
+        """
+        if not self._connected:
+            return []
+        tanks: list[tuple[str, float, float]] = []
+        if bool(self._values.get("new_fuel_system")):
+            count = self._get("FUELSYSTEM_TANK_COUNT") or 0
+            for index in range(1, max(1, int(count)) + 1):
+                cap = self._get(f"FUELSYSTEM_TANK_CAPACITY:{index}")
+                qty = self._get(f"FUELSYSTEM_TANK_QUANTITY:{index}")
+                if cap is None and qty is None:
+                    continue
+                tanks.append((f"FUELSYSTEM TANK QUANTITY:{index}",
+                              float(cap or 0.0), float(qty or 0.0)))
+            if tanks:
+                return tanks
+        for cap_name, qty_name in self._LEGACY_TANKS:
+            cap = self._get(cap_name)
+            qty = self._get(qty_name)
+            if cap is None and qty is None:
+                continue
+            tanks.append((_simvar_name(qty_name),
+                          float(cap or 0.0), float(qty or 0.0)))
+        return tanks
+
+    def set_fuel(self, gallons: float) -> bool:
+        """Put *gallons* of fuel aboard, spread over the tanks it has.
+
+        The turnaround's fallback where GSX cannot be asked: each tank is
+        written in its own scheme (``FUELSYSTEM TANK`` on a [FUEL_SYSTEM]
+        model, ``FUEL TANK`` on a legacy one), centre tanks first as a
+        fueller would, and never past a capacity the model declares. A
+        write that the simulator refuses is answered False, not retried --
+        the caller falls back to asking GSX.
+        """
+        if not self._connected:
+            return False
+        tanks = self.fuel_tanks()
+        if not tanks:
+            # A model that publishes no tanks may still take the total.
+            return self.set_variable("FUEL TOTAL QUANTITY", float(gallons),
+                                     unit="Gallons")
+        remaining = max(0.0, float(gallons))
+        total_cap = sum(cap for _n, cap, _q in tanks)
+        if total_cap > 0.0:
+            remaining = min(remaining, total_cap)
+        wrote = False
+        for name, cap, _qty in tanks:
+            if remaining <= 0.0:
+                break
+            fill = min(remaining, cap) if cap > 0.0 else remaining
+            if self.set_variable(name, fill, unit="Gallons"):
+                remaining -= fill
+                wrote = True
+        return wrote
+
+    def close(self) -> None:
+        self._connected = False
+        self._events.clear()
+        self._freq_event_style.clear()
+        self._writers.clear()
+        self._unwritable.clear()
+        with self._system_state_lock:
+            self._system_state.clear()
+        if self._sim is not None:
+            try:
+                self._sim.exit()
+            except Exception:
+                pass
+            self._sim = None
+            self._requests = None
+
+
+# What an aeroplane calls itself, from what the simulator reports about it.
+#
+# The tables moved to :mod:`wilcoatc.atc.speech`, next to the telephony names
+# they are the inverse of, because the user's aeroplane was not the only thing
+# that needed them: every other aeroplane in the simulator was spelling its
+# registration on the radio for want of exactly this.
+def _radio_callsign(registration: str, airline: str, number: str,
+                    aircraft_type: str = "") -> str:
+    from ..atc.speech import radio_callsign
+
+    return radio_callsign(registration, airline, number, aircraft_type)
+
+
+
+# --------------------------------------------------------------------------
+# offline sources
+# --------------------------------------------------------------------------
+
+
+class ManualSource:
+    """A state the operator sets directly, for use without a simulator.
+
+    Everything in the ATC stack -- frequency resolution, phraseology, voices,
+    ATIS -- can be exercised through this, which is what makes the system
+    testable and demonstrable on a machine with no sim installed.
+    """
+
+    def __init__(self, state: AircraftState | None = None):
+        self._state = state or AircraftState(connected=True, source="manual")
+        self._state.connected = True
+        self._state.source = "manual"
+
+    @property
+    def connected(self) -> bool:
+        return True
+
+    def connect(self) -> bool:
+        return True
+
+    def read(self) -> AircraftState:
+        self._state.timestamp = time.monotonic()
+        # A copy, not the live object. The engine compares the previous read
+        # with the current one to spot a takeoff or a landing, and handing back
+        # the same mutable instance makes every comparison see itself and no
+        # transition ever fire.
+        return replace(self._state)
+
+    def update(self, **fields) -> AircraftState:
+        for key, value in fields.items():
+            if hasattr(self._state, key):
+                setattr(self._state, key, value)
+            else:
+                raise AttributeError(f"AircraftState has no field {key!r}")
+        return self._state
+
+    # The same writing surface the simulator has, so nothing above a source
+    # has to ask which kind it is holding before it tunes a radio.
+
+    def set_com(self, mhz: float, radio: int = 1, standby: bool = False) -> bool:
+        try:
+            value = round(float(mhz), 3)
+        except (TypeError, ValueError):
+            return False
+        if not (118.0 <= value <= 136.999):
+            return False
+        field_name = f"com{int(radio)}_{'standby' if standby else 'active'}"
+        if not hasattr(self._state, field_name):
+            return False
+        setattr(self._state, field_name, value)
+        return True
+
+    def swap_com(self, radio: int = 1) -> bool:
+        active = f"com{int(radio)}_active"
+        standby = f"com{int(radio)}_standby"
+        if not hasattr(self._state, active):
+            return False
+        was = getattr(self._state, active)
+        setattr(self._state, active, getattr(self._state, standby))
+        setattr(self._state, standby, was)
+        return True
+
+    def set_nav(self, mhz: float, radio: int = 1) -> bool:
+        """No radios without a simulator; answered False, not raised."""
+        return False
+
+    def set_squawk(self, code: str) -> bool:
+        text = "".join(c for c in str(code) if c.isdigit())[:4]
+        if len(text) != 4 or any(c not in "01234567" for c in text):
+            return False
+        self._state.transponder_code = text
+        return True
+
+    def pushback(self) -> bool:
+        """No simulator, so no tug. Answered rather than raised, so that a
+        controller working without one still finishes its sentence."""
+        return False
+
+    # The same fuel and plan surface the simulator has, so the autonomous
+    # controller works unchanged on a scripted aeroplane.
+
+    def loaded_flight_plan(self) -> str | None:
+        """No simulator, so no plan it could be holding. None, not ""."""
+        return None
+
+    def request_flight_plan(self) -> bool:
+        """Nothing to ask; there is no simulator to hold a plan."""
+        return False
+
+    def flight_plan_reply(self) -> str | None:
+        return None
+
+    def fuel_tanks(self) -> list:
+        return []
+
+    def set_fuel(self, gallons: float) -> bool:
+        """Refuel the aeroplane the scripted state is flying."""
+        try:
+            value = max(0.0, float(gallons))
+            if self._state.fuel_capacity_gal > 0:
+                value = min(value, self._state.fuel_capacity_gal)
+            self._state.fuel_total_gal = value
+            self._state.fuel_total_lb = value * 6.0
+            return True
+        except Exception:
+            return False
+
+    def close(self) -> None:
+        return None
+
+
+@dataclass
+class ReplayFrame:
+    at_s: float
+    fields: dict
+
+
+class ReplaySource:
+    """Plays a scripted sequence of state changes against a wall clock."""
+
+    def __init__(self, frames: Iterable[ReplayFrame], loop: bool = False,
+                 speed: float = 1.0):
+        self.frames = sorted(frames, key=lambda f: f.at_s)
+        self.loop = loop
+        self.speed = max(0.01, speed)
+        self._state = AircraftState(connected=True, source="replay")
+        self._started = time.monotonic()
+        self._index = 0
+
+    @property
+    def connected(self) -> bool:
+        return True
+
+    def connect(self) -> bool:
+        self._started = time.monotonic()
+        self._index = 0
+        return True
+
+    def read(self) -> AircraftState:
+        elapsed = (time.monotonic() - self._started) * self.speed
+        while self._index < len(self.frames) and self.frames[self._index].at_s <= elapsed:
+            for key, value in self.frames[self._index].fields.items():
+                if hasattr(self._state, key):
+                    setattr(self._state, key, value)
+            self._index += 1
+        if self.loop and self._index >= len(self.frames) and self.frames:
+            self._started = time.monotonic()
+            self._index = 0
+        self._state.timestamp = time.monotonic()
+        return replace(self._state)
+
+    # The fuel and plan calls a real source answers; a replay is what it
+    # is, so these are polite no-ops rather than missing methods.
+    def loaded_flight_plan(self) -> str | None:
+        return None
+
+    def request_flight_plan(self) -> bool:
+        return False
+
+    def flight_plan_reply(self) -> str | None:
+        return None
+
+    def fuel_tanks(self) -> list:
+        return []
+
+    def set_fuel(self, gallons: float) -> bool:
+        return False
+
+    def close(self) -> None:
+        return None
+
+
+def open_source(prefer_sim: bool = True, poll_interval: float = 0.25):
+    """Connect to the simulator if it is running, otherwise fall back."""
+    if prefer_sim:
+        source = SimConnectSource(poll_interval=poll_interval)
+        if source.connect():
+            return source
+    return ManualSource()

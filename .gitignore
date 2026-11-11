@@ -1,0 +1,48 @@
+.venv/
+.venv-hq/
+.venv.zip
+build/
+dist/
+__pycache__/
+*.pyc
+logs/
+out/
+bench/
+bench_run.log
+*.orig
+.pytest_cache/
+.write-test
+
+# Downloaded assets. Recreate with: python -m wilcoatc setup
+data/navdata/*.csv
+data/navdata/*.geojson
+data/navdata/VATSpy.dat
+data/navdata/nav.sqlite
+data/voices/
+data/models/
+data/metar_cache.json
+
+# Local corrections are yours to keep, so these are tracked:
+!data/navdata/overrides.csv
+!data/navdata/preferred_runways.csv
+!data/navdata/minimum_altitudes.csv
+!data/navdata/service_hours.csv
+!data/navdata/circuits.csv
+!data/navdata/circuits_faa.csv
+!data/navdata/vrps.csv
+!data/navdata/vrps_faa.csv
+!data/navdata/airspace.csv
+!data/navdata/airspace_faa.csv
+!data/navdata/fir_frequencies.csv
+!data/navdata/sectors_faa.csv
+!data/navdata/centre_sites_faa.csv
+!data/navdata/sectors.csv
+!data/navdata/taxiway_words.csv
+!data/navdata/SOURCES.md
+
+# Recordings of real frequencies that reference clips are cut from
+# (scripts/clone_prompts.py). Somebody else's audio; never committed.
+new_voices_cloning/
+
+# One machine's own settings on top of config.yaml (wilcoatc.config.Config.load).
+config.local.yaml
