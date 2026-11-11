@@ -1,9 +1,9 @@
 """Put the toolbar panel where the simulator will find it, from a checkout.
 
-A pilot does not run this: WilcoATC-Setup.exe installs the panel into every
+A pilot does not run this: MeridianATC-Setup.exe installs the panel into every
 Community folder it finds (the "Toolbar panel" switch on its Flight Simulator
 screen). This is the same thing for a developer working in the tree; the work
-itself is ``wilcoatc/msfs_panel.py``.
+itself is ``meridianatc/msfs_panel.py``.
 
     python msfs/install_panel.py              # find the simulator and install
     python msfs/install_panel.py --check      # say what it would do
@@ -19,8 +19,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from wilcoatc.msfs_panel import (NAME, community_folders, files_in,  # noqa: E402
-                                 install, layout_for)
+from meridianatc.msfs_panel import (NAME, community_folders, files_in,  # noqa: E402
+                                    install, layout_for)
 
 PACKAGE = HERE / "package"
 __all__ = ["NAME", "PACKAGE", "community_folders", "files_in", "install", "layout_for"]

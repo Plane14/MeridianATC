@@ -1,6 +1,6 @@
 /*
  * The toolbar panel, inside the simulator: three tabs -- Comms, Flight,
- * Settings -- from the "WilcoATC Toolbar Panel" design.
+ * Settings -- from the "MeridianATC Toolbar Panel" design.
  *
  * It contains no air traffic control at all. The phraseology, the voices, the
  * speech recognition and the transcript all live in the application; this
@@ -11,7 +11,7 @@
  * holds the two together. They stay English whatever the panel is read in:
  * they are transmissions, and the radio is English.
  *
- * Its words are the program's: the language set in WilcoATC (ui.language)
+ * Its words are the program's: the language set in MeridianATC (ui.language)
  * and the panel's own catalogue for it, which the application serves
  * (/i18n/<code>.json, the "tb.*" keys). The English written beside each key
  * here is what shows until that arrives, or if it never does.
@@ -793,7 +793,7 @@
         // makes (FlyByWire's EFB, among them): claim the keyboard on focus,
         // give it back on blur. Guarded, because outside the simulator there
         // is no Coherent to tell.
-        var guid = 'wilcoatc-say-' + Date.now();
+        var guid = 'meridianatc-say-' + Date.now();
         function coherent(name) {
             try {
                 if (typeof Coherent === 'undefined' || !Coherent.trigger) return;

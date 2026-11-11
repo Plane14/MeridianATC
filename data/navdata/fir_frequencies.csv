@@ -7,7 +7,7 @@
 # of them. Without a frequency, the controller of a FIR could not be handed
 # to, and the flight went silent at the boundary. A FIR not listed here
 # borrows a centre row filed at a field that names it, else gets a frequency
-# invented for it and logged as invented (wilcoatc/atc/enroute.py).
+# invented for it and logged as invented (meridianatc/atc/enroute.py).
 #
 # FORMAT
 #

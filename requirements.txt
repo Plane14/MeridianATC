@@ -39,7 +39,7 @@ SimConnect>=0.4.26 ; sys_platform == "win32"
 # --- the interface ---
 # The window is a native one drawn by pywebview, over Edge WebView2 on Windows.
 # fastapi carries the engine's state to it over loopback, and serves the same
-# panel to a browser or a tablet when you ask for that with `wilcoatc gui`.
+# panel to a browser or a tablet when you ask for that with `meridianatc gui`.
 fastapi>=0.110
 uvicorn[standard]>=0.27
 pywebview>=5.1

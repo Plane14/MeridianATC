@@ -13,7 +13,7 @@ bench_run.log
 .pytest_cache/
 .write-test
 
-# Downloaded assets. Recreate with: python -m wilcoatc setup
+# Downloaded assets. Recreate with: python -m meridianatc setup
 data/navdata/*.csv
 data/navdata/*.geojson
 data/navdata/VATSpy.dat
@@ -44,5 +44,5 @@ data/metar_cache.json
 # (scripts/clone_prompts.py). Somebody else's audio; never committed.
 new_voices_cloning/
 
-# One machine's own settings on top of config.yaml (wilcoatc.config.Config.load).
+# One machine's own settings on top of config.yaml (meridianatc.config.Config.load).
 config.local.yaml

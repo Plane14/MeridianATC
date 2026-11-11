@@ -1,4 +1,4 @@
-# ✈️ WilcoATC
+# ✈️ MeridianATC
 
 **Real air traffic control for Microsoft Flight Simulator 2024 — running entirely on your PC.**
 
@@ -178,9 +178,9 @@ it's the carrier, said as before; 121.500 is 121.500 everywhere. The panel
 shows the same number the controller says.
 
 ```bash
-python -m wilcoatc freq LFPG          # both numbers, side by side
-python -m wilcoatc freq --audit       # check the whole table
-python -m wilcoatc freq --audit --fix # and correct what can be corrected
+python -m meridianatc freq LFPG          # both numbers, side by side
+python -m meridianatc freq --audit       # check the whole table
+python -m meridianatc freq --audit --fix # and correct what can be corrected
 ```
 
 The audit found a bonus bug. A frequency written to two decimals loses its last
@@ -214,7 +214,7 @@ It happens by itself, once per airport, on its own thread. Ask for one
 deliberately — a destination, before you get there — with:
 
 ```bash
-python -m wilcoatc freq LFPG --from-sim
+python -m meridianatc freq LFPG --from-sim
 ```
 
 Four rules keep that an improvement rather than a different flavour of wrong.
@@ -228,14 +228,14 @@ is 121.610 at de Gaulle exactly as the simulator's menu offers it.
 Reading them needs a SimConnect library new enough to answer facility
 questions; the one bundled with the Python wrapper isn't. The MSFS SDK ships
 one and the usual places are searched, so this normally needs no setup.
-`python -m wilcoatc doctor` says which list is in use. Turn it off with
+`python -m meridianatc doctor` says which list is in use. Turn it off with
 `sim.frequencies_from_sim`, or name a library with `sim.simconnect_dll`.
 
 **No simulator?** The published data is used, and a frequency it lacks can be
 written down once:
 
 ```bash
-python -m wilcoatc freq LFPG --add GND 123.605 --name "De Gaulle Ground"
+python -m meridianatc freq LFPG --add GND 123.605 --name "De Gaulle Ground"
 ```
 
 That takes effect immediately and is written to `overrides.csv`, so it
@@ -286,7 +286,7 @@ but not spoken; the plan's approach isn't read, because no field for it was
 confirmed:
 
 ```bash
-python -m wilcoatc simbrief yourname --save
+python -m meridianatc simbrief yourname --save
 ```
 
 or press *Load latest flight* under Settings.
@@ -344,7 +344,7 @@ ground crew say so rather than acknowledging a truck that isn't coming. Set
 without your own voice doing the same.
 
 ```bash
-python -m wilcoatc gsx        # what is connected, and how it is being read
+python -m meridianatc gsx        # what is connected, and how it is being read
 ```
 
 ---
@@ -355,7 +355,7 @@ There's a manual, and it's *generated* rather than written:
 
 ```bash
 pip install fpdf2
-python scripts/make_manual.py        # out/wilcoatc-phraseology.pdf
+python scripts/make_manual.py        # out/meridianatc-phraseology.pdf
 ```
 
 Forty-seven pages: how to work the radio, which language is worked where, a
@@ -503,9 +503,9 @@ one is still drawn boldly, and it's the only one named.
 
 ## 🎮 The panel in the simulator
 
-A WilcoATC button in the simulator's own toolbar, beside GSX and the camera
+A MeridianATC button in the simulator's own toolbar, beside GSX and the camera
 controls, that opens the radio without leaving the cockpit view.
-`WilcoATC-Setup.exe` puts it in every Community folder it finds (the "Toolbar
+`MeridianATC-Setup.exe` puts it in every Community folder it finds (the "Toolbar
 panel" switch on its Flight Simulator screen), and its uninstaller takes it
 out again; restart the simulator after installing. From a checkout,
 `python msfs/install_panel.py` does the same.
@@ -744,7 +744,7 @@ object. It was measured on a running 2024 and it's the only route that works —
 writing the exit variable to an AI aeroplane is accepted and ignored. Which
 door the stairs open and which hold the loader opens is a *role* (`pax_l1`,
 `cargo_fwd`), and which interactive point that is on a given model is in a
-table, `wilcoatc/integrations/doors.json`, matched on the simulator title: on
+table, `meridianatc/integrations/doors.json`, matched on the simulator title: on
 the Asobo A321 the passenger doors are points 0–3 and the holds 6 and 7,
 verified by watching them. A model with no entry has its doors left alone.
 `scripts/scan_doors.py` stands a model in front of you, opens each point in
@@ -761,7 +761,7 @@ departure whose doors are still closing after five minutes
 (`traffic.doors_force_after_s`) has the close forced, with a warning, rather
 than waiting for ever. Each aeroplane's doors run `at_gate -> turnaround ->
 closing -> ready_for_push`, and nothing of this program's pushes before its
-doors are read shut. The record of all of it is on the `wilcoatc.doors`
+doors are read shut. The record of all of it is on the `meridianatc.doors`
 logger, which `logging.apron: false` quiets.
 
 Each vehicle goes to the door it serves, read off the aeroplane itself: the
@@ -771,7 +771,7 @@ alike), once per model. The stairs go to the foremost left passenger door, the
 aft stairs to the aftmost, the caterer to the foremost right one, a loader to
 each main hold (not the bulk door), the fuel truck to the right wing's fuel
 point, the power unit to the socket; how far out, and which way the vehicle
-faces, is in `wilcoatc/atc/service_layout.json`, with a correction per vehicle
+faces, is in `meridianatc/atc/service_layout.json`, with a correction per vehicle
 model for where its maker put its origin. `scripts/place_vehicle.py --role
 stairs` puts an aeroplane and a vehicle in front of you, lets you nudge the
 vehicle with the keyboard and saves that correction. A model that reports
@@ -816,7 +816,7 @@ removed. Its doors go with it — whatever was open is opened on the new model �
 and the aeroplane is the same aeroplane throughout: same callsign, same strip,
 same place in the sequence. The radio never hears of it. Swaps are spaced at
 half a second each (`traffic.lod.swaps_per_s`) because each one is a model
-loading, and all of it is on the `wilcoatc.lod` logger. `traffic.lod.enabled:
+loading, and all of it is on the `meridianatc.lod` logger. `traffic.lod.enabled:
 false` switches the whole thing off, and then every aeroplane is drawn exactly
 as it was before: FSLTL's painted model if FSLTL is there, the simulator's own
 otherwise, and nothing is ever swapped. `traffic.lod.models` names models of
@@ -875,7 +875,7 @@ traffic:
     time_scale: 1.0       # 5 runs the turnaround and boarding five times faster
 ```
 
-The status lines go to `logs/wilcoatc.log` on the `wilcoatc.traffic.debug`
+The status lines go to `logs/meridianatc.log` on the `meridianatc.traffic.debug`
 logger: callsign, type, stand, level, window (`arrival`, `parked`,
 `pre_boarding`, `boarding`, `closed`, `moving`), every door (`pax_l1=shut>open`
 is a door shut and wanted open), and what happens next and when ("boarding in
@@ -1096,7 +1096,7 @@ folder beside `config.yaml`, or `piston_single.json` for a whole class. It
 replaces each checklist it names and leaves the others, is read again as soon
 as you save it, and a mistake in it is reported in `logs crew` rather than
 stopping anything. The format, with an example, is
-`wilcoatc/atc/checklists/README.md` (in an installed copy, the same folder
+`meridianatc/atc/checklists/README.md` (in an installed copy, the same folder
 under `_internal`).
 
 **One microphone.** There's no second key. A bare answer reaches the first
@@ -1142,7 +1142,7 @@ it's dropped, and `logs crew` says so.
 two" (or "V one ..., rotate ..., V two ...", "approach speed six five") and the
 first officer reads them back and calls them. Otherwise the rotation speed is
 the model's own where the simulator gives one, then the type's from a table
-with its source (`wilcoatc/atc/vspeeds.py`: the C172, PA-28, DA40, SR22 and
+with its source (`meridianatc/atc/vspeeds.py`: the C172, PA-28, DA40, SR22 and
 TBM from their handbooks), then the class's, marked unverified. A jet's V1
 depends on the day's weight, so with none stated it's called only where a
 published set exists. "Minimums two five zero" sets the minimums; with none,
@@ -1195,15 +1195,15 @@ radio yours entirely.
 
 **Study-level add-ons** (Fenix, PMDG, the Aerosoft CRJ, FlyByWire...) run
 their own switches, so a checklist answer can't be checked against the
-simulator's. Their files, in `wilcoatc/atc/checklists/types/`, are matched on
+simulator's. Their files, in `meridianatc/atc/checklists/types/`, are matched on
 the simulator's title and leave everything but the gear and flaps unchecked;
 every disagreement the first officer does see is a `mismatch` line in `logs
 crew`, with the aircraft's title, so the list can grow.
 
 **Autonomous flight, fixed-wing.** `immersion.autonomous_flight` flies the
-aeroplane itself from startup to shutdown (`wilcoatc/atc/autonomous.py`,
-with the hands in `wilcoatc/atc/ap.py` and the geometry in
-`wilcoatc/atc/auto_nav.py`). The First Officer runs the before-start
+aeroplane itself from startup to shutdown (`meridianatc/atc/autonomous.py`,
+with the hands in `meridianatc/atc/ap.py` and the geometry in
+`meridianatc/atc/auto_nav.py`). The First Officer runs the before-start
 checklist, sets the squawk, altimeter and lights, starts the engines, sits
 through pushback until the aeroplane stops, taxis the route the tower
 planned (`session.taxi_path`), holds short, lines up on the centreline,
@@ -1213,7 +1213,7 @@ autopilot for the climb, cruise and descent. Descent is planned from the
 distance to the field (~318 ft per mile on the three-degree path) and the
 aeroplane is configured by height: gear, then approach and final flap,
 speedbrakes armed. On the descent it resolves the approach the controller
-actually cleared (`session.approach_choice`, via `wilcoatc/atc/
+actually cleared (`session.approach_choice`, via `meridianatc/atc/
 approach_flight.py`) and tunes NAV1 to the procedure's own navaid — the
 localizer, the VOR or the NDB — so the needles are alive before the final.
 How it is flown depends on the kind: an ILS with live localizer and
@@ -1255,7 +1255,7 @@ empty fuel, or a fuel figure that was seen and then reads zero all declare
 a MAYDAY, divert to the nearest suitable field and land there.
 
 **Autonomous flight in a helicopter.** `immersion.autonomous_flight` flies a
-rotorcraft too, through its own controller (`wilcoatc/atc/autonomous_heli.py`)
+rotorcraft too, through its own controller (`meridianatc/atc/autonomous_heli.py`)
 rather than the aeroplane's: engine start on a best-effort basis (the
 generic start event plus the rotor governor where the model answers it —
 MSFS has no universal helicopter start), a hover check, the transition at
@@ -1401,7 +1401,7 @@ immersion:
   service: true              # the trolley
   chimes: true
   recordings: true           # play your own files where you have them
-  recordings_dir: ''         # empty is the folder beside WilcoATC
+  recordings_dir: ''         # empty is the folder beside MeridianATC
   volume: 0.8                # relative to the radio, which stays where it is
   airline: ''                # empty derives it from the callsign
   verbosity: normal          # quiet | normal | chatty
@@ -1810,7 +1810,7 @@ it are loaded too, because that's the one that costs a gigabyte.
 
 It runs on four threads. That's the knee of the curve rather than a cap: eight
 buys another quarter and leaves the simulator with fewer cores, which isn't a
-trade this program gets to make on somebody's behalf. `WILCOATC_TTS_THREADS`
+trade this program gets to make on somebody's behalf. `MERIDIANATC_TTS_THREADS`
 overrides it for a machine that isn't average.
 
 **Twenty-five controllers out of eighteen speakers.** Kokoro publishes its
@@ -1875,7 +1875,7 @@ takes to say it, where Kokoro does it in a tenth. On a card it's a tenth or
 better — but the card is drawing the simulator, which is the whole reason the
 CPU tier exists.
 
-**From the release:** download WilcoATC-HQ rather than WilcoATC. It's the same
+**From the release:** download MeridianATC-HQ rather than MeridianATC. It's the same
 program with torch and Chatterbox inside it, about a gigabyte more, and its
 setup screen has one more tick box, "Use cloned controller voices". Tick it
 and press Download: the model arrives (about 2 GB), sixteen controllers are
@@ -1883,7 +1883,7 @@ put in the voice folder, and the controllers switch over when it's done — no
 restart and no config file.
 
 Those sixteen are open-licence speakers, eight American and eight English, cut
-from the CSTR VCTK corpus (CC BY 4.0); `wilcoatc/audio/clones/ATTRIBUTION.md`
+from the CSTR VCTK corpus (CC BY 4.0); `meridianatc/audio/clones/ATTRIBUTION.md`
 says who. Three clips of an accent are enough to staff a field on their own,
 so with them every position at an American or British field is a clone.
 
@@ -1892,14 +1892,14 @@ so with them every position at an American or British field is a clone.
 ```bash
 pip install -r requirements-hq.txt               # torch (CPU) and what Chatterbox needs
 pip install --no-deps chatterbox-tts==0.1.7      # the package, without its own pins
-python -m wilcoatc setup --hq                    # the standard model, about 2 GB
+python -m meridianatc setup --hq                    # the standard model, about 2 GB
 ```
 
 `--no-deps` is not optional. chatterbox-tts declares numpy below 2 on Python
 3.12, and Kokoro needs 2: installed the ordinary way it takes the CPU voices
 down with it. It works on numpy 2 (measured; the whole suite passes beside
 it). `.\build.ps1 -HQ` does the same into its own `.venv-hq` and builds
-`dist\WilcoATC-HQ`.
+`dist\MeridianATC-HQ`.
 
 To add a controller of your own, put a clip in
 `data/voices/chatterbox/prompts/`, named for who they are —
@@ -2196,10 +2196,10 @@ and leaves it to your ears. 👂
 Add just the ones you want:
 
 ```bash
-python -m wilcoatc.audio.voices --download         # Supertonic, the British
+python -m meridianatc.audio.voices --download         # Supertonic, the British
                                                    # and French Piper voices
-python -m wilcoatc.audio.voices --voices ru,pl     # one country's accent
-python -m wilcoatc.audio.voices --all              # every accent, about 3.2 GB
+python -m meridianatc.audio.voices --voices ru,pl     # one country's accent
+python -m meridianatc.audio.voices --all              # every accent, about 3.2 GB
 ```
 
 ---
@@ -2275,7 +2275,7 @@ the rules handled, how many needed the model, and how many nobody understood.
 ```bash
 python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt
-.venv\Scripts\python -m wilcoatc setup
+.venv\Scripts\python -m meridianatc setup
 ```
 
 `setup` downloads the navigation data, builds the database if there isn't one
@@ -2289,7 +2289,7 @@ Supertonic and the British and French Piper voices. Add `--all-voices` for
 every other country's accent, which is another 2.3 GB.
 
 **Or skip all of that and just start it.** Nothing above is required, because
-the program downloads its own parts. Start WilcoATC on a machine where nothing
+the program downloads its own parts. Start MeridianATC on a machine where nothing
 has been fetched and it opens on the setup panel: three lines, three bars, one
 Download button. This is the path that matters, because the pilot most likely
 to be missing a component is the one who installed this by double-clicking an
@@ -2306,8 +2306,8 @@ rebuilding it.
 Check it worked:
 
 ```bash
-.venv\Scripts\python -m wilcoatc doctor        # everything, including the sim link
-.venv\Scripts\python -m wilcoatc sound-test    # plays a tone and a controller
+.venv\Scripts\python -m meridianatc doctor        # everything, including the sim link
+.venv\Scripts\python -m meridianatc sound-test    # plays a tone and a controller
 ```
 
 `doctor` names the audio device you'll actually hear and, when the simulator
@@ -2318,7 +2318,7 @@ position.
 The same report is in the window, under **Settings → Diagnostics**, with a
 Copy button because most of what it's for is being pasted into a bug report.
 It isn't a second implementation: both render one set of checks from
-`wilcoatc/health.py`, so the window and the terminal can't start disagreeing
+`meridianatc/health.py`, so the window and the terminal can't start disagreeing
 about a machine and leave nobody able to say which is right.
 
 ---
@@ -2355,9 +2355,9 @@ bucket it doesn't belong in.
 
 - **No UPX, ever.** Compressing the executable is the single strongest
   trigger, and it buys a few megabytes of a package that's measured in
-  hundreds. `upx=False` in `wilcoatc.spec`, in all three places.
+  hundreds. `upx=False` in `meridianatc.spec`, in all three places.
 - **A version resource.** Product name, company, version, description and
-  copyright, stamped into both executables from `wilcoatc/__init__.py`. A file
+  copyright, stamped into both executables from `meridianatc/__init__.py`. A file
   that names itself is treated differently from a file that doesn't, and it
   gives you something to read in Properties when you've just been warned
   about it.
@@ -2427,7 +2427,7 @@ Windows tries to load the interpreter:
 LoadLibrary: The specified module could not be found.
 ```
 
-From `WilcoATC.exe`, which has no console, that arrives as a message box
+From `MeridianATC.exe`, which has no console, that arrives as a message box
 about a missing DLL and nothing else. The natural reading is that the build
 is fine and the computer is short of a runtime, so people go looking for
 Visual C++ redistributables they already have.
@@ -2458,7 +2458,7 @@ repair: delete `dist\` and `build\` and run `.\build.ps1` again.
 Start the simulator, get to the aircraft, then:
 
 ```bash
-.venv\Scripts\python -m wilcoatc
+.venv\Scripts\python -m meridianatc
 ```
 
 That opens the application. One window, four screens, nothing served to the
@@ -2497,14 +2497,14 @@ file, and the few that need a restart say so rather than pretending.
 Two other ways in:
 
 ```bash
-.venv\Scripts\python -m wilcoatc console   # the terminal, no window
-.venv\Scripts\python -m wilcoatc gui       # the same panel, in a browser
+.venv\Scripts\python -m meridianatc console   # the terminal, no window
+.venv\Scripts\python -m meridianatc gui       # the same panel, in a browser
 ```
 
 `gui` is for a second monitor or a tablet next to the yoke:
 
 ```bash
-.venv\Scripts\python -m wilcoatc gui --host 0.0.0.0
+.venv\Scripts\python -m meridianatc gui --host 0.0.0.0
 ```
 
 then open `http://<your-pc>:8787` on the tablet. Only do that on a network you
@@ -2521,7 +2521,7 @@ radios. Two things it can't tell us are your destination and your filed
 cruise altitude, so give them either in `config.yaml` or on the command line:
 
 ```bash
-.venv\Scripts\python -m wilcoatc --destination KBOS
+.venv\Scripts\python -m meridianatc --destination KBOS
 ```
 
 You can also type instead of talking, which is handy for testing and works
@@ -2663,9 +2663,9 @@ Everything except the sim link works standalone, which is the easiest way to
 audition voices for the airports you fly from.
 
 ```bash
-python -m wilcoatc freq EGLL              # every frequency, and how it is spoken
-python -m wilcoatc atis KSFO --play       # live-weather ATIS, spoken
-python -m wilcoatc say "Delta twelve thirty four, runway three one left, cleared for takeoff." \
+python -m meridianatc freq EGLL              # every frequency, and how it is spoken
+python -m meridianatc atis KSFO --play       # live-weather ATIS, spoken
+python -m meridianatc say "Delta twelve thirty four, runway three one left, cleared for takeoff." \
     --airport KJFK --position TWR
 python scripts/demo.py --out out/demo.wav            # a whole departure
 python scripts/demo_bilingual.py --out out/demo_fr.wav  # the same, in French and English
@@ -2679,7 +2679,7 @@ and it parks the aircraft there, so the frequencies resolve and you can fly
 the radio on its own:
 
 ```bash
-python -m wilcoatc --no-sim --departure KJFK --destination KBOS
+python -m meridianatc --no-sim --departure KJFK --destination KBOS
 ```
 
 Tuning works from the Frequencies screen either way. See below.
@@ -2829,7 +2829,7 @@ lets go of the microphone, and is picked up again when it comes back.
 From the command line:
 
 ```bash
-python -m wilcoatc controllers   # each controller's id, name and buttons
+python -m meridianatc controllers   # each controller's id, name and buttons
 ```
 
 If the settings screen says there's no controller, it says which of three
@@ -2853,7 +2853,7 @@ It used to be asked from several: the settings screen restarted SDL's
 joystick subsystem from its own thread to rebuild the list, push-to-talk read
 the button from another, and while a button was being read the restart was
 skipped altogether. On Windows SDL hears of a new device through a window
-only the thread that made it can read, so a yoke plugged in after WilcoATC
+only the thread that made it can read, so a yoke plugged in after MeridianATC
 started could stay invisible for the whole flight.
 
 ---
@@ -3691,7 +3691,7 @@ non-commercial use. Off by default.
 
 **Who flies the traffic** is your choice, on the same card, and it takes
 effect at the next session:
-- **WilcoATC** shows the live flights and fills the gaps with invented ones.
+- **MeridianATC** shows the live flights and fills the gaps with invented ones.
   Turn FSLTL's own injector off for this mode.
 - **FSLTL** flies the traffic and the controllers work its aircraft; no live
   feed is asked for.
@@ -3739,8 +3739,8 @@ it, for the TCAS, is an option for later. What's sent is in [What leaves your
 machine](#-what-leaves-your-machine).
 
 ```bash
-WilcoATC-console.exe traffic --live --dry-run --airport EBBR --minutes 10
-WilcoATC-console.exe traffic --live --minutes 20
+MeridianATC-console.exe traffic --live --dry-run --airport EBBR --minutes 10
+MeridianATC-console.exe traffic --live --minutes 20
 ```
 
 The first command runs the whole pipeline with no simulator and logs what
@@ -3766,12 +3766,12 @@ network:
 ```
 
 If a human is transmitting on the frequency in COM1, within range of the
-aeroplane, WilcoATC says nothing on it at all. Not an answer, not an
+aeroplane, MeridianATC says nothing on it at all. Not an answer, not an
 advisory, not a handoff, not a readback chased, and not the invented traffic:
 
 ```
 121.705 - EGLL_2_GND (Dan Nicks) on VATSIM is working this frequency.
-          WilcoATC will stay quiet on it.
+          MeridianATC will stay quiet on it.
 ```
 
 Tune away, or wait for them to log off, and it has the frequency back and
@@ -3795,9 +3795,9 @@ generated one anyway.
 See who's on before you fly:
 
 ```bash
-python -m wilcoatc online              # everybody
-python -m wilcoatc online EGLL         # just that field
-python -m wilcoatc online --provider ivao
+python -m meridianatc online              # everybody
+python -m meridianatc online EGLL         # just that field
+python -m meridianatc online --provider ivao
 ```
 
 ```
@@ -4040,7 +4040,7 @@ once per frequency rather than on every call.
 
 Two files let you fix anything wrong near you without touching code. Both are
 applied when the database is rebuilt, so run `python -m
-wilcoatc.navdata.build` afterwards.
+meridianatc.navdata.build` afterwards.
 
 - `data/navdata/overrides.csv` corrects or adds a frequency. Its main use is
   airports whose only published ATIS is the VOR-collocated one below 118 MHz,
@@ -4067,18 +4067,18 @@ question.
 
 | File | What it answers |
 |---|---|
-| `wilcoatc.log` | what happened, with levels, module names and tracebacks |
-| `wilcoatc.jsonl` | the same records as JSON lines, with whatever fields the call site attached |
+| `meridianatc.log` | what happened, with levels, module names and tracebacks |
+| `meridianatc.jsonl` | the same records as JSON lines, with whatever fields the call site attached |
 | `radio.jsonl` | every transmission, with the intent, the confidence and the numbers the parser took out of it -- and where each taxi route came from: the simulator's taxiways, or the invented route and why |
 
 The third one is the reason this exists. "It heard me wrong" becomes a
 question with an answer:
 
 ```bash
-python -m wilcoatc logs                # the transcript, with the reading
-python -m wilcoatc logs app -n 200     # the application log
-python -m wilcoatc logs json           # the same, as JSON lines
-python -m wilcoatc logs where          # which files exist, and how big
+python -m meridianatc logs                # the transcript, with the reading
+python -m meridianatc logs app -n 200     # the application log
+python -m meridianatc logs json           # the same, as JSON lines
+python -m meridianatc logs where          # which files exist, and how big
 ```
 
 ```
@@ -4115,8 +4115,8 @@ logging:
   keep_days: 14         # 0 keeps everything
 ```
 
-After a flight, `logs arrival` (`WilcoATC-console.exe logs arrival`, or
-`python -m wilcoatc logs arrival` in a checkout) prints why the arrival was
+After a flight, `logs arrival` (`MeridianATC-console.exe logs arrival`, or
+`python -m meridianatc logs arrival` in a checkout) prints why the arrival was
 worked the way it was, beside what was said unprompted: the simulator's raw
 approach data and whether it was believed, each descent with the source of
 its floor (the sector altitude or the intercept), each approach and landing
@@ -4180,7 +4180,7 @@ worth knowing about:
 | `ptt.key` | `grave` | any key you do not use in the sim |
 | `atc.dialect` | `auto` | force `faa` or `icao` instead of following the region |
 | `atc.strict_icao_digits` | `false` | `true` for by-the-book "tree", "fower", "fife" |
-| `voice.seed` | `wilcoatc` | change it to reshuffle the entire cast of controllers |
+| `voice.seed` | `meridianatc` | change it to reshuffle the entire cast of controllers |
 | `audio.radio_effects` | `true` | `false` to hear the raw synthesised voice |
 | `weather.prefer_sim` | `true` | `false` to always use the real-world observation |
 | `network.provider` | `none` | `vatsim` or `ivao` to stand down where a person is on frequency |
@@ -4401,7 +4401,7 @@ python scripts/make_world.py
 
 ---
 
-*WilcoATC is a simulator toy. Enjoy the radio, don't fly real aeroplanes with
+*MeridianATC is a simulator toy. Enjoy the radio, don't fly real aeroplanes with
 it, and don't confuse its phraseology with current published procedure.*
 **Happy landings! 🛬**
 

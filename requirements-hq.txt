@@ -1,6 +1,6 @@
 # The HQ build's extra half: torch and Chatterbox, the cloned voices.
 #
-#   .\build.ps1 -HQ        installs this into .venv-hq and builds dist\WilcoATC-HQ
+#   .\build.ps1 -HQ        installs this into .venv-hq and builds dist\MeridianATC-HQ
 #
 # By hand, in a venv that already has requirements.txt:
 #

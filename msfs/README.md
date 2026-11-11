@@ -1,20 +1,20 @@
 # The toolbar panel
 
 A button in the simulator's own toolbar, next to GSX and the camera controls,
-that opens WilcoATC without leaving the cockpit view.
+that opens MeridianATC without leaving the cockpit view.
 
-`WilcoATC-Setup.exe` installs it into every Community folder it finds, and its
-uninstaller removes it (`wilcoatc/msfs_panel.py` does the copying for both).
+`MeridianATC-Setup.exe` installs it into every Community folder it finds, and its
+uninstaller removes it (`meridianatc/msfs_panel.py` does the copying for both).
 From a checkout:
 
 ```
 python msfs/install_panel.py
 ```
 
-Then restart the simulator. The button is the WilcoATC aeroplane, in the
+Then restart the simulator. The button is the MeridianATC aeroplane, in the
 toolbar.
 
-The panel is the "WilcoATC Toolbar Panel" design -- three tabs, Comms, Flight
+The panel is the "MeridianATC Toolbar Panel" design -- three tabs, Comms, Flight
 and Settings -- in the glass of the desktop window. The description of the
 single-card layout below is the panel it replaced, kept for the history of
 why the frequency is the largest thing on it.
@@ -122,7 +122,11 @@ it from what it actually copied, so it cannot drift.
 2. The simulator reads packages at startup. A restart is required, not a
    flight reload.
 3. `wilcoatc.spb` is what registers the button, and it is compiled. If it ever
+3. `wilcoatc.spb` is what registers the button, and it is compiled. If it ever
+   needs rebuilding, `source/wilcoatc.xml` is the input and the SDK's
    needs rebuilding, `source/wilcoatc.xml` is the input and the SDK's
    `fspackagetool` is what compiles it. The `Id` in it must match the
+   `fspackagetool` is what compiles it. The `Id` in it must match the
+   `panel-id` attribute in `WilcoATC.html`: the toolbar knows the button by
    `panel-id` attribute in `WilcoATC.html`: the toolbar knows the button by
    that id and the page answers to it.

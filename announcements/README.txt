@@ -1,7 +1,7 @@
 Recorded cabin announcements
 ============================
 
-Put audio files in the Announcements folder beside this one and WilcoATC will
+Put audio files in the Announcements folder beside this one and MeridianATC will
 play them instead of its synthesised cabin crew.
 
     announcements/
@@ -49,7 +49,7 @@ is fine. A moment that has neither is simply silent.
 
 Two of them are not Fenix's. CaptainWelcome is a moment this program has and
 that aeroplane does not, because there the captain is the person flying it.
-BoardingMusic is in every pack, but where you have no file for it WilcoATC
+BoardingMusic is in every pack, but where you have no file for it MeridianATC
 now plays a quiet bed of its own instead of nothing; your file still wins.
 
 Choosing between several files

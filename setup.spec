@@ -1,10 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""WilcoATC-Setup.exe: one file that installs the program (wilcoatc/installer).
+"""MeridianATC-Setup.exe: one file that installs the program (meridianatc/installer).
 
 Built by ``build.ps1 -Setup`` after the program itself, because it carries
-it: ``WILCOATC_SETUP_PAYLOAD`` names the zip made by
-``wilcoatc.installer.pack`` from ``dist\\WilcoATC``, and
-``WILCOATC_SETUP_NAME`` the executable (WilcoATC-Setup, WilcoATC-HQ-Setup).
+it: ``MERIDIANATC_SETUP_PAYLOAD`` names the zip made by
+``meridianatc.installer.pack`` from ``dist\\MeridianATC``, and
+``MERIDIANATC_SETUP_NAME`` the executable (MeridianATC-Setup, MeridianATC-HQ-Setup).
 
 One file rather than a folder, so it is one download; the cost is that it
 unpacks itself into %TEMP% each time it starts, a few seconds for the
@@ -19,10 +19,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(SPECPATH)  # noqa: F821
-PAYLOAD = os.environ.get("WILCOATC_SETUP_PAYLOAD", "")
-NAME = os.environ.get("WILCOATC_SETUP_NAME", "WilcoATC-Setup")
+PAYLOAD = os.environ.get("MERIDIANATC_SETUP_PAYLOAD", "")
+NAME = os.environ.get("MERIDIANATC_SETUP_NAME", "MeridianATC-Setup")
 if not PAYLOAD or not Path(PAYLOAD).is_file():
-    raise SystemExit("WILCOATC_SETUP_PAYLOAD must name the program zip; "
+    raise SystemExit("MERIDIANATC_SETUP_PAYLOAD must name the program zip; "
                      "build with .\\build.ps1 -Setup")
 
 
@@ -38,16 +38,19 @@ def _stale(payload: str) -> list[str]:
     """
     import zipfile
 
-    static = ROOT / "wilcoatc" / "web" / "static"
+    static = ROOT / "meridianatc" / "web" / "static"
     differ = []
     with zipfile.ZipFile(payload) as zf:
         names = {n.replace("\\", "/"): n for n in zf.namelist()}
         for rel in ("index.html", "app.js", "i18n/en.json"):
             inside = next((n for k, n in names.items()
-                           if k.endswith(f"_internal/wilcoatc/web/static/{rel}")), None)
+                           if k.endswith(f"_internal/meridianatc/web/static/{rel}")), None)
             if inside is None or zf.read(inside) != (static / rel).read_bytes():
                 differ.append(rel)
-        # And the toolbar panel the installer copies into the simulator.
+        # And the toolbar panel the installer copies into the simulator. It
+        # keeps its WilcoATC file names: they are compiled into the shipped
+        # InGamePanels/wilcoatc.spb and only change when it is rebuilt with
+        # the SDK's fspackagetool (see msfs/README.md).
         panel = ROOT / "msfs" / "package" / "html_ui" / "InGamePanels" / "WilcoATC"
         for rel in ("WilcoATC.js", "WilcoATC.html", "WilcoATC.css"):
             inside = next((n for k, n in names.items()
@@ -58,13 +61,13 @@ def _stale(payload: str) -> list[str]:
 
 
 _old = _stale(PAYLOAD)
-if _old and os.environ.get("WILCOATC_SETUP_ALLOW_STALE") != "1":
+if _old and os.environ.get("MERIDIANATC_SETUP_ALLOW_STALE") != "1":
     raise SystemExit(f"the program in {PAYLOAD} is not this tree's ({', '.join(_old)} "
                      "differ): rebuild it with .\\build.ps1 -Setup, or set "
-                     "WILCOATC_SETUP_ALLOW_STALE=1 to ship it anyway")
+                     "MERIDIANATC_SETUP_ALLOW_STALE=1 to ship it anyway")
 
 datas = [
-    (str(ROOT / "wilcoatc" / "installer" / "ui"), "wilcoatc/installer/ui"),
+    (str(ROOT / "meridianatc" / "installer" / "ui"), "meridianatc/installer/ui"),
     (PAYLOAD, "payload"),
 ]
 
@@ -76,7 +79,7 @@ if (ROOT / "LICENSE").is_file():
     licence.write_text((ROOT / "LICENSE").read_text(encoding="utf-8"), encoding="utf-8")
 else:
     sys.path.insert(0, str(ROOT))
-    from wilcoatc.installer.core import readme_licence
+    from meridianatc.installer.core import readme_licence
 
     licence.write_text(readme_licence((ROOT / "README.md").read_text(encoding="utf-8")),
                        encoding="utf-8")
@@ -99,11 +102,11 @@ a = Analysis(  # noqa: F821
 )
 pyz = PYZ(a.pure)  # noqa: F821
 
-ICON = ROOT / "wilcoatc" / "web" / "static" / "logo.ico"
+ICON = ROOT / "meridianatc" / "web" / "static" / "logo.ico"
 
 
 def _meta() -> dict:
-    text = (ROOT / "wilcoatc" / "__init__.py").read_text(encoding="utf-8")
+    text = (ROOT / "meridianatc" / "__init__.py").read_text(encoding="utf-8")
     return dict(re.findall(r'^(\w+)\s*=\s*"([^"]*)"', text, re.M))
 
 
@@ -120,7 +123,7 @@ def _version():
                           OS=0x40004, fileType=0x1, subtype=0x0),
         kids=[StringFileInfo([StringTable("040904B0", [
                   StringStruct("CompanyName", meta["COMPANY_NAME"]),
-                  StringStruct("FileDescription", "WilcoATC Setup"),
+                  StringStruct("FileDescription", "MeridianATC Setup"),
                   StringStruct("FileVersion", meta["__version__"]),
                   StringStruct("InternalName", NAME),
                   StringStruct("LegalCopyright", meta.get("COPYRIGHT", "")),

@@ -1,6 +1,6 @@
 # Where the navigation data comes from
 
-Every file in this folder that ships with WilcoATC, its source and its
+Every file in this folder that ships with MeridianATC, its source and its
 licence. The program is free and open source: nothing here is under a
 non-commercial licence except where this file says so, and that one item is
 never bundled.
@@ -29,7 +29,7 @@ never bundled.
 The en-route sectors (who works a flight at which level) can come from the
 [VatGlasses data](https://github.com/lennycolton/vatglasses-data), by the
 VatGlasses contributors, under **CC BY-NC-SA 4.0**: attribution,
-non-commercial, share-alike. It is not part of WilcoATC. It is downloaded
+non-commercial, share-alike. It is not part of MeridianATC. It is downloaded
 only when the pilot asks for it, after being shown that licence, into its own
 `vatglasses/` folder, and never bundled with a build.
 

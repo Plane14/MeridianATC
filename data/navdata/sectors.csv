@@ -3,7 +3,7 @@
 # WHY THIS FILE EXISTS
 #
 # The en-route controller is the sector the aeroplane is in
-# (wilcoatc/atc/enroute.py). The program ships the FIR outlines and a table of
+# (meridianatc/atc/enroute.py). The program ships the FIR outlines and a table of
 # FIR frequencies; where a sector is split differently in reality, or its
 # frequency is wrong, a row here wins over everything else for the airspace it
 # covers. Shipped empty.

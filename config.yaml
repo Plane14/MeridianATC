@@ -22,7 +22,7 @@ speech:
   confirm_below: 0.6
 voice:
   voice_dir: data/voices
-  seed: wilcoatc
+  seed: meridianatc
   cache_size: 512
   preload: false
   engine: auto
@@ -124,7 +124,7 @@ gsx:
   lvar_file: ''
   control: true
   voice: true
-  client: WilcoATC
+  client: MeridianATC
 traffic:
   enabled: true
   from_simulator: true
@@ -172,7 +172,7 @@ traffic:
   density: 1.0
   seed: 0
   callsigns: auto
-  source: wilcoatc
+  source: meridianatc
   live:
     enabled: true
 weather:

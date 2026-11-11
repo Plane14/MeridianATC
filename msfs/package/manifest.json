@@ -1,9 +1,9 @@
 {
   "dependencies": [],
   "content_type": "MISC",
-  "title": "WilcoATC toolbar panel",
-  "manufacturer": "WilcoATC",
-  "creator": "WilcoATC",
+  "title": "MeridianATC toolbar panel",
+  "manufacturer": "MeridianATC",
+  "creator": "MeridianATC",
   "package_version": "1.0.0",
   "minimum_game_version": "1.32.7",
   "release_notes": {

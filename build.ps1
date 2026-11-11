@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    Build WilcoATC into a folder that runs on a machine with no Python.
+    Build MeridianATC into a folder that runs on a machine with no Python.
 
 .DESCRIPTION
-    Produces dist\WilcoATC: the executable, a console executable beside it,
+    Produces dist\MeridianATC: the executable, a console executable beside it,
     and everything the radio needs to run except the voices and the recogniser
     weights, which the program downloads on first run in the languages the
     pilot chose. Copy that folder anywhere and it runs.
@@ -17,7 +17,7 @@
     the fix; see README, "Windows Defender says it is a virus", for what the
     other switches buy when there is no certificate to sign with.
 
-    -HQ builds WilcoATC-HQ instead: the same program plus torch and
+    -HQ builds MeridianATC-HQ instead: the same program plus torch and
     Chatterbox, about a gigabyte more, for the cloned controller voices. It
     builds from its own interpreter, .venv-hq, made beside .venv the first
     time, so that the ordinary build's environment never carries torch.
@@ -28,19 +28,19 @@
     .\build.ps1 -Zip
     .\build.ps1 -Zip -Setup
     .\build.ps1 -Zip -Sign 9A1B2C3D4E5F60718293A4B5C6D7E8F901234567
-    .\build.ps1 -Zip -Sign certs\wilcoatc.pfx -RebuildBootloader
+    .\build.ps1 -Zip -Sign certs\meridianatc.pfx -RebuildBootloader
 #>
 
 [CmdletBinding()]
 param(
-    # Also produce dist\WilcoATC-win64.zip, ready to attach to a release.
+    # Also produce dist\MeridianATC-win64.zip, ready to attach to a release.
     [switch]$Zip,
     # Skip regenerating the icons (needs Pillow).
     [switch]$SkipIcons,
-    # Build WilcoATC-HQ, with the cloned voices, from .venv-hq.
+    # Build MeridianATC-HQ, with the cloned voices, from .venv-hq.
     [switch]$HQ,
-    # Also produce dist\WilcoATC-Setup.exe (dist\WilcoATC-HQ-Setup.exe with
-    # -HQ): one file that installs the program (wilcoatc/installer).
+    # Also produce dist\MeridianATC-Setup.exe (dist\MeridianATC-HQ-Setup.exe with
+    # -HQ): one file that installs the program (meridianatc/installer).
     [switch]$Setup,
     # The interpreter to package. Must be 64-bit Windows Python.
     [string]$Python = ".venv\Scripts\python.exe",
@@ -71,7 +71,7 @@ Set-Location $PSScriptRoot
 
 function Step($text) { Write-Host "`n=== $text" -ForegroundColor Cyan }
 
-$Name = if ($HQ) { "WilcoATC-HQ" } else { "WilcoATC" }
+$Name = if ($HQ) { "MeridianATC-HQ" } else { "MeridianATC" }
 
 if ($HQ -and -not $PSBoundParameters.ContainsKey("Python")) {
     # Its own interpreter, made from the ordinary one: torch is a gigabyte
@@ -153,12 +153,12 @@ Remove-Item -Recurse -Force build, $staging -ErrorAction SilentlyContinue
 $previous = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
 # The spec reads this to decide which of the two builds it is.
-$env:WILCOATC_HQ = if ($HQ) { "1" } else { "" }
+$env:MERIDIANATC_HQ = if ($HQ) { "1" } else { "" }
 try {
-    & $Python -m PyInstaller --noconfirm --clean --distpath $staging wilcoatc.spec
+    & $Python -m PyInstaller --noconfirm --clean --distpath $staging meridianatc.spec
 } finally {
     $ErrorActionPreference = $previous
-    Remove-Item Env:WILCOATC_HQ -ErrorAction SilentlyContinue
+    Remove-Item Env:MERIDIANATC_HQ -ErrorAction SilentlyContinue
 }
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
 
@@ -168,8 +168,8 @@ $staged = Join-Path $staging $Name
 # because the thing being guarded against is precisely a folder that has
 # most of them.
 $required = @(
-    "WilcoATC.exe",
-    "WilcoATC-console.exe",
+    "MeridianATC.exe",
+    "MeridianATC-console.exe",
     "_internal\base_library.zip",
     "_internal\VCRUNTIME140.dll"
 )
@@ -198,12 +198,12 @@ Step "Navigation data"
 # it and overrides.csv is edited by hand, and neither works on a file sealed
 # inside a read-only executable. The VatGlasses sectors (CC BY-NC-SA) never
 # ship: their folder is left out and the copied database has them stripped,
-# whatever this machine has downloaded (wilcoatc/navdata/release.py).
+# whatever this machine has downloaded (meridianatc/navdata/release.py).
 $navSrc = "data\navdata"
 $navDst = "$out\data\navdata"
 if (Test-Path "$navSrc\nav.sqlite") {
     if (Test-Path $navDst) { Remove-Item -Recurse -Force $navDst }
-    & $Python -m wilcoatc.navdata.release $navSrc $navDst
+    & $Python -m meridianatc.navdata.release $navSrc $navDst
     if ($LASTEXITCODE -ne 0) { throw "the navigation data could not be copied" }
     Write-Host ("copied {0:N0} MB of navigation data" -f ((Get-ChildItem $navDst -Recurse |
         Measure-Object Length -Sum).Sum / 1MB))
@@ -232,7 +232,7 @@ signed. More info -> Run anyway.
 $hqNote = if ($HQ) {
 @"
 
-This is WilcoATC-HQ. It can also clone the controllers' voices from
+This is MeridianATC-HQ. It can also clone the controllers' voices from
 recordings, which sounds the most natural: tick "Use cloned controller
 voices" on the setup screen (2 GB more). Without a graphics card a long
 clearance can take a minute to arrive.
@@ -240,29 +240,29 @@ clearance can take a minute to arrive.
 } else { "" }
 
 @"
-WilcoATC
+MeridianATC
 ========
 
-Double-click WilcoATC.exe.
+Double-click MeridianATC.exe.
 $hqNote
 The first start downloads the controller voices and the speech recogniser --
 a few hundred megabytes, once, in the languages you pick. Everything after
 that is local: no account, no subscription, nothing sent anywhere.
 
-WilcoATC-console.exe is the same program with a terminal attached, for:
+MeridianATC-console.exe is the same program with a terminal attached, for:
 
-    WilcoATC-console.exe setup      choose languages and download what they need
-    WilcoATC-console.exe doctor     check audio, recogniser, voices, simulator
-    WilcoATC-console.exe freq LFPG  every published frequency at a field
+    MeridianATC-console.exe setup      choose languages and download what they need
+    MeridianATC-console.exe doctor     check audio, recogniser, voices, simulator
+    MeridianATC-console.exe freq LFPG  every published frequency at a field
 
 Your settings, voices and logs live in this folder, next to the program. Copy
 the folder to another machine and everything travels with it. If you put the
 program somewhere Windows will not let it write -- Program Files -- it uses
-%LOCALAPPDATA%\WilcoATC instead.
+%LOCALAPPDATA%\MeridianATC instead.
 
 $signatureNote
 
-If Windows Defender quarantines WilcoATC.exe as a trojan, it is wrong, and
+If Windows Defender quarantines MeridianATC.exe as a trojan, it is wrong, and
 Microsoft would like to know: upload the file at
 https://www.microsoft.com/wdsi/filesubmission and pick "Incorrectly detected
 as malware". It is normally corrected within a day or two, for everyone.
@@ -289,7 +289,7 @@ Copy-Item README.md "$out\README.md" -Force -ErrorAction SilentlyContinue
 # The AGPL travels with every copy of the program it covers.
 Copy-Item LICENSE "$out\LICENSE.txt" -Force
 # The toolbar panel for the simulator, beside the program: the installer
-# copies it into each Community folder it finds (wilcoatc/msfs_panel.py).
+# copies it into each Community folder it finds (meridianatc/msfs_panel.py).
 if (Test-Path "$out\msfs-panel") { Remove-Item -Recurse -Force "$out\msfs-panel" }
 Copy-Item -Recurse msfs\package "$out\msfs-panel"
 
@@ -310,7 +310,7 @@ $appConfig = @"
   </runtime>
 </configuration>
 "@
-foreach ($exe in "WilcoATC.exe", "WilcoATC-console.exe") {
+foreach ($exe in "MeridianATC.exe", "MeridianATC-console.exe") {
     [System.IO.File]::WriteAllText(
         (Join-Path (Resolve-Path $out) "$exe.config"),
         $appConfig,
@@ -358,7 +358,7 @@ if (-not $Sign) {
         $signArgs += @("/sha1", ($Sign -replace '[^0-9A-Fa-f]', ''))
     }
 
-    foreach ($exe in "WilcoATC.exe", "WilcoATC-console.exe") {
+    foreach ($exe in "MeridianATC.exe", "MeridianATC-console.exe") {
         $path = Join-Path (Resolve-Path $out) $exe
         & $signtool.FullName @signArgs $path
         if ($LASTEXITCODE -ne 0) { throw "signing $exe failed" }
@@ -382,16 +382,16 @@ if ($Zip) {
 if ($Setup) {
     Step "Installer"
     # The payload is made from the folder just built, with only what a
-    # release ships in it (wilcoatc/installer/pack.py): a dist folder that
+    # release ships in it (meridianatc/installer/pack.py): a dist folder that
     # has been run has a developer's logs and config in it.
     $payloadDir = "build\setup-payload"
     Remove-Item -Recurse -Force $payloadDir -ErrorAction SilentlyContinue
-    & $Python -m wilcoatc.installer.pack $out "$payloadDir\$Name.zip"
+    & $Python -m meridianatc.installer.pack $out "$payloadDir\$Name.zip"
     if ($LASTEXITCODE -ne 0) { throw "the installer's payload could not be made" }
 
     $setupName = "$Name-Setup"
-    $env:WILCOATC_SETUP_PAYLOAD = (Resolve-Path "$payloadDir\$Name.zip").Path
-    $env:WILCOATC_SETUP_NAME = $setupName
+    $env:MERIDIANATC_SETUP_PAYLOAD = (Resolve-Path "$payloadDir\$Name.zip").Path
+    $env:MERIDIANATC_SETUP_NAME = $setupName
     # The same stderr trap as the program's own freeze, above.
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
@@ -400,7 +400,7 @@ if ($Setup) {
             --workpath build\setup setup.spec
     } finally {
         $ErrorActionPreference = $previous
-        Remove-Item Env:WILCOATC_SETUP_PAYLOAD, Env:WILCOATC_SETUP_NAME -ErrorAction SilentlyContinue
+        Remove-Item Env:MERIDIANATC_SETUP_PAYLOAD, Env:MERIDIANATC_SETUP_NAME -ErrorAction SilentlyContinue
     }
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed on setup.spec ($LASTEXITCODE)" }
 
@@ -413,5 +413,5 @@ if ($Setup) {
 }
 
 Write-Host "`nTest it before shipping it:" -ForegroundColor Yellow
-Write-Host "  $out\WilcoATC-console.exe doctor"
-Write-Host "  $out\WilcoATC.exe"
+Write-Host "  $out\MeridianATC-console.exe doctor"
+Write-Host "  $out\MeridianATC.exe"
