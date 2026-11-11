@@ -27,12 +27,16 @@ public partial class DiagnosticsPage : Page
             {
                 var name = c.TryGetProperty("name", out var n)
                     ? n.GetString() : "?";
-                var ok = c.TryGetProperty("ok", out var o)
-                    && o.GetBoolean();
+                // The report's verdict is a status word, not a boolean.
+                var status = c.TryGetProperty("status", out var st)
+                    ? st.GetString() : "?";
                 var detail = c.TryGetProperty("detail", out var dt)
                     ? dt.GetString() : "";
+                var fix = c.TryGetProperty("fix", out var f)
+                    ? f.GetString() : "";
                 DoctorList.Items.Add(
-                    $"{(ok ? "ok" : "FAIL")}  {name}  {detail}");
+                    $"{status?.ToUpperInvariant()}  {name}  {detail}"
+                    + (string.IsNullOrEmpty(fix) ? "" : $"  — {fix}"));
             }
         else
             DoctorList.Items.Add(doc.ToString());

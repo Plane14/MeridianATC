@@ -107,12 +107,15 @@ class History:
             return self._session_id
 
     def close_session(self) -> None:
+        """End the open session's row and forget it: later lines belong to
+        the next flight, not this one."""
         with self._lock:
             if self._session_id is not None:
                 self._conn.execute(
                     "UPDATE sessions SET ended_at = ? WHERE id = ?",
                     (time.time(), self._session_id))
                 self._conn.commit()
+                self._session_id = None
 
     def record(self, who: str, text: str, station: str = "",
                intent: str = "", meta: dict | None = None,

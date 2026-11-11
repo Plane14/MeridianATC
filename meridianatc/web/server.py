@@ -801,6 +801,11 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         wants is "yes, it has begun", after which it watches the socket.
         """
         body = body or {}
+        if engine.config.network.offline:
+            # Downloads are network use: the offline switch has to mean it.
+            return {"started": False,
+                    "error": "offline mode is on -- turn it off to download",
+                    "setup": installer.state()}
         steps = body.get("steps") or installer.missing() or list(SETUP_STEPS)
         started = installer.start(
             [str(key) for key in steps],
@@ -903,11 +908,19 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
 
     @app.post("/api/update/check")
     async def update_check() -> dict:
-        """Asked for from Settings, so asked whatever ``check_updates`` says."""
+        """Asked for from Settings, so asked whatever ``check_updates`` says --
+        but never when offline mode has all network use switched off."""
+        if engine.config.network.offline:
+            return {**updater.snapshot(), "checked": True,
+                    "error": "offline mode is on"}
         return await asyncio.to_thread(updater.check)
 
     @app.post("/api/update/download")
     async def update_download() -> dict:
+        if engine.config.network.offline:
+            return {"started": False,
+                    "update": {**updater.snapshot(),
+                               "error": "offline mode is on"}}
         return {"started": updater.download(), "update": updater.snapshot()}
 
     @app.post("/api/update/cancel")
@@ -1285,12 +1298,16 @@ def _settings_view(engine: Engine) -> dict[str, Any]:
     test buttons, and whether GSX Pro is there to have its vehicles used.
     """
     view = asdict(engine.config)
+    from ..security.secrets import resolve_secret
     for path in SECRETS:
         *sections, name = path.split(".")
         where = view
         for step in sections:
             where = where[step]
         where[name] = ""
+        # The key itself is never sent, but whether one is stored is: the
+        # panel draws "saved" rather than a blank box that could mean either.
+        where[f"{name}_set"] = bool(resolve_secret(engine.config, path))
     traffic = view["traffic"]
     traffic["debug_triggers"] = bool(engine.config.traffic.debug.triggers)
     traffic["gsx_vehicles"] = bool(engine.config.traffic.handling.gsx_vehicles)
@@ -2437,6 +2454,11 @@ def create_setup_app(config, broadcaster: Broadcaster) -> FastAPI:
     @app.post("/api/setup")
     async def setup_start(body: dict | None = None) -> dict:
         body = body or {}
+        if config.network.offline:
+            # Downloads are network use: the offline switch has to mean it.
+            return {"started": False,
+                    "error": "offline mode is on -- turn it off to download",
+                    "setup": installer.state()}
         steps = body.get("steps") or installer.missing() or list(SETUP_STEPS)
         started = installer.start([str(key) for key in steps],
                                   force=bool(body.get("force")),

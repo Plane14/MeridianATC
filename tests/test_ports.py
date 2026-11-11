@@ -472,3 +472,35 @@ class TestDemoPack:
         for path in (self.ROOT / "sample-flights").glob("*.json"):
             data = json.loads(path.read_text(encoding="utf-8"))
             assert data.get("callsign", "").startswith("STORM")
+
+
+class TestHistoryClose:
+    """history.py: a session that ends stops being the write target."""
+
+    def test_close_forgets_session(self, tmp_path):
+        from meridianatc.history import History
+        h = History(tmp_path / "h.db")
+        h.open_session(callsign="TEST1")
+        h.record(who="atc", text="first")
+        h.close_session()
+        # Lines after close land nowhere rather than in the finished flight.
+        h.record(who="atc", text="leaked")
+        h.open_session(callsign="TEST2")
+        h.record(who="atc", text="second")
+        assert len(h.transcript(1)) == 1
+        assert len(h.transcript(2)) == 1
+        h.close()
+
+
+class TestHoldFixSplit:
+    """phrasebooks.py: the fix-holding and the orbit share no key."""
+
+    def test_both_keys_everywhere(self):
+        src = Path("meridianatc/atc/phrasebooks.py").read_text(
+            encoding="utf-8")
+        # Four languages carry each: the {direction}/{fix} clearance and
+        # the {point} orbit, never one shadowing the other.
+        assert src.count('"hold_fix"') == 4
+        assert src.count('"hold_at"') == 4
+        for needle in ("{direction}", "{fix}", "{point}"):
+            assert needle in src

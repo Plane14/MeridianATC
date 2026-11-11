@@ -1720,6 +1720,12 @@ class Engine:
         self.simwatch.detach()
         self.facilities.close()
         self.source.close()
+        if self.history is not None:
+            try:
+                self.history.close_session()
+                self.history.close()
+            except Exception:
+                log.debug("history close failed", exc_info=True)
 
     # ------------------------------------------------------------------
     # session

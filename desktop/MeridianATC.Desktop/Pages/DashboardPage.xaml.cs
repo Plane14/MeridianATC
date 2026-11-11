@@ -24,6 +24,8 @@ public partial class DashboardPage : Page
             Callsign.Text = TryGet(s, "aircraft", "callsign") ?? "—";
             Phase.Text = TryGet(s, "flight", "phase") ?? "—";
             Frequency.Text = TryGet(s, "radio", "com1") ?? "—";
+            AutonomousState.Text =
+                TryGet(s, "autonomous", "enabled") == "yes" ? "on" : "off";
         }
         var hint = await App.Engine.GetAsync("/api/guidance");
         if (hint is { } h)
@@ -36,10 +38,19 @@ public partial class DashboardPage : Page
 
     private void OnEngineEvent(JsonElement e)
     {
-        if (!e.TryGetProperty("kind", out var kind)) return;
+        // Only "event" envelopes carry a line worth logging; "state" and
+        // "setup" payloads would draw a row of nothing every snapshot.
+        if (!e.TryGetProperty("kind", out var kind)
+            || kind.GetString() != "event")
+            return;
+        var type = e.TryGetProperty("type", out var ty)
+            ? ty.GetString() : "";
         var text = e.TryGetProperty("text", out var t) ? t.GetString() : "";
+        if (string.IsNullOrEmpty(text)) return;
         var speaker = e.TryGetProperty("speaker", out var sp)
-            ? sp.GetString() : kind.GetString();
+            && sp.ValueKind == JsonValueKind.String
+            && !string.IsNullOrEmpty(sp.GetString())
+            ? sp.GetString() : type;
         Dispatcher.Invoke(() =>
         {
             Log.Items.Insert(0, $"{speaker}: {text}");

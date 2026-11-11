@@ -46,8 +46,13 @@ public partial class TranscriptPage : Page
             Lines.Items.Clear();
             foreach (var row in t.EnumerateArray())
             {
+                // Pilot rows carry no speaker name; the kind says who.
                 var who = row.TryGetProperty("speaker", out var w)
-                    ? w.GetString() : "";
+                    && w.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrEmpty(w.GetString())
+                    ? w.GetString()
+                    : (row.TryGetProperty("kind", out var kd)
+                        ? kd.GetString() : "");
                 var text = row.TryGetProperty("text", out var x)
                     ? x.GetString() : "";
                 Lines.Items.Add($"{who}: {text}");
