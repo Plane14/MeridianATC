@@ -64,6 +64,7 @@ looks like from here is variables that read zero for no reason.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import ctypes.wintypes as w
 import json
@@ -660,10 +661,9 @@ class MobiFlightBridge(Bridge):
 
     def _shut(self) -> None:
         if self._own_connection and self._dll is not None and self._handle:
-            try:
+            import contextlib
+            with contextlib.suppress(Exception):
                 self._dll.SimConnect_Close(self._handle)
-            except Exception:
-                pass
         self._handle = None
 
     def close(self) -> None:
@@ -689,6 +689,8 @@ class MobiFlightBridge(Bridge):
 # exception, not a crash.
 
 SIMCONNECT_OBJECT_ID_USER = 0
+#: SIMCONNECT_RECV_ID_SIMOBJECT_DATA: the answer a data definition gets.
+_RECV_SIMOBJECT_DATA = 6
 #: SIMCONNECT_PERIOD_SECOND: a value a second is enough for a tug.
 _PERIOD_SECOND = 4
 #: SIMCONNECT_DATATYPE_FLOAT64: a double, the wrapper's default unit type.
@@ -732,8 +734,12 @@ class DirectBridge(Bridge):
         self._lock = threading.Lock()
         self._registered: list[str] = []
         self._values: dict[str, float] = {}
-        # The probe's verdict: an exception naming our definition means the
-        # simulator predates L: support and this bridge has nothing.
+        # The probe's verdict: an exception during the probe window means the
+        # simulator refused the L: definition and this bridge has nothing.
+        # SIMCONNECT_RECV_EXCEPTION carries dwException, not dwRequestID --
+        # there is no request id to match on, and the probe is the only
+        # outstanding request in its window anyway.
+        self._probing = False
         self._probe_refused = False
         self._probe_heard = False
 
@@ -792,16 +798,16 @@ class DirectBridge(Bridge):
             handle, _REQ_LVAR_PROBE, _DEF_LVAR_PROBE,
             SIMCONNECT_OBJECT_ID_USER, _PERIOD_SECOND, _REQUEST_DEFAULT,
             0, 0, 0)
+        self._probing = True
         deadline = time.monotonic() + _PROBE_WAIT_S
         while time.monotonic() < deadline and not self._probe_refused:
             time.sleep(self.PUMP_S)
+        self._probing = False
         # Stop the probe's periodic request; it has done its job.
-        try:
+        with contextlib.suppress(Exception):
             dll.SimConnect_RequestDataOnSimObject(
                 handle, _REQ_LVAR_PROBE, _DEF_LVAR_PROBE,
                 SIMCONNECT_OBJECT_ID_USER, 0, _REQUEST_DEFAULT, 0, 0, 0)
-        except Exception:
-            pass
         return not self._probe_refused
 
     @property
@@ -848,14 +854,10 @@ class DirectBridge(Bridge):
         elif which == _RECV_QUIT:
             self._ready = False
         elif which == _RECV_EXCEPTION:
-            refused = ctypes.cast(data,
-                                  ctypes.POINTER(_ClientData)).contents
-            request = int(refused.dwRequestID)
-            if request in (_REQ_LVAR_PROBE,):
+            if self._probing:
                 self._probe_refused = True
             else:
-                log.debug("SimConnect refused a direct lvar request %s",
-                          request)
+                log.debug("SimConnect refused a direct lvar request")
         return True
 
     def _heard(self, message) -> None:
@@ -941,10 +943,9 @@ class DirectBridge(Bridge):
 
     def _shut(self) -> None:
         if self._own_connection and self._dll is not None and self._handle:
-            try:
+            import contextlib
+            with contextlib.suppress(Exception):
                 self._dll.SimConnect_Close(self._handle)
-            except Exception:
-                pass
         self._handle = None
 
     def close(self) -> None:

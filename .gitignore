@@ -46,3 +46,7 @@ new_voices_cloning/
 
 # One machine's own settings on top of config.yaml (meridianatc.config.Config.load).
 config.local.yaml
+
+# dotnet build output
+desktop/**/bin/
+desktop/**/obj/

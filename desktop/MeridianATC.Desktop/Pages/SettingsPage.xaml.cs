@@ -23,6 +23,7 @@ public partial class SettingsPage : Page
             {
                 Select(Provider, Get(ai, "provider"));
                 Model.Text = Get(ai, "model");
+                Host.Text = Get(ai, "host");
                 Phrasing.IsChecked = ai.TryGetProperty("phrasing", out var p)
                     && p.ValueKind == JsonValueKind.True;
             }
@@ -48,6 +49,7 @@ public partial class SettingsPage : Page
             ["ai.provider"] = (Provider.SelectedItem as ComboBoxItem)
                 ?.Content?.ToString(),
             ["ai.model"] = Model.Text.Trim(),
+            ["ai.host"] = Host.Text.Trim(),
             ["ai.phrasing"] = Phrasing.IsChecked == true,
             ["speech.stt_engine"] = (SttEngine.SelectedItem as ComboBoxItem)
                 ?.Content?.ToString(),

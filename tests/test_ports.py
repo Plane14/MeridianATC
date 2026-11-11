@@ -80,9 +80,20 @@ class TestProviders:
     def test_no_key_not_available(self):
         assert not build_provider("openrouter", api_key="").available()
 
-    def test_custom_requires_allowlisted_host(self):
+    def test_custom_requires_https(self):
+        # The custom URL is itself the pin: https only, no credentials,
+        # query or fragment -- the bars named providers are held to.
         with pytest.raises(ValueError):
-            build_provider("custom", api_key="k", host="https://evil.test")
+            build_provider("custom", api_key="k", host="http://insecure.test")
+        with pytest.raises(ValueError):
+            build_provider("custom", api_key="k",
+                           host="https://user:pass@bad.test")
+        with pytest.raises(ValueError):
+            build_provider("custom", api_key="k", host="")
+        ok = build_provider("custom", api_key="k",
+                            host="https://llm.example.test/v1")
+        assert ok.available()
+        assert ok.url.endswith("/chat/completions")
 
     def test_unknown_provider(self):
         with pytest.raises(ValueError):
@@ -422,18 +433,18 @@ class TestAutofly:
     StormATC profile data."""
 
     def test_a320_title_match(self):
-        from meridianatc.atc.autofly import override
         from meridianatc.atc import flying as fly
+        from meridianatc.atc.autofly import override
         perf = override("A320", "FlyByWire A320neo", fly.AIRLINER)
         assert perf.rotate_kt == 130.0 and perf.climb_kt == 180.0
 
     def test_c172(self):
-        from meridianatc.atc.autofly import override
         from meridianatc.atc import flying as fly
+        from meridianatc.atc.autofly import override
         perf = override("C172", "Cessna 172 Skyhawk", fly.LIGHT)
         assert perf.rotate_kt > 0 and perf != fly.LIGHT
 
     def test_no_match_passthrough(self):
-        from meridianatc.atc.autofly import override
         from meridianatc.atc import flying as fly
+        from meridianatc.atc.autofly import override
         assert override("B738", "PMDG 737-800", fly.AIRLINER) is fly.AIRLINER

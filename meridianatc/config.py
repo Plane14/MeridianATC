@@ -577,8 +577,10 @@ describe(
                      restart=True),
     model=Setting("understanding", "understanding", restart=True,
                   when="ai.provider!=none"),
+    # Ollama's URL, and the custom provider's base URL the endpoint is
+    # built from -- both live on the same setting.
     host=Setting("understanding", "understanding", restart=True,
-                 advanced=True, when="ai.provider=ollama"),
+                 advanced=True, when="ai.provider!=none"),
     # Never sent back to the panel: shown as set or not set.
     api_key=Setting("understanding", "understanding", kind="secret",
                     restart=True, when="ai.provider!=none"),

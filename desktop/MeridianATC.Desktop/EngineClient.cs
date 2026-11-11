@@ -121,6 +121,7 @@ public sealed class EngineClient : IDisposable
         try
         {
             using var r = await Http.PostAsJsonAsync(path, body, ct);
+            if (!r.IsSuccessStatusCode) return null;
             return JsonDocument.Parse(await r.Content.ReadAsStringAsync(ct))
                 .RootElement.Clone();
         }

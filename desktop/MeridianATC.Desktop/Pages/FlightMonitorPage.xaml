@@ -28,6 +28,13 @@
             <Border Style="{StaticResource Card}" Margin="0,12,0,0">
                 <StackPanel>
                     <TextBlock Foreground="#FF8A95A5" Margin="0,0,0,6"
+                               Text="On the surface"/>
+                    <WrapPanel x:Name="Surface" Orientation="Horizontal"/>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                <StackPanel>
+                    <TextBlock Foreground="#FF8A95A5" Margin="0,0,0,6"
                                Text="Traffic being worked"/>
                     <ListBox x:Name="Traffic" Background="Transparent"
                              BorderThickness="0" Foreground="#FFB8C2CE"

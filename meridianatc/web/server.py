@@ -664,7 +664,7 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         from ..atc.guidance import for_session
 
         session = getattr(engine, "session", None)
-        plan_known = bool(getattr(session, "flight_plan", None)
+        plan_known = bool(getattr(session, "flight_plan_open", False)
                           or getattr(session, "destination", None))
         aircraft = getattr(session, "aircraft", None)
         callsign = getattr(getattr(aircraft, "callsign", None),
@@ -700,11 +700,14 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
             session = getattr(engine, "session", None)
             airport = getattr(session, "destination", None) or \
                 getattr(session, "departure", None)
+            callsign = ""
+            aircraft = getattr(session, "aircraft", None) if session else None
+            if aircraft is not None:
+                cs = getattr(aircraft, "callsign", None)
+                callsign = getattr(cs, "written", "") or str(cs or "")
             leg = engine.continuous.plan_next_leg(
                 state.latitude, state.longitude,
-                getattr(airport, "ident", "") or "",
-                getattr(getattr(session, "aircraft", None) or object(),
-                        "callsign", "") if session else "")
+                getattr(airport, "ident", "") or "", callsign)
             if leg is None:
                 return {"ok": False}
             return {"ok": True, "leg": {

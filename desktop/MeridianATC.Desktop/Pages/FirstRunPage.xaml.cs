@@ -23,19 +23,9 @@ public partial class FirstRunPage : Page
 
     private async void Continue_Click(object s, RoutedEventArgs e)
     {
-        var r = await App.Engine.PostAsync("/api/settings", new
-        {
-            changes = new Dictionary<string, object?>
-            {
-                ["network.cloud_consent"] = Consent.IsChecked == true,
-            },
-        });
-        // The endpoint takes the map itself.
-        if (r is null || !(r.Value.TryGetProperty("ok", out var ok)
-                           && ok.GetBoolean()))
-            r = await App.Engine.PostAsync("/api/settings",
-                new Dictionary<string, object?>
-                { ["network.cloud_consent"] = Consent.IsChecked == true });
+        var r = await App.Engine.PostAsync("/api/settings",
+            new Dictionary<string, object?>
+            { ["network.cloud_consent"] = Consent.IsChecked == true });
         Result.Text = Consent.IsChecked == true
             ? "Consent given — cloud services are available."
             : "No consent — the program runs fully offline.";

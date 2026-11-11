@@ -308,7 +308,10 @@ class Engine:
         # A cloud provider named without consent (or in offline mode) is
         # built as "none": the deterministic parser then carries it all.
         ai_provider = self.config.ai.provider
-        cloud = ai_provider not in ("", "none", "ollama", "custom")
+        # Everything but local Ollama can reach out (a "custom" endpoint can
+        # be anywhere and carries a bearer key), so everything but it wants
+        # the first-run consent before a key is sent.
+        cloud = ai_provider not in ("", "none", "ollama")
         if self.config.network.offline \
                 or (cloud and not self.config.network.cloud_consent):
             ai_provider = "none"
@@ -329,9 +332,14 @@ class Engine:
         # renderer is only built when the pilot asked for it and the
         # provider speaks.
         self.phrasing = None
+        # Consent gates cloud reach-out; a local Ollama phrasing is a local
+        # call and does not need it.
+        provider = self.understanding.provider
+        is_cloud = provider is not None \
+            and getattr(provider, "name", "") != "ollama"
         if self.config.ai.phrasing and not self.config.network.offline \
-                and self.config.network.cloud_consent \
-                and self.understanding.provider is not None:
+                and (not is_cloud or self.config.network.cloud_consent) \
+                and provider is not None:
             from .llm.rendering import PhrasingRenderer
             self.phrasing = PhrasingRenderer(self.understanding.provider)
         self.brain = ControllerBrain(
@@ -943,7 +951,8 @@ class Engine:
                 # session the flight opened. Nothing here reaches back into
                 # the engine.
                 try:
-                    station = getattr(self, "current_station", None)
+                    station = getattr(getattr(self, "session", None),
+                                      "current_station", None)
                     self.history.record(
                         who=speaker or kind, text=text,
                         station=getattr(station, "ident", ""),

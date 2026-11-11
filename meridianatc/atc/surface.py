@@ -128,7 +128,7 @@ def progress(layout, lat: float, lon: float, route: list[str]) -> dict:
                                  / length2)) if length2 > 0 else 0.0
                 remaining += seg * (1.0 - t)
                 found_chain = True
-            elif found_chain or not any(pos.found and pos.taxiway):
+            elif found_chain or not (pos.found and pos.taxiway):
                 remaining += seg
         if found_chain and i + 1 < len(route) and not next_name:
             next_name = str(route[i + 1])

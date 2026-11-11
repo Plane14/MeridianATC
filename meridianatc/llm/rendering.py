@@ -67,8 +67,13 @@ class PhrasingRenderer:
         """
         if self.provider is None or not approved.strip():
             return approved
+        # ``complete`` is the free-form answer a rephrase needs; providers
+        # without it only know how to classify, whose schema would hand back
+        # a JSON intent blob instead of a sentence.
+        call = getattr(self.provider, "complete", None) \
+            or self.provider.classify
         try:
-            render = self.provider.classify(approved, self._system).strip()
+            render = call(approved, self._system).strip()
         except Exception as exc:
             log.debug("phrasing render failed: %s", exc)
             return approved

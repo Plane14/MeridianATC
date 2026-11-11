@@ -95,6 +95,25 @@ class OllamaProvider:
         response.raise_for_status()
         return response.json().get("message", {}).get("content", "")
 
+    def complete(self, prompt: str, system: str) -> str:
+        """A free-form answer -- the phrasing renderer's sentence, which is
+        not a schema-shaped classification."""
+        response = requests.post(
+            f"{self.host}/api/chat",
+            json={
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                "stream": False,
+                "options": {"temperature": 0.1, "num_predict": 256},
+            },
+            timeout=self.timeout_s,
+        )
+        response.raise_for_status()
+        return response.json().get("message", {}).get("content", "")
+
 
 # --------------------------------------------------------------------------
 # cloud: Claude
@@ -188,6 +207,23 @@ class AnthropicProvider:
             block.text for block in response.content if block.type == "text"
         )
 
+    def complete(self, prompt: str, system: str) -> str:
+        """A free-form answer for the phrasing renderer: no schema, just the
+        sentence the prompt asks for."""
+        client = self._get_client()
+        response = client.messages.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        if response.stop_reason == "refusal":
+            log.info("Claude declined to render the transmission")
+            return ""
+        return "".join(
+            block.text for block in response.content if block.type == "text"
+        )
+
 
 # --------------------------------------------------------------------------
 
@@ -219,25 +255,40 @@ class OpenAICompatibleProvider:
 
     def __init__(self, provider: str, api_key: str, model: str = "",
                  host: str = "", timeout_s: float = 12.0):
-        from ..security.endpoints import is_allowed
-
         self.provider = (provider or "openrouter").strip().lower()
         self.name = self.provider
         self.api_key = api_key
         self.model = model or self.DEFAULT_MODELS.get(self.provider, "")
         if self.provider == "custom":
+            # There is no official endpoint to pin to, so the user's URL is
+            # itself the pin: https, a real host, no credentials, query or
+            # fragment -- the same bars the policy holds named providers to.
             base = (host or "").rstrip("/")
-            if not base or not is_allowed("custom", base):
+            from urllib.parse import urlsplit
+
+            try:
+                uri = urlsplit(base)
+            except ValueError as exc:
                 raise ValueError(
-                    "custom provider needs an allowlisted https host")
+                    "custom provider needs a valid URL") from exc
+            if (uri.scheme.lower() != "https" or not uri.hostname
+                    or uri.username or uri.password
+                    or uri.query or uri.fragment):
+                raise ValueError(
+                    "custom provider needs an https URL without credentials, "
+                    "query or fragment")
             self.url = f"{base}/chat/completions"
+            self._custom_ok = True
         else:
             self.url = self.ENDPOINTS[self.provider]
+            self._custom_ok = False
         self.timeout_s = timeout_s
         self._session = requests.Session()
         self._session.max_redirects = 0
 
     def available(self) -> bool:
+        if self.provider == "custom":
+            return bool(self.api_key) and self._custom_ok
         from ..security.endpoints import is_allowed
 
         return bool(self.api_key) and is_allowed(self.provider, self.url)
@@ -268,6 +319,10 @@ class OpenAICompatibleProvider:
         return self.chat(
             [{"role": "system", "content": system},
              {"role": "user", "content": prompt}])
+
+    def complete(self, prompt: str, system: str) -> str:
+        """Free-form for the phrasing renderer: same chat, no schema."""
+        return self.classify(prompt, system)
 
 
 def build_provider(kind: str, **options):
