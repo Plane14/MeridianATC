@@ -13,6 +13,7 @@ does, so both work at once and neither is special.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import threading
 import time
@@ -31,15 +32,17 @@ from .. import config as cfg
 from ..atc.enroute import is_invented
 from ..atc.language import LANGUAGE_NAMES, languages_for
 from ..atc.written import as_written
-from ..navdata.channels import carrier_khz, same_channel, shown
-from ..navdata.db import STATION_RANGE_NM
 from ..audio.announcements import EVENTS as ANNOUNCEMENT_EVENTS
+from ..audio.io import InputMeter
 from ..engine import Engine, Event, announcement_roots
 from ..health import report as health_report
-from ..audio.io import InputMeter
-from ..install import Installer, SIZES_MB as SETUP_STEPS
+from ..install import SIZES_MB as SETUP_STEPS
+from ..install import Installer
 from ..logs import METRICS, RING, SESSION_ID, diagnostics
-from ..update import Updater, cleanup as update_cleanup, quit_process
+from ..navdata.channels import carrier_khz, same_channel, shown
+from ..navdata.db import STATION_RANGE_NM
+from ..update import Updater, quit_process
+from ..update import cleanup as update_cleanup
 
 log = logging.getLogger(__name__)
 
@@ -91,10 +94,8 @@ class Broadcaster:
         loop = self.loop
         if loop is None or loop.is_closed():
             return
-        try:
+        with contextlib.suppress(RuntimeError):
             loop.call_soon_threadsafe(asyncio.create_task, self._send(payload))
-        except RuntimeError:
-            pass
 
     async def _send(self, payload: dict) -> None:
         dead = []
@@ -224,8 +225,9 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         lat, lon = state.latitude, state.longitude
 
         def offsets(to_lat: float, to_lon: float) -> dict:
-            from ..navdata.db import bearing_deg, haversine_nm
             import math
+
+            from ..navdata.db import bearing_deg, haversine_nm
 
             distance = haversine_nm(lat, lon, to_lat, to_lon)
             bearing = bearing_deg(lat, lon, to_lat, to_lon)
@@ -892,7 +894,7 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
             {"kind": "update", "update": state}),
         skipped_version=engine.config.ui.skipped_version)
     update_cleanup()
-    if engine.config.ui.check_updates:
+    if engine.config.ui.check_updates and not engine.config.network.offline:
         updater.check_in_background()
 
     @app.get("/api/update")
@@ -1206,12 +1208,10 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
             if key in payload and payload[key] is not None:
                 setattr(engine.config.flight, key, str(payload[key]).strip())
         if "cruise_altitude_ft" in payload:
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 engine.config.flight.cruise_altitude_ft = int(
                     payload["cruise_altitude_ft"] or 0
                 )
-            except (TypeError, ValueError):
-                pass
         await asyncio.to_thread(engine.begin_session)
         return {"ok": True, "state": snapshot(engine)}
 

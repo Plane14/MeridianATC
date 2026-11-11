@@ -179,9 +179,7 @@ def may_swap(one: Candidate, distance: float, hide_m: float) -> bool:
     hidden = distance > hide_m
     if not one.livery_matches and not hidden:
         return False
-    if one.doors_open and not hidden:
-        return False
-    return True
+    return not (one.doors_open and not hidden)
 
 
 class Lod:
@@ -281,7 +279,7 @@ class Lod:
         # distance; it is not going to be undone.
         kept = sum(1 for _, one in by_distance
                    if one.busy and wanted[one.callsign] == DETAILED)
-        for distance, one in by_distance:
+        for _distance, one in by_distance:
             if one.busy or wanted[one.callsign] != DETAILED:
                 continue
             if kept < self.limit:
@@ -293,7 +291,7 @@ class Lod:
         # Lightening first: it frees a model load before the next one is
         # asked for. Then detail, nearest first.
         for level in (LIGHT, DETAILED):
-            for distance, one in by_distance:
+            for _distance, one in by_distance:
                 # One drawn with no level asked was drawn the light way.
                 if wanted[one.callsign] != level or (one.level or LIGHT) == level:
                     continue
@@ -324,7 +322,7 @@ class Lod:
         kept = sum(1 for distance, one in by_distance
                    if fixed(one) and distance <= reach
                    and wanted[one.callsign] == DETAILED)
-        for distance, one in by_distance:
+        for _distance, one in by_distance:
             if fixed(one) or wanted[one.callsign] != DETAILED:
                 continue
             if kept < self.limit:

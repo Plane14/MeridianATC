@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from ..navdata.db import (Airport, NavDB,
-                          transition_altitude as transition_for)
+from ..navdata.db import Airport, NavDB
+from ..navdata.db import transition_altitude as transition_for
 from . import speech as sp
 from .phraseology import Phraseology, Weather
 
@@ -37,7 +37,7 @@ class AtisReport:
     weather: Weather
     landing_runways: list[str] = field(default_factory=list)
     departing_runways: list[str] = field(default_factory=list)
-    issued_utc: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    issued_utc: datetime = field(default_factory=lambda: datetime.now(UTC))
     issued_monotonic: float = field(default_factory=lambda: time.monotonic())
 
     @property
@@ -97,7 +97,7 @@ class AtisGenerator:
 
     def _letter_from_clock(self) -> int:
         """Start on a plausible letter rather than always on Alpha."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return (now.hour * 2 + now.minute // 30) % 26
 
     # ------------------------------------------------------------------
@@ -194,7 +194,7 @@ class AtisGenerator:
             return self._compose_french(letter, wx, runways,
                                         departing if split else None)
         p = self.phrase
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         name = self.airport.spoken
 
         parts: list[str] = []
@@ -315,7 +315,7 @@ class AtisGenerator:
         from . import speech_fr as sfr
 
         p = self.phrase
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         parts: list[str] = [
             f"Ici {self.airport.spoken}, information {sfr.letters(letter)}, "
             f"{sfr.time_utc(now.hour, now.minute)}"
@@ -406,7 +406,7 @@ def letter_from_text(text: str) -> str:
     from .speech import _ALPHABET_REVERSE
 
     words = [w.strip(".,").lower() for w in (text or "").split()]
-    for i, word in enumerate(words):
+    for _i, word in enumerate(words):
         if word in _ALPHABET_REVERSE:
             letter = _ALPHABET_REVERSE[word]
             if len(letter) == 1 and letter.isalpha():

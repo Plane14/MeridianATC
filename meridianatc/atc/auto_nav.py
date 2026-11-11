@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Where the aeroplane should be pointing, as pure geometry.
 
 No simulator, no session, no events: given a position and a route, these
@@ -90,7 +89,7 @@ def path_steering(lat: float, lon: float, path: list[tuple[float, float]],
 
     # The segment the aeroplane is closest to, and how far along it.
     best = None
-    for i, (a, b) in enumerate(zip(path, path[1:])):
+    for i, (a, b) in enumerate(zip(path, path[1:], strict=False)):
         along, side = _point_segment_distance(lat, lon, a, b)
         # Distance to the segment itself, for picking the nearest one.
         seg_len_m = haversine_nm(a[0], a[1], b[0], b[1]) * 1852.0

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """The rest of the aeroplane.
 
 Everything on the radio is a controller. This is everybody else: the first
@@ -93,36 +92,54 @@ from dataclasses import dataclass, field, replace
 
 import numpy as np
 
-from ..audio.announcements import (AnnouncementLibrary, Flight, flight_seed,
-                                   load as load_recording)
-from ..audio.applause import SAMPLE_RATE as APPLAUSE_RATE, applause
-from ..audio.boarding import SAMPLE_RATE as BOARDING_RATE, bed as boarding_bed
-from ..audio.chime import chime as make_chime, silence
 from ..audio import aboard
+from ..audio.announcements import AnnouncementLibrary, Flight
+from ..audio.announcements import load as load_recording
+from ..audio.applause import SAMPLE_RATE as APPLAUSE_RATE
+from ..audio.applause import applause
+from ..audio.boarding import SAMPLE_RATE as BOARDING_RATE
+from ..audio.boarding import bed as boarding_bed
+from ..audio.chime import chime as make_chime
+from ..audio.chime import silence
 from ..audio.imperfections import rng_for
 from ..audio.radio_fx import PROFILE_CABIN, PROFILE_INTERCOM
-from ..audio.voices import (accent_for, gender_of as voice_gender,
-                            in_language, language_of as voice_language)
+from ..audio.voices import accent_for, in_language
+from ..audio.voices import gender_of as voice_gender
+from ..audio.voices import language_of as voice_language
 from ..logs import CREW
 from ..navdata.db import transition_altitude
-from . import aircraft_class, checklist_files
+from . import aircraft_class, checklist_files, interphone, vspeeds
 from . import profile as flight_profile
 from .callouts import Callouts, Situation
-from .notices import SAFETY as SAFETY_NOTICES, Notices, Watching
 from .checklist import OFFER_SETTLE_S, ChecklistRunner
 from .copilot import confirmation
-from . import interphone
-from .crew_lines import (ANSWERS, CABIN, CABIN_PA, CAPTAIN, CHECKLIST_DIGITS,
-                         CHECKLIST_WORDS,
-                         CONDITIONS, CUE_GROUPS, CUE_RECORDINGS,
-                         FIRST_OFFICER, FIRST_OFFICER_ANSWERS,
-                         FIRST_OFFICER_WORDS, GROUND, LEG_WORDS,
-                         NOTICE_WORDS,
-                         GROUP_SIDE, INTERCOM, PURSER, RECORDED_ONLY, SCRIPTS,
-                         Line)
+from .crew_lines import (
+    ANSWERS,
+    CABIN,
+    CABIN_PA,
+    CAPTAIN,
+    CHECKLIST_DIGITS,
+    CHECKLIST_WORDS,
+    CONDITIONS,
+    CUE_GROUPS,
+    CUE_RECORDINGS,
+    FIRST_OFFICER,
+    FIRST_OFFICER_ANSWERS,
+    FIRST_OFFICER_WORDS,
+    GROUND,
+    GROUP_SIDE,
+    INTERCOM,
+    LEG_WORDS,
+    NOTICE_WORDS,
+    PURSER,
+    RECORDED_ONLY,
+    SCRIPTS,
+    Line,
+)
 from .landing import APPLAUSE_FPM, touchdown_rate
+from .notices import SAFETY as SAFETY_NOTICES
+from .notices import Notices, Watching
 from .session import FlightSession, Phase
-from . import vspeeds
 
 log = logging.getLogger(__name__)
 
@@ -1036,7 +1053,6 @@ class CrewDirector:
         descending = state.vertical_speed_fpm < self.DESCENDING_FPM
         high = self.state.highest_ft > TEN_THOUSAND_FT
         height = self._height(state)
-        was = self._height(previous)
 
         if descending and high and session.phase in (Phase.DESCENT,
                                                      Phase.APPROACH,
@@ -1054,10 +1070,10 @@ class CrewDirector:
         # could do.
         if not (descending or session.phase in (Phase.APPROACH, Phase.LANDING)):
             return
-        if session.phase is Phase.APPROACH or height < 3000:
-            if high or session.phase is Phase.APPROACH:
-                self._fire("cabin_ready", session, state)
-                self._fire("cabin_ready_reply", session, state, delay=12.0)
+        if ((session.phase is Phase.APPROACH or height < 3000)
+                and (high or session.phase is Phase.APPROACH)):
+            self._fire("cabin_ready", session, state)
+            self._fire("cabin_ready_reply", session, state, delay=12.0)
         if state.gear_down and height < 2500:
             self._fire("approach", session, state)
 
@@ -1862,7 +1878,7 @@ class CrewDirector:
             on_done=lambda voice, error: self._rendered(nxt, voice, error),
             priority=1)
 
-    def _rendered(self, pending: "_Pending", voice, error) -> None:
+    def _rendered(self, pending: _Pending, voice, error) -> None:
         """A lane render back on the loop: hang it on the line it is for.
 
         Set on the object rather than back into the queue. A line dropped
@@ -3178,7 +3194,7 @@ _PLURALS: dict[str, tuple[str, str]] = {
 }
 
 
-def _manner(line: Line) -> "aboard.Manner":
+def _manner(line: Line) -> aboard.Manner:
     """How readily whoever says this line stalls. See meridianatc.audio.aboard."""
     if line.path == CABIN_PA:
         if line.who == CAPTAIN:
@@ -3366,11 +3382,11 @@ def _flight_number(callsign, language: str = "en") -> str:
         return _say(language, "this_flight")
     spoken = (getattr(callsign, "spoken_full", "") or "").strip()
     telephony = (getattr(callsign, "telephony", "") or "").strip()
-    if getattr(callsign, "is_airline", False) and telephony:
-        if spoken.lower().startswith(telephony.lower()):
-            rest = spoken[len(telephony):].strip()
-            if rest:
-                return rest
+    if (getattr(callsign, "is_airline", False) and telephony
+            and spoken.lower().startswith(telephony.lower())):
+        rest = spoken[len(telephony):].strip()
+        if rest:
+            return rest
     return spoken or _say(language, "this_flight")
 
 

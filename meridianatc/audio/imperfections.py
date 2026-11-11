@@ -142,35 +142,25 @@ STALL = ""
 #: whole of each language's counting.
 VALUE_WORDS: dict[str, frozenset[str]] = {
     "en": frozenset(
-        "zero one two three four five six seven eight nine niner tree fife "
-        "ten eleven twelve thirteen fourteen fifteen sixteen seventeen "
-        "eighteen nineteen twenty thirty forty fifty sixty seventy eighty "
-        "ninety hundred thousand".split()),
+        ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "niner", "tree", "fife", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "hundred", "thousand"]),
     "fr": frozenset(
-        "zéro un une deux trois quatre cinq six sept huit neuf dix onze "
-        "douze treize quatorze quinze seize vingt trente quarante cinquante "
-        "soixante cent mille".split()),
+        ["zéro", "un", "une", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix", "onze", "douze", "treize", "quatorze", "quinze", "seize", "vingt", "trente", "quarante", "cinquante", "soixante", "cent", "mille"]),
     "de": frozenset(
-        "null eins ein zwei zwo drei vier fünf sechs sieben acht neun zehn "
-        "elf zwölf zwanzig dreißig vierzig fünfzig hundert tausend".split()),
+        ["null", "eins", "ein", "zwei", "zwo", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun", "zehn", "elf", "zwölf", "zwanzig", "dreißig", "vierzig", "fünfzig", "hundert", "tausend"]),
     "es": frozenset(
-        "cero uno una dos tres cuatro cinco seis siete ocho nueve diez "
-        "veinte treinta cuarenta cincuenta cien mil".split()),
+        ["cero", "uno", "una", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve", "diez", "veinte", "treinta", "cuarenta", "cincuenta", "cien", "mil"]),
     "it": frozenset(
-        "zero uno una due tre quattro cinque sei sette otto nove dieci venti "
-        "trenta quaranta cinquanta cento mille".split()),
+        ["zero", "uno", "una", "due", "tre", "quattro", "cinque", "sei", "sette", "otto", "nove", "dieci", "venti", "trenta", "quaranta", "cinquanta", "cento", "mille"]),
     "pt": frozenset(
-        "zero um uma dois duas três quatro cinco seis sete oito nove dez "
-        "vinte trinta quarenta cinquenta cem mil".split()),
+        ["zero", "um", "uma", "dois", "duas", "três", "quatro", "cinco", "seis", "sete", "oito", "nove", "dez", "vinte", "trinta", "quarenta", "cinquenta", "cem", "mil"]),
     "nl": frozenset(
-        "nul een twee drie vier vijf zes zeven acht negen tien twintig "
-        "dertig veertig vijftig honderd duizend".split()),
+        ["nul", "een", "twee", "drie", "vier", "vijf", "zes", "zeven", "acht", "negen", "tien", "twintig", "dertig", "veertig", "vijftig", "honderd", "duizend"]),
 }
 
 #: The words *inside* a number, after which a stall would cut it in half:
 #: "one two six decimal, uh, seven" is not somebody remembering a frequency.
 _INSIDE_VALUE = frozenset(
-    "decimal point komma virgule décimal decimale decimaal".split())
+    ["decimal", "point", "komma", "virgule", "décimal", "decimale", "decimaal"])
 
 
 def _bare(word: str) -> str:
@@ -354,7 +344,7 @@ class Imperfections:
     #: this is the same transmitter warming differently, not a different one.
     carrier: float = 0.25
 
-    def indoors(self) -> "Imperfections":
+    def indoors(self) -> Imperfections:
         """The same person, with no transmit bar in their hand.
 
         The first officer and the cabin crew are people and are not on a
@@ -642,7 +632,7 @@ def _pauses(voice: np.ndarray, sample_rate: int,
 
     least = int(sample_rate * max(0.0, min_ms) / 1000.0)
     runs: list[tuple[int, int]] = []
-    for start, end in zip(bounds[:-1], bounds[1:]):
+    for start, end in zip(bounds[:-1], bounds[1:], strict=False):
         if not quiet[start]:
             continue
         if start == 0 or end >= quiet.size:

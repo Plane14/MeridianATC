@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Traffic information: who else is out there, from the pilot's seat.
 
 The phrases for it existed and nothing called them. Flight following

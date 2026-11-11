@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """The Information frequencies: AFIS at a field, FIS en route, flight service.
 
 The controller's routing had a branch for every position but INFO, and an
@@ -41,8 +40,8 @@ from __future__ import annotations
 import math
 import re
 import unicodedata
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from ..logs import decision
 from ..navdata.build import bearing_deg, haversine_nm
@@ -150,7 +149,7 @@ def _tower_at(navdb: NavDB, ident: str) -> Station | None:
 def _sun_elevation(when: datetime, lat: float, lon: float) -> float:
     """The sun's elevation in degrees, to a fraction of a degree (the NOAA
     approximation), which is all "HJ" needs."""
-    when = when.astimezone(timezone.utc)
+    when = when.astimezone(UTC)
     day = when.timetuple().tm_yday
     hours = when.hour + when.minute / 60.0 + when.second / 3600.0
     gamma = 2.0 * math.pi / 365.0 * (day - 1 + (hours - 12.0) / 24.0)
@@ -198,7 +197,7 @@ def _eu_summer(when: datetime) -> bool:
     """European summer time: last Sunday of March to last Sunday of
     October, changing at 0100 UTC (EU Directive 2000/84/EC)."""
     def last_sunday(month: int) -> datetime:
-        day = datetime(when.year, month, 31, 1, 0, tzinfo=timezone.utc)
+        day = datetime(when.year, month, 31, 1, 0, tzinfo=UTC)
         return day.replace(day=31 - (day.weekday() + 1) % 7)
     return last_sunday(3) <= when < last_sunday(10)
 
@@ -221,7 +220,7 @@ class Hours:
     summer_shift_min: int = 0
 
     @classmethod
-    def parse(cls, text: str) -> "Hours":
+    def parse(cls, text: str) -> Hours:
         text = (text or "").strip().upper()
         if not text:
             return cls()
@@ -251,7 +250,7 @@ class Hours:
         if self.kind in ("HJ", "HN"):
             daylight = _sun_elevation(when, lat, lon) > _HORIZON_DEG
             return daylight if self.kind == "HJ" else not daylight
-        when = when.astimezone(timezone.utc)
+        when = when.astimezone(UTC)
         if self.summer_shift_min and _eu_summer(when):
             # An hour earlier in summer is the same check an hour later.
             from datetime import timedelta
@@ -264,9 +263,12 @@ class Hours:
                 if start <= end:
                     if start <= minute < end and (days is None or today in days):
                         return True
-                elif minute >= start and (days is None or today in days):
-                    return True
-                elif minute < end and (days is None or yesterday in days):
+                # A span that crosses midnight owns the minutes after its
+                # start on the same day and the minutes before its end on
+                # the following one.
+                elif (minute >= start and (days is None or today in days)
+                        or minute < end
+                        and (days is None or yesterday in days)):
                     return True
         return False
 
@@ -292,7 +294,7 @@ def is_open(navdb: NavDB, station: Station | None,
     """
     if station is None:
         return False
-    when = when or datetime.now(timezone.utc)
+    when = when or datetime.now(UTC)
     if not _within_hours(navdb, station, when):
         return False
     if station.position == "INFO" and kind_of(navdb, station) == AERODROME:

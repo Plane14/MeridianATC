@@ -285,9 +285,7 @@ class SimFacilities:
                 one = self._read(data)
                 if one is not None:
                     found.append(one)
-            elif which == _RECV_FACILITY_DATA_END:
-                break
-            elif which in (_RECV_EXCEPTION, _RECV_QUIT):
+            elif which == _RECV_FACILITY_DATA_END or which in (_RECV_EXCEPTION, _RECV_QUIT):
                 break
         return found
 

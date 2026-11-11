@@ -25,8 +25,12 @@ import time
 from dataclasses import dataclass, field
 
 from ..atc.systems import FIELDS, Systems
-from .aitraffic import (SIMCONNECT_DATATYPE_FLOAT64, _Received,
-                        install_dispatch, remove_dispatch)
+from .aitraffic import (
+    SIMCONNECT_DATATYPE_FLOAT64,
+    _Received,
+    install_dispatch,
+    remove_dispatch,
+)
 
 log = logging.getLogger("meridianatc.systems")
 

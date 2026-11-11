@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """What the crew actually say.
 
 Kept apart from :mod:`meridianatc.atc.crew`, which decides *when* somebody

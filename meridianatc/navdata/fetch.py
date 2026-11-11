@@ -24,8 +24,8 @@ Run ``python -m meridianatc.navdata.fetch`` to refresh.
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 import requests
 
@@ -34,7 +34,7 @@ from ..paths import navdata_dir
 # Called with (what is being fetched, bytes so far, bytes expected). A total of
 # zero means the server would not say how big it is. Given one of these the
 # printing stops: the panel is drawing the bar and two of them is one too many.
-Progress = Optional[Callable[[str, int, int], None]]
+Progress = Callable[[str, int, int], None] | None
 
 OURAIRPORTS = "https://davidmegginson.github.io/ourairports-data"
 VATSPY = "https://raw.githubusercontent.com/vatsimnetwork/vatspy-data-project/master"

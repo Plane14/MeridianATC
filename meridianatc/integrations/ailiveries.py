@@ -93,7 +93,7 @@ class AiLiveries:
         self._by_title = by_title or {}
 
     @classmethod
-    def from_pairs(cls, pairs) -> "AiLiveries":
+    def from_pairs(cls, pairs) -> AiLiveries:
         """From what the simulator listed: (title, livery) for every one."""
         listed: dict[str, list[str]] = {}
         for title, livery in pairs or ():

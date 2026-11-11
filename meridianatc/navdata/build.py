@@ -21,15 +21,15 @@ from __future__ import annotations
 import csv
 import json
 import math
-import re
 import os
+import re
 import sqlite3
 import sys
 import unicodedata
 from pathlib import Path
 
-from . import channels
 from ..paths import bundle_root, navdata_dir
+from . import channels
 
 ROOT = bundle_root()
 DATA_DIR = navdata_dir()

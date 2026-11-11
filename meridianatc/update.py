@@ -49,9 +49,9 @@ import threading
 import time
 import urllib.request
 import zipfile
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Callable
 
 from . import __version__
 from .paths import FROZEN, data_root

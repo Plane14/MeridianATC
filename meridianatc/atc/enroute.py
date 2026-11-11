@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Who works the cruise: en-route sectors, by airspace rather than by range.
 
 A flight from Singapore to Hong Kong heard "contact Singapore Control" and
@@ -598,7 +597,7 @@ class EnRoute:
         if not ahead:
             return [((lat, lon), far)]
         points = [(lat, lon)] + list(route[ahead[0]:])
-        return list(zip(points, points[1:]))
+        return list(zip(points, points[1:], strict=False))
 
     # -------------------------------------------------------- on frequency
 

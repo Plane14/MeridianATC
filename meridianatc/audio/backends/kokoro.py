@@ -20,7 +20,8 @@ from pathlib import Path
 
 import numpy as np
 
-from ..tts_kokoro import MODEL_DIR, KokoroBackend as _Kokoro
+from ..tts_kokoro import MODEL_DIR
+from ..tts_kokoro import KokoroBackend as _Kokoro
 from .base import Capabilities
 
 #: The languages the shipped Kokoro model has a speaker for. Mirrors

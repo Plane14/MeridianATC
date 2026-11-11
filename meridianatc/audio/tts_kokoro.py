@@ -51,8 +51,8 @@ from pathlib import Path
 
 import numpy as np
 
-from . import accent
 from ..paths import voice_dir
+from . import accent
 
 log = logging.getLogger(__name__)
 

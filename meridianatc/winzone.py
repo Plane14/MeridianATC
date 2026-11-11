@@ -46,8 +46,8 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 #: The alternate data stream Windows writes on anything it considers foreign.
 STREAM = "Zone.Identifier"

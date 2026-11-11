@@ -23,7 +23,7 @@ from __future__ import annotations
 import math
 import re
 import unicodedata
-from typing import Iterable
+from collections.abc import Iterable
 
 from ..navdata.build import bearing_deg, haversine_nm
 from .route import CLB, Route, RouteFix
@@ -211,7 +211,7 @@ def star_join(final, fixes) -> RouteFix | None:
     if final is None:
         return None
     fixes = [f for f in fixes if not f.is_marker]
-    for before, fix in zip(fixes, fixes[1:]):
+    for before, fix in zip(fixes, fixes[1:], strict=False):
         out, side = frame(final, fix.lat, fix.lon)
         if not (JOIN_OUT_NM[0] <= out <= JOIN_OUT_NM[1]
                 and abs(side) <= JOIN_CONVERGING_SIDE_NM):
@@ -242,7 +242,7 @@ def along_to(fixes, lat: float, lon: float, to: RouteFix):
         return None
     target = fixes.index(to)
     best = None
-    for i, (a, b) in enumerate(zip(fixes, fixes[1:])):
+    for i, (a, b) in enumerate(zip(fixes, fixes[1:], strict=False)):
         lat0 = math.radians((a.lat + b.lat) / 2.0)
         ax, ay = a.lon * 60.0 * math.cos(lat0), a.lat * 60.0
         bx, by = b.lon * 60.0 * math.cos(lat0), b.lat * 60.0
@@ -259,7 +259,7 @@ def along_to(fixes, lat: float, lon: float, to: RouteFix):
         return None
     a, b = fixes[leg], fixes[leg + 1]
     left = (1.0 - f) * haversine_nm(a.lat, a.lon, b.lat, b.lon)
-    for p, q in zip(fixes[leg + 1:target], fixes[leg + 2:target + 1]):
+    for p, q in zip(fixes[leg + 1:target], fixes[leg + 2:target + 1], strict=False):
         left += haversine_nm(p.lat, p.lon, q.lat, q.lon)
     return off, left
 

@@ -23,13 +23,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from .speech import _ALPHABET_REVERSE, _WORD_TO_DIGIT
 
 
-class Intent(str, Enum):
+class Intent(StrEnum):
     """What the pilot is trying to do."""
 
     UNKNOWN = "unknown"
@@ -342,7 +342,7 @@ _REPORT_WORD = re.compile(
     r"\b(report|rappelez|rappeler|melden|notifique|riporti|reporte|informe)\b")
 
 
-def _circuit_calls(result: "ParsedIntent") -> None:
+def _circuit_calls(result: ParsedIntent) -> None:
     """The circuit calls no rule table understood on its own.
 
     A leg on its own -- "downwind", "vent arrière", "Gegenanflug" -- is the
@@ -1035,13 +1035,12 @@ class IntentParser:
                 break
         else:
             # No rule fired. If the transmission carries instruction words and
-            # numbers, it is almost certainly a readback.
-            if _READBACK_MARKERS.search(norm) and result.values:
-                result.intent = Intent.READBACK
-                result.confidence = 0.7 if result.callsign_matched else 0.5
-            # A frequency on its own is the handoff read back: "one two one
-            # point six". Nothing else is said with nothing but a frequency.
-            elif result.values and set(result.values) <= {"frequency"}:
+            # numbers, it is almost certainly a readback. A frequency on its
+            # own is the handoff read back: "one two one point six". Nothing
+            # else is said with nothing but a frequency.
+            if (_READBACK_MARKERS.search(norm) and result.values
+                    or result.values
+                    and set(result.values) <= {"frequency"}):
                 result.intent = Intent.READBACK
                 result.confidence = 0.7 if result.callsign_matched else 0.5
             # A level and the callsign and nothing to read back: a check-in,
@@ -1055,9 +1054,9 @@ class IntentParser:
 
         # A transmission that both reads something back and carries a request
         # keyword is still a readback if it has no request verb of its own.
-        if result.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE) and result.values:
-            if _READBACK_MARKERS.search(norm):
-                result.intent = Intent.READBACK
+        if (result.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE)
+                and result.values and _READBACK_MARKERS.search(norm)):
+            result.intent = Intent.READBACK
 
         _circuit_calls(result)
         _runway_from_hold_short(result.values)
@@ -1097,9 +1096,9 @@ class IntentParser:
                 result.intent = Intent.READBACK
                 result.confidence = 0.7 if result.callsign_matched else 0.5
 
-        if result.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE) and result.values:
-            if re.search(grammar.readback, norm):
-                result.intent = Intent.READBACK
+        if (result.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE)
+                and result.values and re.search(grammar.readback, norm)):
+            result.intent = Intent.READBACK
 
         _circuit_calls(result)
         _runway_from_hold_short(result.values)
@@ -1110,7 +1109,10 @@ class IntentParser:
     def _parse_french(self, text: str) -> ParsedIntent:
         """The same pipeline against the French rule table."""
         from .intents_fr import (
-            READBACK_MARKERS_FR, STATION_WORDS_FR, normalize_fr, values_fr,
+            READBACK_MARKERS_FR,
+            STATION_WORDS_FR,
+            normalize_fr,
+            values_fr,
         )
 
         raw = text or ""
@@ -1134,9 +1136,9 @@ class IntentParser:
                 result.intent = Intent.READBACK
                 result.confidence = 0.7 if result.callsign_matched else 0.5
 
-        if result.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE) and result.values:
-            if READBACK_MARKERS_FR.search(norm):
-                result.intent = Intent.READBACK
+        if (result.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE)
+                and result.values and READBACK_MARKERS_FR.search(norm)):
+            result.intent = Intent.READBACK
 
         _circuit_calls(result)
         _runway_from_hold_short(result.values)
@@ -1159,10 +1161,9 @@ class IntentParser:
                 return True
         # The tail alone, at either end: "..., six niner Mike".
         for form in self._own():
-            if norm.startswith(form + " ") or norm.endswith(" " + form) \
-                    or norm == form:
-                if len(form.split()) >= 2:
-                    return True
+            if (norm.startswith(form + " ") or norm.endswith(" " + form) \
+                    or norm == form) and len(form.split()) >= 2:
+                return True
         # Punctuation is not spoken, and the languages do not normalise it the
         # same way: French turns "F-GJIM" into "f gjim" while English leaves
         # the hyphen where it is. A registration would match in one language

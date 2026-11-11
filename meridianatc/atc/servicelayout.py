@@ -281,7 +281,7 @@ def docked_loader(door: Point, sill: float, loader: dict, rule: dict
 def _between(xs: list, ys: list, x: float) -> float:
     """``ys`` at ``x``, straight between the points of ``xs``."""
     x = max(xs[0], min(xs[-1], x))
-    for (x0, y0), (x1, y1) in zip(zip(xs, ys), zip(xs[1:], ys[1:])):
+    for (x0, y0), (x1, y1) in zip(zip(xs, ys, strict=False), zip(xs[1:], ys[1:], strict=False), strict=False):
         if x0 <= x <= x1:
             return y0 + (y1 - y0) * (x - x0) / ((x1 - x0) or 1.0)
     return ys[-1]

@@ -430,7 +430,7 @@ def shape(voice: np.ndarray, sample_rate: int, settings,
     rng = rng or random.Random()
     pitch = np.ones(voice.size, dtype=np.float32)
     speed = np.ones(voice.size, dtype=np.float32)
-    for (a, b), (semitones, pace) in zip(runs, plan(len(runs), settings, rng)):
+    for (a, b), (semitones, pace) in zip(runs, plan(len(runs), settings, rng), strict=False):
         pitch[a:b] = 2.0 ** (semitones / 12.0)
         speed[a:b] = pace
     return psola(voice, sample_rate, pitch, speed)

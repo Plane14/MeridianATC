@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -37,7 +38,9 @@ public partial class MainWindow : Window
             button.Click += (_, _) => ScreenFrame.Navigate(make());
             Nav.Children.Add(button);
         }
-        ScreenFrame.Navigate(new DashboardPage());
+        ScreenFrame.Navigate(FirstRunDone()
+            ? (Page)new DashboardPage()
+            : new FirstRunPage());
         _ = ConnectAsync();
         InputBindings.Add(new KeyBinding(
             new RelayCommand(() => ScreenFrame.Navigate(new RadioPage())),
@@ -58,6 +61,24 @@ public partial class MainWindow : Window
                 ? "engine connected on 127.0.0.1:8787"
                 : "engine not reachable");
     }
+
+    /// <summary>Whether the shell's first-run page has been seen before.</summary>
+    private static bool FirstRunDone()
+    {
+        var path = MarkerPath();
+        if (File.Exists(path)) return true;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, DateTime.UtcNow.ToString("o"));
+        }
+        catch (IOException) { }
+        return false;
+    }
+
+    private static string MarkerPath() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "MeridianATC", "shell.firstrun");
 }
 
 /// <summary>An ICommand over a lambda, for the keyboard shortcuts.</summary>

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from ..navdata.db import Airport, Station
@@ -20,7 +20,7 @@ from .profile import DEFAULT as DEFAULT_PROFILE
 from .profile import FlightProfile
 
 
-class Phase(str, Enum):
+class Phase(StrEnum):
     """Where the flight has got to."""
 
     PREFLIGHT = "preflight"
@@ -181,9 +181,7 @@ class Instruction:
             if key not in required:
                 continue
             got = heard.get(key)
-            if got is None:
-                wrong.append(key)
-            elif not _matches(key, expected, got):
+            if got is None or not _matches(key, expected, got):
                 wrong.append(key)
         return wrong
 

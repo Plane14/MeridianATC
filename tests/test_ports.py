@@ -3,6 +3,9 @@ continuous, guidance, surface, history, secrets, endpoints."""
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -448,3 +451,24 @@ class TestAutofly:
         from meridianatc.atc import flying as fly
         from meridianatc.atc.autofly import override
         assert override("B738", "PMDG 737-800", fly.AIRLINER) is fly.AIRLINER
+
+
+class TestDemoPack:
+    """demo/: the fictional pack is data, but it still has to parse."""
+
+    ROOT = Path(__file__).resolve().parents[1] / "demo"
+
+    def test_all_files_parse(self):
+        for path in self.ROOT.rglob("*.json"):
+            data = json.loads(path.read_text(encoding="utf-8"))
+            assert data, f"{path.name} is empty"
+
+    def test_fictional_flags(self):
+        # Nothing in here may be mistaken for real-world navdata.
+        for path in (self.ROOT / "sample-airports").glob("*.json"):
+            data = json.loads(path.read_text(encoding="utf-8"))
+            assert data.get("isFictional") or "FICTIONAL" in str(
+                data.get("$comment", "")), f"{path.name} unmarked"
+        for path in (self.ROOT / "sample-flights").glob("*.json"):
+            data = json.loads(path.read_text(encoding="utf-8"))
+            assert data.get("callsign", "").startswith("STORM")

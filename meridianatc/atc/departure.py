@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """What the controller does about a departure it has already held.
 
 The third of the watches, after :mod:`meridianatc.atc.watch` for the surface and
@@ -38,8 +37,8 @@ from __future__ import annotations
 
 import logging
 
-from ..navdata.db import NavDB, Station
 from ..logs import decision
+from ..navdata.db import NavDB, Station
 from . import climb
 from .controller import ControllerBrain, Reply
 from .phraseology import Weather, language_of

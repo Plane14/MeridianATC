@@ -22,6 +22,7 @@ use is left exactly as it was.
 
 from __future__ import annotations
 
+import contextlib
 import re
 from functools import lru_cache
 
@@ -189,10 +190,8 @@ def protected(language: str) -> frozenset[str]:
     from . import numbers as num
 
     words: set[str] = set(_rule_words(language))
-    try:
+    with contextlib.suppress(Exception):           # pragma: no cover
         words |= set(num.word_values(language))
-    except Exception:                              # pragma: no cover
-        pass
     return frozenset(words)
 
 

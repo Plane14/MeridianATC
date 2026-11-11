@@ -58,7 +58,7 @@ class Systems:
     taxi: bool = False
     landing: bool = False
 
-    def differences(self, other: "Systems") -> list[str]:
+    def differences(self, other: Systems) -> list[str]:
         return [name for name in FIELDS
                 if getattr(self, name) != getattr(other, name)]
 

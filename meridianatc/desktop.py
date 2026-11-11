@@ -27,11 +27,10 @@ import time
 from pathlib import Path
 
 from .config import Config
-from .paths import command_hint
 from .engine import Engine
 from .navdata.db import NavDB
-from .web.server import (Broadcaster, create_app, create_setup_app,
-                         event_sink)
+from .paths import command_hint
+from .web.server import Broadcaster, create_app, create_setup_app, event_sink
 
 log = logging.getLogger(__name__)
 

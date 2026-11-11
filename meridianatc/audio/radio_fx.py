@@ -1016,7 +1016,7 @@ def station_character(facility: str, position: str, ident: str = "") -> tuple[fl
     import hashlib
 
     digest = hashlib.sha256(
-        f"{ident}|{facility}|{position}".encode("utf-8")
+        f"{ident}|{facility}|{position}".encode()
     ).digest()
     tilt = ((digest[0] % 9) - 4) * 0.6          # -2.4 to +2.4 dB
     flutter = 0.0
@@ -1039,7 +1039,7 @@ def station_keying(facility: str, position: str, ident: str = "") -> float:
     import hashlib
 
     digest = hashlib.sha256(
-        f"{ident}|{facility}|{position}|keying".encode("utf-8")
+        f"{ident}|{facility}|{position}|keying".encode()
     ).digest()
     return round(((digest[0] % 11) - 5) / 5.0, 2)
 

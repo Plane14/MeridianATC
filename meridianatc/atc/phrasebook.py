@@ -29,14 +29,13 @@ a US thing and belongs to the English class.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Sequence
 
+from ..navdata.channels import channel_digits, spoken_channel
 from . import numbers as num
 from . import speech as sp
-from ..navdata.channels import channel_digits, spoken_channel
-from .phraseology import (Aircraft, Weather, _join, _pick, _sentence,
-                          without_callsign)
+from .phraseology import Aircraft, Weather, _join, _pick, _sentence, without_callsign
 
 
 @dataclass(frozen=True)
@@ -140,7 +139,7 @@ PHRASE_KEYS: tuple[str, ...] = (
     "cleared_approach", "cleared_straight_in_approach", "cleared_visual",
     "cleared_visual_at", "report_field_in_sight", "field_at",
     "descend_via", "arrival_named", "descend_to_reach", "climb_via", "except_maintain",
-    "hold_at", "on_radial", "turns_to", "legs_of", "expect_further_clearance",
+    "hold_fix", "on_radial", "turns_to", "legs_of", "expect_further_clearance",
     # handoffs
     "contact", "monitor", "remain_this_frequency", "frequency_change_approved",
     "did_you_get_frequency",
@@ -1292,8 +1291,8 @@ class LocalisedPhraseology:
         turns = turns or self.book.right
         parts = [
             aircraft.spoken(True),
-            self._("hold_at").format(direction=direction,
-                                     fix=self._fix(fix, fix_spoken)),
+            self._("hold_fix").format(direction=direction,
+                                      fix=self._fix(fix, fix_spoken)),
             self._("on_radial").format(radial=self.hdg(radial)),
         ]
         if altitude_ft:

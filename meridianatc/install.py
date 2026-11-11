@@ -25,11 +25,12 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from .config import Config
-from .paths import model_dir, navdata_dir, resolve, voice_dir
+from .paths import model_dir, resolve
 
 log = logging.getLogger(__name__)
 
@@ -298,9 +299,7 @@ class Installer:
 
     def _voices(self, force: bool = False, all_voices: bool = False,
                 hq: bool = False, **_: Any) -> None:
-        from .audio.voices import download_voices
-
-        from .audio.voices import VoiceRegistry
+        from .audio.voices import VoiceRegistry, download_voices
 
         root = resolve(self.config.voice.voice_dir)
         # The cloning model is two gigabytes on top and only asked for by

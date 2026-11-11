@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """The first officer's checklists, as files a pilot can write.
 
 The flows for each class of aeroplane (``aircraft_class.CLASSES``) ship in

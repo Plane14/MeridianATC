@@ -21,8 +21,12 @@ import logging
 import time
 
 from ..atc.servicelayout import FEET, Point, points_from_reading
-from .aitraffic import (SIMCONNECT_DATATYPE_FLOAT64, _Received,
-                        install_dispatch, remove_dispatch)
+from .aitraffic import (
+    SIMCONNECT_DATATYPE_FLOAT64,
+    _Received,
+    install_dispatch,
+    remove_dispatch,
+)
 
 log = logging.getLogger("meridianatc.doors")
 

@@ -182,7 +182,7 @@ class Taxiing:
 
     def remaining_edges(self) -> set[tuple[object, object]]:
         found = set()
-        for a, b in zip(self.nodes[self.index - 1:], self.nodes[self.index:]):
+        for a, b in zip(self.nodes[self.index - 1:], self.nodes[self.index:], strict=False):
             if a is not None and b is not None:
                 found.add((a, b))
         return found
@@ -264,7 +264,7 @@ class GroundLayout:
                 self.runway_nodes.add(node)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "GroundLayout":
+    def from_dict(cls, data: dict) -> GroundLayout:
         return cls(data["ident"], data["latitude"], data["longitude"],
                    data["points"], data["parkings"], data["paths"],
                    data.get("names", []))
@@ -403,7 +403,7 @@ class GroundLayout:
     def names_along(self, nodes: list[object]) -> list[str]:
         """The taxiways a route uses, in order, each once."""
         found: list[str] = []
-        for a, b in zip(nodes, nodes[1:]):
+        for a, b in zip(nodes, nodes[1:], strict=False):
             for other, _length, runway, label in self.edges.get(a, ()):
                 if other == b:
                     if label and not runway and (not found

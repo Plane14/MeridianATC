@@ -20,9 +20,10 @@ public partial class DashboardPage : Page
         var state = await App.Engine.GetAsync("/api/state");
         if (state is { } s)
         {
-            Callsign.Text = TryGet(s, "callsign") ?? "—";
-            Phase.Text = TryGet(s, "phase") ?? "—";
-            Frequency.Text = TryGet(s, "com1_active") ?? "—";
+            // The snapshot nests facts under their area.
+            Callsign.Text = TryGet(s, "aircraft", "callsign") ?? "—";
+            Phase.Text = TryGet(s, "flight", "phase") ?? "—";
+            Frequency.Text = TryGet(s, "radio", "com1") ?? "—";
         }
         var hint = await App.Engine.GetAsync("/api/guidance");
         if (hint is { } h)
@@ -68,8 +69,19 @@ public partial class DashboardPage : Page
         }
     }
 
-    private static string? TryGet(JsonElement e, string name) =>
-        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
-            ? v.GetString()
-            : v.ValueKind is JsonValueKind.Number ? v.ToString() : null;
+    private static string? TryGet(JsonElement e, params string[] path)
+    {
+        var node = e;
+        foreach (var name in path)
+            if (!node.TryGetProperty(name, out node))
+                return null;
+        return node.ValueKind switch
+        {
+            JsonValueKind.String => node.GetString(),
+            JsonValueKind.Number => node.ToString(),
+            JsonValueKind.True => "yes",
+            JsonValueKind.False => "no",
+            _ => null,
+        };
+    }
 }

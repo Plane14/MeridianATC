@@ -95,7 +95,7 @@ def _area(row: dict) -> Area | None:
 
 def _shoelace(ring) -> float:
     return 0.5 * sum(x1 * y2 - x2 * y1
-                     for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]))
+                     for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1], strict=False))
 
 
 class ApproachAreas:
@@ -107,7 +107,7 @@ class ApproachAreas:
         self._fields: dict[str, Area | None] = {}
 
     @classmethod
-    def load(cls, path: Path | str) -> "ApproachAreas":
+    def load(cls, path: Path | str) -> ApproachAreas:
         path = Path(path)
         try:
             data = json.loads(gzip.decompress(path.read_bytes()).decode("utf-8"))

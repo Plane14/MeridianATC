@@ -70,7 +70,7 @@ _MEASURED_IN: frozenset[str] = frozenset({
     "knots", "knot", "feet", "foot", "miles", "mile", "degrees", "degree",
     "minutes", "minute", "thousand", "hundred",
     "left", "right", "center", "centre",
-    "nœuds", "noeuds", "pieds", "milles", "minutes", "degrés",
+    "nœuds", "noeuds", "pieds", "milles", "degrés",
     "gauche", "droite",
 })
 

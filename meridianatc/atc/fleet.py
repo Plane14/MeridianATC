@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Which aeroplanes a field has: an airport's airliners or an airfield's
 light aircraft, and the rule that decided.
 
@@ -95,7 +94,7 @@ GA_FIELD_MOVEMENT_GAP_S = 240.0
 PARKED_BY_SIZE = {"airfield": 5, "ga_field": 8, "airport": 12}
 
 
-def parked_for(kind: "FieldKind | None", configured: int) -> int:
+def parked_for(kind: FieldKind | None, configured: int) -> int:
     """How many to park at this field, given ``traffic.parked``."""
     size = kind.size if kind is not None else "airport"
     share = PARKED_BY_SIZE.get(size, PARKED_BY_SIZE["airport"])

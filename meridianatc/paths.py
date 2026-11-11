@@ -23,6 +23,7 @@ that writes its logs relative to the working directory writes them there.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from pathlib import Path
@@ -188,10 +189,8 @@ def announcements_dir() -> Path:
     inner.mkdir(parents=True, exist_ok=True)
     guide = path / "README.txt"
     if not guide.exists():
-        try:
+        with contextlib.suppress(OSError):
             guide.write_text(ANNOUNCEMENTS_README, encoding="utf-8")
-        except OSError:
-            pass
     return path
 
 

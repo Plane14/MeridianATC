@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """An instruction said again, in the language it is being said again in.
 
 A controller repeating itself repeats the instruction, and a pilot who asked

@@ -18,8 +18,9 @@ altitude wording (flight levels vs metric-free thousands), pressure setting
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, Literal
+from typing import Literal
 
 Dialect = Literal["faa", "icao"]
 
@@ -121,9 +122,7 @@ def digits(value: str | int, dialect: Dialect = "faa") -> str:
             out.append(_ALPHABET[ch.upper()])
         elif ch == ".":
             out.append("point")
-        elif ch == "-":
-            continue
-        elif ch == " ":
+        elif ch == "-" or ch == " ":
             continue
         else:
             out.append(ch)

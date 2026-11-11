@@ -296,9 +296,9 @@ def profile_for(ident: str) -> LanguageProfile:
     best: tuple[int, LanguageProfile] | None = None
     for prefixes, profile in _PROFILES:
         for prefix in prefixes:
-            if code.startswith(prefix):
-                if best is None or len(prefix) > best[0]:
-                    best = (len(prefix), profile)
+            if code.startswith(prefix) and (best is None
+                                           or len(prefix) > best[0]):
+                best = (len(prefix), profile)
     return best[1] if best else DEFAULT_PROFILE
 
 

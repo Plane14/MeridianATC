@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """A cabin clapping, for a landing gentle enough to deserve it.
 
 Synthesised rather than shipped, for the reasons :mod:`meridianatc.audio.chime`

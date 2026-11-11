@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """What the pilot says to the people who are not on the radio.
 
 There is one microphone. Everything a pilot says arrives here first, and
@@ -539,7 +538,7 @@ def _figure(words: list[str], language: str) -> tuple[float | None, list[str]]:
                 number += tens[words[at]]
                 at += 1
             elif at < len(words) and words[at] in digits \
-                    and 0 < digits[words[at]] and number % 10 == 0 \
+                    and digits[words[at]] > 0 and number % 10 == 0 \
                     and number >= 20:
                 number += digits[words[at]]
                 at += 1
@@ -705,7 +704,7 @@ def _speeds(text: str, folded: str, language: str):
             found.append((name, value))
         else:
             unnamed = _split_figures(text, value, language)
-            found += list(zip(("v1", "vr", "v2"), unnamed))
+            found += list(zip(("v1", "vr", "v2"), unnamed, strict=False))
     return tuple(found) or None
 
 
@@ -922,11 +921,11 @@ def _addressed(folded: str, language: str, names,
     for table in tables:
         for who, phrases in table.items():
             for phrase in phrases:
-                if re.search(rf"\b{re.escape(phrase)}\b", head):
-                    # The longest match wins, so "ground crew" is not read as
-                    # a cabin address by way of "crew" appearing in both.
-                    if len(phrase) > len(best[1]):
-                        best = (who, phrase)
+                # The longest match wins, so "ground crew" is not read as
+                # a cabin address by way of "crew" appearing in both.
+                if (re.search(rf"\b{re.escape(phrase)}\b", head)
+                        and len(phrase) > len(best[1])):
+                    best = (who, phrase)
     return best
 
 

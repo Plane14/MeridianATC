@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Where an aeroplane is relative to the runway it is landing on.
 
 Every arrival clearance used to be a radius round the airport reference
@@ -23,7 +22,6 @@ the answer by a few hundred feet at most.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 from ..navdata.build import bearing_deg, haversine_nm

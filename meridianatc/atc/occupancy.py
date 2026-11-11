@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Who is on the runway, and who is about to be.
 
 The tower's view of its runway was the invented traffic's own bookkeeping --

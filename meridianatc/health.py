@@ -25,8 +25,9 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from .config import Config
 from .paths import command_hint, model_dir, resolve

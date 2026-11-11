@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Per-type performance for the *invented* traffic, from the EUROCONTROL
 Aircraft Performance Database (ATCPFDB).
 

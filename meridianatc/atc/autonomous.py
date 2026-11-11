@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Autonomous flight control for the First Officer.
 
 When enabled, the First Officer manages the entire flight from startup to
@@ -26,15 +25,16 @@ support the aircraft type and have ground services (fuel, parking, etc.).
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import math
 import random
 import re
 import sqlite3
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Callable, Optional
+from enum import StrEnum
 
 from ..config import Config
 from ..navdata.build import haversine_nm
@@ -52,7 +52,7 @@ from .session import FlightSession, Phase, station_key
 log = logging.getLogger(__name__)
 
 
-class AutonomousPhase(str, Enum):
+class AutonomousPhase(StrEnum):
     """Internal autonomous flight phases."""
     INIT = "init"
     PREFLIGHT = "preflight"
@@ -187,7 +187,7 @@ class AutonomousState:
     # already set up.
     emergency: str = ""
     emergency_declared: bool = False
-    emergency_destination: Optional[Airport] = None
+    emergency_destination: Airport | None = None
     # Chain flights
     chain_flight_index: int = 0
     chain_flights: list[dict] = field(default_factory=list)
@@ -220,13 +220,13 @@ class AutonomousState:
     # The turnaround between chained legs: the plan being serviced for,
     # whether the engines were shut and the fuel asked for, and where the
     # diversion field is that the fuel figure was built on.
-    plan_flight: Optional[dict] = None
+    plan_flight: dict | None = None
     service_started_at: float = 0.0
     gsx_asked: bool = False
     gsx_busy: bool = False
     fuel_wrote: bool = False
     service_warned: bool = False
-    alternate: Optional[Airport] = None
+    alternate: Airport | None = None
     # The warnings a flight gets once: overweight at the hold, the flap
     # speed the schedule asked for and could not have, minimum fuel
     # already said on the radio, and the short-of-diversion note at the
@@ -260,13 +260,13 @@ class AutonomousFlight:
         self,
         config: Config,
         navdb: NavDB,
-        sim_source: Optional[SimConnectSource],
+        sim_source: SimConnectSource | None,
         session: FlightSession,
         crew: CrewDirector,
         brain: ControllerBrain,
         get_state: Callable[[], object],
         on_event: Callable[[str, str, str], None],
-        use_route: Optional[Callable[[object], None]] = None,
+        use_route: Callable[[object], None] | None = None,
     ):
         self.config = config
         self.navdb = navdb
@@ -313,9 +313,9 @@ class AutonomousFlight:
         # When the squawk/altimeter were last pushed into the radios, so a
         # dial that does not take is retried on a clock, not every tick.
         self._dialled_at = 0.0
-        self._dir: Optional[FlightDirector] = None
-        self._perf: Optional[fly.Performance] = None
-        self._speeds: Optional[vspeeds.Speeds] = None
+        self._dir: FlightDirector | None = None
+        self._perf: fly.Performance | None = None
+        self._speeds: vspeeds.Speeds | None = None
         self._fuel_known = False
         self._ga_flag_seen = False
         # The last few headwind samples on final, for the windshear
@@ -458,7 +458,7 @@ class AutonomousFlight:
         self.config.immersion.autonomous_flight = False
         self._handoff()
 
-    def engage(self, session: Optional[FlightSession] = None) -> bool:
+    def engage(self, session: FlightSession | None = None) -> bool:
         """The panel's engage, live: start the machine fresh wherever the
         aeroplane already is. False when there is no flight to fly yet --
         the next ``begin_flight`` picks the flag up instead."""
@@ -1373,7 +1373,7 @@ class AutonomousFlight:
             # The outside checks a FO runs before the before-start list:
             # transponder on with the assigned squawk, the altimeter set,
             # the lights that belong on for the phase.
-            if not getattr(state, "transponder_state", -1) in (3, 4):
+            if getattr(state, "transponder_state", -1) not in (3, 4):
                 d.transponder(self.session.squawk or "1200")
             if getattr(state, "kohlsman_hpa", 0.0) > 0 and self.session.altimeter:
                 d.kohlsman(float(self.session.altimeter))
@@ -1649,9 +1649,9 @@ class AutonomousFlight:
             err = auto_nav.align(state.latitude, state.longitude,
                                  self.state.runway_lat, self.state.runway_lon,
                                  self.state.runway_heading)
-            hdg_err = abs(((self.state.runway_heading
+            hdg_err = abs((self.state.runway_heading
                             - (state.heading_true or 0.0) + 540.0)
-                           % 360.0 - 180.0))
+                           % 360.0 - 180.0)
             steer_hdg = (self.state.runway_heading
                          + err["correction_deg"]) % 360.0
             if abs(err["offset_m"]) < 60.0:
@@ -2107,11 +2107,11 @@ class AutonomousFlight:
 
         if self.session.phase == Phase.PARKED:
             self._transition(AutonomousPhase.PARKED)
-        elif now - self.state.phase_entered_at > self.TAXI_TIMEOUT:
-            # Parked somewhere: a long taxi in is not an error if we are
-            # stopped; only a moving never-ending one is.
-            if (state.ground_speed_kt or 0.0) > 1.0:
-                self._set_error("Taxi-in timed out")
+        # Parked somewhere: a long taxi in is not an error if we are
+        # stopped; only a moving never-ending one is.
+        elif (now - self.state.phase_entered_at > self.TAXI_TIMEOUT
+                and (state.ground_speed_kt or 0.0) > 1.0):
+            self._set_error("Taxi-in timed out")
 
     def _phase_parked(self, state, now: float) -> None:
         """At parking position: the shutdown checklist, then the sequence."""
@@ -2244,9 +2244,9 @@ class AutonomousFlight:
                        "Turnaround: engines still running, servicing anyway",
                        "autonomous.service.engines")
         rotor = float(getattr(state, "rotor_rpm_pct", 0.0) or 0.0)
-        if self._is_helicopter and rotor > 1.0:
-            if now - self.state.service_started_at < 90.0:
-                return False
+        if (self._is_helicopter and rotor > 1.0
+                and now - self.state.service_started_at < 90.0):
+            return False
 
         plan = self.state.plan_flight or {}
         dest = (self.navdb.airport(plan.get("destination", "") or "")
@@ -2969,7 +2969,7 @@ class AutonomousFlight:
             return float(getattr(airport, "elev_ft", 0.0) or 0.0)
         return 0.0
 
-    def _distance_to_destination_nm(self, state) -> Optional[float]:
+    def _distance_to_destination_nm(self, state) -> float | None:
         dest = self.session.destination
         if dest is None or not getattr(state, "has_position", False):
             return None
@@ -3002,12 +3002,12 @@ class AutonomousFlight:
         agl = (state.altitude_ft or 0.0) - self._field_elevation(state)
 
         # Gear down on final, flaps through the stages, speedbrake armed.
-        if agl < 2000 or (distance is not None and distance < 10.0):
-            # Only a model that has said the gear is down already is not
-            # asked: up or unanswered both get the command. The inverted
-            # check used to ask only the aeroplane already configured.
-            if state.gear_down is not True:
-                d.gear(True)
+        # Only a model that has said the gear is down already is not
+        # asked: up or unanswered both get the command. The inverted
+        # check used to ask only the aeroplane already configured.
+        if (agl < 2000 or (distance is not None and distance < 10.0)) \
+                and state.gear_down is not True:
+            d.gear(True)
         if distance is not None and distance < 6.0 and agl < 2500:
             self._set_flaps(state, 0.75)
             self.state.configured = "flaps_landing"
@@ -3058,17 +3058,17 @@ class AutonomousFlight:
         # limits on this runway, or the field's own report below what the
         # approach can be flown to. Counted once an approach -- the flag
         # lifts when the next one is set up.
-        if self._weather_reactions and 0.0 < agl < 1000.0 \
-                and not self.state.weather_ga_active:
-            if self._landing_wind_bad(state) \
-                    or self._weather_below_minima(state):
-                self.state.weather_gas += 1
-                self.state.weather_ga_active = True
-                return True
+        if (self._weather_reactions and 0.0 < agl < 1000.0
+                and not self.state.weather_ga_active
+                and (self._landing_wind_bad(state)
+                     or self._weather_below_minima(state))):
+            self.state.weather_gas += 1
+            self.state.weather_ga_active = True
+            return True
         # Below minimums without the runway: a go-around, not a dive.
-        if agl < (self.state.minima_ft or 200.0) and agl > 0:
-            if not self.session.cleared_landing and self.session.ifr:
-                return True
+        if (agl < (self.state.minima_ft or 200.0) and agl > 0
+                and not self.session.cleared_landing and self.session.ifr):
+            return True
         # Unstable low down: sink rate, bank, or speed far off.
         if 0 < agl < 500.0:
             vs = state.vertical_speed_fpm or 0.0
@@ -3082,9 +3082,7 @@ class AutonomousFlight:
             if target and abs(ias - target) > 20.0:
                 return True
         # Drifting toward the ground without a flare started.
-        if agl < 30.0 and not self.session.cleared_landing:
-            return True
-        return False
+        return bool(agl < 30.0 and not self.session.cleared_landing)
 
     def _start_go_around(self, state) -> None:
         """The go-around: power, pitch, configuration, climb away."""
@@ -3324,7 +3322,7 @@ class AutonomousFlight:
         """The reserve the legs are planned to, in hours."""
         return max(0.25, self._reserve_min / 60.0)
 
-    def _pick_alternate(self, state, destination=None) -> Optional[Airport]:
+    def _pick_alternate(self, state, destination=None) -> Airport | None:
         """The nearest field that can take the aeroplane, for the reserve.
 
         What a crew files: the closest suitable airport to the
@@ -3393,10 +3391,8 @@ class AutonomousFlight:
         # An emergency ends the chain: nobody flies the next leg on one.
         self._chained = False
         if mayday:
-            try:
+            with contextlib.suppress(Exception):
                 self.sim.set_squawk("7700")
-            except Exception:
-                pass
         # Nearest airport that can take the aeroplane, for the divert.
         current = self._get_current_airport()
         if current is not None:
@@ -3414,10 +3410,8 @@ class AutonomousFlight:
         text = (f"{prefix}, {callsign} "
                 f"{kind} emergency, diverting to {dest_name}")
         if self.crew.transmit:
-            try:
+            with contextlib.suppress(Exception):
                 self.crew.transmit(text)
-            except Exception:
-                pass
         else:
             log.warning("Emergency declared but no radio to say it: %s", text)
         self._emit("error", f"Emergency: {kind}; diverting to {dest_name}",
@@ -3532,14 +3526,14 @@ class AutonomousFlight:
         hist.append(longitudinal)
         del hist[:len(hist) - 8]
         swing = (max(hist) - min(hist)) if len(hist) >= 4 else 0.0
-        if (swing >= 15.0 or (updraft >= 10.0 and agl < 500.0)) \
-                and now - self.state.windshear_since > 20.0:
-            if self.state.sub in ("intercept", "final"):
-                self.state.windshear_since = now
-                self.state.weather_gas += 1
-                self._emit("info", "Windshear: going around",
-                           "autonomous.weather.windshear")
-                self._start_go_around(state)
+        if ((swing >= 15.0 or (updraft >= 10.0 and agl < 500.0))
+                and now - self.state.windshear_since > 20.0
+                and self.state.sub in ("intercept", "final")):
+            self.state.windshear_since = now
+            self.state.weather_gas += 1
+            self._emit("info", "Windshear: going around",
+                       "autonomous.weather.windshear")
+            self._start_go_around(state)
 
     def _field_weather(self, airport):
         """The weather the controllers are quoting for a field, or None.
@@ -3768,11 +3762,9 @@ class AutonomousFlight:
                    f"Weather below limits at the destination: diverting "
                    f"to {dest.ident}", "autonomous.weather.divert")
         if self.crew.transmit:
-            try:
+            with contextlib.suppress(Exception):
                 self.crew.transmit(
                     f"diverting to {dest.ident}, weather below minima")
-            except Exception:
-                pass
         self.session.destination = dest
         self.state.weather_gas = 0
         self._route_diversion()
@@ -3800,7 +3792,7 @@ class AutonomousFlight:
         log.info("Chained flight: %s -> %s (%d NM)", current.ident, destination.ident,
                  flight_plan.get("distance_nm", 0))
 
-    def _get_current_airport(self) -> Optional[Airport]:
+    def _get_current_airport(self) -> Airport | None:
         """Get the airport the aircraft is currently at."""
         state = self.get_state()
         if state and state.has_position:
@@ -3876,7 +3868,7 @@ class AutonomousFlight:
             return 9000
         return 6000
 
-    def _pick_destination(self, candidates: list[tuple[Airport, float]]) -> Optional[Airport]:
+    def _pick_destination(self, candidates: list[tuple[Airport, float]]) -> Airport | None:
         """Pick a destination from candidates with some randomness."""
         if not candidates:
             return None
@@ -4246,13 +4238,13 @@ class AutonomousFlight:
 def create_autonomous_flight(
     config: Config,
     navdb: NavDB,
-    sim_source: Optional[SimConnectSource],
+    sim_source: SimConnectSource | None,
     session: FlightSession,
     crew: CrewDirector,
     brain: ControllerBrain,
     get_state: Callable[[], object],
     on_event: Callable[[str, str, str], None],
-    use_route: Optional[Callable[[object], None]] = None,
+    use_route: Callable[[object], None] | None = None,
 ) -> AutonomousFlight:
     """The First Officer's machine, always built.
 

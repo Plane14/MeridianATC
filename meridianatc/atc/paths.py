@@ -267,7 +267,7 @@ def drive_route(points: list[Point], speed: float, t0: float,
     # The speed at every joint: standing at both ends, a corner's own
     # speed either side of it.
     joints = [0.0]
-    for (_, v), (_, w) in zip(pieces, pieces[1:]):
+    for (_, v), (_, w) in zip(pieces, pieces[1:], strict=False):
         joints.append(v if v is not None else w if w is not None else speed)
     joints.append(0.0)
     segments: list[Segment] = []
@@ -329,7 +329,7 @@ def _straight(a: Point, b: Point) -> tuple[Point, Point, Point, Point]:
 def _length(a: Point, b: Point, c: Point, d: Point, steps: int = 16) -> float:
     s = Segment(0.0, 1.0, a, b, c, d)
     marks = [_bezier(s, k / steps) for k in range(steps + 1)]
-    return sum(math.dist(p, q) for p, q in zip(marks, marks[1:]))
+    return sum(math.dist(p, q) for p, q in zip(marks, marks[1:], strict=False))
 
 
 __all__ = ["Segment", "evaluate", "ends_at", "ease", "drive_in", "drive_out",

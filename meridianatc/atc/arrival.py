@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """What the controller does about an arrival without being asked.
 
 :mod:`meridianatc.atc.watch` is the same idea for the surface and
@@ -54,18 +53,18 @@ import logging
 import math
 import time
 
+from ..logs import decision
 from ..navdata.build import bearing_deg, haversine_nm
 from ..navdata.db import NavDB, Station
-from .controller import ControllerBrain, Reply
-from ..logs import decision
+from . import holds as hold_rules
+from . import vectors as vec
 from .approaches import VISUAL
+from .controller import ControllerBrain, Reply
 from .final import final_for
 from .phraseology import Weather, language_of
 from .procedures import ON_STAR_NM, along_to, frame, star_join
 from .procedures import written as written_procedure
 from .route import DSC
-from . import holds as hold_rules
-from . import vectors as vec
 from .session import FlightSession, Instruction, Phase, station_key
 
 log = logging.getLogger(__name__)

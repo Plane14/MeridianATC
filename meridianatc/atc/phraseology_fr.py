@@ -27,16 +27,21 @@ English one, so it reads as French rather than as translated English.
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
-from . import speech_fr as fr
 from ..navdata.channels import spoken_channel
+from . import speech_fr as fr
+from .phraseology import (
+    Aircraft,
+    Weather,
+    _join,
+    _pick,
+    _sentence,
+    without_callsign,
+)
 
 # The circle's side, as the French clause says it.
 _FR_COMPASS = {"north": "nord", "east": "est", "south": "sud", "west": "ouest"}
-from .phraseology import (Aircraft, Weather, _join, _pick, _sentence,
-                          without_callsign)
-
 
 # The conspicuity code a VFR flight squawks. Europe uses 7000 where the US
 # uses 1200, and a controller says the digits rather than the number.

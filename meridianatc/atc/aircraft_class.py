@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Which kind of aeroplane the pilot is flying, for the first officer.
 
 A checklist and a callout belong to a class of aeroplane, not to a type: a

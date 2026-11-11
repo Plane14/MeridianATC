@@ -13,6 +13,25 @@ public partial class TranscriptPage : Page
     {
         InitializeComponent();
         Loaded += async (_, _) => await RefreshAsync();
+        App.Engine.OnEvent += OnEngineEvent;
+        Unloaded += (_, _) => App.Engine.OnEvent -= OnEngineEvent;
+    }
+
+    private void OnEngineEvent(JsonElement e)
+    {
+        // Transcript lines are the radio's exchange: what the pilot said and
+        // what a station answered, in the order they were said.
+        if (!e.TryGetProperty("kind", out var k)
+            || k.GetString() != "event"
+            || !e.TryGetProperty("type", out var t))
+            return;
+        var type = t.GetString();
+        if (type is not ("pilot" or "atc")) return;
+        var who = e.TryGetProperty("speaker", out var sp)
+            ? sp.GetString() : type;
+        var text = e.TryGetProperty("text", out var x)
+            ? x.GetString() : "";
+        Dispatcher.Invoke(() => Lines.Items.Add($"{who}: {text}"));
     }
 
     private async Task RefreshAsync()

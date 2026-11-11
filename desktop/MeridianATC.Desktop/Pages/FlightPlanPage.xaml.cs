@@ -27,6 +27,8 @@ public partial class FlightPlanPage : Page
             if (f.TryGetProperty("cruise_altitude_ft", out var c)
                 && c.ValueKind == JsonValueKind.Number)
                 Cruise.Text = c.GetInt32().ToString();
+            if (cfg.TryGetProperty("simbrief", out var sb))
+                SimbriefUser.Text = Get(sb, "username");
         }
     }
 
@@ -49,7 +51,8 @@ public partial class FlightPlanPage : Page
 
     private async void Simbrief_Click(object s, RoutedEventArgs e)
     {
-        var r = await App.Engine.PostAsync("/api/simbrief", new { });
+        var r = await App.Engine.PostAsync("/api/simbrief",
+            new { username = SimbriefUser.Text.Trim() });
         Result.Text = r is { } res &&
             res.TryGetProperty("ok", out var ok) && ok.GetBoolean()
                 ? "SimBrief plan loaded"

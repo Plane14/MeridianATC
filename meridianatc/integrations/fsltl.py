@@ -72,7 +72,7 @@ class FsltlLiveries:
         self.source = source
 
     @classmethod
-    def parse(cls, text: str, source: Path | None = None) -> "FsltlLiveries":
+    def parse(cls, text: str, source: Path | None = None) -> FsltlLiveries:
         rules: dict[tuple[str, str], tuple[str, ...]] = {}
         for body in _RULE.findall(text):
             found = dict(_ATTRIBUTE.findall(body))
@@ -89,7 +89,7 @@ class FsltlLiveries:
         return cls(rules, source)
 
     @classmethod
-    def load(cls, path: Path) -> "FsltlLiveries | None":
+    def load(cls, path: Path) -> FsltlLiveries | None:
         try:
             text = Path(path).read_text(encoding="utf-8", errors="replace")
         except OSError:

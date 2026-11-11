@@ -82,7 +82,7 @@ class Ofp:
     # of ``raw`` in two places for two lists -- points for the en-route
     # look-ahead, names for a direct -- and the altitudes, stages and times
     # were dropped, which is what a top of descent is made of.
-    navlog: tuple["NavlogFix", ...] = ()
+    navlog: tuple[NavlogFix, ...] = ()
     # (lat, lon, elevation ft) of the departure, which the log leaves out.
     origin_position: tuple[float, float, float] | None = None
     raw: dict = field(default_factory=dict, repr=False)

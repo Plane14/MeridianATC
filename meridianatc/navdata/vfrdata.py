@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Circuits, reporting points and airspace volumes, from files.
 
 The tower used to know none of these. Every circuit was left-hand at a

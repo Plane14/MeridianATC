@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """The speeds a takeoff and an approach are flown at, with where each comes
 from.
 
@@ -30,8 +29,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from .aircraft_class import (AIRLINER, BUSINESS_JET, HELICOPTER, PISTON_SINGLE,
-                             PISTON_TWIN, TURBOPROP_SINGLE, TURBOPROP_TWIN)
+from .aircraft_class import (
+    AIRLINER,
+    BUSINESS_JET,
+    HELICOPTER,
+    PISTON_SINGLE,
+    PISTON_TWIN,
+    TURBOPROP_SINGLE,
+    TURBOPROP_TWIN,
+)
 
 
 @dataclass(frozen=True)

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """A word heard where a spelled letter belongs is read as that letter.
 
 The recogniser writes what a letter sounds like when it does not expect a
@@ -99,7 +98,7 @@ def snap(text: str) -> tuple[str, list[tuple[str, str]]]:
     if not changes:
         return text, []
     out, last = [], 0
-    for i, (start, end, word) in enumerate(found):
+    for i, (start, end, _word) in enumerate(found):
         if i in changes:
             out += [text[last:start], changes[i]]
             last = end

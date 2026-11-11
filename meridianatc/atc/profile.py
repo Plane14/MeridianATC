@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """What kind of flying this is, as the pilot said it.
 
 Everything that differs between an airline flight and a light aeroplane's
@@ -69,7 +68,7 @@ class FlightProfile:
     region: str = AUTO
 
     @classmethod
-    def of(cls, flight) -> "FlightProfile":
+    def of(cls, flight) -> FlightProfile:
         """From ``config.flight``; anything unknown is the default."""
         kind = getattr(flight, "profile", AIRLINER)
         region = getattr(flight, "region", AUTO)

@@ -14,10 +14,9 @@ import math
 import re
 import sqlite3
 import threading
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
-from typing import Iterable, Sequence
 
 from ..paths import command_hint
 from .build import DB_PATH, bearing_deg, haversine_nm, put_in_place
@@ -226,15 +225,7 @@ def _names_match(a: str, b: str) -> bool:
 # frequencies as "Twy", "Twy A" and "Twy D E", Canada its MF as "Mandatory",
 # the UK and Togo an air/ground station as "G Voice" (A/G VOICE RDO), Russia
 # "Taxiing", Japan "Remote". 96 rows at 70-odd fields in the built database.
-_NOT_A_NAME = frozenset("""
-    twy taxiway taxi taxiing rwy runway apron apn ramp stand
-    info information tower twr ground gnd delivery del clearance clnc clr
-    approach app departure dep radar control ctl con centre center ctr
-    atis ctaf unicom multicom radio rdo mandatory remote voice
-    ops operations frequency freq aerodrome airport field afis fis service
-    traffic advisory and of the north south east west primary secondary
-    alt alternate main i ii iii iv
-""".split())
+_NOT_A_NAME = frozenset(["twy", "taxiway", "taxi", "taxiing", "rwy", "runway", "apron", "apn", "ramp", "stand", "info", "information", "tower", "twr", "ground", "gnd", "delivery", "del", "clearance", "clnc", "clr", "approach", "app", "departure", "dep", "radar", "control", "ctl", "con", "centre", "center", "ctr", "atis", "ctaf", "unicom", "multicom", "radio", "rdo", "mandatory", "remote", "voice", "ops", "operations", "frequency", "freq", "aerodrome", "airport", "field", "afis", "fis", "service", "traffic", "advisory", "and", "of", "the", "north", "south", "east", "west", "primary", "secondary", "alt", "alternate", "main", "i", "ii", "iii", "iv"])
 
 
 # Letters a frequency's name and a word of its airport's name must agree on
@@ -739,7 +730,7 @@ class NavDB:
         self._local = threading.local()
         self._opened: list[tuple[threading.Thread, sqlite3.Connection]] = []
         self._opened_lock = threading.Lock()
-        self._conn                      # fail here, not mid-flight, if unreadable
+        _ = self._conn                  # fail here, not mid-flight, if unreadable
         self._boundaries: list[tuple] | None = None
         self._enroute = None
         self._preferences: dict[str, tuple[list[str], list[str], float]] | None = None
@@ -1232,7 +1223,6 @@ class NavDB:
     # runways
     # ------------------------------------------------------------------
 
-    @lru_cache(maxsize=512)
     # -- the simulator's runways, ahead of the database's ----------------
 
     def set_sim_runways(self, ident: str, runways) -> None:
@@ -1561,7 +1551,7 @@ class NavDB:
             return end_ident, rw
         return best[1], best[2]
 
-    def _preference(self, ident: str, departing: bool) -> "RunwayPreference | None":
+    def _preference(self, ident: str, departing: bool) -> RunwayPreference | None:
         self._load_preferences()
         entry = self._preferences.get((ident or "").upper())
         if entry is None:
@@ -1987,7 +1977,7 @@ class NavDB:
             return None
 
     @staticmethod
-    def _station_for_position(row) -> "Station":
+    def _station_for_position(row) -> Station:
         """One sector position, as the handoff names it and as it answers."""
         facility = _GENERIC_CENTRE_WORD.sub("", row["callsign"].strip())             or row["callsign"]
         prefix = row["prefix"] or ""
@@ -1996,7 +1986,7 @@ class NavDB:
                        dialect=dialect_for(prefix))
 
     def sector_centre(self, lat: float, lon: float,
-                      altitude_ft: float) -> "Station | None":
+                      altitude_ft: float) -> Station | None:
         """Who works this position at this level, from the sector data.
 
         The sectors containing the aeroplane at its level, and of each the
@@ -2024,7 +2014,7 @@ class NavDB:
                        if position is not None and position["type"] == "CTR"]
             if not centres:
                 continue
-            group = row["grp"] if "grp" in row.keys() else ""
+            group = row.get("grp", "")
             own = [position for position in centres
                    if group and _names_match(
                        _GENERIC_CENTRE_WORD.sub("", position["callsign"]), group)]
@@ -2038,7 +2028,7 @@ class NavDB:
     SECTOR_ANSWER_MARGIN_DEG = 0.75
 
     def _sector_candidates(self, mhz: float, lat: float, lon: float,
-                           tolerance_khz: int) -> list["Station"]:
+                           tolerance_khz: int) -> list[Station]:
         """Sector positions on this frequency that cover, or nearly cover, here."""
         try:
             rows = self._conn.execute(
@@ -2088,7 +2078,7 @@ class NavDB:
         return name
 
     @classmethod
-    def _same_centre(cls, spoken: str, station: "Station", distance: float) -> bool:
+    def _same_centre(cls, spoken: str, station: Station, distance: float) -> bool:
         """Whether a borrowed frequency really belongs to the sector overhead.
 
         Two ways of being satisfied. The names agree, which is the ordinary
@@ -2254,9 +2244,9 @@ def _point_in_ring(x: float, y: float, ring: Sequence[Sequence[float]]) -> bool:
     for i in range(n):
         xi, yi = ring[i][0], ring[i][1]
         xj, yj = ring[j][0], ring[j][1]
-        if (yi > y) != (yj > y):
-            if x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-12) + xi:
-                inside = not inside
+        if ((yi > y) != (yj > y)
+                and x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-12) + xi):
+            inside = not inside
         j = i
     return inside
 

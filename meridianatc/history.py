@@ -86,8 +86,17 @@ class History:
     def open_session(self, departure: str = "", destination: str = "",
                      callsign: str = "", aircraft: str = "",
                      rules: str = "") -> int:
-        """Start a session row; the id is remembered for transcript writes."""
+        """Start a session row; the id is remembered for transcript writes.
+
+        The previous session, if any was left open, is closed first -- a
+        flight that ends by the next one beginning still gets an end time.
+        """
         with self._lock:
+            if self._session_id is not None:
+                self._conn.execute(
+                    "UPDATE sessions SET ended_at = ? WHERE id = ? "
+                    "AND ended_at IS NULL",
+                    (time.time(), self._session_id))
             cur = self._conn.execute(
                 "INSERT INTO sessions (started_at, departure, destination, "
                 "callsign, aircraft, rules) VALUES (?, ?, ?, ?, ?, ?)",

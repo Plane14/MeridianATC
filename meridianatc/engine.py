@@ -24,75 +24,101 @@ import os
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from typing import Any, Callable
+from typing import Any
 
+from .atc import handling as handling_spots
+from .atc import interphone, letters
+from .atc import lod as lod_windows
+from .atc.arrival import ArrivalWatch
 from .atc.atis import AtisGenerator, AtisReport
-from .atc.controller import ControllerBrain, Reply
-from .atc import interphone
-from .atc.crew import CrewDirector
 from .atc.autonomous import AutonomousFlight, create_autonomous_flight
+from .atc.callsigns import every_language, heard_registration
+from .atc.climb import leaving_departure
+from .atc.controller import ControllerBrain, Reply
+from .atc.crew import CrewDirector
+from .atc.departure import ClimbWatch, DepartureWatch, SidWatch
+from .atc.detect import by_words, clearly_in, language_of_text
+from .atc.handling import Handling, fuselage_length
 from .atc.intents import Intent, IntentParser, ParsedIntent
 from .atc.landing import LandingMonitor
+from .atc.language import (
+    LANGUAGE_NAMES,
+    languages_for,
+    profile_for,
+    reply_language,
+)
+from .atc.lod import Candidate, Lod
 from .atc.phraseology import Aircraft, Phraseology, Weather, wake_suffix
 from .atc.profile import FlightProfile
-from .atc.callsigns import every_language, heard_registration
-from .atc import letters
-from .atc.detect import by_words, clearly_in, language_of_text
-from .atc.language import (LANGUAGE_NAMES, SUPPORTED_LANGUAGES, languages_for,
-                           profile_for, reply_language)
-from .atc.session import FlightSession, Instruction, Phase, station_key
-from .atc.handling import Handling, fuselage_length
-from .atc.traffic import TrafficInjector, UserAircraft
-from .atc import lod as lod_windows
-from .atc.lod import Candidate, Lod
-from .atc.systems import wanted as systems_wanted
-from .atc.servicelayout import fittings_for, load_layout, spots_for
-from .atc import handling as handling_spots
-from .integrations.aitraffic import SimTraffic
-from .integrations.systems import SimSystems
-from .integrations.groundvehicles import gsx_installed
-from .integrations.servicepoints import SimServicePoints
-from .integrations.doors import DoorTable, SimDoors
-from .integrations.groundvehicles import SimVehicles
-from .integrations.facilities import SimFacilities
-from .integrations import gsx
-from .integrations.gsx import GsxLink
-from .security.secrets import resolve_secret
-from .integrations.simaircraft import SimAircraft
-from .integrations.network import OnlineNetwork
-from .atc.arrival import ArrivalWatch
-from .atc.climb import leaving_departure
-from .atc.departure import ClimbWatch, DepartureWatch, SidWatch
 from .atc.routing import RouteWatch
-from .atc.watch import (AirspaceWatch, RadarServiceWatch,
-                        ReportingPointWatch, RestrictionWatch, RunwayWatch,
-                        SurfaceWatch)
+from .atc.servicelayout import fittings_for, load_layout, spots_for
+from .atc.session import FlightSession, Instruction, Phase, station_key
+from .atc.systems import wanted as systems_wanted
+from .atc.traffic import TrafficInjector, UserAircraft
+from .atc.watch import (
+    AirspaceWatch,
+    RadarServiceWatch,
+    ReportingPointWatch,
+    RestrictionWatch,
+    RunwayWatch,
+    SurfaceWatch,
+)
 from .atc.written import as_written
-from .logs import decision, RADIO, timed
-from .audio.io import (CabinPlayer, MicrophoneCapture, PushToTalk,
-                       JoystickPushToTalk, RadioPlayer)
+from .audio.announcements import FOLDER as ANNOUNCEMENTS
+from .audio.announcements import AnnouncementLibrary
 from .audio.controllers import ControllerMissing, ControllersUnavailable
 from .audio.imperfections import from_config as imperfections_for
+from .audio.io import (
+    CabinPlayer,
+    JoystickPushToTalk,
+    MicrophoneCapture,
+    PushToTalk,
+    RadioPlayer,
+)
 from .audio.prosody import from_config as prosody_for
-from .audio.tone import from_config as tone_for
 from .audio.radio_fx import PROFILE_ATIS
-from .audio.announcements import FOLDER as ANNOUNCEMENTS, AnnouncementLibrary
 from .audio.stt import Recognizer, SpeechModelMissing, engine_model
+from .audio.tone import from_config as tone_for
 from .audio.tts import Synthesizer
 from .audio.voices import VoicesMissing
-from .paths import announcements_dir, command_hint, resolve as _resolve
 from .config import Config
+from .integrations import gsx
+from .integrations.aitraffic import SimTraffic
+from .integrations.doors import DoorTable, SimDoors
+from .integrations.facilities import SimFacilities
+from .integrations.groundvehicles import SimVehicles, gsx_installed
+from .integrations.gsx import GsxLink
+from .integrations.network import OnlineNetwork
+from .integrations.servicepoints import SimServicePoints
+from .integrations.simaircraft import SimAircraft
+from .integrations.systems import SimSystems
 from .llm.providers import build_provider
 from .llm.understanding import Understanding
+from .logs import RADIO, decision, timed
 from .navdata.channels import is_valid_channel, same_channel
-from .navdata.db import (STATION_RANGE_NM, NavDB, Station, dialect_for,
-                         haversine_nm, normalize_runway)
+from .navdata.db import (
+    STATION_RANGE_NM,
+    NavDB,
+    Station,
+    haversine_nm,
+    normalize_runway,
+)
+from .navdata.magvar import variation
+from .paths import announcements_dir, command_hint
+from .paths import resolve as _resolve
+from .security.secrets import resolve_secret
 from .sim.source import ManualSource, SimConnectSource, StateSource
 from .sim.state import AircraftState
-from .navdata.magvar import variation
-from .weather.metar import (WeatherProvider, at_the_surface, merge_weather,
-                            in_the_circuit, near_the_field, weather_from_sim)
+from .weather.metar import (
+    WeatherProvider,
+    at_the_surface,
+    in_the_circuit,
+    merge_weather,
+    near_the_field,
+    weather_from_sim,
+)
 
 log = logging.getLogger(__name__)
 status_log = logging.getLogger("meridianatc.traffic.debug")
@@ -211,7 +237,7 @@ class Engine:
             gpu=self.config.voice.gpu,
             hq_model=self.config.voice.hq_model,
             hq_takes=self.config.voice.hq_takes,
-            deepgram_key=resolve_secret(self.config, "speech.deepgram_key"),
+            deepgram_key=resolve_secret(self.config, "speech.deepgram_key", env="DEEPGRAM_API_KEY"),
             deepgram_voice=self.config.speech.deepgram_voice,
         )
         # Said once. Without voices every single transmission fails, and a
@@ -232,7 +258,7 @@ class Engine:
                 and self.config.network.cloud_consent:
             from .integrations.deepgram import DeepgramRecognizer
             self.recognizer = DeepgramRecognizer(
-                api_key=resolve_secret(self.config, "speech.deepgram_key"),
+                api_key=resolve_secret(self.config, "speech.deepgram_key", env="DEEPGRAM_API_KEY"),
                 model=self.config.speech.deepgram_model,
                 languages=self.languages,
             )
@@ -1010,8 +1036,10 @@ class Engine:
         :class:`~meridianatc.integrations.simbrief.SimBriefError` with something
         worth showing a person if it could not be.
         """
-        from .integrations.simbrief import fetch
+        from .integrations.simbrief import SimBriefError, fetch
 
+        if self.config.network.offline:
+            raise SimBriefError("Offline mode is on.")
         plan = fetch(username or self.config.simbrief.username)
         self.apply_flight_plan(plan)
         self.emit("info", f"SimBrief: {plan.described}",
@@ -6057,29 +6085,29 @@ class Engine:
         if destination is None:
             return
 
-        if station.position == "CTR" and arriving_why:
-            if session.advise_once("handoff:approach"):
-                approach = self._approach_at(destination, station)
-                decision("handoff", to="approach", station=station.callsign,
-                         field=destination.ident, why=arriving_why,
-                         to_run_nm=round(to_run, 1),
-                         altitude_ft=round(state.altitude_ft),
-                         worked_by=("approach" if approach is not None
-                                    else "the centre: no approach control"))
-                if approach is None:
-                    # No approach control at the field: the centre works the
-                    # arrival itself -- the descent, the approach clearance
-                    # and the handoff to the tower, which ArrivalWatch and
-                    # the tower handoff below give any radar position. It
-                    # used to say "frequency change approved" here and let
-                    # the flight go with nobody to call.
-                    return
-                self._pass_to_station(session, station, approach)
+        if (station.position == "CTR" and arriving_why
+                and session.advise_once("handoff:approach")):
+            approach = self._approach_at(destination, station)
+            decision("handoff", to="approach", station=station.callsign,
+                     field=destination.ident, why=arriving_why,
+                     to_run_nm=round(to_run, 1),
+                     altitude_ft=round(state.altitude_ft),
+                     worked_by=("approach" if approach is not None
+                                else "the centre: no approach control"))
+            if approach is None:
+                # No approach control at the field: the centre works the
+                # arrival itself -- the descent, the approach clearance
+                # and the handoff to the tower, which ArrivalWatch and
+                # the tower handoff below give any radar position. It
+                # used to say "frequency change approved" here and let
+                # the flight go with nobody to call.
                 return
-            # That has already been said. A field that publishes no approach
-            # control is worked by the centre the whole way in, so the flight
-            # falls through to the tower handoff below rather than being left
-            # on a sector frequency with nobody to clear it to land.
+            self._pass_to_station(session, station, approach)
+            return
+        # That has already been said. A field that publishes no approach
+        # control is worked by the centre the whole way in, so the flight
+        # falls through to the tower handoff below rather than being left
+        # on a sector frequency with nobody to clear it to land.
 
         # The centre is in here as well as the terminal positions. Where a
         # field publishes no approach control the flight is worked by the

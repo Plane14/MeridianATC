@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Where an aeroplane is in the circuit, worked out from where it is.
 
 The tower used to take the pilot's word for it. The leg came from the words

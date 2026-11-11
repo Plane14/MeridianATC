@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Which instrument approach a runway actually has.
 
 Every arrival was "the ILS": the ATIS announced it, approach told the pilot to
@@ -92,7 +91,7 @@ class FieldApproaches:
                                         float(faf_ft or 0.0),
                                         float(missed_ft or 0.0)))
 
-    def add_procedure(self, approach: "Approach") -> None:
+    def add_procedure(self, approach: Approach) -> None:
         """A procedure under its charted kind; the older ``by_runway`` gets
         the kind it was choosing between (VOR/DME is a VOR, RNP an RNAV)."""
         self.procedures.append(approach)
@@ -315,7 +314,7 @@ def _below_basic_vfr(weather) -> bool:
         or visibility < BASIC_VFR[1]
 
 
-def plan(known: "FieldApproaches | None", runway: str, weather=None, *,
+def plan(known: FieldApproaches | None, runway: str, weather=None, *,
          requested: str = "", airliner: bool = True, region: str = "icao",
          runway_headings: dict | None = None,
          ils: bool | None = None) -> Choice:
@@ -472,7 +471,7 @@ def legacy_kind(name: str) -> str:
     return LEGACY_KIND.get(base, base)
 
 
-def load_fixture(path) -> "FieldApproaches":
+def load_fixture(path) -> FieldApproaches:
     """A field's approaches from a JSON list (tests/data/approaches), the
     same shape the simulator's facility data is decoded into."""
     import json

@@ -26,6 +26,7 @@ leaves the rest of the apron exactly as it was.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import ctypes.wintypes as w
 import json
@@ -36,19 +37,27 @@ import time
 import zlib
 from pathlib import Path
 
-from .aitraffic import (SIMCONNECT_DATATYPE_FLOAT64,
-                        SIMCONNECT_DATA_SET_FLAG_DEFAULT, _AssignedObjectId,
-                        _Exception, _Received, _assigned_message_id,
-                        _exception_message_id, init_position_type,
-                        install_dispatch, remove_dispatch,
-                        subscribe_frames, unsubscribe_frames, frame_timing)
-from .doors import TOGGLE_EXIT_EVENT  # noqa: F401  (where it used to live)
-from ..atc import paths
 from ..atc import baggage as bags
+from ..atc import handling, paths
 from ..atc import passengers as people
-from .motion import Actor, Channel, MotionEngine, keyframed, walking_while
+from .aitraffic import (
+    SIMCONNECT_DATA_SET_FLAG_DEFAULT,
+    SIMCONNECT_DATATYPE_FLOAT64,
+    _assigned_message_id,
+    _AssignedObjectId,
+    _Exception,
+    _exception_message_id,
+    _Received,
+    frame_timing,
+    init_position_type,
+    install_dispatch,
+    remove_dispatch,
+    subscribe_frames,
+    unsubscribe_frames,
+)
+from .doors import TOGGLE_EXIT_EVENT  # noqa: F401  (where it used to live)
 from .facilities import find_simconnect
-from ..atc import handling
+from .motion import Actor, Channel, MotionEngine, keyframed, walking_while
 
 log = logging.getLogger(__name__)
 
@@ -513,10 +522,8 @@ def enumerate_simobjects(kind: int, dll_path: str = "", timeout_s: float = 6.0,
         log.info("listing the simulator's objects raised", exc_info=True)
         return None
     finally:
-        try:
+        with contextlib.suppress(Exception):
             dll.SimConnect_Close(handle)
-        except Exception:
-            pass
     return found if answered else None
 
 
@@ -1291,7 +1298,7 @@ class SimVehicles:
             self._pose_ready = False
             return
         asked = ", ".join(f"{name.decode()} {value:.2f}"
-                          for (name, _), value in zip(variables, packed))
+                          for (name, _), value in zip(variables, packed, strict=False))
         if result != 0:
             log.info("vehicles: the simulator refused the pose of %s (%s): %s",
                      vehicle_id, result, asked)
@@ -1320,14 +1327,14 @@ class SimVehicles:
         if asked is None:
             return
         vehicle_id, kind, wanted = asked
-        took = all(abs(a - b) < 0.05 for a, b in zip(values, wanted))
+        took = all(abs(a - b) < 0.05 for a, b in zip(values, wanted, strict=False))
         if took and vehicle_id in self._objects:
             self._raised.add(vehicle_id)
         log.info("vehicles: %s pose reads back %s: %s", vehicle_id,
                  "as written" if took else "NOT as written",
                  ", ".join(f"{name.decode()} {got:.2f} (asked {want:.2f})"
                            for (name, _), got, want
-                           in zip(POSE_VARS[kind], values, wanted)))
+                           in zip(POSE_VARS[kind], values, wanted, strict=False)))
 
     def raised(self, vehicle_id: str, now: float | None = None) -> bool:
         """Whether a vehicle's pose has taken: read back as written, or

@@ -30,41 +30,67 @@ dataset publishes:
 
 from __future__ import annotations
 
-import time
-
 import hashlib
 import logging
 import math
 import re
+import time
 from dataclasses import dataclass
 from typing import Any
 
-from ..navdata import terrain
-from ..navdata.db import (DEFAULT_TRANSITION_FT, NavDB, Station,
-                          normalize_runway, transition_altitude,
-                          bearing_deg, haversine_nm, transition_level,
-                          vfr_region)
 from ..logs import decision
+from ..navdata import terrain
 from ..navdata.channels import same_channel
+from ..navdata.db import (
+    DEFAULT_TRANSITION_FT,
+    NavDB,
+    Station,
+    bearing_deg,
+    haversine_nm,
+    normalize_runway,
+    transition_altitude,
+    transition_level,
+    vfr_region,
+)
 from . import speech as sp
-from .taxi import say_words
-from .approaches import (VISUAL, Approach, Choice, FieldApproaches, asked_for,
-                         choose, legacy_kind, plan as plan_approach)
-from .enroute import is_oceanic
+from .approaches import (
+    VISUAL,
+    Approach,
+    Choice,
+    FieldApproaches,
+    asked_for,
+    choose,
+    legacy_kind,
+)
+from .approaches import plan as plan_approach
 from .circuit import agrees, choose_join, circuit_for, runway_length_nm
-from .climb import (CLIMBING_FPM, DEPARTURE_REACHING_FT, LAST_STEP_FT,
-                    centre_step, departure_step, departure_top,
-                    initial_altitude)
+from .climb import (
+    CLIMBING_FPM,
+    DEPARTURE_REACHING_FT,
+    LAST_STEP_FT,
+    centre_step,
+    departure_step,
+    departure_top,
+    initial_altitude,
+)
+from .enroute import is_oceanic
+from .final import final_for
+from .intents import _REPORT_WORD, Intent, ParsedIntent
+from .phraseology import Phraseology, Weather, _join, language_of
 from .procedures import heard as procedure_heard
 from .procedures import near as procedure_near
 from .procedures import on_course_fix, sid_first_fix
 from .procedures import written as written_procedure
-from .final import final_for
-from .intents import _REPORT_WORD, Intent, ParsedIntent
-from .phraseology import Phraseology, Weather, _join, language_of
-from .session import (ATTEMPTS_BEFORE_REISSUE, PROMPTS_BEFORE_REISSUE,
-                      FlightSession, Instruction, Phase, nearly_matches,
-                      station_key)
+from .session import (
+    ATTEMPTS_BEFORE_REISSUE,
+    PROMPTS_BEFORE_REISSUE,
+    FlightSession,
+    Instruction,
+    Phase,
+    nearly_matches,
+    station_key,
+)
+from .taxi import say_words
 
 log = logging.getLogger(__name__)
 
@@ -869,10 +895,7 @@ class ControllerBrain:
                     else self._CHECK_IN_READINGS)
         if parsed.intent not in readings:
             return False
-        if (parsed.intent in (Intent.REQUEST_CLIMB, Intent.REQUEST_DESCENT)
-                and self._ASKING.search(parsed.normalized)):
-            return False
-        return True
+        return not (parsed.intent in (Intent.REQUEST_CLIMB, Intent.REQUEST_DESCENT) and self._ASKING.search(parsed.normalized))
 
     # The pilot's altitude and the Mode C disagree by this much or more:
     # the controller says what it sees before telling it to descend.
@@ -1187,9 +1210,10 @@ class ControllerBrain:
         if altitude and str(int(float(altitude))) == str(values.get("squawk", "")).lstrip("0"):
             altitude = None
         if ("vfr_ceiling_ft" in values and altitude
-                and (asked is None or "vfr_ceiling_ft" in asked)):
-            if int(float(altitude)) != int(float(values["vfr_ceiling_ft"])):
-                wrong.append("vfr_ceiling_ft")
+                and (asked is None or "vfr_ceiling_ft" in asked)
+                and int(float(altitude))
+                != int(float(values["vfr_ceiling_ft"]))):
+            wrong.append("vfr_ceiling_ft")
         said_point = None
         if "exit_point" in values and (asked is None or "exit_point" in asked):
             if self._mentions(parsed, values["exit_point"], p):
@@ -3025,7 +3049,6 @@ class ControllerBrain:
     def _departing_airliner(self, airport) -> str:
         """An airliner just off this field, climbing out: what a departure
         behind it is cautioned about."""
-        from . import speech as sp
 
         if airport is None:
             return ""

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import math
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
@@ -40,7 +40,7 @@ _B = 6356.7523142
 _RE = 6371.2
 
 _lock = threading.Lock()
-_model: "_Model | None" = None
+_model: _Model | None = None
 
 
 class _Model:
@@ -164,7 +164,7 @@ class _Model:
         return math.degrees(math.atan2(by, bx))
 
 
-def _loaded() -> "_Model | None":
+def _loaded() -> _Model | None:
     global _model
     with _lock:
         if _model is None and COEFFICIENTS.exists():
@@ -173,9 +173,9 @@ def _loaded() -> "_Model | None":
 
 
 def _decimal_year(when: datetime | None = None) -> float:
-    when = when or datetime.now(timezone.utc)
-    start = datetime(when.year, 1, 1, tzinfo=timezone.utc)
-    end = datetime(when.year + 1, 1, 1, tzinfo=timezone.utc)
+    when = when or datetime.now(UTC)
+    start = datetime(when.year, 1, 1, tzinfo=UTC)
+    end = datetime(when.year + 1, 1, 1, tzinfo=UTC)
     return when.year + (when - start).total_seconds() / (end - start).total_seconds()
 
 

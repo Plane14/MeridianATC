@@ -200,7 +200,7 @@ RADIO_FIGURES = {"en": "zero one two tree four fife six seven eight niner "
 
 
 def hotwords_for(language: str, callsign: str = "",
-                 stations: "list[str] | tuple[str, ...]" = ()) -> str:
+                 stations: list[str] | tuple[str, ...] = ()) -> str:
     """The pilot's own callsign, the stations within reach, the alphabet and
     the radio's figures, in the frequency's language."""
     parts = [callsign.strip()] if callsign and callsign.strip() else []
@@ -229,7 +229,7 @@ class Transcript:
         return not self.text.strip()
 
     def replace_meta(self, duration_s: float, decode_s: float,
-                     language_confidence: float) -> "Transcript":
+                     language_confidence: float) -> Transcript:
         """Stamp timing onto a transcript produced by the arbitration path."""
         self.duration_s = duration_s
         self.decode_s = decode_s
@@ -499,7 +499,7 @@ class Recognizer:
         return best
 
     def _decode(self, model, samples: np.ndarray, language: str,
-                prompt: str | None) -> "Transcript":
+                prompt: str | None) -> Transcript:
         segments, info = model.transcribe(
             samples,
             language=language,
@@ -552,7 +552,7 @@ def _looping(text: str) -> bool:
         return False
     if len(set(words)) / len(words) < 0.30:
         return True
-    pairs = list(zip(words, words[1:]))
+    pairs = list(zip(words, words[1:], strict=False))
     return len(set(pairs)) / len(pairs) < 0.35
 
 

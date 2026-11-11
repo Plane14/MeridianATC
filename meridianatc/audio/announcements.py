@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Recorded cabin announcements, from a folder the pilot fills.
 
 The synthesised crew are a fallback. What people actually want in the cabin
@@ -58,9 +57,9 @@ import logging
 import re
 import threading
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 log = logging.getLogger(__name__)
 
@@ -399,9 +398,7 @@ class AnnouncementLibrary:
                 if not flight.refuelling:
                     return None
                 score += 1
-            elif tag == (flight.aircraft or "").lower():
-                score += 1
-            elif tag == (flight.airline or "").lower():
+            elif tag == (flight.aircraft or "").lower() or tag == (flight.airline or "").lower():
                 score += 1
             elif tag in _EVERY_PART_OF_DAY:
                 return None            # a different part of the day

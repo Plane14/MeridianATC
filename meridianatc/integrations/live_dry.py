@@ -26,10 +26,10 @@ Everything it prints is also written to ``logs/live_dry/<date-time>.jsonl``.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
-from datetime import datetime
-from typing import Callable
+from collections.abc import Callable
 
 from ..atc.live import LiveRoster
 from ..atc.phraseology import Weather
@@ -108,85 +108,75 @@ def dry_run(config, navdb, ident: str, seconds: float, *,
     said = None
     started = clock()
     next_poll = next_report = started
-    handle = None
-    if log_path is not None:
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        handle = open(log_path, "a", encoding="utf-8")
-    try:
-        while clock() - started < seconds:
-            now = clock()
-            if now >= next_poll:
-                state = thread.round()
-                next_poll = now + thread.poll_s
-                roster.update(thread.flights, thread.answered_wall,
-                              thread.routes)
-                if state.status != said:
-                    said = state.status
-                    out(f"feed: {state.status}, source {state.source or '-'},"
-                        f" {state.count} aircraft"
-                        + (f", resting {state.resting}" if state.resting
-                           else "")
-                        + (f", dropped {state.dropped}" if state.dropped
-                           else ""))
-            seen = roster.seen(now, traffic.field)
-            traffic.set_observed(seen, time.monotonic())
-            traffic.advance(time.monotonic())
-            if now >= next_report:
-                next_report = now + REPORT_S
-                drawn = traffic.positions(invented_only=True)
-                report = {"t": round(now - started, 1), "aircraft": []}
-                for p in drawn:
-                    flight = traffic.flight_named(p["callsign"])
-                    source = (getattr(flight, "source", "") or "invented"
-                              if flight is not None else
-                              "live (parked)" if p.get("phase") == "parked"
-                              and p.get("observed") else "invented")
-                    entry = {
-                        "callsign": p["callsign"], "source": source,
-                        "type": p.get("type", ""),
-                        "operator": p.get("operator", ""),
-                        "model": _fsltl_model(liveries, p.get("operator", ""),
-                                              p.get("type", ""))
-                        or "the simulator's own",
-                        "lat": p["lat"], "lon": p["lon"],
-                        "altitude_ft": p["altitude_ft"],
-                        "heading": p["heading"],
-                        "ground_speed_kt": p["ground_speed_kt"],
-                        "on_ground": p["on_ground"],
-                        "on": traffic.live_snapped.get(p["callsign"], "")}
-                    report["aircraft"].append(entry)
-                live_n = sum(1 for a in report["aircraft"]
-                             if a["source"].startswith("live"))
-                out(f"[{report['t']:6.0f} s] would inject "
-                    f"{len(report['aircraft'])}: {live_n} live, "
-                    f"{len(report['aircraft']) - live_n} invented")
-                for a in report["aircraft"]:
-                    out(f"    {a['callsign']:<9} {a['source']:<13} "
-                        f"{a['type'] or '?':<5} {a['operator'] or '-':<4} "
-                        f"{a['lat']:9.5f} {a['lon']:10.5f} "
-                        f"{a['altitude_ft']:6.0f} ft {a['heading']:3.0f} "
-                        f"{a['ground_speed_kt']:3.0f} kt"
-                        + (" ground" if a["on_ground"] else "")
-                        + (f" on {a['on']}" if a["on"] else "")
-                        + f"  FSLTL match: {a['model']}")
-                reports.append(report)
-                if handle is not None:
-                    handle.write(json.dumps(report) + "\n")
-                    handle.flush()
-            sleep(1.0)
-    finally:
-        if handle is not None:
-            handle.close()
-        if book is not None:
-            book.save()
+    with contextlib.ExitStack() as stack:
+        handle = None
+        if log_path is not None:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            handle = stack.enter_context(
+                open(log_path, "a", encoding="utf-8"))
+        try:
+            while clock() - started < seconds:
+                now = clock()
+                if now >= next_poll:
+                    state = thread.round()
+                    next_poll = now + thread.poll_s
+                    roster.update(thread.flights, thread.answered_wall,
+                                  thread.routes)
+                    if state.status != said:
+                        said = state.status
+                        out(f"feed: {state.status}, source {state.source or '-'},"
+                            f" {state.count} aircraft"
+                            + (f", resting {state.resting}" if state.resting
+                               else "")
+                            + (f", dropped {state.dropped}" if state.dropped
+                               else ""))
+                seen = roster.seen(now, traffic.field)
+                traffic.set_observed(seen, time.monotonic())
+                traffic.advance(time.monotonic())
+                if now >= next_report:
+                    next_report = now + REPORT_S
+                    drawn = traffic.positions(invented_only=True)
+                    report = {"t": round(now - started, 1), "aircraft": []}
+                    for p in drawn:
+                        flight = traffic.flight_named(p["callsign"])
+                        source = (getattr(flight, "source", "") or "invented"
+                                  if flight is not None else
+                                  "live (parked)" if p.get("phase") == "parked"
+                                  and p.get("observed") else "invented")
+                        entry = {
+                            "callsign": p["callsign"], "source": source,
+                            "type": p.get("type", ""),
+                            "operator": p.get("operator", ""),
+                            "model": _fsltl_model(liveries, p.get("operator", ""),
+                                                  p.get("type", ""))
+                            or "the simulator's own",
+                            "lat": p["lat"], "lon": p["lon"],
+                            "altitude_ft": p["altitude_ft"],
+                            "heading": p["heading"],
+                            "ground_speed_kt": p["ground_speed_kt"],
+                            "on_ground": p["on_ground"],
+                            "on": traffic.live_snapped.get(p["callsign"], "")}
+                        report["aircraft"].append(entry)
+                    live_n = sum(1 for a in report["aircraft"]
+                                 if a["source"].startswith("live"))
+                    out(f"[{report['t']:6.0f} s] would inject "
+                        f"{len(report['aircraft'])}: {live_n} live, "
+                        f"{len(report['aircraft']) - live_n} invented")
+                    for a in report["aircraft"]:
+                        out(f"    {a['callsign']:<9} {a['source']:<13} "
+                            f"{a['type'] or '?':<5} {a['operator'] or '-':<4} "
+                            f"{a['lat']:9.5f} {a['lon']:10.5f} "
+                            f"{a['altitude_ft']:6.0f} ft {a['heading']:3.0f} "
+                            f"{a['ground_speed_kt']:3.0f} kt"
+                            + (" ground" if a["on_ground"] else "")
+                            + (f" on {a['on']}" if a["on"] else "")
+                            + f"  FSLTL match: {a['model']}")
+                    reports.append(report)
+                    if handle is not None:
+                        handle.write(json.dumps(report) + "\n")
+                        handle.flush()
+                sleep(1.0)
+        finally:
+            if book is not None:
+                book.save()
     return reports
-
-
-def default_log_path():
-    from ..paths import data_root
-
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    return data_root() / "logs" / "live_dry" / f"{stamp}.jsonl"
-
-
-__all__ = ["dry_run", "default_log_path"]

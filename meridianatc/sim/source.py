@@ -16,16 +16,18 @@ Three sources implement the same interface:
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import logging
 import math
 import threading
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from typing import Iterable, Protocol
+from typing import Protocol
 
-from .state import AircraftState, normalize_angle
 from .serial import serialize
+from .state import AircraftState, normalize_angle
 
 log = logging.getLogger(__name__)
 
@@ -1422,10 +1424,8 @@ class SimConnectSource:
         with self._system_state_lock:
             self._system_state.clear()
         if self._sim is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._sim.exit()
-            except Exception:
-                pass
             self._sim = None
             self._requests = None
 

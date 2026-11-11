@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """The First Officer's hands: every command the aeroplane is sent.
 
 One place, so the phase machine in :mod:`meridianatc.atc.autonomous` never has

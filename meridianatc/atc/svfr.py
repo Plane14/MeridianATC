@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Special VFR: the weather a VFR flight may not fly in, and the way round it.
 
 The tower released a VFR departure into a hundred-foot overcast exactly as it
@@ -44,7 +43,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 STATUTE_MILE_M = 1609.34
 
@@ -94,7 +93,7 @@ def is_night(lat: float, lon: float, region: str,
              when: datetime | None = None) -> bool:
     from .afis import _sun_elevation
 
-    when = when or datetime.now(timezone.utc)
+    when = when or datetime.now(UTC)
     below = _NIGHT_BELOW_DEG.get(region, _NIGHT_BELOW_DEFAULT)
     return _sun_elevation(when, lat, lon) < below
 

@@ -43,7 +43,7 @@ MOUNTAIN_MARGIN_FT = 2000.0
 MOUNTAINOUS_ABOVE_FT = 3000.0
 
 _lock = threading.Lock()
-_grid: "tuple[float, int, int, bytes] | None" = None
+_grid: tuple[float, int, int, bytes] | None = None
 _missing = False
 
 

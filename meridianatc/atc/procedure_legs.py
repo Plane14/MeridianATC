@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """SID/STAR legs as the simulator's facility data gives them, and how the
 First Officer flies them.
 

@@ -398,7 +398,7 @@ class ChatterboxTTS:
         # the same clearance from the same controller is the same waveform
         # in every session, which the transmission cache assumes. A re-roll
         # is the next seed along, so it is just as repeatable.
-        seed = int(hashlib.sha1(f"{prompt.name}|{text}".encode("utf-8"))
+        seed = int(hashlib.sha1(f"{prompt.name}|{text}".encode())
                    .hexdigest()[:8], 16)
         rate = int(getattr(model, "sr", SAMPLE_RATE) or SAMPLE_RATE)
 

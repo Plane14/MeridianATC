@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Autonomous flight for rotorcraft: the helicopter's own controller.
 
 :class:`~meridianatc.atc.autonomous.AutonomousFlight` delegates to this when the
@@ -521,7 +520,6 @@ class RotorcraftFlight:
             self.owner._set_error("rotorcraft transition timed out")
 
     def _climb(self, state) -> None:
-        agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)
         self._fly(state, agl_target=None,
                   alt_target=self.state.cruise_alt_ft,
                   ias_target=self.state.ias_cruise_kt,

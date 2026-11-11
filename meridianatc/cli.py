@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import argparse
-import os
+import contextlib
 import sys
 import threading
 import time
@@ -16,13 +16,12 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from . import logs
-from . import __version__
-from .config import Config, CONFIG_PATH
-from .paths import (command_hint, log_dir, model_dir as _model_dir,
-                    resolve as _resolve)
+from . import __version__, logs
+from .config import CONFIG_PATH, Config
 from .navdata.channels import channel_name
-from .navdata.db import NavDB, POSITION_SUFFIX
+from .navdata.db import POSITION_SUFFIX, NavDB
+from .paths import command_hint, log_dir
+from .paths import resolve as _resolve
 
 console = Console()
 
@@ -683,8 +682,7 @@ def _report_tug(config, bridge) -> None:
     only read, a GSX that is not running, and a stand with no push on its
     menu -- and only one of them is visible from the aeroplane.
     """
-    from .integrations.gsx import (SERVICES, menu_file, read_menu,
-                                   pushback_choice)
+    from .integrations.gsx import SERVICES, menu_file, pushback_choice, read_menu
 
     if not config.gsx.control:
         console.print("[yellow]Calling the tug is switched off "
@@ -1410,10 +1408,8 @@ def cmd_gui(args) -> int:
         ))
         if not args.no_browser:
             threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-        try:
+        with contextlib.suppress(KeyboardInterrupt):
             serve_setup(config, broadcaster, args.host, args.port)
-        except KeyboardInterrupt:
-            pass
         return 1
 
     console.print(Panel(

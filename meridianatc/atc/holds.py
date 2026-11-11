@@ -149,8 +149,7 @@ def below_every_minima(known, runway: str, weather, airliner: bool = True) -> bo
     """The destination's weather under the minima of every approach to
     ``runway`` the aeroplane can fly -- and of a circle from any other.
     Nothing known about the field is the ILS's 200 ft and half a mile."""
-    from .approaches import AIRLINER_LINES, CIRCLING, GA_LINES, MINIMA, RNP, \
-        _allows
+    from .approaches import AIRLINER_LINES, CIRCLING, GA_LINES, MINIMA, RNP, _allows
 
     if weather is None:
         return False

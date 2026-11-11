@@ -27,11 +27,11 @@ produces the same words.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Sequence
 
-from . import speech as sp
 from ..navdata.channels import spoken_channel
+from . import speech as sp
 
 Dialect = sp.Dialect
 

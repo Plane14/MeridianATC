@@ -23,7 +23,8 @@ radiotelephony phraseology.
 from __future__ import annotations
 
 import re
-from .speech import Callsign, _ALPHABET
+
+from .speech import _ALPHABET, Callsign
 
 # --------------------------------------------------------------------------
 # digits

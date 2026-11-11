@@ -146,10 +146,10 @@ def merge_extras(rows: list[dict], extras: dict, ident: str) -> list[dict]:
                 row["secondary_displaced_m"] = struct.unpack(
                     "<f", lengths[2 * i + 1])[0]
         elif name == "closed":
-            for row, (_n, primary, secondary) in zip(rows, unpacked):
+            for row, (_n, primary, secondary) in zip(rows, unpacked, strict=False):
                 row["primary_closed"], row["secondary_closed"] = primary, secondary
         elif name == "ils_type":
-            for row, (_n, primary, secondary, _r1, _r2) in zip(rows, unpacked):
+            for row, (_n, primary, secondary, _r1, _r2) in zip(rows, unpacked, strict=False):
                 # 0 is no navaid at that end. Anything else ("V", 86) is a
                 # VOR-family navaid -- an ILS's localizer or a VOR: the type
                 # does not tell them apart, so the ident is kept as it came.
@@ -158,7 +158,7 @@ def merge_extras(rows: list[dict], extras: dict, ident: str) -> list[dict]:
                 if not secondary:
                     row["secondary_ils"] = ""
         elif name == "slope":
-            for row, (_n, _slope, true_slope) in zip(rows, unpacked):
+            for row, (_n, _slope, true_slope) in zip(rows, unpacked, strict=False):
                 row["true_slope_deg"] = true_slope
     return rows
 

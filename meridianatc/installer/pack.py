@@ -26,9 +26,7 @@ def wanted(rel: Path) -> bool:
         return False
     # Under data/ only the navigation data ships; voices and models are
     # downloaded on first run.
-    if parts[0] == "data" and (len(parts) < 2 or parts[1] != "navdata"):
-        return False
-    return True
+    return not (parts[0] == "data" and (len(parts) < 2 or parts[1] != "navdata"))
 
 
 def pack(folder: Path, out: Path) -> int:

@@ -55,8 +55,12 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .aitraffic import (SIMCONNECT_DATATYPE_FLOAT64, _Received,
-                        install_dispatch, remove_dispatch)
+from .aitraffic import (
+    SIMCONNECT_DATATYPE_FLOAT64,
+    _Received,
+    install_dispatch,
+    remove_dispatch,
+)
 
 log = logging.getLogger("meridianatc.doors")
 
@@ -115,11 +119,11 @@ class DoorTable:
         self.source = source
 
     @classmethod
-    def parse(cls, text: str, source: Path | None = None) -> "DoorTable":
+    def parse(cls, text: str, source: Path | None = None) -> DoorTable:
         return cls(json.loads(text), source)
 
     @classmethod
-    def load(cls, path: str | Path = "") -> "DoorTable":
+    def load(cls, path: str | Path = "") -> DoorTable:
         """The table at ``path``, or the one shipped beside this module.
 
         A table that cannot be read is an empty one, logged: the doors stay
@@ -575,7 +579,7 @@ class SimDoors:
         if plan is None:
             return
         plan.reading = {index: float(value)
-                        for index, value in zip(self._indices, values)}
+                        for index, value in zip(self._indices, values, strict=False)}
         plan.read_at = time.monotonic() if plan.asked_at < 0 else plan.asked_at
         if not self._seen:
             self._seen = True

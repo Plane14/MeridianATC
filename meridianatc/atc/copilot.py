@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """The first officer's half of the radio work.
 
 Two separate things, and it matters that they are separate.

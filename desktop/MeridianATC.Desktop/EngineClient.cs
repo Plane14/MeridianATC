@@ -87,7 +87,10 @@ public sealed class EngineClient : IDisposable
         if (path is null) return false;
         try
         {
-            _engine = Process.Start(new ProcessStartInfo(path)
+            // gui --no-browser: engine + API on the fixed port without the
+            // webview window -- this shell is the window.
+            _engine = Process.Start(new ProcessStartInfo(path,
+                "gui --no-browser")
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,

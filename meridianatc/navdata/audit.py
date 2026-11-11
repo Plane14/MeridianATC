@@ -26,8 +26,15 @@ import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from .channels import (AIRBAND_HIGH_KHZ, AIRBAND_LOW_KHZ, carrier_khz,
-                       channel_name, is_eight_33, is_valid_channel, to_khz)
+from .channels import (
+    AIRBAND_HIGH_KHZ,
+    AIRBAND_LOW_KHZ,
+    carrier_khz,
+    channel_name,
+    is_eight_33,
+    is_valid_channel,
+    to_khz,
+)
 
 # What a field of each size ought to have. Below rank 3 an airport may well be
 # uncontrolled, so nothing is expected of it.
@@ -115,7 +122,7 @@ def audit(conn: sqlite3.Connection, deep: bool = False) -> Report:
 
     # Two stations on one carrier at one field is either a duplicate row or a
     # genuine clash; either way the resolver has to pick and may pick wrong.
-    for (ident, khz), group in seen_carrier.items():
+    for (ident, _khz), group in seen_carrier.items():
         if len(group) < 2:
             continue
         positions = sorted({g["position"] for g in group})
@@ -368,7 +375,7 @@ def firs_crossed(navdb, route) -> list[str]:
         else:
             points.append((float(item[0]), float(item[1])))
     seen: list[str] = []
-    for (lat, lon), (lat2, lon2) in zip(points, points[1:]):
+    for (lat, lon), (lat2, lon2) in zip(points, points[1:], strict=False):
         steps = max(1, int(haversine_nm(lat, lon, lat2, lon2) // ROUTE_STEP_NM))
         for i in range(steps + 1):
             if i:

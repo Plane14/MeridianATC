@@ -20,7 +20,7 @@ import threading
 import numpy as np
 
 from .. import accent
-from ..voices import CATALOGUE, VoiceRegistry, VOICE_DIR
+from ..voices import CATALOGUE, VOICE_DIR, VoiceRegistry
 from .base import Capabilities
 
 log = logging.getLogger(__name__)

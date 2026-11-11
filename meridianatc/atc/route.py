@@ -46,8 +46,8 @@ import logging
 import math
 import re
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from ..navdata.build import bearing_deg, haversine_nm
 
@@ -317,7 +317,7 @@ class Route:
     def _along(self, first: int, last: int) -> float:
         return sum(haversine_nm(a.lat, a.lon, b.lat, b.lon)
                    for a, b in zip(self.fixes[first:last],
-                                   self.fixes[first + 1:last + 1]))
+                                   self.fixes[first + 1:last + 1], strict=False))
 
 
 def _leg_position(a: RouteFix, b: RouteFix, lat: float, lon: float

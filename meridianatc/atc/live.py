@@ -108,7 +108,7 @@ class Sample:
     heading: float
 
     @classmethod
-    def of(cls, f, before: "Sample | None") -> "Sample":
+    def of(cls, f, before: Sample | None) -> Sample:
         heading = f.track
         if f.on_ground and before is not None:
             if f.gs_kt < MOVING_KT:
@@ -162,7 +162,7 @@ def _between(a: Sample, b: Sample, t: float, elevation: float) -> tuple:
     return lat, lon, alt, heading, gs, vs, on_ground
 
 
-def _as_flight(one: "LiveSeen"):
+def _as_flight(one: LiveSeen):
     """A drawn position, in the shape _on_final reads."""
     from types import SimpleNamespace
 
@@ -260,7 +260,7 @@ class LiveSeen:
     landed_by_us: bool = False
     # Where the real one is now, ``delay_s`` ahead of what is drawn: what it
     # is about to do, for the controllers (Phase 4).
-    lead: "LiveSeen | None" = None
+    lead: LiveSeen | None = None
     # Which way it is moving, which on the ground is not always the way it
     # points: a pushback goes tail first.
     track: float = 0.0

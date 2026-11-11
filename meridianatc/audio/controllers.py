@@ -27,6 +27,7 @@ buttons pressed. One text file to attach to an issue.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -37,10 +38,10 @@ import sys
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import Future
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 log = logging.getLogger(__name__)
 
@@ -237,10 +238,8 @@ class Controllers:
         try:
             events = sdl.event.get()
         except Exception:
-            try:
+            with contextlib.suppress(Exception):
                 sdl.event.pump()
-            except Exception:
-                pass
             return False
         added = getattr(sdl, "JOYDEVICEADDED", None)
         removed = getattr(sdl, "JOYDEVICEREMOVED", None)
@@ -281,12 +280,10 @@ class Controllers:
         sdl = self._sdl
         if sdl is None:
             return
-        try:
+        # SDL's DirectInput backend can refuse to restart without a window
+        # handle; looking again without restarting is never worse.
+        with contextlib.suppress(Exception):
             sdl.joystick.quit()
-        except Exception:
-            # SDL's DirectInput backend can refuse to restart without a window
-            # handle; looking again without restarting is never worse.
-            pass
         try:
             sdl.joystick.init()
             self._reopen_all()
@@ -867,10 +864,8 @@ def probe(name: str) -> dict:
             pygame.display.init()
             pygame.display.set_mode((1, 1), pygame.HIDDEN)
         else:
-            try:
+            with contextlib.suppress(Exception):
                 pygame.display.init()
-            except Exception:
-                pass
         pygame.joystick.init()
         for _ in range(5):
             pygame.event.pump()
@@ -978,7 +973,7 @@ def render_report(*, hid: list[HidDevice], probes: dict[str, dict],
     lines.append("Known controllers")
     lines.append("-" * 40)
     windows = {(d.vendor, d.product): d for d in hid}
-    for (vendor, product), (name, buttons) in KNOWN.items():
+    for (vendor, product), (name, _buttons) in KNOWN.items():
         where = windows.get((vendor, product))
         if where is None:
             lines.append(f"{name} ({_hex(vendor, product)}): not seen by Windows")

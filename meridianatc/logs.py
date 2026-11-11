@@ -55,10 +55,11 @@ import threading
 import time
 import uuid
 from collections import deque
-from contextlib import contextmanager
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from .paths import log_dir
 
@@ -250,9 +251,8 @@ class RadioLog:
         }
         line = json.dumps(entry, ensure_ascii=False, default=str)
         try:
-            with self._lock:
-                with open(self.path, "a", encoding="utf-8") as handle:
-                    handle.write(line + "\n")
+            with self._lock, open(self.path, "a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
         except OSError:
             # A transcript that cannot be written is not worth stopping a
             # flight for. It is noted once, by the handler that can still work.
@@ -422,10 +422,8 @@ def configure(config=None, *, force: bool = False) -> Path:
     root = logging.getLogger()
     for handler in list(root.handlers):
         root.removeHandler(handler)
-        try:
+        with suppress(Exception):
             handler.close()
-        except Exception:
-            pass
     root.setLevel(min(level, console_level))
     root.addFilter(SessionFilter())
     # Last-line defence: a credential-shaped string never reaches a sink,

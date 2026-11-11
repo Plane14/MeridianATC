@@ -255,8 +255,13 @@ describe(
                        choices=("whisper", "deepgram"), restart=True),
     deepgram_model=Setting("radio", "recogniser", restart=True,
                            advanced=True, when="speech.stt_engine=deepgram"),
-    deepgram_key=Setting("radio", "recogniser", kind="secret", restart=True,
-                         when="speech.stt_engine=deepgram"),
+    # The one key covers the TTS too (voice.engine=deepgram): a hosted-voice
+    # user with local recognition still needs somewhere to put it, so it is
+    # not gated on the recogniser alone.
+    deepgram_key=Setting("radio", "recogniser", kind="secret",
+                         restart=True, advanced=True),
+    deepgram_voice=Setting("voices", "voices", restart=True, advanced=True,
+                           when="voice.engine=deepgram"),
     model=Setting("radio", "recogniser", choices=SPEECH_MODELS, restart=True,
                   when="speech.stt_engine=whisper"),
     device=Setting("radio", "recogniser", choices=("cpu", "cuda", "auto"),
@@ -329,7 +334,8 @@ describe(
     VoiceConfig,
     # "kokoro" is still read, as auto, and is not offered.
     engine=Setting("voices", "voices",
-                   choices=("auto", "supertonic", "piper", "chatterbox"),
+                   choices=("auto", "supertonic", "piper", "chatterbox",
+                            "deepgram"),
                    restart=True),
     gpu=Setting("voices", "voices", restart=True),
     # Not a restart: the engine loads the other model in place
@@ -1878,7 +1884,7 @@ class Config:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
     @classmethod
-    def load(cls, path: Path | str | None = None) -> "Config":
+    def load(cls, path: Path | str | None = None) -> Config:
         """``config.yaml``, then ``config.local.yaml`` beside it on top.
 
         The local file is for settings one machine wants and the tracked
@@ -2069,7 +2075,7 @@ def _merge(target: Any, values: dict) -> None:
             setattr(target, key, value)
 
 
-def _read_legacy(config: "Config", raw: dict) -> None:
+def _read_legacy(config: Config, raw: dict) -> None:
     """An old name that still means something, read into its new one.
 
     ``atc.dialect`` pinned FAA or ICAO wording and was never read (only a

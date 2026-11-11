@@ -226,7 +226,7 @@ def crossings(points: list[tuple[float, float]], lines: list[RunwayLine],
     for line in lines:
         if excluded & set(line.ends):
             continue
-        for index, (p, q) in enumerate(zip(points, points[1:])):
+        for index, (p, q) in enumerate(zip(points, points[1:], strict=False)):
             if _segment_gap(p, q, line.a, line.b) <= line.half_width_m:
                 found.append((index, line.name))
                 break
@@ -248,7 +248,7 @@ def spoken_route(layout: GroundLayout, nodes: list[object], *,
     taxiway rejoined later is said once, where it first appears.
     """
     legs: list[list] = []          # [family, metres, first name, last name, start]
-    for index, (a, b) in enumerate(zip(nodes, nodes[1:])):
+    for index, (a, b) in enumerate(zip(nodes, nodes[1:], strict=False)):
         for other, length, runway, label in layout.edges.get(a, ()):
             if other != b:
                 continue
@@ -393,7 +393,7 @@ def _on_layout(layout: GroundLayout, x: float, z: float) -> bool:
 def _length(legs) -> float:
     """Metres from the start to the runway, line-up included."""
     return sum(math.dist(p, q) for leg in legs
-               for p, q in zip(leg.points, leg.points[1:]))
+               for p, q in zip(leg.points, leg.points[1:], strict=False))
 
 
 def _threshold(lines: list[RunwayLine], runway: str):

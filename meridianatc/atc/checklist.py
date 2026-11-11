@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """A checklist run with the pilot, challenge and response.
 
 The first officer used to recite: "taxi checklist complete, flaps set",

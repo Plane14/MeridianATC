@@ -31,9 +31,9 @@ import sys
 import time
 import uuid
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 from .. import COMPANY_NAME, PRODUCT_NAME, __version__
 from ..update import PILOT_FILES, RELEASES_PAGE
@@ -258,7 +258,7 @@ def resolve_target(text: str, payload_size: int = 0, deepest: int = 0) -> Target
     if target.upgrade:
         notes.append("path.upgrade")
 
-    windows = os.environ.get("SystemRoot")
+    windows = os.environ.get("SYSTEMROOT")
     if windows and _inside(path, Path(windows)):
         target.problems.append("path.system")
     elif not _writable(path):
@@ -595,7 +595,7 @@ def write_settings(target: Path, check: bool, language: str = "") -> None:
 
 def powershell(script: str, timeout: float = 60.0) -> subprocess.CompletedProcess:
     """Run a script handed over as UTF-16, so no code page touches a path."""
-    exe = Path(os.environ.get("SystemRoot", r"C:\Windows")) / \
+    exe = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / \
         "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
     return subprocess.run(
@@ -672,7 +672,7 @@ def register_uninstall(target: Path, size: int) -> None:
     import winreg
 
     exe = target / EXECUTABLE
-    ps = Path(os.environ.get("SystemRoot", r"C:\Windows")) / \
+    ps = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / \
         "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     command = (f'"{ps}" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden '
                f'-File "{target / UNINSTALLER}"')

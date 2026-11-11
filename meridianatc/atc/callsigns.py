@@ -30,8 +30,14 @@ rather than from here.
 from __future__ import annotations
 
 from . import numbers as num
-from .speech import (_AIRLINE_RE, _ALPHABET, _NUMERIC_FLIGHT_RE, Callsign,
-                     airline_table, flies_as_airline)
+from .speech import (
+    _AIRLINE_RE,
+    _ALPHABET,
+    _NUMERIC_FLIGHT_RE,
+    Callsign,
+    airline_table,
+    flies_as_airline,
+)
 
 # Names English approximates and everybody else says properly. "Airfrans" and
 # "Itarrow" exist so an English speaker can say them on a noisy channel; a

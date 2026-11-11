@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import math
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from . import paths
 
@@ -125,7 +125,7 @@ def following(drive: list, behind_m: float, step: float = TRACK_STEP_S) -> list:
     times = [t0 + k * step for k in range(int((t1 - t0) / step) + 1)] + [t1]
     marks = [paths.evaluate(drive, t)[:2] for t in times]
     along = [0.0]
-    for a, b in zip(marks, marks[1:]):
+    for a, b in zip(marks, marks[1:], strict=False):
         along.append(along[-1] + math.dist(a, b))
     start_heading = math.radians(paths.evaluate(drive, t0)[2])
     back = (-math.sin(start_heading), -math.cos(start_heading))
@@ -143,7 +143,7 @@ def following(drive: list, behind_m: float, step: float = TRACK_STEP_S) -> list:
 
     points = [at(s - behind_m) for s in along]
     segments = []
-    for (ta, a), (tb, b) in zip(zip(times, points), zip(times[1:], points[1:])):
+    for (ta, a), (tb, b) in zip(zip(times, points, strict=False), zip(times[1:], points[1:], strict=False), strict=False):
         if tb - ta <= 1e-6 or math.dist(a, b) < 0.005:
             continue
         segments.append(paths.Segment(ta, tb, a, paths._lerp(a, b, 1 / 3),

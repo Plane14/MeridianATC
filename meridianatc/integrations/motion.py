@@ -59,12 +59,13 @@ moves them.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import logging
 import math
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from ..atc import paths
 from .aitraffic import SIMCONNECT_DATATYPE_FLOAT64
@@ -222,7 +223,7 @@ def keyframed(points: list[tuple[float, float]]) -> Callable[[float], float]:
             return 0.0
         if now <= marks[0][0]:
             return marks[0][1]
-        for (t0, v0), (t1, v1) in zip(marks, marks[1:]):
+        for (t0, v0), (t1, v1) in zip(marks, marks[1:], strict=False):
             if now < t1:
                 return v0 + (v1 - v0) * (now - t0) / max(1e-6, t1 - t0)
         return marks[-1][1]
@@ -442,7 +443,7 @@ class MotionEngine:
                         ("ktsSpeed", ctypes.c_double), ("percentThrottle", ctypes.c_double)]
 
         points = (Waypoint * count)()
-        for point, (x, z) in zip(points, actor.sim_leg):
+        for point, (x, z) in zip(points, actor.sim_leg, strict=False):
             point.Latitude, point.Longitude = actor.to_latlon(x, z)
             point.Altitude = 0.0
             point.Flags = _WAYPOINT_SPEED | _WAYPOINT_ON_GROUND
@@ -502,7 +503,7 @@ class MotionEngine:
     def _check_sim_leg(self, actor: Actor, now: float) -> None:
         end = actor.sim_leg[-1]
         length = sum(math.hypot(b[0] - a[0], b[1] - a[1])
-                     for a, b in zip(actor.sim_leg, actor.sim_leg[1:]))
+                     for a, b in zip(actor.sim_leg, actor.sim_leg[1:], strict=False))
         allowed = SIM_LEG_SLACK * length / max(0.5, actor.sim_speed_kt * 0.5144)
         close = actor.seen is not None and math.hypot(
             actor.seen[0] - end[0], actor.seen[1] - end[1]) <= DOCK_WITHIN_M
@@ -529,12 +530,10 @@ class MotionEngine:
         for request, key in list(self._reads.items()):
             if key == actor.key:
                 del self._reads[request]
-                try:
+                with contextlib.suppress(Exception):
                     self._dll.RequestDataOnSimObject(
                         self._handle, request, _DEF_POSITION, actor.object_id,
                         _PERIOD_NEVER, 0, 0, 0, 0)
-                except Exception:
-                    pass
 
     # -- the simulator ----------------------------------------------------------
 

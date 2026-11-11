@@ -159,8 +159,12 @@ def _station_words() -> frozenset[str]:
     """
     global _STATION_CACHE
     if _STATION_CACHE is None:
-        from ..navdata.db import (POSITION_SUFFIX, POSITION_SUFFIX_BY_LANGUAGE,
-                                  POSITION_SUFFIX_ICAO, POSITION_SUFFIX_SHORT)
+        from ..navdata.db import (
+            POSITION_SUFFIX,
+            POSITION_SUFFIX_BY_LANGUAGE,
+            POSITION_SUFFIX_ICAO,
+            POSITION_SUFFIX_SHORT,
+        )
 
         tables = [POSITION_SUFFIX, POSITION_SUFFIX_SHORT, POSITION_SUFFIX_ICAO,
                   *POSITION_SUFFIX_BY_LANGUAGE.values()]

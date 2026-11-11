@@ -41,13 +41,13 @@ import logging
 import queue
 import re
 import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
-from . import accent, imperfections, intonation, prosody, tone
+from . import imperfections, intonation, prosody, tone
+from .backends import BackendRegistry, TTSUnavailable, default_registry
 from .radio_fx import (
     PROFILE_ATIS,
     PROFILE_CLEAN,
@@ -57,9 +57,7 @@ from .radio_fx import (
     station_character,
     station_keying,
 )
-from .backends import BackendRegistry, TTSUnavailable, default_registry
-from .voices import (VoiceAssignment, VoiceRegistry,
-                     VoicesMissing, VOICE_DIR)
+from .voices import VOICE_DIR, VoiceAssignment, VoiceRegistry, VoicesMissing
 
 log = logging.getLogger(__name__)
 
@@ -90,10 +88,10 @@ class Synthesizer:
         cache_size: int = 512,
         seed: str = "meridianatc",
         engine: str = "auto",
-        backends: "BackendRegistry | None" = None,
-        prosody_settings: "prosody.Prosody | None" = None,
-        imperfection_settings: "imperfections.Imperfections | None" = None,
-        tone_settings: "tone.Tone | None" = None,
+        backends: BackendRegistry | None = None,
+        prosody_settings: prosody.Prosody | None = None,
+        imperfection_settings: imperfections.Imperfections | None = None,
+        tone_settings: tone.Tone | None = None,
         gpu: bool = False,
         hq_model: str = "standard",
         hq_takes: int = 2,
@@ -145,8 +143,8 @@ class Synthesizer:
         # of the program that has nothing to do with speech. The queue is
         # priority first: a controller answering a pilot is never queued
         # behind a safety demonstration.
-        self._render_jobs: "queue.PriorityQueue" = queue.PriorityQueue()
-        self._render_done: "queue.Queue" = queue.Queue()
+        self._render_jobs: queue.PriorityQueue = queue.PriorityQueue()
+        self._render_done: queue.Queue = queue.Queue()
         self._render_seq = itertools.count()
         self._render_thread = threading.Thread(
             target=self._render_lane, daemon=True, name="meridianatc-render")
@@ -409,7 +407,7 @@ class Synthesizer:
             self._effects[sample_rate] = effect
         return effect
 
-    def _operator(self, shaped: bool) -> "imperfections.Imperfections":
+    def _operator(self, shaped: bool) -> imperfections.Imperfections:
         """Who is speaking, as far as the imperfections layer is concerned.
 
         ``shaped`` says whether this is somebody on a frequency. It used to

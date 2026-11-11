@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """How the landing went, and whether the flight kept its schedule.
 
 The one number every simulator pilot wants after a touchdown is the rate they

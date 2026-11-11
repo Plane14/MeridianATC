@@ -32,7 +32,7 @@ import math
 from dataclasses import dataclass
 
 from ..navdata import terrain
-from ..navdata.build import haversine_nm, project
+from ..navdata.build import project
 from .procedures import frame
 
 

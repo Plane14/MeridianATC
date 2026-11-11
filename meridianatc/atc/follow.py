@@ -154,7 +154,7 @@ class _Route:
                 l1, l2 = math.hypot(*d1), math.hypot(*d2)
                 turn = abs(_wrap(_heading(*d2) - _heading(*d1)))
                 cusp = turn > CUSP_DEG or (push and i == push)
-                if 2.0 < turn and not cusp:
+                if turn > 2.0 and not cusp:
                     half = math.radians(turn) / 2.0
                     t = min(FILLET_M * math.tan(half), 0.45 * l1, 0.45 * l2)
                     start = (b[0] - d1[0] / l1 * t, b[1] - d1[1] / l1 * t)
@@ -180,17 +180,17 @@ class _Route:
             self.push_end = self._length(dense)
         self.points = dense
         self.cumulative = [0.0]
-        for a, b in zip(dense, dense[1:]):
+        for a, b in zip(dense, dense[1:], strict=False):
             cumulative += math.hypot(b[0] - a[0], b[1] - a[1])
             self.cumulative.append(cumulative)
         self.length = cumulative
         self.headings = [_heading(b[0] - a[0], b[1] - a[1])
-                         for a, b in zip(dense, dense[1:])] or [0.0]
+                         for a, b in zip(dense, dense[1:], strict=False)] or [0.0]
 
     @staticmethod
     def _length(points) -> float:
         return sum(math.hypot(b[0] - a[0], b[1] - a[1])
-                   for a, b in zip(points, points[1:]))
+                   for a, b in zip(points, points[1:], strict=False))
 
     def at(self, s: float) -> tuple[float, float, float]:
         """Position and direction of motion ``s`` metres along."""
@@ -229,7 +229,7 @@ class _Route:
     def project(self, x: float, z: float) -> float:
         """How far along the route its nearest point to (x, z) is."""
         best, found = float("inf"), 0.0
-        for i, (a, b) in enumerate(zip(self.points, self.points[1:])):
+        for i, (a, b) in enumerate(zip(self.points, self.points[1:], strict=False)):
             dx, dz = b[0] - a[0], b[1] - a[1]
             span = dx * dx + dz * dz
             u = 0.0 if span == 0 else max(0.0, min(1.0, ((x - a[0]) * dx

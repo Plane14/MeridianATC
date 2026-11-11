@@ -46,6 +46,7 @@ otherwise.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import logging
 import math
@@ -511,11 +512,9 @@ def unsubscribe_frames(simconnect, callback) -> None:
         return
     _FRAMES.pop(id(simconnect), None)
     remove_dispatch(simconnect, entry["token"])
-    try:
+    with contextlib.suppress(Exception):
         simconnect.dll.UnsubscribeFromSystemEvent(simconnect.hSimConnect,
                                                   _FRAME_EVENT)
-    except Exception:
-        pass
 
 
 def remove_dispatch(simconnect, token) -> None:
@@ -530,10 +529,8 @@ def remove_dispatch(simconnect, token) -> None:
         pump.handlers.remove(handler)
     if pump.handlers:
         return
-    try:
+    with contextlib.suppress(Exception):
         pump.sim.my_dispatch_proc_rd = pump.original_c
-    except Exception:
-        pass
     _PUMPS.pop(key, None)
 
 
@@ -1467,12 +1464,10 @@ class SimTraffic:
         object_id = self._objects.get(callsign)
         if object_id is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             self._dll.RequestDataOnSimObject(self._handle, request, _DEF_READ,
                                              int(object_id), _PERIOD_NEVER,
                                              0, 0, 0, 0)
-        except Exception:
-            pass
 
     def on_read(self, request_id: int, lat: float, lon: float,
                 altitude: float, ground: float,
@@ -1793,7 +1788,7 @@ class SimTraffic:
             # by name is struck off; silence is tried again later.
             lod_log.info("lod: %s's new model %r, livery %r, %s; it stays as "
                          "it is", swap[0] or "a departed aeroplane", title,
-                         livery, "was refused (exception %s)" % exception
+                         livery, f"was refused (exception {exception})"
                          if exception is not None else "never came")
             if exception is not None and title:
                 self._bad_titles.add(title)

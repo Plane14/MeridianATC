@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """How the people in the aeroplane sound: less like a file, more like a crew.
 
 The flight deck and the cabin were rendered almost clean. The interphone
@@ -133,7 +132,7 @@ class Manner:
     #: Lines shorter than this many words are callouts and are left alone.
     shortest: int = 6
 
-    def scaled(self, factor: float) -> "Manner":
+    def scaled(self, factor: float) -> Manner:
         return replace(self, head=min(1.0, self.head * factor),
                        sentence=min(1.0, self.sentence * factor),
                        comma=min(1.0, self.comma * factor),

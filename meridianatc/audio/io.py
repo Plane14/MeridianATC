@@ -17,8 +17,8 @@ import queue
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import numpy as np
 
@@ -242,9 +242,7 @@ class PushToTalk:
             pass
         # Fall back to the raw virtual-key code for keys pynput reports oddly.
         vk = getattr(key, "vk", None)
-        if vk is not None and name in ("grave", "backquote", "tilde") and vk == 192:
-            return True
-        return False
+        return bool(vk is not None and name in ("grave", "backquote", "tilde") and vk == 192)
 
     def start(self) -> None:
         from pynput import keyboard

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Asking the simulator for an airport's SIDs and STARs.
 
 The navigation database has runways and frequencies and no procedures, so a
@@ -140,7 +139,7 @@ def _leg(index: int, raw: bytes) -> ProcedureLeg | None:
         values = struct.unpack(_LEG_SHAPE, raw)
     except struct.error:
         return None
-    data = dict(zip(_LEG_NAMES, values))
+    data = dict(zip(_LEG_NAMES, values, strict=False))
     from ..atc.procedure_legs import PATH_TYPES, TURN_NAMES
     path_type = int(data["path_type"])
     return ProcedureLeg(

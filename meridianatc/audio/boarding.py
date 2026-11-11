@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """The music that plays in the cabin while people are getting on.
 
 Synthesised rather than shipped, for the reasons :mod:`meridianatc.audio.chime`

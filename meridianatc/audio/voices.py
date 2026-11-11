@@ -43,9 +43,9 @@ from __future__ import annotations
 
 import hashlib
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Callable, Optional
 
 import requests
 
@@ -53,7 +53,7 @@ from ..paths import command_hint, voice_dir
 
 # Called with (what is being fetched, bytes so far, bytes expected). A total of
 # zero means the server would not say how big it is.
-Progress = Optional[Callable[[str, int, int], None]]
+Progress = Callable[[str, int, int], None] | None
 
 class VoicesMissing(RuntimeError):
     """Not one controller voice is on disk, so nobody can be cast.
@@ -447,13 +447,13 @@ ACCENT_EXCLUDED: dict[str, float] = {
 }
 
 
-def calibration_name(spec: "VoiceSpec") -> str:
+def calibration_name(spec: VoiceSpec) -> str:
     """How the calibration names a voice: the model, and the speaker where
     the model holds several."""
     return spec.key + (f"#{spec.speaker_name}" if spec.speaker_id is not None else "")
 
 
-def _accent_strength(spec: "VoiceSpec", h: int) -> float:
+def _accent_strength(spec: VoiceSpec, h: int) -> float:
     """A controller's accent strength: the hash spreads a country's
     controllers over eight steps, up to what that accent was calibrated to
     (``ACCENT_STRENGTH``). Uncalibrated, the old 0.25-0.88."""
@@ -869,7 +869,7 @@ def _person_table() -> dict[str, str]:
     return _PERSON_BY_IDENTITY
 
 
-def person_name(voice: "VoiceSpec | str") -> str:
+def person_name(voice: VoiceSpec | str) -> str:
     """The first name a crew picker gives one voice, or "" for none.
 
     Takes a spec or a key; a multi-speaker key alone names its first

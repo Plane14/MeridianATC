@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Which callout is due, by the class of aeroplane and the rules flown.
 
 The first officer used to make one set of calls for every aeroplane, an
@@ -43,8 +42,15 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
-from .aircraft_class import (AIRLINER, BUSINESS_JET, HELICOPTER, PISTON_SINGLE,
-                             PISTON_TWIN, TURBOPROP_SINGLE, TURBOPROP_TWIN)
+from .aircraft_class import (
+    AIRLINER,
+    BUSINESS_JET,
+    HELICOPTER,
+    PISTON_SINGLE,
+    PISTON_TWIN,
+    TURBOPROP_SINGLE,
+    TURBOPROP_TWIN,
+)
 from .session import Phase
 from .vspeeds import Speeds
 

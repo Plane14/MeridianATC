@@ -95,10 +95,9 @@ import random
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import paths
 from . import baggage as bags
 from . import passengers as people
-from . import zones
+from . import paths, zones
 
 log = logging.getLogger(__name__)
 
@@ -1337,7 +1336,7 @@ class Handling:
         if run.out(now):
             vehicles = [(bags.TRACTOR, f"{turn.callsign}/{run.hold}/tractor",
                          run.tractor_path, [])]
-            for k, (drive, counts) in enumerate(zip(run.cart_paths, run.cart_counts)):
+            for k, (drive, counts) in enumerate(zip(run.cart_paths, run.cart_counts, strict=False)):
                 vehicles.append((bags.CART, f"{turn.callsign}/{run.hold}/cart{k}", drive,
                                  [("WAGON BACK LINK ORIENTATION", "number", counts)]))
             for kind, key, drive, channels in vehicles:
@@ -1532,7 +1531,7 @@ class Handling:
                           for k in range(steps + 1)]
                 found.extend(zones.Zone(owner, f"{name} way in",
                                         zones.strip(a, b, size.half_width_m + MARGIN_M))
-                             for a, b in zip(points, points[1:]))
+                             for a, b in zip(points, points[1:], strict=False))
         return found
 
     def _in_the_way(self, turn: Turnaround, visit: Visit,

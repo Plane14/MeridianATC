@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """What the first officer notices without being asked: a second pair of
 eyes.
 
@@ -30,13 +29,18 @@ crew say it after the radio, writing down the ones the radio held back.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from ..navdata.channels import same_channel
-from .aircraft_class import (AIRLINER, BUSINESS_JET, PISTON_SINGLE,
-                             PISTON_TWIN, TURBOPROP_SINGLE, TURBOPROP_TWIN)
+from .aircraft_class import (
+    AIRLINER,
+    BUSINESS_JET,
+    PISTON_SINGLE,
+    PISTON_TWIN,
+    TURBOPROP_TWIN,
+)
 from .callouts import Call
-from .checklist import holds, _hpa
+from .checklist import _hpa, holds
 from .checklist_files import Check
 from .session import Phase
 

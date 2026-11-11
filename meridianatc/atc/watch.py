@@ -39,9 +39,9 @@ from __future__ import annotations
 
 import logging
 
-from ..navdata.build import bearing_deg, project
-from ..navdata.db import NavDB, Station, normalize_runway
 from ..logs import decision
+from ..navdata.build import bearing_deg, project
+from ..navdata.db import NavDB, Station
 from .controller import ControllerBrain, Reply
 from .phraseology import language_of
 from .session import FlightSession
@@ -164,12 +164,12 @@ class SurfaceWatch:
             )
 
         # --- lined up on a runway without a clearance -----------------
-        if state.on_ground and runway and not self._allowed(
-                airport.ident, session, runway):
-            if self._aligned(runway, self.magnetic_heading(state)):
-                key = f"incursion:{self.navdb.runway_strip(airport.ident, runway)}"
-                if session.advise_once(key):
-                    return Reply(p.hold_position_incursion(aircraft, runway), station)
+        if (state.on_ground and runway and not self._allowed(
+                airport.ident, session, runway)
+                and self._aligned(runway, self.magnetic_heading(state))):
+            key = f"incursion:{self.navdb.runway_strip(airport.ident, runway)}"
+            if session.advise_once(key):
+                return Reply(p.hold_position_incursion(aircraft, runway), station)
 
         return None
 

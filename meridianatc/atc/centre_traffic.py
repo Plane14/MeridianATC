@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import logging
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from ..logs import decision
 from ..navdata.build import project
@@ -50,7 +50,7 @@ from .language import phraseology_for
 from .operators import by_icao, roster_for
 from .phraseology import Aircraft, wake_suffix
 from .pilot import PilotSpeech
-from .traffic import Call, Flight, READBACK_GAP_S, observed_type
+from .traffic import READBACK_GAP_S, Call, Flight, observed_type
 
 log = logging.getLogger(__name__)
 

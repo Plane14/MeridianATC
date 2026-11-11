@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """The navigation data as it ships in a build: everything but VatGlasses.
 
 The VatGlasses sectors are under CC BY-NC-SA. MeridianATC downloads them only

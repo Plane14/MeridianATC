@@ -36,27 +36,53 @@ import math
 import random
 from dataclasses import dataclass, field
 
+from ..logs import decision
 from ..navdata.build import project
 from ..navdata.channels import same_channel
-from ..navdata.db import (NavDB, Station, bearing_deg, dialect_for,
-                          haversine_nm, normalize_runway)
-from .callsigns import every_language
-from . import fleet as fleets
-from . import live as livemod
-from ..logs import decision
+from ..navdata.db import (
+    NavDB,
+    Station,
+    bearing_deg,
+    haversine_nm,
+    normalize_runway,
+)
 from . import circuit as circuitry
-from .circuit import (CIRCUIT_BASE_NM, CIRCUIT_CENTRELINE_NM,
-                      CIRCUIT_UPWIND_NM, CIRCUIT_WIDTH_NM)
+from . import fleet as fleets
 from . import ground as groundwork
-from .flying import (AIRLINER, OWN_DECISIONS, Command, Performance, Target, glide_altitude,
-                     offset_from_track)
-from .flying import step as fly_step
-from .flying import FLARE_FPM, FLARE_FT, LIFTOFF_AFTER_S
-from .flying import LIGHT as LIGHT_PERFORMANCE
-from .language import phraseology_for, reply_language
+from . import live as livemod
 from . import perftable
-from .operators import (FREIGHT, LIGHT_FLEET, REGIONAL, WIDEBODY, Operator,
-                        by_icao, registration_prefix, roster_for)
+from .callsigns import every_language
+from .circuit import (
+    CIRCUIT_BASE_NM,
+    CIRCUIT_CENTRELINE_NM,
+    CIRCUIT_UPWIND_NM,
+    CIRCUIT_WIDTH_NM,
+)
+from .flying import (
+    AIRLINER,
+    FLARE_FPM,
+    FLARE_FT,
+    LIFTOFF_AFTER_S,
+    OWN_DECISIONS,
+    Command,
+    Performance,
+    Target,
+    glide_altitude,
+    offset_from_track,
+)
+from .flying import LIGHT as LIGHT_PERFORMANCE
+from .flying import step as fly_step
+from .language import phraseology_for, reply_language
+from .operators import (
+    FREIGHT,
+    LIGHT_FLEET,
+    REGIONAL,
+    WIDEBODY,
+    Operator,
+    by_icao,
+    registration_prefix,
+    roster_for,
+)
 from .phraseology import Aircraft, Weather, wake_suffix
 from .pilot import PilotSpeech
 
@@ -1138,7 +1164,7 @@ class TrafficInjector:
             self.field.arrival_runway = (self.field.arrival_runway
                                          or self.field.departure_runway)
 
-    def set_ground(self, layout: "groundwork.GroundLayout | None") -> None:
+    def set_ground(self, layout: groundwork.GroundLayout | None) -> None:
         """The taxiways of the field being worked, from the simulator.
 
         Only for this field, and only for aeroplanes made from now on: one
@@ -1761,8 +1787,7 @@ class TrafficInjector:
         aeroplanes are never in it -- the simulator handles its own -- and
         neither is anything that has started to move.
         """
-        from .handling import (ARRIVED, BOARDING, DEPARTING, PARKED, Standing,
-                               is_light)
+        from .handling import ARRIVED, BOARDING, DEPARTING, PARKED, Standing, is_light
 
         if self.ground is None:
             return []
@@ -2145,7 +2170,7 @@ class TrafficInjector:
         short = [c for c in livemod.CATEGORIES if room[c] - invented[c] > 0]
         return short[0] if len(short) == 1 else None
 
-    def _in_play(self, kind: "fleets.FieldKind | None") -> int:
+    def _in_play(self, kind: fleets.FieldKind | None) -> int:
         """Aeroplanes in play at once at this field, scaled by the density:
         the field's kind for a general-aviation field (fleet.classify), the
         size rank's for an airport, as it always was."""
@@ -2153,7 +2178,7 @@ class TrafficInjector:
                 else CONCURRENT_BY_RANK.get(self.field.size_rank, 3))
         return int(round(base * self.density))
 
-    def _movement_gap_s(self, kind: "fleets.FieldKind | None") -> float:
+    def _movement_gap_s(self, kind: fleets.FieldKind | None) -> float:
         """Seconds between one aeroplane starting and the next."""
         base = (kind.movement_gap_s if kind is not None and kind.movement_gap_s
                 else 55.0)
@@ -2883,7 +2908,7 @@ class TrafficInjector:
                 return self.random.choice(options)
         return self.ground.free_stand(airliner, occupied, taken, choose=choose)
 
-    def ground_occupancy(self, layout: "groundwork.GroundLayout"
+    def ground_occupancy(self, layout: groundwork.GroundLayout
                          ) -> tuple[list[tuple[float, float, float]], set[int]]:
         """Where every other aeroplane is on ``layout``'s ground, for the
         pilot's own taxi (:mod:`meridianatc.atc.taxi`).
@@ -3407,7 +3432,7 @@ class TrafficInjector:
         layout = self.ground
         stretch = self._runway_stretch(flight, position)
         metres = sum(math.dist(layout.xy[a], layout.xy[b])
-                     for a, b in zip(stretch, stretch[1:]))
+                     for a, b in zip(stretch, stretch[1:], strict=False))
         # Off the far side as well: the tail has to clear it, not the nose.
         takes = metres / groundwork.TURN_MS + 30.0
         if (self.runway_occupied(now, ignore=flight)
@@ -4250,7 +4275,7 @@ class TrafficInjector:
         return flight.phase in ("taxi_in", "landed")
 
     @property
-    def parked_observed(self) -> list["ParkedObserved"]:
+    def parked_observed(self) -> list[ParkedObserved]:
         """Somebody else's aeroplanes standing on this airport."""
         return list(self._parked_observed.values())
 
@@ -4641,7 +4666,6 @@ class TrafficInjector:
         traffic manager, which does the same three things.
         """
         hold = self.hold_live
-        user = self.user
         on_runway = self._user_on_runway()
         to_run = self._user_on_final()
         busy = on_runway or (to_run is not None and to_run <= PILOT_FINAL_NM)
@@ -4780,7 +4804,7 @@ class TrafficInjector:
             urgent=True,
         )
 
-    def set_user(self, user: "UserAircraft | None") -> None:
+    def set_user(self, user: UserAircraft | None) -> None:
         """Tell the traffic where the person flying actually is.
 
         Without this the AI works a field with one aeroplane missing from it:
@@ -5346,12 +5370,15 @@ class TrafficInjector:
             route = route or self._taxi_route()
             flight.taxi_rest, flight.taxi_split_xy = rest, where
             if flight.ifr:
-                first = lambda p, a, s: p.request_taxi(a, s)
+                def first(p, a, s):
+                    return p.request_taxi(a, s)
             elif flight.pattern_work:
-                first = lambda p, a, s: p.call(
-                    a, s, p.book.request_pattern_work, greeting=True)
+                def first(p, a, s):
+                    return p.call(
+                                    a, s, p.book.request_pattern_work, greeting=True)
             else:
-                first = lambda p, a, s: p.request_vfr_departure(a, s)
+                def first(p, a, s):
+                    return p.request_vfr_departure(a, s)
             self._exchange(
                 flight, now, "GND",
                 pilot_first=first,
@@ -5381,15 +5408,18 @@ class TrafficInjector:
         if phase == "taxi":
             route = self._taxi_route()
             if flight.ifr:
-                first = lambda p, a, s: p.request_taxi(a, s)
+                def first(p, a, s):
+                    return p.request_taxi(a, s)
             elif flight.pattern_work:
                 # No clearance to collect: a VFR departure asks to taxi and,
                 # if it is staying in the circuit rather than going somewhere,
                 # says so.
-                first = lambda p, a, s: p.call(
-                    a, s, p.book.request_pattern_work, greeting=True)
+                def first(p, a, s):
+                    return p.call(
+                                    a, s, p.book.request_pattern_work, greeting=True)
             else:
-                first = lambda p, a, s: p.request_vfr_departure(a, s)
+                def first(p, a, s):
+                    return p.request_vfr_departure(a, s)
             self._exchange(
                 flight, now, "GND",
                 pilot_first=first,
@@ -5791,7 +5821,8 @@ class TrafficInjector:
             flight.next_at = now + self.random.uniform(6.0, 14.0)
             return
 
-        taking_the_runway = lambda p, a, s: p.line_up(a, flight.runway)
+        def taking_the_runway(p, a, s):
+            return p.line_up(a, flight.runway)
         if flight.pattern_work:
             self._exchange(
                 flight, now, "TWR",
@@ -6216,14 +6247,18 @@ class TrafficInjector:
             or flight.runway
         weather = self.field.weather or Weather()
         if kind == "takeoff":
-            opening = lambda p, a, s: p.ready_for_departure(a, runway, station=s)
-            answer = lambda c, a, s: c.afis_takeoff(a, weather)
+            def opening(p, a, s):
+                return p.ready_for_departure(a, runway, station=s)
+            def answer(c, a, s):
+                return c.afis_takeoff(a, weather)
         elif kind in ("land", "touch_and_go"):
             opening = pilot_first or announce
-            answer = lambda c, a, s: c.afis_land(a, weather)
+            def answer(c, a, s):
+                return c.afis_land(a, weather)
         elif kind in ("taxi", "pattern") and pilot_first is not None:
             opening = pilot_first
-            answer = lambda c, a, s: c.afis_field(a, s, runway, weather)
+            def answer(c, a, s):
+                return c.afis_field(a, s, runway, weather)
         elif kind == "line_up":
             opening = answer = None
         else:
