@@ -52,6 +52,23 @@ void Protocol() {
     j["ac"] = Json::array(); for (int i = 0; i < 513; ++i) j["ac"].push_back(a);
     Reject([&] { Parse(j.dump()); });
 }
+void Ownership() {
+    Session session;
+    auto hello = Parse(R"({"v":1,"t":"hello"})");
+    auto clear = Parse(R"({"v":1,"t":"clear"})");
+    auto traffic = Parse(Json{{"v", 1}, {"t", "traffic"}, {"seq", 1}, {"ac", Json::array({Aircraft()})}}.dump());
+    Check(session.Apply(hello, 0, 1) && !session.Connected(0), "doctor hello never owns idle slot");
+    Check(session.Apply(traffic, 1, 2), "traffic claims slot after doctor");
+    Check(session.Apply(hello, 9, 3) && session.snapshot.size() == 1, "foreign hello does not clear traffic");
+    Check(!session.Apply(clear, 9, 3), "foreign clear rejected");
+    Check(!session.Apply(traffic, 9, 3), "foreign traffic rejected");
+    Check(session.Apply(hello, 10, 2), "owner hello answered");
+    Check(session.Apply(traffic, 11, 3), "hello does not postpone takeover or sequence reset");
+    Check(session.Apply(clear, 12, 3) && session.snapshot.empty(), "owner clear accepted");
+    Check(!session.Apply(traffic, 13, 2), "clear retains sender ownership");
+    Check(session.Apply(clear, 22, 2), "clear can take over after inactivity");
+    Check(!session.Connected(32), "ownership expires after clear");
+}
 void Movement() {
     auto a = Parse(Json{{"v", 1}, {"t", "traffic"}, {"seq", 1}, {"ac", Json::array({Aircraft()})}}.dump()).aircraft.begin()->second;
     a.hdg = 359; Motion motion(a, 10);
@@ -108,6 +125,6 @@ void Socket() {
     server.Close(); Check(server.Open(port), "clean socket reopen");
 }
 int main() {
-    try { Protocol(); Movement(); Socket(); std::cout << "protocol, snapshot lifecycle, motion and UDP tests passed\n"; }
+    try { Protocol(); Ownership(); Movement(); Socket(); std::cout << "protocol, ownership, snapshot lifecycle, motion and UDP tests passed\n"; }
     catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

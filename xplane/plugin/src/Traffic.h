@@ -142,14 +142,23 @@ class Session {
     bool hasSequence = false;
     uint64_t sequence = 0;
     double trafficAt = -1e9;
+    bool ownerKnown = false;
+    uint64_t owner = 0;
+    double ownerAt = -1e9;
 public:
     std::map<std::string, AircraftState> snapshot;
-    bool Apply(const Packet& packet, double now) {
-        if (packet.kind == "clear") { Clear(); return true; }
-        if (packet.kind != "traffic") return true;
-        if (now - trafficAt < 10 && hasSequence && packet.seq <= sequence) return false;
-        snapshot = packet.aircraft;
-        trafficAt = now; sequence = packet.seq; hasSequence = true;
+    bool Connected(double now) const { return ownerKnown && now - ownerAt < 10; }
+    bool Apply(const Packet& packet, double now, uint64_t sender = 0) {
+        if (packet.kind == "hello") return true;
+        if (Connected(now) && sender != owner) return false;
+        if (!Connected(now)) Clear();
+        if (packet.kind == "traffic" && now - trafficAt < 10 && hasSequence && packet.seq <= sequence) return false;
+        if (packet.kind == "clear") Clear();
+        else {
+            snapshot = packet.aircraft;
+            trafficAt = now; sequence = packet.seq; hasSequence = true;
+        }
+        owner = sender; ownerKnown = true; ownerAt = now;
         return true;
     }
     bool Expire(double now) {

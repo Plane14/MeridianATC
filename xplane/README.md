@@ -131,7 +131,7 @@ plugin owns AI targets; see Log.txt. Drawing doesn't require TCAS control.
 
 Read-only integer datarefs:
 
-* `meridianatc/xp/connected`: 1 while an accepted engine packet was seen within
+* `meridianatc/xp/connected`: 1 while accepted owner traffic/clear was seen within
   10 seconds and the plugin is enabled; otherwise 0.
 * `meridianatc/xp/aircraft`: number of IDs in the current snapshot, including
   unmatched/hidden aircraft; 0 after clear/timeout/disable.
@@ -180,7 +180,9 @@ All aircraft are deleted **10 seconds after the last accepted traffic snapshot**
 tracking so a restarted sender can begin at zero. If restarting earlier, send
 clear from the same socket or wait 10 seconds. Only one source address/port owns
 the session; a new source can take over after 10 seconds without accepted owner
-packets. Other sources' hello requests still get replies but do not take over.
+traffic/clear. **Hello never claims, changes or refreshes ownership**, even on
+an idle plugin. Any sender's hello receives status without changing aircraft,
+sequence tracking, the connected dataref or the periodic-status destination.
 
 ```json
 {"v":1,"t":"clear"}
@@ -192,7 +194,7 @@ Immediately removes all aircraft and resets sequence tracking.
 {"v":1,"t":"hello"}
 ```
 
-Requests immediate status. Send hello/traffic periodically to maintain connected
+Requests immediate status only. Send traffic periodically to maintain connected
 status. No sender timestamp field is required: monotonic local arrival times
 drive a 200 ms interpolation buffer. Heading/longitude interpolate on the short
 arc (including north/dateline wrap). Beyond the newest snapshot, GS/heading/VS
@@ -203,7 +205,7 @@ measurement. A steady snapshot rate of 5–10 Hz is recommended.
 ### Plugin -> engine
 
 Sent to every hello's source immediately, plus once a second to the active
-engine while an accepted packet has arrived within the last 10 seconds:
+engine while accepted owner traffic/clear has arrived within the last 10 seconds:
 
 ```json
 {"v":1,"t":"status","plugin":"MeridianATC-XP","version":"0.1.0","xpmp2":"3.7.0","xplane":120000,"csl_models":123,"aircraft":1,"drawn":["DLH4AB"],"unmatched":[]}

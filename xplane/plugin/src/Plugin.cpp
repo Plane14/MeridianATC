@@ -33,8 +33,8 @@ struct Config {
     std::vector<fs::path> csl;
 } config;
 fs::path root;
-bool initialized = false, visible = true, peerKnown = false;
-double lastSeen = -1e9, lastStatus = -1e9;
+bool initialized = false, visible = true;
+double lastStatus = -1e9;
 Udp udp;
 sockaddr_in peer{};
 Session session;
@@ -174,19 +174,17 @@ float Poll(float, float, int, void*) {
         for (int n = 0; n < 64 && udp.Receive(wire, from); ++n) {
             try {
                 auto packet = Parse(wire);
-                bool newPeer = !peerKnown || now - lastSeen >= 10;
-                if (!newPeer && (from.sin_port != peer.sin_port || from.sin_addr.s_addr != peer.sin_addr.s_addr)) {
-                    if (packet.kind == "hello") udp.Send(Status().dump(), from);
+                if (packet.kind == "hello") {
+                    udp.Send(Status().dump(), from);
                     continue;
                 }
-                if (newPeer) session.Clear();
-                if (!session.Apply(packet, now)) continue;
-                peer = from; peerKnown = true; lastSeen = now;
-                if (packet.kind != "hello") Sync(now);
-                if (packet.kind == "hello") { udp.Send(Status().dump(), peer); lastStatus = now; }
+                auto sender = (static_cast<uint64_t>(ntohl(from.sin_addr.s_addr)) << 16) | ntohs(from.sin_port);
+                if (!session.Apply(packet, now, sender)) continue;
+                peer = from;
+                Sync(now);
             } catch (const std::exception&) { /* Invalid datagrams leave the current snapshot intact. */ }
         }
-        if (peerKnown && now - lastSeen < 10 && now - lastStatus >= 1) {
+        if (session.Connected(now) && now - lastStatus >= 1) {
             udp.Send(Status().dump(), peer); lastStatus = now;
         }
     } catch (const std::exception& e) { Log(e.what()); }
@@ -210,11 +208,11 @@ void Menu(void*, void* item) {
         Checks();
     } catch (const std::exception& e) { Log(e.what()); }
 }
-int Connected(void*) { return initialized && peerKnown && Now() - lastSeen < 10 ? 1 : 0; }
+int Connected(void*) { return initialized && session.Connected(Now()) ? 1 : 0; }
 int AircraftCount(void*) { return static_cast<int>(session.snapshot.size()); }
 void Shutdown() {
     if (loop) { XPLMDestroyFlightLoop(loop); loop = nullptr; }
-    aircraft.clear(); unmatched.clear(); session.Clear(); udp.Close(); peerKnown = false;
+    aircraft.clear(); unmatched.clear(); session = Session{}; udp.Close();
     if (initialized) { XPMPMultiplayerDisable(); XPMPMultiplayerCleanup(); initialized = false; }
 }
 }
