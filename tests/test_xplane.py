@@ -306,10 +306,13 @@ def test_engine_attachment_and_msfs_only_guards(monkeypatch, xp):
     attach = Mock(return_value=False)
     monkeypatch.setattr(module.XPlaneTraffic, "attach", attach)
     server, link = xp
+    server.values[DATAREFS["on_ground"][0]] = 0
     assert link.connect()
+    eventually(lambda: not link.read().on_ground)
     engine = module.Engine.__new__(module.Engine)
     engine.config = Config()
     engine.config.sim.simulator = "xplane"
+    engine.config.immersion.autonomous_flight = True
     previous = Mock()
     engine.source = previous
     engine.state = link.read()
@@ -324,6 +327,7 @@ def test_engine_attachment_and_msfs_only_guards(monkeypatch, xp):
     monkeypatch.setattr(module, "open_source", factory)
     assert engine.attach_simulator()
     assert engine.source is link and engine.autonomous_flight.sim is link
+    engine.autonomous_flight.enable.assert_called_once()
     assert engine._sim_source is link
     previous.close.assert_called_once()
     assert factory.call_args.kwargs["simulator"] == "xplane"

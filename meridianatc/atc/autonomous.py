@@ -39,7 +39,7 @@ from enum import StrEnum
 from ..config import Config
 from ..navdata.build import haversine_nm
 from ..navdata.db import Airport, NavDB
-from ..sim.capabilities import capabilities
+from ..sim.capabilities import autofly_limit, capabilities
 from ..sim.source import SimConnectSource
 from . import approach_flight, auto_nav, procedure_legs, vspeeds
 from . import flying as fly
@@ -576,10 +576,9 @@ class AutonomousFlight:
         """Start a new autonomous flight."""
         self.session = session
         aircraft = self.get_state()
-        if self._enabled and aircraft is not None and not capabilities(aircraft.source).autofly:
+        if self._enabled and aircraft is not None and autofly_limit(aircraft):
             self._enabled = False
-            self._emit("info", "Autonomous aircraft control is MSFS-only; "
-                       "radio and checklists remain available.", "log.autofly_unavailable")
+            self._emit("info", autofly_limit(aircraft), "log.autofly_unavailable")
         self.state = AutonomousState()
         self.state.phase, sub = self._entry_phase(session)
         self.state.phase_entered_at = time.monotonic()
@@ -628,12 +627,18 @@ class AutonomousFlight:
         state = self.get_state()
         if state is None or not state.connected:
             return
-        if not capabilities(state.source).autofly:
+        reason = autofly_limit(state)
+        if reason:
             self._enabled = False
-            self._emit("info", "Autonomous aircraft control is MSFS-only; "
-                       "radio and checklists remain available.", "log.autofly_unavailable")
+            self._handoff()
+            self._emit("info", reason, "log.autofly_unavailable")
             return
         self._last_state = state
+        if not self._can_fly_phase(state):
+            self._manual_control_required()
+            return
+        if not capabilities(state.source).flight_axes and not self.state.ap_master:
+            self.state.ap_master = self.director.autopilot(True)
 
         now = time.monotonic()
 
@@ -648,6 +653,8 @@ class AutonomousFlight:
         # radios: a helicopter ices and is blown around as an aeroplane
         # does. The go-around parts are the fixed-wing phases' own.
         self._monitor_weather(state, now)
+        if not self._enabled:
+            return
         if self._heli is not None:
             self._heli.tick(state)
             return
@@ -686,9 +693,26 @@ class AutonomousFlight:
 
         self.state.last_action_at = now
 
+    def _can_fly_phase(self, state) -> bool:
+        return capabilities(state.source).flight_axes or (
+                not self._is_helicopter and self.state.phase in (
+                    AutonomousPhase.CLIMB, AutonomousPhase.CRUISE,
+                    AutonomousPhase.DESCENT, AutonomousPhase.APPROACH)
+                and self.state.sub != "go_around")
+
+    def _manual_control_required(self) -> None:
+        self._enabled = False
+        self._handoff()
+        self._emit("info", "Take manual control: X-Plane supports airborne fixed-wing "
+                   "autopilot assistance only, not taxi, takeoff, landing, go-around "
+                   "or rotorcraft controls.", "log.autofly_manual")
+
     def _execute_phase(self, state, now: float) -> None:
         """Execute logic for the current autonomous phase."""
         phase = self.state.phase
+        if not self._can_fly_phase(state):
+            self._manual_control_required()
+            return
 
         try:
             if phase == AutonomousPhase.PREFLIGHT:
@@ -3097,6 +3121,9 @@ class AutonomousFlight:
 
     def _start_go_around(self, state) -> None:
         """The go-around: power, pitch, configuration, climb away."""
+        if not capabilities(state.source).flight_axes:
+            self._manual_control_required()
+            return
         self.state.go_arounds += 1
         self.state.circling = False
         self.state.circle_path = []

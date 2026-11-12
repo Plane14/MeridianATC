@@ -111,7 +111,7 @@ from .navdata.magvar import variation
 from .paths import announcements_dir, command_hint
 from .paths import resolve as _resolve
 from .security.secrets import resolve_secret
-from .sim.capabilities import capabilities
+from .sim.capabilities import autofly_limit, capabilities
 from .sim.source import ManualSource, StateSource, open_source
 from .sim.state import AircraftState
 from .weather.metar import (
@@ -1505,6 +1505,8 @@ class Engine:
         # Update autonomous flight with the new sim source
         if self.autonomous_flight and hasattr(self.autonomous_flight, 'sim'):
             self.autonomous_flight.sim = sim
+            if self.config.immersion.autonomous_flight and not autofly_limit(self.state):
+                self.autonomous_flight.enable()
 
         simulator = capabilities(self.state.source).name
         self.emit("info", f"Connected to {simulator}.",
@@ -2071,9 +2073,8 @@ class Engine:
         wherever the flight already is -- parked, taxiing or airborne --
         rather than only at a session's beginning.
         """
-        if not capabilities(self.state.source).autofly:
-            message = ("Autonomous aircraft control is not available for this simulator. "
-                       "The First Officer's radio and checklists remain available.")
+        message = autofly_limit(self.state)
+        if message:
             self.emit("info", message, key="log.autofly_unavailable")
             return False, message
         fo = self.autonomous_flight
@@ -2088,7 +2089,12 @@ class Engine:
         except Exception as exc:
             log.debug("autonomous engage failed", exc_info=True)
             return False, str(exc)
-        self.emit("info", "First Officer flying", key="fo.engaged")
+        if capabilities(self.state.source).flight_axes:
+            self.emit("info", "First Officer flying", key="fo.engaged")
+        else:
+            self.emit("info", "First Officer airborne autopilot assistance engaged; "
+                      "taxi, takeoff, landing, go-around and rotorcraft controls remain manual.",
+                      key="fo.ap_only_engaged")
         return True, ""
 
     def disengage_autonomous(self) -> tuple[bool, str]:
@@ -2107,9 +2113,10 @@ class Engine:
 
     def autonomous_status(self) -> dict:
         """What the panel shows in the FO button."""
-        if not capabilities(self.state.source).autofly:
+        reason = autofly_limit(self.state)
+        if reason:
             return {"available": False, "enabled": False, "phase": "", "sub": "",
-                    "helicopter": False, "error": "Aircraft control is MSFS-only"}
+                    "helicopter": self.state.category == "Helicopter", "error": reason}
         fo = self.autonomous_flight
         if fo is None:
             return {"available": False, "enabled": False, "phase": "",

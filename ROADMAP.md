@@ -19,11 +19,13 @@
 - Native MeridianATC-XP XPMP2 traffic renderer and Python snapshot/status backend
 - X-Plane plugin discovery, preserving install/uninstall CLI, Windows setup option,
   optional native payload packaging, and doctor installation/UDP/CSL checks
+- X-Plane AP-level FO assistance through standard commands/datarefs (airborne fixed-wing only)
 
 ## Next
 
 - Live X-Plane rendering/terrain/labels/TCAS validation with real CSL packages
-- X-Plane aircraft-tested autonomous AP/axis director (currently explicitly unavailable)
+- Live-aircraft validation of X-Plane AP assistance; taxi/takeoff/flare/go-around
+  and rotorcraft axis control remain explicitly manual
 - Reliable native X-Plane traffic identity before importing TCAS contacts
 - Validate macOS native plugin packaging/signing and installer UI on real systems
 

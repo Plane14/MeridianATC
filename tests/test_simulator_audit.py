@@ -66,7 +66,7 @@ def test_xplane_switch_writes_weather_and_pause(link):
     assert source.set_variable("BRAKE PARKING POSITION", 1)
     assert source.set_variable("GEAR HANDLE POSITION", 0)
     assert source.set_variable("KOHLSMAN SETTING MB", 1013.25)
-    assert not source.set_variable("AUTOPILOT MASTER", 1)
+    assert source.set_variable("AUTOPILOT MASTER", 1)
     assert not source.set_variable("LIGHT BEACON", float("nan"))
     eventually(lambda: len(peer.writes) == 3)
     assert peer.writes[0] == (xplane.DATAREFS["parking_brake"][0], 1)
@@ -92,6 +92,11 @@ def test_capabilities_and_honest_autofly_refusal():
     assert not ok and "not available" in message
     assert not engine.autonomous_status()["available"]
     engine.autonomous_flight.engage.assert_not_called()
+    engine.state.on_ground = False
+    engine.session = None
+    engine.autonomous_flight.engage.return_value = True
+    assert engine.engage_autonomous()[0]
+    engine.autonomous_flight.engage.assert_called_once_with(None)
 
 
 def test_configured_autofly_does_not_send_xplane_controls():
@@ -102,6 +107,7 @@ def test_configured_autofly_does_not_send_xplane_controls():
     fo._enabled = True
     fo.get_state = lambda: AircraftState(source="xplane", connected=True)
     fo._emit = Mock()
+    fo._handoff = Mock()
     fo._manage_comms = Mock()
     fo.tick()
     assert not fo.enabled

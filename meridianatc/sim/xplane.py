@@ -19,6 +19,7 @@ from dataclasses import fields
 
 from .source import SimConnectSource
 from .state import AircraftState
+from .xpcontrols import READS, XPlaneControls
 
 FT = 3.280839895
 KT = 1.943844492
@@ -120,6 +121,8 @@ for _tank in range(9):
     EXTRA[f"tank{_tank}"] = f"sim/flightmodel/weight/m_fuel[{_tank}]"
     EXTRA[f"tank_ratio{_tank}"] = f"sim/aircraft/overflow/acf_tank_rat[{_tank}]"
 
+EXTRA.update(READS)
+
 STRINGS = {
     "type_code": ("sim/aircraft/view/acf_ICAO", 40),
     "tail_number": ("sim/aircraft/view/acf_tailnum", 40),
@@ -164,6 +167,7 @@ class XPlaneSource:
         self._answered = threading.Event()
         self._lock = threading.Lock()
         self._values = {}
+        self._controls = XPlaneControls(self)
         self._last_packet = 0.0
         self._subscriptions = [(key, path) for key, (path, _) in DATAREFS.items()]
         self._subscriptions += list(EXTRA.items())
@@ -289,7 +293,7 @@ class XPlaneSource:
             1 if state.transponder_state == 2 else state.transponder_state)
         state.transponder_code = f"{int(values.get('squawk', 1200)):04d}"
         state.com1_transmit = values.get("transmit", 6) == 6
-        state.autopilot = bool(values.get("autopilot_mode"))
+        state.autopilot = bool(values.get("control:ap_on", values.get("autopilot_mode") == 2))
         state.gps_drives_nav1 = values.get("hsi_source", 0) in (2, 3)
         state.nav1_has_localizer = bool(int(values.get("nav_type", 0)) & (8 | 16))
         state.ambient_precip_state = 4 if values.get("rain", 0) > 0 else 0
@@ -361,17 +365,23 @@ class XPlaneSource:
         return self._command("sim/ground_ops/pushback_straight")
 
     def set_variable(self, name, value, unit=None):
-        mapping = WRITABLE.get(str(name).upper().replace("_", " "))
-        if mapping is None:
-            return False
-        attribute, scale = mapping
         try:
+            name = str(name).upper().replace("_", " ")
+            value = float(value)
+            if not math.isfinite(value):
+                return False
+            if self._controls.set_variable(name, value, unit):
+                return True
+            mapping = WRITABLE.get(name)
+            if mapping is None:
+                return False
+            attribute, scale = mapping
             return self._dref(DATAREFS[attribute][0], float(value) * scale)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return False
 
     def _send(self, name, value):
-        return False
+        return self._controls.send(name, value)
 
     def loaded_flight_plan(self):
         return None
@@ -416,3 +426,4 @@ class XPlaneSource:
             self._socket.close()
             self._socket = None
         self._answered.clear()
+        self._controls.clear()

@@ -63,12 +63,32 @@ an add-on's bindings without measurements would give false confirmation.
 The generic left/right/all fuel-selector numbering differs between simulators;
 the shipped checklist tests only whether it is off.
 
-Basic MSFS-named switch writes map to verified X-Plane datarefs (brake, gear,
-battery, avionics, lights and barometer). **Autonomous flight is not supported
-on X-Plane**: fixed-wing AP modes, flight-control axes, throttle/flap scheduling
-and helicopter cyclic/collective/pedals require an aircraft-tested director,
-not a blind SimConnect-event translation. Engage is refused explicitly and
-configured autonomous control is stopped before it can issue flight commands.
+MSFS-named writes/events map through `sim/xpcontrols.py` to verified standard
+X-Plane datarefs/commands: HDG/ALT/VS/IAS/Mach bugs, AP/FD/AT, NAV/LOC/APR,
+flight-level change, throttle levers, flap/speedbrake handles, gear, parking
+brake, batteries, avionics, lights, altimeter and engine auto-start/shutdown.
+VS engagement preserves the preselected VS; the heading EX1 and speed EX1
+scales are converted. FD display writes do not disengage AP servos. AT arm
+does not declutch a speed-hold command that is still awaiting RREF feedback.
+Toggle-like AP buttons are guarded by subscribed mode status and a one-second
+pending-command window, so repeated ON/OFF requests do not blindly toggle.
+No combined autopilot bitmasks, override datarefs or direct heading/altitude
+mode writes are used. An unanswered mode read returns False.
+
+**X-Plane FO flight control is airborne fixed-wing autopilot assistance**, not
+full gate-to-gate autonomous flight. Engage on the ground or in a helicopter
+is refused. Climb/cruise/descent/approach use the existing director, but taxi,
+rotation, flare/landing and go-around require manual control: the FO hands
+back its AP modes and announces this before issuing any raw-axis commands.
+Elevator/aileron/rudder/steering and rotorcraft axes are deliberately unmapped.
+The native TO/GA button translation is available to the director, but the FO's
+go-around routine also needs pitch-axis control and is therefore refused.
+Load a route into X-Plane's FMS yourself before using GPS/NAV; this does not
+import a MeridianATC plan into the simulator. Custom aircraft may intercept or
+ignore the standard AP commands. UDP sends are not execution acknowledgements;
+monitor the aircraft's instruments and be ready to take control. These mappings
+have fake-peer protocol tests, not live-aircraft validation.
+
 FO radio and checklist conversation remain available. GSX/LVAR integrations,
 MSFS facility queries, native TCAS-contact import and simulator flight-plan
 import are not supported; use published data and manually loaded plans/SimBrief.
