@@ -1,8 +1,14 @@
 # MeridianATC-XP (X-Plane 12)
 
 A native, main-thread XPMP2 renderer for MeridianATC's invented traffic. This
-plugin does not generate traffic. The Python traffic sender is a separate next
-step; the existing XPlaneSource reads the user's aircraft independently.
+plugin does not generate traffic. MeridianATC's Python `XPlaneTraffic` sender
+automatically attaches when the aircraft-state source is X-Plane; XPlaneSource
+reads the user's aircraft independently. Configure the traffic plugin host/port
+under traffic settings (defaults `127.0.0.1:49010`). The source's UDP port 49000
+is independent. Without a plugin response or usable CSL models, invented traffic
+is not confirmed into the controller's picture. Existing radio-only/refusal
+behavior is retained. The Python sender reports drawing only after status lists
+the callsign in `drawn`; it does not expose MSFS object IDs, doors or LOD swaps.
 
 ## Build
 
@@ -184,8 +190,11 @@ requested through the menu.
 
 ## Limitations / verification
 
-No Python traffic sender, model redistribution, remote networking, audio, or
-automatic AI-control arbitration is included. Simulator rendering, ground probes,
+No model redistribution, remote networking, audio, or automatic AI-control
+arbitration is included. X-Plane's native TCAS traffic is not yet imported into
+the controller's picture: TCAS slots can be sparse and include this plugin's own
+aircraft, so importing anonymous positions would duplicate invented traffic.
+Simulator rendering, ground probes,
 labels and TCAS require live X-Plane validation; protocol/motion/socket unit
 tests do not prove these visuals. macOS binaries need normal local signing/
 quarantine handling. Windows requires the MSVC runtime used by the build.

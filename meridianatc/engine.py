@@ -94,6 +94,7 @@ from .integrations.network import OnlineNetwork
 from .integrations.servicepoints import SimServicePoints
 from .integrations.simaircraft import SimAircraft
 from .integrations.systems import SimSystems
+from .integrations.xptraffic import XPlaneTraffic
 from .llm.providers import build_provider
 from .llm.understanding import Understanding
 from .logs import RADIO, decision, timed
@@ -1122,9 +1123,34 @@ class Engine:
     def attach_simulator_traffic(self) -> bool:
         """Let the other aeroplanes be seen, not only heard.
 
-        Needs the live SimConnect session, so it is done once the source is
-        connected. A simulator that will not have them leaves the radio alone.
+        Attach the renderer for the connected source. A simulator that will
+        not have them leaves the radio alone.
         """
+        xplane = self.state.source == "xplane"
+        if xplane != isinstance(self.simtraffic, XPlaneTraffic):
+            self.simtraffic.detach()
+            options = dict(
+                enabled=self.config.traffic.enabled and self.config.traffic.in_simulator,
+                limit=self.config.traffic.in_simulator_limit + max(0, int(self.config.traffic.parked)),
+                settle_s=self.config.traffic.lod.settle_s,
+                smooth=self.config.traffic.smooth_motion,
+            )
+            if xplane:
+                self.simtraffic = XPlaneTraffic(
+                    **options, host=self.config.traffic.xplane_plugin_host,
+                    port=self.config.traffic.xplane_plugin_port)
+            else:
+                self.simtraffic = SimTraffic(**options)
+            self.simtraffic.lod_models = dict(self.config.traffic.lod.models or {})
+            self.simtraffic.on_swapped = self._model_swapped
+            self.simtraffic.on_removed = self._model_removed
+            self._ai_liveries_asked = False
+        if xplane:
+            self.traffic.await_observed = False
+            drawing = self.simtraffic.attach()
+            if not drawing and self.simtraffic.enabled:
+                self._warn_xplane_traffic()
+            return drawing
         simconnect = getattr(self.source, "_sim", None)
         if simconnect is None:
             return False
@@ -1150,6 +1176,15 @@ class Engine:
             self.servicepoints.attach(simconnect)
             log.info("%s", self.simdoors.describe())
         return drawing or watching
+
+    def _warn_xplane_traffic(self) -> None:
+        if getattr(self, "_xptraffic_notice", False):
+            return
+        self._xptraffic_notice = True
+        self.emit("info",
+                  "X-Plane traffic is not available. Install or enable MeridianATC-XP "
+                  "and its CSL models; see xplane/README.md. Traffic stays radio-only.",
+                  key="log.xplane_traffic_unavailable")
 
     # How long the simulator is given to list its aircraft and liveries.
     # A running 2024 lists six thousand in a second or two.
@@ -3879,11 +3914,14 @@ class Engine:
             # aeroplanes that were promised at startup and never made.
             if (self.simtraffic.refused
                     and session.advise_once("sim_traffic_refused")):
-                self.emit("info",
-                          "This simulator will not create AI aircraft, so "
-                          "MeridianATC adds no traffic of its own. Aircraft "
-                          "already in the simulator are still worked.",
-                          key="log.traffic_refused")
+                if isinstance(self.simtraffic, XPlaneTraffic):
+                    self._warn_xplane_traffic()
+                else:
+                    self.emit("info",
+                              "This simulator will not create AI aircraft, so "
+                              "MeridianATC adds no traffic of its own. Aircraft "
+                              "already in the simulator are still worked.",
+                              key="log.traffic_refused")
         elif self.brain.traffic is not None:
             # Switched off mid-flight: the aeroplanes stop existing, and the
             # controller stops sequencing the user against them.
@@ -4303,7 +4341,7 @@ class Engine:
         swapped when the decision says, so many a second; one moving is
         left as it is until it parks.
         """
-        if not self.lod.enabled:
+        if isinstance(self.simtraffic, XPlaneTraffic) or not self.lod.enabled:
             return
         if self.lod.scheduled:
             self._choose_models_by_schedule(positions, now)

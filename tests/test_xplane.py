@@ -302,6 +302,8 @@ def test_offline_selection_and_defaults():
 def test_engine_attachment_and_msfs_only_guards(monkeypatch, xp):
     from meridianatc import engine as module
 
+    attach = Mock(return_value=False)
+    monkeypatch.setattr(module.XPlaneTraffic, "attach", attach)
     server, link = xp
     assert link.connect()
     engine = module.Engine.__new__(module.Engine)
@@ -324,14 +326,15 @@ def test_engine_attachment_and_msfs_only_guards(monkeypatch, xp):
     assert engine._sim_source is link
     previous.close.assert_called_once()
     assert factory.call_args.kwargs["simulator"] == "xplane"
-    assert not engine.attach_simulator_traffic()
+    assert isinstance(engine.simtraffic, module.XPlaneTraffic)
     assert not engine.open_simulator_frequencies()
     assert engine.attach_lvar_bridge() == ""
     engine.simwatch.attach.assert_not_called()
-    engine.simtraffic.attach.assert_not_called()
+    attach.assert_called_once_with()
     engine.facilities.open.assert_not_called()
     engine.gsx.attach.assert_called_once_with(None)
-    assert "X-Plane 12" in engine.emit.call_args.args[1]
+    assert any("Connected to X-Plane 12" in call.args[1]
+               for call in engine.emit.call_args_list)
 
 
 def test_failed_engine_attachment_keeps_previous_source(monkeypatch):

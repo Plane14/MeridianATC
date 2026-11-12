@@ -1102,6 +1102,8 @@ class TrafficConfig:
     # real aeroplane in the simulator, so a busy field is capped rather than
     # allowed to fill the ramp.
     in_simulator_limit: int = 12
+    xplane_plugin_host: str = "127.0.0.1"
+    xplane_plugin_port: int = 49010
     # Drawn every frame between the traffic's ticks (meridianatc.atc.follow),
     # frozen so the simulator does not move them itself; off writes each
     # aeroplane once a tick, which is what jumped on the taxiway and made a
@@ -1204,6 +1206,10 @@ describe(
     in_simulator=Setting("traffic", "traffic", restart=True),
     in_simulator_limit=Setting("traffic", "traffic", min=0, max=60,
                                restart=True),
+    xplane_plugin_host=Setting("traffic", "traffic", label="set.xplane_plugin_host",
+                               restart=True, advanced=True),
+    xplane_plugin_port=Setting("traffic", "traffic", label="set.xplane_plugin_port",
+                               min=1, max=65535, restart=True, advanced=True),
     density=Setting("traffic", "traffic", min=0, max=3, step=0.25,
                     widget="slider", label="set.how_busy"),
     parked=Setting("traffic", "traffic", min=0, max=80, restart=True),
