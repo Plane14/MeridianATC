@@ -20,12 +20,7 @@ public partial class DashboardPage : Page
         var state = await App.Engine.GetAsync("/api/state");
         if (state is { } s)
         {
-            // The snapshot nests facts under their area.
-            Callsign.Text = TryGet(s, "aircraft", "callsign") ?? "—";
-            Phase.Text = TryGet(s, "flight", "phase") ?? "—";
-            Frequency.Text = TryGet(s, "radio", "com1") ?? "—";
-            AutonomousState.Text =
-                TryGet(s, "autonomous", "enabled") == "yes" ? "on" : "off";
+            ApplySnapshot(s);
         }
         var hint = await App.Engine.GetAsync("/api/guidance");
         if (hint is { } h)
@@ -38,6 +33,11 @@ public partial class DashboardPage : Page
 
     private void OnEngineEvent(JsonElement e)
     {
+        if (EngineClient.StateFromEvent(e) is { } snapshot)
+        {
+            Dispatcher.Invoke(() => ApplySnapshot(snapshot));
+            return;
+        }
         // Only "event" envelopes carry a line worth logging; "state" and
         // "setup" payloads would draw a row of nothing every snapshot.
         if (!e.TryGetProperty("kind", out var kind)
@@ -56,6 +56,15 @@ public partial class DashboardPage : Page
             Log.Items.Insert(0, $"{speaker}: {text}");
             if (Log.Items.Count > 100) Log.Items.RemoveAt(100);
         });
+    }
+
+    private void ApplySnapshot(JsonElement s)
+    {
+        Simulator.Text = EngineClient.SimulatorName(s);
+        Callsign.Text = TryGet(s, "aircraft", "callsign") ?? "—";
+        Phase.Text = TryGet(s, "flight", "phase") ?? "—";
+        Frequency.Text = TryGet(s, "radio", "com1") ?? "—";
+        AutonomousState.Text = TryGet(s, "autonomous", "enabled") == "yes" ? "on" : "off";
     }
 
     private async void Send_Click(object sender, RoutedEventArgs e)

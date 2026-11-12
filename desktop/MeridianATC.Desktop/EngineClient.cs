@@ -78,17 +78,10 @@ public sealed class EngineClient : IDisposable
     private async Task<bool> TryLaunchAsync(CancellationToken ct)
     {
         // The bundled engine beside the shell, then the development tree.
-        var candidates = new[]
-        {
-            Path.Combine(AppContext.BaseDirectory, "engine", "meridianatc.exe"),
-            Path.Combine(AppContext.BaseDirectory, "MeridianATC.exe"),
-        };
-        var path = candidates.FirstOrDefault(File.Exists);
+        var path = FindEngine(AppContext.BaseDirectory, Environment.ProcessPath);
         if (path is null) return false;
         try
         {
-            // gui --no-browser: engine + API on the fixed port without the
-            // webview window -- this shell is the window.
             _engine = Process.Start(new ProcessStartInfo(path,
                 "gui --no-browser")
             {
@@ -101,6 +94,37 @@ public sealed class EngineClient : IDisposable
         {
             return false;
         }
+    }
+
+    public static string? FindEngine(string directory, string? processPath)
+    {
+        var candidates = new[]
+        {
+            Path.Combine(directory, "engine", "meridianatc.exe"),
+            Path.Combine(directory, "MeridianATC.exe"),
+        };
+        return candidates.FirstOrDefault(p => File.Exists(p) &&
+            !string.Equals(Path.GetFullPath(p), processPath,
+                StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static string SimulatorName(JsonElement state)
+    {
+        var source = state.TryGetProperty("source", out var s) ? s.GetString() : "";
+        var name = source switch
+        {
+            "xplane" => "X-Plane 12",
+            "simconnect" => "Microsoft Flight Simulator",
+            _ => "Manual / replay",
+        };
+        return state.TryGetProperty("connected", out var c) && c.ValueKind == JsonValueKind.True
+            ? name : name + " (disconnected)";
+    }
+
+    public static JsonElement? StateFromEvent(JsonElement envelope)
+    {
+        return envelope.TryGetProperty("kind", out var kind) && kind.GetString() == "state"
+            && envelope.TryGetProperty("state", out var state) ? state.Clone() : null;
     }
 
     /// <summary>GET an endpoint and read its JSON body.</summary>

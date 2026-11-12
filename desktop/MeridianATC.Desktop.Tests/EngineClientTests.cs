@@ -10,6 +10,46 @@ namespace MeridianATC.Desktop.Tests;
 /// </summary>
 public sealed class EngineClientTests
 {
+    [Theory]
+    [InlineData("xplane", true, "X-Plane 12")]
+    [InlineData("xplane", false, "X-Plane 12 (disconnected)")]
+    [InlineData("simconnect", true, "Microsoft Flight Simulator")]
+    [InlineData("manual", true, "Manual / replay")]
+    public void SimulatorNamesComeFromState(string source, bool connected, string expected)
+    {
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(new { source, connected }));
+        Assert.Equal(expected, EngineClient.SimulatorName(doc.RootElement));
+    }
+
+    [Fact]
+    public void StateEnvelopesUpdateTheDashboardRatherThanBeingIgnored()
+    {
+        using var message = JsonDocument.Parse("{\"kind\":\"state\",\"state\":{\"source\":\"xplane\",\"connected\":true}}");
+        var state = EngineClient.StateFromEvent(message.RootElement);
+        Assert.True(state.HasValue);
+        Assert.Equal("X-Plane 12", EngineClient.SimulatorName(state.Value));
+        using var line = JsonDocument.Parse("{\"kind\":\"event\",\"text\":\"radio\"}");
+        Assert.Null(EngineClient.StateFromEvent(line.RootElement));
+    }
+
+    [Fact]
+    public void MissingEngineDoesNotLaunchTheShellRecursively()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var shell = Path.Combine(directory, "MeridianATC.exe");
+            File.WriteAllText(shell, "shell");
+            Assert.Null(EngineClient.FindEngine(directory, shell));
+            Directory.CreateDirectory(Path.Combine(directory, "engine"));
+            var engine = Path.Combine(directory, "engine", "meridianatc.exe");
+            File.WriteAllText(engine, "engine");
+            Assert.Equal(engine, EngineClient.FindEngine(directory, shell));
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
     [Fact]
     public void PortIsTheEngineOne()
     {

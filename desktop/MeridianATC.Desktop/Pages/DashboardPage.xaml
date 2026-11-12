@@ -5,6 +5,7 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="24">
             <TextBlock Style="{StaticResource Heading}" Text="Dashboard"/>
+            <TextBlock x:Name="Simulator" Style="{StaticResource Body}" Text="Simulator disconnected" Margin="0,0,0,8"/>
             <Border Style="{StaticResource Card}">
                 <StackPanel>
                     <TextBlock Style="{StaticResource Body}"
