@@ -109,7 +109,7 @@ from .navdata.magvar import variation
 from .paths import announcements_dir, command_hint
 from .paths import resolve as _resolve
 from .security.secrets import resolve_secret
-from .sim.source import ManualSource, SimConnectSource, StateSource
+from .sim.source import ManualSource, StateSource, open_source
 from .sim.state import AircraftState
 from .weather.metar import (
     WeatherProvider,
@@ -671,7 +671,7 @@ class Engine:
         # than recognised by type: the question is whether *this* engine has
         # a simulator source in use, and a type check answers a subtly
         # different one that goes wrong the moment anything wraps the class.
-        self._sim_source: SimConnectSource | None = None
+        self._sim_source: StateSource | None = None
         # Whether the last tick found the simulator paused, so it is said
         # once rather than four times a second.
         self._was_paused = False
@@ -1227,13 +1227,13 @@ class Engine:
         Without one the published data is used and nothing is said about it,
         because there is nothing the pilot can do differently.
         """
-        if not self.config.sim.frequencies_from_sim:
+        if self.state.source == "xplane" or not self.config.sim.frequencies_from_sim:
             return False
         return self.facilities.open()
 
     def follow_facilities(self, state: AircraftState) -> None:
         """Read the airport under the aeroplane, once, in the background."""
-        if not self.facilities.available or not state.has_position:
+        if state.source == "xplane" or not self.facilities.available or not state.has_position:
             return
         airport = self.navdb.home_airport(state.latitude, state.longitude)
         if airport is None:
@@ -1283,7 +1283,7 @@ class Engine:
         handling exactly where it was -- watching the aeroplane's own
         movement, which needs nothing installed.
         """
-        if not self.config.gsx.enabled:
+        if self.state.source == "xplane" or not self.config.gsx.enabled:
             return ""
         existing = self.gsx.bridge
         if existing is not None and getattr(existing, "available", False):
@@ -1426,9 +1426,12 @@ class Engine:
         without a simulator carries on rather than losing its position to a
         half-built connection.
         """
-        sim = SimConnectSource(poll_interval=self.config.sim.poll_interval_s,
-                               dll_path=self.config.sim.simconnect_dll)
-        if not sim.connect():
+        sim = open_source(poll_interval=self.config.sim.poll_interval_s,
+                          simulator=self.config.sim.simulator,
+                          xplane_host=self.config.sim.xplane_host,
+                          xplane_port=self.config.sim.xplane_port,
+                          dll_path=self.config.sim.simconnect_dll)
+        if isinstance(sim, ManualSource):
             sim.close()
             return False
 
@@ -1440,6 +1443,16 @@ class Engine:
         # thing that asks gets the aeroplane's real position rather than the
         # placeholder the manual source was holding.
         self.refresh_state()
+        if self.state.source == "xplane":
+            for integration in (self.simvehicles, self.simdoors, self.simsystems,
+                                self.servicepoints, self.simtraffic, self.simwatch):
+                integration.detach()
+            self.facilities.close()
+            bridge = self.gsx.bridge
+            if bridge is not None:
+                bridge.close()
+            self.gsx.attach(None)
+            self.traffic.await_observed = False
         if previous is not sim:
             try:
                 previous.close()
@@ -1451,7 +1464,9 @@ class Engine:
         if self.autonomous_flight and hasattr(self.autonomous_flight, 'sim'):
             self.autonomous_flight.sim = sim
 
-        self.emit("info", "Connected to the simulator.", key="log.sim_connected")
+        simulator = "X-Plane 12" if self.state.source == "xplane" else "Microsoft Flight Simulator"
+        self.emit("info", f"Connected to {simulator}.",
+                  key="log.sim_connected_name", simulator=simulator)
         # The ground handling, which needs the simulator to be there before
         # it can open a channel of its own. It used to be written and never
         # called, which is the whole of why GSX appeared to do nothing: the

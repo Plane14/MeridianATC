@@ -1700,10 +1700,12 @@ function paintSettingsLive() {
     // A stand-in source reports itself connected, because it is: the engine
     // has a state to read. It is not a simulator, though, and saying so would
     // send somebody looking for a fault in MSFS that is not there.
-    const linked = state.source === "simconnect" && state.connected;
+    const linked = ["simconnect", "xplane"].includes(state.source) && state.connected;
     line.classList.toggle("is-off", !linked);
     text(line.lastElementChild, linked
-      ? t("set.sim_connected", "Microsoft Flight Simulator · connected")
+      ? (state.source === "xplane"
+          ? t("set.xplane_connected", "X-Plane 12 · connected")
+          : t("set.sim_connected", "Microsoft Flight Simulator · connected"))
       : t("set.sim_stand_in", "no simulator — flying on a stand-in position"));
     text($("sim-session"), clock(state.session_s));
     text($("sim-source"), state.source || "—");

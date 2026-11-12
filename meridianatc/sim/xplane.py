@@ -1,0 +1,379 @@
+"""X-Plane 12's built-in UDP aircraft link (no plugin required).
+
+Names and units checked against X-Plane's 1208 DataRefs.txt, mirrored at
+https://github.com/X-Plane/XPlane2Blender/blob/master/io_xplane2blender/resources/DataRefs.txt
+Commands checked against Resources/plugins/Commands.txt mirrored at
+https://github.com/Rororo098/Xplane-Dataref-Bridge/blob/main/Commands.txt
+The 12.1.1+ Web API (8086) is deliberately not needed by this link.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import math
+import socket
+import struct
+import threading
+import time
+
+from .state import AircraftState
+
+FT = 3.280839895
+KT = 1.943844492
+LB = 2.204622622
+RADIOS = "sim/cockpit2/radios/actuators/"
+
+# attribute: (dataref, multiplier); booleans retain their dataclass type.
+DATAREFS = {
+    "latitude": ("sim/flightmodel/position/latitude", 1),
+    "longitude": ("sim/flightmodel/position/longitude", 1),
+    "altitude_ft": ("sim/flightmodel/position/elevation", FT),
+    "altitude_agl_ft": ("sim/flightmodel/position/y_agl", FT),
+    "indicated_altitude_ft": ("sim/cockpit2/gauges/indicators/altitude_ft_pilot", 1),
+    "heading_true": ("sim/flightmodel/position/true_psi", 1),
+    "heading_magnetic": ("sim/flightmodel/position/mag_psi", 1),
+    "track_true": ("sim/cockpit2/gauges/indicators/ground_track_true_pilot", 1),
+    "ground_speed_kt": ("sim/flightmodel/position/groundspeed", KT),
+    "indicated_airspeed_kt": ("sim/flightmodel/position/indicated_airspeed", 1),
+    "true_airspeed_kt": ("sim/flightmodel/position/true_airspeed", KT),
+    "vertical_speed_fpm": ("sim/flightmodel/position/vh_ind_fpm", 1),
+    "on_ground": ("sim/flightmodel/failures/onground_any", 1),
+    "bank_deg": ("sim/flightmodel/position/phi", 1),
+    "parking_brake": ("sim/cockpit2/controls/parking_brake_ratio", 1),
+    "gear_down": ("sim/cockpit2/controls/gear_handle_down", 1),
+    "seatbelt_sign": ("sim/cockpit2/switches/fasten_seat_belts", 1),
+    "beacon_light": ("sim/cockpit2/switches/beacon_on", 1),
+    "landing_light": ("sim/cockpit2/switches/landing_lights_on", 1),
+    "taxi_light": ("sim/cockpit2/switches/taxi_light_on", 1),
+    "nav_light": ("sim/cockpit2/switches/navigation_lights_on", 1),
+    "strobe_light": ("sim/cockpit2/switches/strobe_lights_on", 1),
+    "engine_count": ("sim/aircraft/engine/acf_num_engines", 1),
+    "kohlsman_hpa": ("sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot", 33.86389),
+    "mixture_pct": ("sim/cockpit2/engine/actuators/mixture_ratio[0]", 100),
+    "pitot_heat": ("sim/cockpit2/ice/ice_pitot_heat_on_pilot", 1),
+    "avionics_master": ("sim/cockpit2/switches/avionics_power_on", 1),
+    "battery_master": ("sim/cockpit2/electrical/battery_on[0]", 1),
+    "main_bus_volts": ("sim/cockpit2/electrical/bus_volts[0]", 1),
+    "nav1_freq": (RADIOS + "nav1_frequency_hz", .01),
+    "ap_airspeed_kt": ("sim/cockpit2/autopilot/airspeed_dial_kts", 1),
+    "throttle_pct": ("sim/cockpit2/engine/actuators/throttle_ratio[0]", 100),
+    "airspeed_mach": ("sim/flightmodel/misc/machno", 1),
+    "total_weight_lb": ("sim/flightmodel/weight/m_total", LB),
+    "max_gross_weight_lb": ("sim/aircraft/weight/acf_m_max", LB),
+    "fuel_total_lb": ("sim/flightmodel/weight/m_fuel_total", LB),
+    "paused": ("sim/time/paused", 1),
+    "ambient_wind_direction": ("sim/weather/aircraft/wind_now_direction_degt", 1),
+    "ambient_wind_velocity": ("sim/weather/aircraft/wind_now_speed_msc", KT),
+    "ambient_temperature_c": ("sim/weather/aircraft/temperature_ambient_deg_c", 1),
+    "total_air_temperature_c": ("sim/weather/aircraft/temperature_leadingedge_deg_c", 1),
+    "ambient_visibility_m": ("sim/weather/aircraft/visibility_reported_sm", 1609.344),
+    "ambient_humidity_pct": ("sim/weather/aircraft/relative_humidity_sealevel_percent", 1),
+    "sea_level_pressure_hpa": ("sim/weather/aircraft/qnh_pas", .01),
+    "com1_receive": (RADIOS + "audio_selection_com1", 1),
+    "com2_receive": (RADIOS + "audio_selection_com2", 1),
+    "structural_ice_pct": ("sim/flightmodel/failures/frm_ice", 100),
+    "pressure_altitude_ft": ("sim/flightmodel2/position/pressure_altitude", 1),
+    "autothrottle": ("sim/cockpit2/autopilot/autothrottle_on", 1),
+    "design_vs0_kt": ("sim/aircraft/view/acf_Vso", 1),
+    "design_vs1_kt": ("sim/aircraft/view/acf_Vs", 1),
+    "design_vc_kt": ("sim/aircraft/view/acf_Vno", 1),
+    "barber_pole_kt": ("sim/aircraft/view/acf_Vne", 1),
+    "nav1_cdi": ("sim/cockpit2/radios/indicators/nav1_hdef_dots_pilot", 127 / 2.5),
+    "nav1_gsi": ("sim/cockpit2/radios/indicators/nav1_vdef_dots_pilot", 119 / 2.5),
+    "nav1_has_glideslope": ("sim/cockpit2/radios/indicators/nav1_display_vertical", 1),
+    "rotor_brake_active": ("sim/cockpit2/switches/rotor_brake", 1),
+    "rotor_clutch_active": ("sim/cockpit2/switches/clutch_engage", 1),
+    "collective_position": ("sim/cockpit2/engine/actuators/prop_ratio[0]", 100),
+}
+for _radio in (1, 2):
+    for _standby in (False, True):
+        _suffix = "standby" if _standby else "active"
+        _path = f"com{_radio}_" + ("standby_" if _standby else "") + "frequency_hz_833"
+        # Despite the historic 'hz' spelling, 833 channel numbers are kHz.
+        DATAREFS[f"com{_radio}_{_suffix}"] = (RADIOS + _path, .001)
+
+EXTRA = {
+    "xp_engine_type": "sim/aircraft/prop/acf_en_type[0]",
+    "helicopter": "sim/aircraft2/metadata/is_helicopter",
+    "xp_transponder": RADIOS + "transponder_mode",
+    "ident": "sim/cockpit2/radios/indicators/transponder_id",
+    "squawk": RADIOS + "transponder_code",
+    "flaps": "sim/cockpit2/controls/flap_ratio",
+    "flap_detents": "sim/aircraft/controls/acf_flap_detents",
+    "speedbrake": "sim/cockpit2/controls/speedbrake_ratio",
+    "transmit": RADIOS + "audio_com_selection",
+    "autopilot_mode": "sim/cockpit2/autopilot/servos_on",
+    # DataRefs.txt says 'appears to be in lbs'; in practice this is kg,
+    # matching m_fuel_total and the per-tank quantities.
+    "fuel_capacity_kg": "sim/aircraft/weight/acf_m_fuel_tot",
+    "hsi_source": RADIOS + "HSI_source_select_pilot",
+    "nav_type": "sim/cockpit2/radios/indicators/nav1_type",
+    "rain": "sim/weather/aircraft/precipitation_on_aircraft_ratio",
+}
+for _engine in range(16):
+    EXTRA[f"running{_engine}"] = f"sim/flightmodel/engine/ENGN_running[{_engine}]"
+    EXTRA[f"flow{_engine}"] = f"sim/flightmodel/engine/ENGN_FF_[{_engine}]"
+for _tank in range(9):
+    EXTRA[f"tank{_tank}"] = f"sim/flightmodel/weight/m_fuel[{_tank}]"
+    EXTRA[f"tank_ratio{_tank}"] = f"sim/aircraft/overflow/acf_tank_rat[{_tank}]"
+
+STRINGS = {
+    "type_code": ("sim/aircraft/view/acf_ICAO", 40),
+    "tail_number": ("sim/aircraft/view/acf_tailnum", 40),
+    "title": ("sim/aircraft/view/acf_ui_name", 250),
+}
+
+
+class XPlaneSource:
+    def __init__(self, host="127.0.0.1", port=49000, poll_interval=.25,
+                 timeout_s=1.0, disconnect_s=5.0, discovery_s=1.1):
+        self.host, self.port = host, int(port)
+        self.version = None
+        self.timeout_s, self.disconnect_s = timeout_s, disconnect_s
+        self.discovery_s = discovery_s
+        self.frequency = max(1, round(1 / max(.05, poll_interval)))
+        self._socket = None
+        self._thread = None
+        self._stop = threading.Event()
+        self._answered = threading.Event()
+        self._lock = threading.Lock()
+        self._values = {}
+        self._last_packet = 0.0
+        self._subscriptions = [(key, path) for key, (path, _) in DATAREFS.items()]
+        self._subscriptions += list(EXTRA.items())
+        self._subscriptions += [(f"{key}:{i}", f"{path}[{i}]")
+                                for key, (path, size) in STRINGS.items()
+                                for i in range(size)]
+
+    @staticmethod
+    def parse_beacon(packet, sender):
+        if len(packet) < 21 or packet[:5] != b"BECN\0":
+            return None
+        major, _minor, app, version, role, port = struct.unpack_from("<BBiiIH", packet, 5)
+        if major != 1 or app != 1 or role != 1 or version < 120000 or not port:
+            return None
+        return sender[0], port, version
+
+    def _discover(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as beacon:
+            beacon.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            beacon.bind(("", 49707))
+            beacon.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
+                              socket.inet_aton("239.255.1.1") + socket.inet_aton("0.0.0.0"))
+            deadline = time.monotonic() + self.discovery_s
+            while time.monotonic() < deadline:
+                beacon.settimeout(max(.001, deadline - time.monotonic()))
+                packet, sender = beacon.recvfrom(2048)
+                found = self.parse_beacon(packet, sender)
+                if found:
+                    return found
+        return None
+
+    @property
+    def connected(self):
+        return (self._socket is not None and self._answered.is_set()
+                and time.monotonic() - self._last_packet < self.disconnect_s)
+
+    def connect(self):
+        if self.connected:
+            return True
+        self.close()
+        self._values.clear()
+        self._answered.clear()
+        self._stop.clear()
+        found = None
+        with contextlib.suppress(OSError):
+            found = self._discover()
+        candidates = [(self.host, self.port)]
+        if found:
+            self.version = found[2]
+            candidates.insert(0, found[:2])
+        for endpoint in dict.fromkeys(candidates):
+            try:
+                with self._lock:
+                    self._values.clear()
+                    self._last_packet = 0.0
+                self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                self._socket.connect(endpoint)
+                self._socket.settimeout(.1)
+                self._stop.clear()
+                self._answered.clear()
+                self._thread = threading.Thread(target=self._receive,
+                                                name="XPlane-RREF", daemon=True)
+                self._thread.start()
+                for index, (_key, path) in enumerate(self._subscriptions):
+                    self._subscribe(index, path, self.frequency)
+                if self._answered.wait(self.timeout_s) and self.connected:
+                    return True
+            except OSError:
+                pass
+            self.close()
+        return False
+
+    def _subscribe(self, index, path, frequency):
+        self._socket.send(b"RREF\0" + struct.pack("<ii400s", frequency, index, path.encode("ascii")))
+
+    def _receive(self):
+        while not self._stop.is_set():
+            try:
+                packet = self._socket.recv(65535)
+            except TimeoutError:
+                continue
+            except OSError:
+                return
+            if len(packet) < 13 or packet[:4] != b"RREF" or (len(packet) - 5) % 8:
+                continue
+            valid = False
+            with self._lock:
+                for index, value in struct.iter_unpack("<if", packet[5:]):
+                    if 0 <= index < len(self._subscriptions) and math.isfinite(value):
+                        self._values[self._subscriptions[index][0]] = value
+                        valid = True
+                if valid:
+                    self._last_packet = time.monotonic()
+                    self._answered.set()
+
+    def read(self):
+        with self._lock:
+            values = self._values.copy()
+        state = AircraftState(source="xplane", connected=self.connected)
+        for key, (_path, factor) in DATAREFS.items():
+            if key in values:
+                raw = values[key] * factor
+                default = getattr(state, key)
+                setattr(state, key, bool(raw) if isinstance(default, bool)
+                        else int(raw) if isinstance(default, int) else raw)
+        for key, (_path, size) in STRINGS.items():
+            raw = bytes(max(0, min(255, int(values.get(f"{key}:{i}", 0)))) for i in range(size))
+            setattr(state, key, raw.split(b"\0", 1)[0].decode("utf-8", errors="replace").strip())
+        state.callsign = state.tail_number
+        state.engines_running = any(values.get(f"running{i}", 0) for i in range(16))
+        for i in range(1, 4):
+            if f"running{i}" in values and state.engine_count > i:
+                setattr(state, f"eng{i + 1}_combustion", bool(values[f"running{i}"]))
+        state.engine_type = {0: 0, 1: 0, 3: 4, 5: 1, 6: 4, 7: 1, 9: 5, 10: 5}.get(
+            int(values.get("xp_engine_type", -1)), -1)
+        state.category = "Helicopter" if values.get("helicopter") else "Airplane"
+        if state.category == "Helicopter":
+            state.engine_type = 3 if state.engine_type == 5 else state.engine_type
+        state.flaps_index = round(values.get("flaps", 0) * max(0, values.get("flap_detents", 1) - 1))
+        state.transponder_state = {0: 0, 1: 1, 2: 3, 3: 4, 4: 2, 5: 4, 6: 4, 7: 4}.get(
+            int(values.get("xp_transponder", 0)), 0)
+        state.transponder_mode = 5 if values.get("ident") else (
+            1 if state.transponder_state == 2 else state.transponder_state)
+        state.transponder_code = f"{int(values.get('squawk', 1200)):04d}"
+        state.com1_transmit = values.get("transmit", 6) == 6
+        state.autopilot = bool(values.get("autopilot_mode"))
+        state.gps_drives_nav1 = values.get("hsi_source", 0) in (2, 3)
+        state.nav1_has_localizer = bool(int(values.get("nav_type", 0)) & (8 | 16))
+        state.ambient_precip_state = 4 if values.get("rain", 0) > 0 else 0
+        state.spoilers_armed = values.get("speedbrake", 0) < 0
+        # X-Plane reports fuel mass, not volume; use the same nominal 6 lb/gal
+        # as ManualSource where the model does not declare a fuel density.
+        state.fuel_total_gal = state.fuel_total_lb / 6
+        state.fuel_capacity_gal = values.get("fuel_capacity_kg", 0) * LB / 6
+        state.est_fuel_flow_pph = sum(values.get(f"flow{i}", 0) for i in range(16)) * LB * 3600
+        return state
+
+    def read_now(self, attribute):
+        if not self.connected:
+            return None
+        with self._lock:
+            known = attribute in self._values
+        return getattr(self.read(), attribute, None) if known else None
+
+    def _dref(self, path, value):
+        try:
+            if not self.connected or not math.isfinite(float(value)):
+                return False
+            self._socket.send(b"DREF\0" + struct.pack("<f500s", float(value), path.encode("ascii")))
+            return True
+        except (OSError, ValueError, TypeError, OverflowError):
+            return False
+
+    def _command(self, command):
+        if not self.connected:
+            return False
+        try:
+            self._socket.send(b"CMND\0" + command.encode("ascii") + b"\0")
+            return True
+        except OSError:
+            return False
+
+    def set_com(self, mhz, radio=1, standby=False):
+        try:
+            value = float(mhz)
+            if radio not in (1, 2) or not 118 <= value <= 136.999:
+                return False
+            path = f"com{radio}_" + ("standby_" if standby else "") + "frequency_hz_833"
+            return self._dref(RADIOS + path, round(value * 1000))
+        except (ValueError, TypeError):
+            return False
+
+    def swap_com(self, radio=1):
+        return radio in (1, 2) and self._command(f"sim/radios/com{radio}_standy_flip")
+
+    def set_nav(self, mhz, radio=1):
+        try:
+            return (radio in (1, 2) and 108 <= float(mhz) <= 117.95
+                    and self._dref(RADIOS + f"nav{radio}_frequency_hz", round(float(mhz) * 100)))
+        except (ValueError, TypeError):
+            return False
+
+    def set_squawk(self, code):
+        code = str(code)
+        return (len(code) == 4 and all(c in "01234567" for c in code)
+                and self._dref(RADIOS + "transponder_code", int(code)))
+
+    def pushback(self):
+        return self._command("sim/ground_ops/pushback_straight")
+
+    def set_variable(self, name, value, unit=None):
+        return False
+
+    def _send(self, name, value):
+        return False
+
+    def loaded_flight_plan(self):
+        return None
+
+    def request_flight_plan(self):
+        return False
+
+    def flight_plan_reply(self):
+        return None
+
+    def fuel_tanks(self):
+        if not self.connected:
+            return []
+        with self._lock:
+            values = self._values.copy()
+        capacity = values.get("fuel_capacity_kg", 0)
+        return [(f"sim/flightmodel/weight/m_fuel[{i}]",
+                 capacity * values[f"tank_ratio{i}"] * LB / 6,
+                 values.get(f"tank{i}", 0) * LB / 6)
+                for i in range(9) if values.get(f"tank_ratio{i}", 0) > 0]
+
+    def set_fuel(self, gallons):
+        try:
+            gallons = float(gallons)
+            tanks = self.fuel_tanks()
+            capacity = sum(cap for _, cap, _ in tanks)
+            if not math.isfinite(gallons) or gallons < 0 or capacity <= 0:
+                return False
+            fraction = min(1, gallons / capacity)
+            return all(self._dref(path, cap * fraction * 6 / LB) for path, cap, _ in tanks)
+        except (ValueError, TypeError):
+            return False
+
+    def close(self):
+        self._stop.set()
+        if self._socket is not None:
+            for index, (_key, path) in enumerate(self._subscriptions):
+                with contextlib.suppress(OSError):
+                    self._subscribe(index, path, 0)
+            if self._thread is not None:
+                self._thread.join(timeout=.5)
+            self._socket.close()
+            self._socket = None
+        self._answered.clear()

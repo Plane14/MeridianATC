@@ -1258,6 +1258,9 @@ describe(
 @dataclass
 class SimConfig:
     enabled: bool = True
+    simulator: str = "auto"
+    xplane_host: str = "127.0.0.1"
+    xplane_port: int = 49000
     poll_interval_s: float = 0.25
     reconnect_interval_s: float = 10.0
     # Take each airport's frequency list from the simulator rather than from
@@ -1275,6 +1278,12 @@ describe(
     SimConfig,
     enabled=Setting("weather_data", "simulator", label="set.use_sim",
                     help="set.use_sim_why"),
+    simulator=Setting("weather_data", "simulator", label="set.simulator_choice",
+                      choices=("auto", "msfs", "xplane"), restart=True),
+    xplane_host=Setting("weather_data", "simulator", label="set.xplane_host",
+                       advanced=True, restart=True),
+    xplane_port=Setting("weather_data", "simulator", label="set.xplane_port",
+                       min=1, max=65535, advanced=True, restart=True),
     poll_interval_s=Setting("weather_data", "simulator", min=0.05, max=5,
                             step=0.05, unit="s", advanced=True),
     reconnect_interval_s=Setting("weather_data", "simulator", min=1, max=120,

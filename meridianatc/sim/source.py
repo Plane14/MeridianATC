@@ -1621,10 +1621,23 @@ class ReplaySource:
         return None
 
 
-def open_source(prefer_sim: bool = True, poll_interval: float = 0.25):
+def open_source(prefer_sim: bool = True, poll_interval: float = 0.25,
+                simulator: str = "auto", xplane_host: str = "127.0.0.1",
+                xplane_port: int = 49000, dll_path: str = ""):
     """Connect to the simulator if it is running, otherwise fall back."""
     if prefer_sim:
-        source = SimConnectSource(poll_interval=poll_interval)
-        if source.connect():
-            return source
+        from .xplane import XPlaneSource
+
+        factories = []
+        if simulator in ("auto", "msfs"):
+            factories.append(lambda: SimConnectSource(poll_interval=poll_interval,
+                                                       dll_path=dll_path))
+        if simulator in ("auto", "xplane"):
+            factories.append(lambda: XPlaneSource(host=xplane_host, port=xplane_port,
+                                                   poll_interval=poll_interval))
+        for factory in factories:
+            source = factory()
+            if source.connect():
+                return source
+            source.close()
     return ManualSource()

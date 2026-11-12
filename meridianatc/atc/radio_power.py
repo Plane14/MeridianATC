@@ -65,7 +65,7 @@ def own_electrics(title: str) -> bool:
 
 def decide(state) -> tuple[bool, str]:
     """Whether the radio is on, and why -- the reason is for the log."""
-    if not getattr(state, "connected", False) or getattr(state, "source", "") != "simconnect":
+    if not getattr(state, "connected", False) or getattr(state, "source", "") not in ("simconnect", "xplane"):
         # A replay, a stand-in, the tests, or no simulator at all: there is
         # no aeroplane to be switched off.
         return True, "no simulator"

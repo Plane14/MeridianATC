@@ -1110,7 +1110,7 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         # program's idea of it. A stand-in source reports itself connected --
         # it is, there is a state to read -- so asking it that question gets
         # a yes that means nothing.
-        in_sim = engine.state.source == "simconnect" and engine.state.connected
+        in_sim = engine.state.source in ("simconnect", "xplane") and engine.state.connected
         if radio == 1 and not standby:
             station = engine.tune(mhz)
             return {"ok": True, "station": station.callsign if station else "",

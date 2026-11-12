@@ -206,12 +206,15 @@ def _audio_devices(config: Config) -> Check:
 
 def _simulator(config: Config) -> Check:
     from .navdata.db import NavDB
-    from .sim.source import SimConnectSource
+    from .sim.source import ManualSource, open_source
 
-    source = SimConnectSource()
-    if not source.connect():
+    source = open_source(simulator=config.sim.simulator,
+                         xplane_host=config.sim.xplane_host,
+                         xplane_port=config.sim.xplane_port,
+                         dll_path=config.sim.simconnect_dll)
+    if isinstance(source, ManualSource):
         return Check("simulator", "Simulator", "warn",
-                     "not running -- start MSFS, or use text mode")
+                     "not running -- start the selected simulator, or use text mode")
     try:
         state = source.read()
         where = f"{state.latitude:.4f}, {state.longitude:.4f}"
@@ -225,7 +228,7 @@ def _simulator(config: Config) -> Check:
         else:
             where += "  (no position reported)"
         return Check("simulator", "Simulator", "ok",
-                     f"{state.callsign or 'unknown'} at {where}")
+                     f"{state.source}: {state.callsign or 'unknown'} at {where}")
     finally:
         source.close()
 
@@ -240,6 +243,8 @@ def _ground(config: Config) -> Check | None:
     written to -- which is the difference between a controller that can see
     the ramp and one that can call the tug.
     """
+    if config.sim.simulator == "xplane":
+        return Check("ground", "Ground handling", "off", "GSX is MSFS-only")
     if not config.gsx.enabled:
         return Check("ground", "Ground handling", "off", "switched off")
 
@@ -282,10 +287,13 @@ def _ground(config: Config) -> Check | None:
 
 
 def _com1(config: Config) -> Check | None:
-    from .sim.source import SimConnectSource
+    from .sim.source import ManualSource, open_source
 
-    source = SimConnectSource()
-    if not source.connect():
+    source = open_source(simulator=config.sim.simulator,
+                         xplane_host=config.sim.xplane_host,
+                         xplane_port=config.sim.xplane_port,
+                         dll_path=config.sim.simconnect_dll)
+    if isinstance(source, ManualSource):
         return None
     try:
         state = source.read()
@@ -305,6 +313,9 @@ def _frequencies(config: Config) -> Check:
     """
     from .integrations.facilities import find_simconnect
 
+    if config.sim.simulator == "xplane":
+        return Check("frequencies", "Airport frequencies", "ok",
+                     "published data -- simulator facilities are MSFS-only")
     if not config.sim.frequencies_from_sim:
         return Check("frequencies", "Frequencies", "warn",
                      "published only -- sim.frequencies_from_sim is off")
