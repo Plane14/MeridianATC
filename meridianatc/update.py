@@ -54,7 +54,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from . import __version__
-from .paths import FROZEN, data_root
+from .paths import FROZEN, _writable, data_root
 
 log = logging.getLogger(__name__)
 
@@ -214,16 +214,6 @@ def updates_dir() -> Path:
     return data_root() / "updates"
 
 
-def _writable(directory: Path) -> bool:
-    try:
-        probe = directory / ".update-test"
-        probe.touch()
-        probe.unlink()
-        return True
-    except OSError:
-        return False
-
-
 def why_not_install() -> str:
     """Empty when this installation can replace itself; else the reason.
 
@@ -295,7 +285,7 @@ def apply_script(pid: int) -> str:
         f'tasklist /FI "PID eq {pid}" 2>NUL | find "{pid}" >NUL',
         "if not errorlevel 1 (",
         "  set /a tries+=1",
-        "  if %tries% GEQ 120 goto copy",
+        "  if %tries% GEQ 120 goto still_running",
         "  timeout /t 1 /nobreak >NUL",
         "  goto wait",
         ")",
@@ -318,6 +308,9 @@ def apply_script(pid: int) -> str:
         # The old program is still whole wherever robocopy stopped short of
         # it; starting it is better than leaving the pilot with nothing.
         f'start "" "%DST%\\{EXECUTABLE}"',
+        "exit /b 1",
+        ":still_running",
+        'echo FAILED: application is still running; update not applied >> "%LOG%"',
         "exit /b 1",
     ]
     return "\r\n".join(lines) + "\r\n"
@@ -385,7 +378,12 @@ class Updater:
 
     def check(self) -> dict:
         """Ask GitHub, on this thread. Failing to is said, never raised."""
-        self._set(checking=True, error="")
+        with self._lock:
+            if self.state.checking or self.state.phase in ("downloading", "ready", "applying"):
+                return asdict(self.state)
+            self.state.checking = True
+            self.state.error = ""
+        self._changed()
         try:
             release = self._fetch()
         except Exception as exc:
@@ -418,23 +416,31 @@ class Updater:
         """Start fetching and unpacking the new version; False if it cannot."""
         with self._lock:
             busy = self.state.phase in ("downloading", "applying")
-            ready = self.state.can_install and self._release is not None
-        if busy or not ready:
+            ready = self.state.can_install and self._release is not None and not self.state.checking
+            if busy or not ready:
+                return False
+            release = self._release
+            self._cancel.clear()
+            self.state.phase = "downloading"
+            self.state.progress = self.state.received = 0
+            self.state.total = release.asset_size
+            self.state.error = ""
+        self._changed()
+        try:
+            threading.Thread(target=self._download, args=(release,), name="meridianatc-update",
+                             daemon=True).start()
+        except Exception as exc:
+            log.warning("could not start the update download: %s", exc, exc_info=True)
+            self._set(phase="failed", error=str(exc))
             return False
-        self._cancel.clear()
-        self._set(phase="downloading", progress=0.0, received=0,
-                  total=self._release.asset_size, error="")
-        threading.Thread(target=self._download, name="meridianatc-update",
-                         daemon=True).start()
         return True
 
     def cancel(self) -> None:
         self._cancel.set()
 
-    def _download(self) -> None:
-        release = self._release
-        folder = updates_dir()
+    def _download(self, release: Release) -> None:
         try:
+            folder = updates_dir()
             folder.mkdir(parents=True, exist_ok=True)
             archive = folder / (release.asset or "MeridianATC.zip")
             part = archive.with_suffix(archive.suffix + ".part")
@@ -507,17 +513,22 @@ class Updater:
                 return False
             self.state.phase = "applying"
         self._changed()
-        script = updates_dir() / "apply-update.cmd"
-        script.write_text(apply_script(os.getpid()), encoding="ascii")
-        env = apply_environment(staged, install_dir(),
-                                updates_dir() / "apply-update.log")
-        flags = 0
-        if sys.platform == "win32":
-            flags = (subprocess.CREATE_NEW_PROCESS_GROUP
-                     | subprocess.DETACHED_PROCESS
-                     | subprocess.CREATE_NO_WINDOW)
-        subprocess.Popen(["cmd.exe", "/c", str(script)], creationflags=flags,
-                         close_fds=True, cwd=str(updates_dir()), env=env)
+        try:
+            script = updates_dir() / "apply-update.cmd"
+            script.write_text(apply_script(os.getpid()), encoding="ascii")
+            env = apply_environment(staged, install_dir(),
+                                    updates_dir() / "apply-update.log")
+            flags = 0
+            if sys.platform == "win32":
+                flags = (subprocess.CREATE_NEW_PROCESS_GROUP
+                         | subprocess.DETACHED_PROCESS
+                         | subprocess.CREATE_NO_WINDOW)
+            subprocess.Popen(["cmd.exe", "/c", str(script)], creationflags=flags,
+                             close_fds=True, cwd=str(updates_dir()), env=env)
+        except Exception as exc:
+            log.warning("could not start the update installer: %s", exc, exc_info=True)
+            self._set(phase="ready", error=str(exc))
+            return False
         log.info("handing over to %s and closing", script)
         quit_program()
         return True
