@@ -1,0 +1,3 @@
+[submodule "xplane/plugin/lib/XPMP2"]
+	path = xplane/plugin/lib/XPMP2
+	url = https://github.com/TwinFan/XPMP2.git

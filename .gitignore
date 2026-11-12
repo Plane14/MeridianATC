@@ -50,3 +50,7 @@ config.local.yaml
 # dotnet build output
 desktop/**/bin/
 desktop/**/obj/
+
+# Native X-Plane plugin
+xplane/plugin/build*/
+xplane/plugin/out/

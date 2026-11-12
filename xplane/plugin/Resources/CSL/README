@@ -1,0 +1,7 @@
+Install a licensed XPMP2-compatible CSL model package here, for example Bluebell.
+Extract package directories with their xsb_aircraft.txt files and OBJ/textures.
+No aircraft models are included. Respect the model authors' distribution terms.
+
+Also searched, in order: LiveTraffic/Resources/CSL, xPilot/Resources/CSL (both
+under X-Plane/Resources/plugins), then each csl= path in meridianatc-xp.ini.
+Do not copy another plugin's models if its package licence does not permit it.
