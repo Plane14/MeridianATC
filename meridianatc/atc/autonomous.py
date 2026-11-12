@@ -131,6 +131,7 @@ class AutonomousState:
     runway_lat: float = 0.0
     runway_lon: float = 0.0
     runway_heading: float = 0.0
+    runway_key: tuple[str, str] = ()
     runway_length_ft: float = 0.0
     aligned: bool = False
     # Takeoff: when rotation began, whether the wheels are up, and the
@@ -1839,13 +1840,13 @@ class AutonomousFlight:
     def _phase_climb(self, state, now: float) -> None:
         """Climb to the assigned or planned level."""
         target = self._altitude_target(state)
-        assigned_hdg = self.session.assigned_heading or 0.0
+        assigned_hdg = self.session.assigned_heading
         sid = self._sid_nav(state)
         if sid is not None:
             # A filed/cleared SID owns the lateral path until its last
             # leg; the assigned heading still wins where ATC gave one.
             self._fly_procedure(state, sid)
-        elif assigned_hdg:
+        elif assigned_hdg is not None:
             self._apply_flight_director(state, altitude=target,
                                         vs_fpm=self.performance.climb_fpm,
                                         heading=assigned_hdg,
@@ -1940,10 +1941,10 @@ class AutonomousFlight:
         if star is not None:
             self._fly_procedure(state, star)
         else:
-            assigned_hdg = self.session.assigned_heading or 0.0
+            assigned_hdg = self.session.assigned_heading
             self._apply_flight_director(state, altitude=target,
                                         vs_fpm=-descent_fpm,
-                                        heading=assigned_hdg or -1.0,
+                                        heading=assigned_hdg if assigned_hdg is not None else -1.0,
                                         speed_kt=speed)
 
         # The approach's own navaid, tuned early enough that the needles
@@ -2560,7 +2561,7 @@ class AutonomousFlight:
         """
         if self.state.procedure_suspended == "sid":
             return None
-        if getattr(self.session, "assigned_heading", None):
+        if getattr(self.session, "assigned_heading", None) is not None:
             # A vector is off the procedure until ATC says resume own
             # navigation; the heading bug is the clearance, not the leg.
             return None
@@ -2614,7 +2615,7 @@ class AutonomousFlight:
         """The filed/cleared arrival procedure's guidance, if any."""
         if self.state.procedure_suspended == "star":
             return None
-        if getattr(self.session, "assigned_heading", None):
+        if getattr(self.session, "assigned_heading", None) is not None:
             return None
         route = getattr(self.brain, "route", None)
         ident = self._airport_ident(
@@ -2678,8 +2679,8 @@ class AutonomousFlight:
         An assigned heading, level or speed still outranks the
         procedure's own targets -- ATC's word is the clearance.
         """
-        assigned_hdg = self.session.assigned_heading or 0.0
-        heading = assigned_hdg or (
+        assigned_hdg = self.session.assigned_heading
+        heading = assigned_hdg if assigned_hdg is not None else (
             self._magnetic(guidance.heading, state)
             if guidance.heading is not None else -1.0)
         assigned_alt = self.session.assigned_altitude_ft or 0.0
@@ -2705,8 +2706,6 @@ class AutonomousFlight:
 
     def _find_runway(self, state) -> None:
         """The departure/arrival runway's threshold and heading, once."""
-        if self.state.runway_heading > 0:
-            return
         # The field the leg is bound for: the arrival's when one is named,
         # the departure's otherwise.
         airport = (self.session.destination
@@ -2718,10 +2717,16 @@ class AutonomousFlight:
                 airport = self.navdb.home_airport(state_now.latitude,
                                                   state_now.longitude)
         if airport is None:
+            self.state.runway_heading = 0.0
+            self.state.runway_key = ()
             return
+        name = (self.session.arrival_runway or self.session.departure_runway or "")
+        key = (airport.ident, name)
+        if self.state.runway_heading > 0 and self.state.runway_key == key:
+            return
+        self.state.runway_heading = 0.0
+        self.state.runway_key = ()
         runways = list(self.navdb.runways(airport.ident) or [])
-        name = (self.session.departure_runway or self.session.arrival_runway
-                or "")
         if not name and runways:
             # The tower's choice stands in session; the longest runway is
             # the honest guess when nothing was said.
@@ -2732,6 +2737,8 @@ class AutonomousFlight:
             return
         self.state.runway_lat, self.state.runway_lon, \
             self.state.runway_heading, self.state.runway_length_ft = found
+        self.state.runway_heading = self.state.runway_heading or 360.0
+        self.state.runway_key = key
 
     # -- the cleared approach, as a recipe ---------------------------------
 

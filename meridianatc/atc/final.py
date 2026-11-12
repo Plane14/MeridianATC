@@ -22,6 +22,7 @@ the answer by a few hundred feet at most.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from ..navdata.build import bearing_deg, haversine_nm
@@ -48,13 +49,21 @@ class Final:
 
     def distance(self, state) -> float:
         """Miles from the aeroplane to the threshold."""
+        for name, limit in (("latitude", 90), ("longitude", 180)):
+            value = getattr(state, name, None)
+            if (name in getattr(state, "unavailable", ()) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or abs(value) > limit):
+                return math.inf
         return haversine_nm(state.latitude, state.longitude, self.lat, self.lon)
 
     def offset(self, state) -> float:
         """Degrees between the aeroplane and the extended centreline, seen
         from the threshold: zero on the centreline, ninety abeam, 180 over
         the far end."""
-        if self.distance(state) < 0.05:
+        distance = self.distance(state)
+        if not math.isfinite(distance):
+            return 180.0
+        if distance < 0.05:
             return 0.0
         towards = bearing_deg(self.lat, self.lon, state.latitude, state.longitude)
         outbound = (self.course + 180.0) % 360.0
@@ -86,16 +95,23 @@ def course_over_ground(state) -> float | None:
     """The way the aeroplane is going.
 
     The ground track where the source has one, and the heading where it does
-    not: a stand-in source leaves the track at zero. A real track of exactly
-    north therefore reads as the heading, which is within the drift of it.
+    not. A stand-in source leaves the track at zero.
     """
     track = getattr(state, "track_true", None)
     heading = getattr(state, "heading_true", None)
-    if track:
-        return float(track)
-    if heading is not None:
-        return float(heading)
-    return float(track) if track is not None else None
+    unavailable = getattr(state, "unavailable", ())
+    known_track = track != 0 or getattr(state, "source", "") not in ("none", "manual")
+    for name, value in (("track_true", track if known_track else None),
+                        ("heading_true", heading)):
+        if name in unavailable or value is None:
+            continue
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            return value % 360.0
+    return None
 
 
 def final_for(navdb, ident: str, runway: str) -> Final | None:

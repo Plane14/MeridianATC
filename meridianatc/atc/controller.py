@@ -394,6 +394,9 @@ class ControllerBrain:
         if not self.staffed(station):
             return Reply("", station, silent=True)
 
+        if session.pending is not None and session.pending.station_key != station_key(station):
+            session.clear_pending()
+
         # With Ground switched off nobody approves a pushback, and nobody
         # redirects it either: "contact Tower" for a pushback is the tower
         # doing Ground's job by another name. The request goes unanswered on

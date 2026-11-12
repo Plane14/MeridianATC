@@ -39,6 +39,7 @@ the answer can be wrong, and it is wrong exactly as before.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -283,35 +284,43 @@ def ceiling_ft(weather) -> int | None:
     """The lowest broken or overcast layer, or vertical visibility, AGL."""
     if weather is None:
         return None
-    layers = [height for cover, height in getattr(weather, "clouds", ())
+    layers = [height for cover, height in (getattr(weather, "clouds", ()) or ())
               if cover in ("BKN", "OVC", "VV")]
     return min(layers) if layers else None
+
+
+def _visibility(weather) -> float | None:
+    try:
+        value = float(weather.visibility_sm)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) and value >= 0 else None
 
 
 def _allows(weather, height: int, vis: float) -> bool:
     if weather is None:
         return True
     ceiling = ceiling_ft(weather)
-    visibility = float(getattr(weather, "visibility_sm", 10.0) or 10.0)
-    return (ceiling is None or ceiling >= height) and visibility >= vis
+    visibility = _visibility(weather)
+    return (ceiling is None or ceiling >= height) and visibility is not None and visibility >= vis
 
 
 def _visual_weather(weather) -> bool:
     if weather is None:
         return False
     ceiling = ceiling_ft(weather)
-    visibility = float(getattr(weather, "visibility_sm", 10.0) or 10.0)
+    visibility = _visibility(weather)
     return (ceiling is None or ceiling >= VISUAL_CEILING_FT) \
-        and visibility >= VISUAL_VIS_SM
+        and visibility is not None and visibility >= VISUAL_VIS_SM
 
 
 def _below_basic_vfr(weather) -> bool:
     if weather is None:
         return False
     ceiling = ceiling_ft(weather)
-    visibility = float(getattr(weather, "visibility_sm", 10.0) or 10.0)
+    visibility = _visibility(weather)
     return (ceiling is not None and ceiling < BASIC_VFR[0]) \
-        or visibility < BASIC_VFR[1]
+        or (visibility is not None and visibility < BASIC_VFR[1])
 
 
 def plan(known: FieldApproaches | None, runway: str, weather=None, *,

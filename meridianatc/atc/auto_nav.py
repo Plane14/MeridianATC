@@ -22,7 +22,6 @@ Three problems, three functions:
 from __future__ import annotations
 
 import math
-import re
 
 from ..navdata.build import bearing_deg, haversine_nm
 from ..navdata.db import normalize_runway
@@ -46,9 +45,11 @@ def _point_segment_distance(lat: float, lon: float,
     # is, and the same approximation the ground layout uses.
     m_per_deg_lat = 111320.0
     m_per_deg_lon = 111320.0 * math.cos(math.radians((a[0] + b[0]) / 2.0))
-    ax, az = a[1] * m_per_deg_lon, a[0] * m_per_deg_lat
-    bx, bz = b[1] * m_per_deg_lon, b[0] * m_per_deg_lat
-    px, pz = lon * m_per_deg_lon, lat * m_per_deg_lat
+    ax, az = 0.0, 0.0
+    bx = ((b[1] - a[1] + 180.0) % 360.0 - 180.0) * m_per_deg_lon
+    bz = (b[0] - a[0]) * m_per_deg_lat
+    px = ((lon - a[1] + 180.0) % 360.0 - 180.0) * m_per_deg_lon
+    pz = (lat - a[0]) * m_per_deg_lat
     dx, dz = bx - ax, bz - az
     length2 = dx * dx + dz * dz
     t = 0.0 if length2 == 0 else max(
@@ -57,7 +58,7 @@ def _point_segment_distance(lat: float, lon: float,
     along = math.hypot(cx - ax, cz - az)
     across = math.hypot(px - cx, pz - cz)
     # Which side: positive to the right of the direction of travel.
-    cross = dx * (pz - az) - dz * (px - ax)
+    cross = dz * (px - ax) - dx * (pz - az)
     side = across if cross >= 0 else -across
     return along, side
 
@@ -85,7 +86,7 @@ def path_steering(lat: float, lon: float, path: list[tuple[float, float]],
                 "cross_track_m": 0.0,
                 "remaining_m": haversine_nm(lat, lon,
                                             path[0][0], path[0][1]) * 1852.0,
-                "nearest": 0, "done": False}
+                "nearest": 0, "done": haversine_nm(lat, lon, *path[0]) * 1852.0 < PATH_REACHED_M * 2}
 
     # The segment the aeroplane is closest to, and how far along it.
     best = None
@@ -116,8 +117,9 @@ def path_steering(lat: float, lon: float, path: list[tuple[float, float]],
         if walked <= available and seg_m > 0:
             t = start_frac + (walked / seg_m)
             t = min(1.0, t)
+            delta_lon = (b[1] - a[1] + 180.0) % 360.0 - 180.0
             target = (a[0] + (b[0] - a[0]) * t,
-                      a[1] + (b[1] - a[1]) * t)
+                      (a[1] + delta_lon * t + 180.0) % 360.0 - 180.0)
             break
         walked -= available
         i += 1
@@ -174,21 +176,7 @@ def runway_end(runways, runway: str):
     if exact:
         _, _, lat, lon, heading, length = exact[0]
         return lat, lon, heading, length
-    # No end named it: the designation's own heading picks the end whose
-    # outbound track is closest to it.
-    digits = re.sub(r"[^0-9]", "", wanted or "")
-    if len(digits) < 2:
-        return None
-    want_hdg = float(digits[:2]) * 10.0
-    best = None
-    for _, _, lat, lon, heading, length in candidates:
-        diff = abs((heading - want_hdg + 540.0) % 360.0 - 180.0)
-        if best is None or diff < best[0]:
-            best = (diff, lat, lon, heading, length)
-    if best is None:
-        return None
-    _, lat, lon, heading, length = best
-    return lat, lon, heading, length
+    return None
 
 
 def glide(threshold_lat: float, threshold_lon: float,

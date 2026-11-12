@@ -13,6 +13,7 @@ discounts it for reserves so a leg is never planned to the last drop.
 from __future__ import annotations
 
 import logging
+import math
 import random
 import threading
 from dataclasses import dataclass
@@ -33,6 +34,12 @@ class MissionRequest:
 
     def validate(self) -> list[str]:
         errors = []
+        for name in ("min_nm", "max_nm", "service_minutes", "reserve_factor"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                errors.append(f"{name} must be a finite number")
+        if errors:
+            return errors
         if self.min_nm < 1:
             errors.append("min range must be at least 1 NM")
         if self.max_nm <= self.min_nm:
@@ -41,6 +48,10 @@ class MissionRequest:
             errors.append("service time must be at least 5 minutes")
         if self.reserve_factor < 1.0:
             errors.append("reserve factor must be at least 1.0")
+        elif self.max_nm / self.reserve_factor < self.min_nm:
+            errors.append("reserve-adjusted range must reach the minimum range")
+        if self.flight_rules not in ("ifr", "vfr"):
+            errors.append("flight rules must be ifr or vfr")
         return errors
 
 
@@ -66,6 +77,7 @@ class ContinuousFlights:
         self._lock = threading.Lock()
         self._request: MissionRequest | None = None
         self._legs: list[Leg] = []
+        self._generation = 0
 
     @property
     def running(self) -> bool:
@@ -91,6 +103,7 @@ class ContinuousFlights:
         if errors:
             return errors
         with self._lock:
+            self._generation += 1
             self._request = request
             self._legs = []
         log.info("continuous mission: %.0f-%.0f NM, service %d min, "
@@ -100,6 +113,7 @@ class ContinuousFlights:
 
     def stop(self) -> None:
         with self._lock:
+            self._generation += 1
             self._request = None
 
     def plan_next_leg(self, at_lat: float, at_lon: float,
@@ -113,7 +127,13 @@ class ContinuousFlights:
         """
         with self._lock:
             request = self._request
+            generation = self._generation
         if request is None:
+            return None
+        if (not isinstance(at_lat, (int, float)) or not isinstance(at_lon, (int, float))
+                or not math.isfinite(at_lat) or not math.isfinite(at_lon)
+                or not -90 <= at_lat <= 90 or not -180 <= at_lon <= 180):
+            log.warning("cannot plan a leg without a valid aircraft position")
             return None
         max_nm = request.max_nm / request.reserve_factor
         candidates = self.navdb.nearest_airports(
@@ -130,8 +150,10 @@ class ContinuousFlights:
         # Nearest-first is deterministic; a little shuffle over the nearest
         # few keeps a mission from repeating the same field every leg.
         pool = eligible[:min(5, len(eligible))]
-        airport, distance = self._random.choice(pool)
         with self._lock:
+            if generation != self._generation:
+                return None
+            airport, distance = self._random.choice(pool)
             leg = Leg(number=len(self._legs) + 1,
                       departure=current or "",
                       destination=airport.ident,

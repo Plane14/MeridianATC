@@ -74,7 +74,12 @@ def _load(path: Path) -> list[dict]:
         log.warning("could not read %s: %s", path, exc)
         return []
     rows = data.get("airlines") if isinstance(data, dict) else data
-    return [r for r in (rows or []) if isinstance(r, dict)]
+    if rows is None:
+        return []
+    if not isinstance(rows, list):
+        log.warning("could not read %s: expected an airlines list", path)
+        return []
+    return [r for r in rows if isinstance(r, dict)]
 
 
 @lru_cache(maxsize=1)
