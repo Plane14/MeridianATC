@@ -677,6 +677,8 @@ class Engine:
         self._sim_source: StateSource | None = None
         self._sim_attempt: Future | None = None
         self._sim_lock = threading.RLock()
+        self._shutdown_lock = threading.Lock()
+        self._shutdown_done = False
         # Whether the last tick found the simulator paused, so it is said
         # once rather than four times a second.
         self._was_paused = False
@@ -1481,6 +1483,19 @@ class Engine:
             sim.close()
             return False
 
+        try:
+            state = sim.read()
+            if not state.connected:
+                sim.close()
+                return False
+        except Exception:
+            log.warning("could not read the candidate simulator source", exc_info=True)
+            try:
+                sim.close()
+            except Exception:
+                log.warning("could not close the rejected simulator source", exc_info=True)
+            return False
+
         previous = self.source
         self.source = sim
         self._sim_source = sim
@@ -1488,7 +1503,7 @@ class Engine:
         # Read once before anything is told the sim is here, so the first
         # thing that asks gets the aeroplane's real position rather than the
         # placeholder the manual source was holding.
-        self.refresh_state()
+        self.state = state
         if not capabilities(self.state.source).lvars:
             self._detach_simulator_integrations()
             self.emit("info", "X-Plane uses the browser/desktop panel. GSX, MSFS facilities, "
@@ -1826,34 +1841,44 @@ class Engine:
                       key="log.live_back", source=state.source)
 
     def stop(self) -> None:
+        with self._shutdown_lock:
+            if self._shutdown_done:
+                return
+            self._shutdown_done = True
+            self._stop_resources()
+
+    def _stop_resources(self) -> None:
+        def close(name, component, method):
+            if component is None:
+                return
+            try:
+                getattr(component, method)()
+            except Exception:
+                log.warning("could not close %s", name, exc_info=True)
+
         self._stop.set()
         with self._sim_lock:
             self._sim_wanted = False
             self._discard_simulator_attempt()
-        if self.live_feed is not None:
-            self.live_feed.stop()
-        self.cabin.stop()
-        if self._ptt is not None:
-            self._ptt.stop()
-        if self._situation_thread is not None:
+        close("live traffic", self.live_feed, "stop")
+        close("cabin", self.cabin, "stop")
+        close("push-to-talk", self._ptt, "stop")
+        if self._situation_thread is not None and self._situation_thread is not threading.current_thread():
             self._situation_thread.join(timeout=2.0)
-        self.player.stop()
+            if self._situation_thread.is_alive():
+                log.warning("the situation thread is still finishing a tick during shutdown")
+        close("autonomous controls", self.autonomous_flight, "disengage")
+        close("audio player", self.player, "stop")
         # Take the injected aeroplanes back out before the connection goes, or
         # they are left sitting in the simulator with nobody flying them.
-        self.simvehicles.detach()
-        self.simdoors.detach()
-        self.simsystems.detach()
-        self.servicepoints.detach()
-        self.simtraffic.detach()
-        self.simwatch.detach()
-        self.facilities.close()
-        self.source.close()
-        if self.history is not None:
-            try:
-                self.history.close_session()
-                self.history.close()
-            except Exception:
-                log.debug("history close failed", exc_info=True)
+        for name in ("simvehicles", "simdoors", "simsystems", "servicepoints", "simtraffic", "simwatch"):
+            close(name, getattr(self, name), "detach")
+        close("facilities", self.facilities, "close")
+        close("GSX bridge", self.gsx.bridge, "close")
+        close("simulator source", self.source, "close")
+        close("history session", self.history, "close_session")
+        close("history database", self.history, "close")
+        close("navigation database", self.navdb, "close")
 
     # ------------------------------------------------------------------
     # session
@@ -3817,11 +3842,19 @@ class Engine:
         return self.station
 
     def _situation_loop(self) -> None:
+        failed = False
         while not self._stop.is_set():
             try:
                 self._tick()
             except Exception:
-                log.debug("situation loop error", exc_info=True)
+                if not failed:
+                    log.warning("situation update failed; check the simulator connection and configuration",
+                                exc_info=True)
+                failed = True
+            else:
+                if failed:
+                    log.info("situation updates recovered")
+                failed = False
             self._stop.wait(self.config.sim.poll_interval_s)
 
     def _tick(self) -> None:

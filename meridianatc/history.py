@@ -121,10 +121,10 @@ class History:
                intent: str = "", meta: dict | None = None,
                session_id: int | None = None) -> None:
         """Append one transcript line to the current (or named) session."""
-        sid = session_id if session_id is not None else self._session_id
-        if sid is None:
-            return
         with self._lock:
+            sid = session_id if session_id is not None else self._session_id
+            if sid is None:
+                return
             self._conn.execute(
                 "INSERT INTO transcript (session_id, at, who, station, text, "
                 "intent, meta) VALUES (?, ?, ?, ?, ?, ?, ?)",

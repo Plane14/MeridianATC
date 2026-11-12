@@ -175,7 +175,8 @@ class Installer:
         download writing to the same folder is the one failure here that could
         leave a half-file behind and be hard to explain afterwards.
         """
-        wanted = [k for k in (keys or list(SIZES_MB)) if k in SIZES_MB]
+        selected = list(SIZES_MB) if keys is None else keys
+        wanted = list(dict.fromkeys(k for k in selected if k in SIZES_MB))
         if not wanted:
             return False
         with self._lock:
@@ -192,7 +193,19 @@ class Installer:
             )
             self._thread = thread
         self._publish(force=True)
-        thread.start()
+        try:
+            thread.start()
+        except Exception as exc:
+            log.warning("could not start setup: %s", exc, exc_info=True)
+            with self._lock:
+                self._thread = None
+                self._state.running = False
+                self._state.finished_at = time.time()
+                for step in self._state.steps:
+                    step.state = "failed"
+                    step.error = str(exc)
+            self._publish(force=True)
+            return False
         return True
 
     def cancel(self) -> None:

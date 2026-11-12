@@ -25,6 +25,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 NAME = "meridianatc-ingamepanel"
@@ -133,17 +134,35 @@ def install(source: Path, into: Path) -> Path:
     is a file the layout no longer lists.
     """
     target = into / NAME
-    if target.exists():
-        shutil.rmtree(target)
-    shutil.copytree(source, target)
-    (target / "layout.json").write_text(
-        json.dumps(layout_for(target), indent=2) + "\n", encoding="utf-8")
+    if not (source / "manifest.json").is_file():
+        raise ValueError(f"No MSFS panel manifest in {source}")
+    if source.resolve() == target.resolve() or target.resolve() in source.resolve().parents:
+        raise ValueError("The panel source must be outside the installed package.")
+    into.mkdir(parents=True, exist_ok=True)
+    backup = into / (NAME + ".previous")
+    if backup.exists():
+        raise FileExistsError(f"An earlier panel backup needs recovery or removal: {backup}")
+    with tempfile.TemporaryDirectory(prefix=".meridianatc-panel-", dir=into) as staging:
+        package = Path(staging) / NAME
+        shutil.copytree(source, package)
+        (package / "layout.json").write_text(
+            json.dumps(layout_for(package), indent=2) + "\n", encoding="utf-8")
+        if target.exists():
+            target.rename(backup)
+        try:
+            package.rename(target)
+        except OSError:
+            if backup.exists():
+                backup.rename(target)
+            raise
+        if backup.exists():
+            shutil.rmtree(backup)
     return target
 
 
 def uninstall(into: Path) -> bool:
     target = into / NAME
     if target.is_dir():
-        shutil.rmtree(target, ignore_errors=True)
+        shutil.rmtree(target)
         return True
     return False

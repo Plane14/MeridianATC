@@ -74,6 +74,7 @@ def _check(fn: Callable[[Config], Check | None], config: Config,
 def _navdata(config: Config) -> Check:
     from .navdata.db import NavDB
 
+    db = None
     try:
         db = NavDB()
         frequencies = db._conn.execute(
@@ -83,6 +84,9 @@ def _navdata(config: Config) -> Check:
     except Exception as exc:
         return Check("navdata", "Nav database", "error", str(exc)[:80],
                      fix="navdata")
+    finally:
+        if db is not None:
+            db.close()
     return Check("navdata", "Nav database", "ok",
                  f"{airports:,} airports, {frequencies:,} frequencies")
 
@@ -217,13 +221,18 @@ def _simulator(config: Config) -> Check:
                      "not running -- start the selected simulator, or use text mode")
     try:
         state = source.read()
+        if not state.connected:
+            return Check("simulator", "Simulator", "warn", "simulator stopped responding")
         where = f"{state.latitude:.4f}, {state.longitude:.4f}"
         if state.has_position:
             db = NavDB()
-            near = db.home_airport(state.latitude, state.longitude)
-            if near is None:
-                near = db.nearest_airport(state.latitude, state.longitude,
-                                          max_nm=60, min_rank=1)
+            try:
+                near = db.home_airport(state.latitude, state.longitude)
+                if near is None:
+                    near = db.nearest_airport(state.latitude, state.longitude,
+                                              max_nm=60, min_rank=1)
+            finally:
+                db.close()
             where += f"  ({near.ident} {near.name})" if near else "  (no airport near)"
         else:
             where += "  (no position reported)"
@@ -344,6 +353,8 @@ def _com1(config: Config) -> Check | None:
         return None
     try:
         state = source.read()
+        if not state.connected:
+            return Check("com1", "COM1", "warn", "simulator stopped responding")
         if not state.com1_active:
             return None
         return Check("com1", "COM1", "ok", f"{state.com1_active:.3f}")

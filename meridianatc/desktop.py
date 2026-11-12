@@ -62,9 +62,13 @@ class LocalApi:
         self.config = config if engine is None else engine.config
         self.broadcaster = broadcaster
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.socket.bind(("127.0.0.1", 0))
-        self.socket.listen(16)
+        try:
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.socket.bind(("127.0.0.1", 0))
+            self.socket.listen(16)
+        except OSError:
+            self.socket.close()
+            raise
         self.port = self.socket.getsockname()[1]
         # And a second, fixed one for the panel in the simulator's toolbar,
         # which cannot be told a number that changes every launch. Failing to
@@ -74,12 +78,15 @@ class LocalApi:
         self.toolbar_socket: socket.socket | None = None
         self.toolbar_port = 0
         if toolbar_port:
+            fixed = None
             try:
                 fixed = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 fixed.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 fixed.bind(("127.0.0.1", int(toolbar_port)))
                 fixed.listen(16)
-            except OSError as exc:
+            except (OSError, ValueError) as exc:
+                if fixed is not None:
+                    fixed.close()
                 log.info("the toolbar port %s is not available (%s)",
                          toolbar_port, exc)
             else:
@@ -105,7 +112,12 @@ class LocalApi:
             target=self._server.run, kwargs={"sockets": listening},
             name="MeridianATC-api", daemon=True,
         )
-        self._thread.start()
+        try:
+            self._thread.start()
+        except Exception:
+            self._thread = None
+            self.stop()
+            raise
 
     def wait_until_ready(self, timeout_s: float = 15.0) -> bool:
         """Hold the window back until the first request would succeed."""
@@ -119,8 +131,13 @@ class LocalApi:
     def stop(self) -> None:
         if self._server is not None:
             self._server.should_exit = True
-        if self._thread is not None:
+        if self._thread is not None and self._thread is not threading.current_thread():
             self._thread.join(timeout=3.0)
+            if self._thread.is_alive():
+                log.warning("the local API thread is still finishing requests during shutdown")
+        for listener in (self.socket, self.toolbar_socket):
+            if listener is not None:
+                listener.close()
 
 
 def available() -> tuple[bool, str]:
@@ -166,35 +183,25 @@ def run(
                    toolbar_port=config.toolbar.port
                    if config.toolbar.enabled and engine is not None else 0,
                    config=config)
-    api.start()
-
-    if not api.wait_until_ready():
-        api.stop()
-        raise RuntimeError("the local interface did not start")
-
-    window = webview.create_window(
-        "MeridianATC",
-        api.url,
-        width=WINDOW_W,
-        height=WINDOW_H,
-        min_size=(MIN_W, MIN_H),
-        background_color=BACKGROUND,
-        text_select=True,
-        confirm_close=False,
-    )
+    lifecycle = threading.RLock()
+    closed = False
 
     # The engine owns a microphone, an audio device and two threads. Closing
     # the window has to put all of them down, or the process lingers with the
     # microphone still open.
     def shutdown() -> None:
-        if engine is not None:
+        nonlocal closed
+        with lifecycle:
+            if closed:
+                return
+            closed = True
             try:
-                engine.stop()
+                if engine is not None:
+                    engine.stop()
             except Exception:
-                log.debug("engine shutdown raised", exc_info=True)
-        api.stop()
-
-    window.events.closing += lambda: shutdown()
+                log.warning("engine shutdown raised", exc_info=True)
+            finally:
+                api.stop()
 
     # The window first, the models after. Loading the recogniser and the
     # voices takes seconds -- and in the HQ build torch and Chatterbox
@@ -203,19 +210,34 @@ def run(
     # again and starting a second copy. The panel is served already, so it
     # opens at once and says "Loading speech recognition...", then "Ready."
     def bring_up() -> None:
+        with lifecycle:
+            if closed:
+                return
         if engine is not None:
             try:
                 engine.warm()
             except Exception:
                 log.exception("warming the engine failed")
-            engine.start(connect_sim=connect_sim)
-        if on_ready is not None:
-            on_ready(engine, api)
+        with lifecycle:
+            if closed:
+                return
+            if engine is not None:
+                engine.start(connect_sim=connect_sim)
+            if on_ready is not None:
+                on_ready(engine, api)
 
     try:
+        api.start()
+        if not api.wait_until_ready():
+            raise RuntimeError("the local interface did not start")
+        window = webview.create_window(
+            "MeridianATC", api.url, width=WINDOW_W, height=WINDOW_H,
+            min_size=(MIN_W, MIN_H), background_color=BACKGROUND,
+            text_select=True, confirm_close=False,
+        )
+        window.events.closing += lambda: shutdown()
         webview.start(bring_up, **_icon(webview))
     except Exception as exc:                       # pragma: no cover - GUI path
-        shutdown()
         raise RuntimeError(_explain(exc)) from exc
     finally:
         shutdown()
