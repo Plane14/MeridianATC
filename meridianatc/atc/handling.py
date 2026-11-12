@@ -327,9 +327,12 @@ def _steps(rows) -> tuple[Step, ...]:
                  for row in rows or ())
 
 
-def load_timelines(path: Path | str | None = None) -> dict:
-    """turnaround.json, read into profiles, footprints and the type table."""
-    raw = json.loads(Path(path or TIMELINE_FILE).read_text(encoding="utf-8"))
+def _parse_timelines(raw: dict) -> dict:
+    if not isinstance(raw, dict):
+        raise ValueError("expected an object")
+    for key in ("profiles", "footprints", "types", "baggage"):
+        if not isinstance(raw.get(key, {}), dict):
+            raise ValueError(f"{key} must be an object")
     profiles = {}
     for name, row in raw.get("profiles", {}).items():
         stairs = row.get("arrival_stairs") or {}
@@ -343,11 +346,43 @@ def load_timelines(path: Path | str | None = None) -> dict:
     footprints = {kind: zones.Footprint(float(f["ahead_m"]), float(f["behind_m"]),
                                         float(f["half_width_m"]))
                   for kind, f in raw.get("footprints", {}).items()}
+    for profile in profiles.values():
+        numbers = [profile.deboard_s, *profile.arrival_stairs]
+        for step in (*profile.turnaround, *profile.quiet, *profile.boarding):
+            if step.kind not in SPOTS or step.after not in (START, DEBOARDED, *SPOTS):
+                raise ValueError(f"profile {profile.name}: unknown service or dependency")
+            numbers.append(step.delay)
+            if step.serve is not None:
+                numbers.append(step.serve)
+        if any(not math.isfinite(v) or v < 0 for v in numbers):
+            raise ValueError(f"profile {profile.name}: durations must be finite and nonnegative")
+        if not math.isfinite(profile.refuel_chance) or not 0 <= profile.refuel_chance <= 1:
+            raise ValueError(f"profile {profile.name}: refuel_chance must be between zero and one")
+    for name in (raw.get("airliner", "narrowbody"), raw.get("light", "light"), *raw.get("types", {}).values()):
+        if not isinstance(name, str) or name not in profiles:
+            raise ValueError("airliner, light and types must reference defined profiles")
+    margin = float(raw.get("margin_m", 0.0))
+    dimensions = [margin, *(float(f[key]) for f in raw.get("footprints", {}).values()
+                             for key in ("ahead_m", "behind_m", "half_width_m"))]
+    if any(not math.isfinite(v) or v < 0 for v in dimensions):
+        raise ValueError("margin and footprint dimensions must be finite and nonnegative")
     return {"profiles": profiles, "types": dict(raw.get("types", {})),
             "baggage": dict(raw.get("baggage", {})),
             "airliner": raw.get("airliner", "narrowbody"),
             "light": raw.get("light", "light"),
-            "footprints": footprints, "margin": float(raw.get("margin_m", 0.0))}
+            "footprints": footprints, "margin": margin}
+
+
+def load_timelines(path: Path | str | None = None) -> dict:
+    """turnaround.json, or inactive ground services with a diagnostic."""
+    where = Path(path or TIMELINE_FILE)
+    try:
+        return _parse_timelines(json.loads(where.read_text(encoding="utf-8")))
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        log.warning("turnaround table %s invalid (%s); ground service timelines disabled", where, exc)
+        profiles = {name: Profile(name, 0.0, False, (), (), ()) for name in ("narrowbody", "light")}
+        return {"profiles": profiles, "types": {}, "baggage": {}, "airliner": "narrowbody",
+                "light": "light", "footprints": {}, "margin": 0.0}
 
 
 TIMELINES = load_timelines()

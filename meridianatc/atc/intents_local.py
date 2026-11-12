@@ -287,8 +287,8 @@ def extract_frequency(norm: str, grammar: Grammar) -> float | None:
         tail = norm.split("decimalpoint", 1)[1] if "decimalpoint" in norm else ""
         pieces = digit_runs(tail, grammar).split()
         fraction = pieces[0] if pieces and pieces[0].isdigit() else ""
-        if fraction:
-            value = float(f"{whole}.{fraction[:3]}")
+        if fraction and len(fraction) <= 3:
+            value = float(f"{whole}.{fraction}")
             if 118.0 <= value <= 136.999:
                 return round(value, 3)
 
@@ -307,19 +307,20 @@ def extract_runway(norm: str, grammar: Grammar) -> str | None:
     nobody had challenged, and the exchange could not be got out of.
     """
     collapsed = digit_runs(norm, grammar)
-    sides = "|".join(grammar.sides)
+    side_names = {**grammar.sides, "l": "L", "c": "C", "r": "R"}
+    sides = "|".join(side_names)
     collapsed = re.sub(
         rf"\b(?:{grammar.hold_short})\b"
-        rf"(?:\s+\w+){{0,3}}?\s+(?:{grammar.runway})?\s*\d{{1,2}}\b\s*"
-        rf"(?:{sides})?", " ", collapsed)
+        rf"(?:\s+\w+){{0,3}}?\s+(?:{grammar.runway})?\s*\d{{1,2}}(?!\d)\s*"
+        rf"(?:{sides})?\b", " ", collapsed)
     match = re.search(
-        rf"\b(?:{grammar.runway})\s*(\d{{1,2}})\s*(?:({sides})\b)?", collapsed)
+        rf"\b(?:{grammar.runway})\s*(\d{{1,2}})(?!\d)\s*(?:({sides})\b)?(?![a-z])", collapsed)
     if not match:
         return None
     number = int(match.group(1))
     if not 1 <= number <= 36:
         return None
-    return f"{number:02d}{grammar.sides.get(match.group(2) or '', '')}"
+    return f"{number:02d}{side_names.get(match.group(2) or '', '')}"
 
 
 def extract_squawk(norm: str, grammar: Grammar) -> str | None:
@@ -433,12 +434,13 @@ def values(norm: str, grammar: Grammar) -> dict[str, Any]:
     # than every language having to spell its own out, and the digits have to
     # have been collapsed first or the runway is two separate words.
     runs = digit_runs(norm, grammar)
+    side_names = {**grammar.sides, "l": "L", "c": "C", "r": "R"}
     held = re.search(
         rf"\b(?:{grammar.hold_short})\b"
-        rf"(?:\s+\w+){{0,3}}?\s+(?:{grammar.runway})?\s*(\d{{1,2}})\b\s*"
-        rf"({'|'.join(grammar.sides)})?", runs)
+        rf"(?:\s+\w+){{0,3}}?\s+(?:{grammar.runway})?\s*(\d{{1,2}})(?!\d)\s*"
+        rf"({'|'.join(side_names)})?\b", runs)
     if held and 1 <= int(held.group(1)) <= 36:
-        side = grammar.sides.get((held.group(2) or ""), "")
+        side = side_names.get((held.group(2) or ""), "")
         found["hold_short"] = f"{int(held.group(1)):02d}{side}"
     elif re.search(rf"\b(?:{grammar.hold_short}|{grammar.holding_point})\b",
                    norm):

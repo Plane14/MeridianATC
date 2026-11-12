@@ -30,7 +30,6 @@ the answer changes, with what it was decided from.
 
 from __future__ import annotations
 
-import json
 import logging
 from functools import lru_cache
 
@@ -51,14 +50,15 @@ _OWN_ELECTRICS = {"battery_master", "avionics_master"}
 def own_electrics(title: str) -> bool:
     """Whether the model is an add-on whose electrics the simulator's
     variables do not follow, from its file in ``atc/checklists/types``."""
-    from .checklist_files import _add_ons
+    from .checklist_files import _add_ons, _read
 
     for path in _add_ons(title or ""):
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        if _OWN_ELECTRICS & set(raw.get("no_check", [])):
+        problems = []
+        raw = _read(path, problems)
+        if problems:
+            log.warning("radio power checklist file: %s", "; ".join(problems))
+        unchecked = raw.get("no_check", []) if isinstance(raw, dict) else []
+        if isinstance(unchecked, list) and any(isinstance(var, str) and var in _OWN_ELECTRICS for var in unchecked):
             return True
     return False
 

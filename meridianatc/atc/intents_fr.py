@@ -42,7 +42,7 @@ _CLEANUP_FR: list[tuple[str, str]] = [
     (r"-", " "),
     (r"\bniveau de vol\b", "niveaudevol"),
     (r"\bniveau\b", "niveaudevol"),
-    (r"\bF\.?L\.?\s*(\d)", r"niveaudevol \1"),
+    (r"\bf\.?\s*l\.?\s*(\d)", r"niveaudevol \1"),
     (r"\bdécimale\b", "decimale"),
     (r"\bdecimal\b", "decimale"),
     (r"\bvirgule\b", "decimale"),
@@ -248,7 +248,7 @@ def extract_frequency_fr(text: str) -> float | None:
         tail = norm.split("decimale", 1)[1] if "decimale" in norm else ""
         frac_tokens = digit_runs_fr(tail).split()
         frac = frac_tokens[0] if frac_tokens and frac_tokens[0].isdigit() else ""
-        if frac:
+        if frac and len(frac) <= 3:
             value = float(f"{whole}.{frac}")
             if 118.0 <= value <= 136.999:
                 return round(value, 3)
@@ -260,8 +260,8 @@ def extract_frequency_fr(text: str) -> float | None:
     return None
 
 
-_SIDE_FR = {"gauche": "L", "droite": "R", "centre": "C"}
-_RE_RUNWAY_FR = re.compile(r"\bpiste\s*(\d{1,2})\s*(gauche|droite|centre)?\b")
+_SIDE_FR = {"gauche": "L", "droite": "R", "centre": "C", "l": "L", "c": "C", "r": "R"}
+_RE_RUNWAY_FR = re.compile(r"\bpiste\s*(\d{1,2})\s*(gauche|droite|centre|l|c|r)?\b")
 
 
 def _without_hold_short_fr(collapsed: str) -> str:
@@ -269,7 +269,7 @@ def _without_hold_short_fr(collapsed: str) -> str:
     return re.sub(
         rf"\b(?:{_HOLD_SHORT_FR})\s+avant\b"
         r"(?:\s+(?:de\s+)?la)?(?:\s+piste)?\s+\d{1,2}\s*"
-        r"(?:gauche|droite|centre)?", " ", collapsed)
+        r"(?:gauche|droite|centre|l|c|r)?\b", " ", collapsed)
 
 
 def extract_runway_fr(text: str) -> str | None:
@@ -606,9 +606,9 @@ def values_fr(text: str) -> dict[str, Any]:
     held = re.search(
         rf"\b(?:{_HOLD_SHORT_FR})\s+avant\b"
         r"(?:\s+(?:de\s+)?la)?(?:\s+piste)?\s+(\d{1,2})\s*"
-        r"(gauche|droite|centre)?", digit_runs_fr(norm))
+        r"(gauche|droite|centre|l|c|r)?\b", digit_runs_fr(norm))
     if held and 1 <= int(held.group(1)) <= 36:
-        side = {"gauche": "L", "droite": "R", "centre": "C"}.get(
+        side = _SIDE_FR.get(
             (held.group(2) or ""), "")
         values["hold_short"] = f"{int(held.group(1)):02d}{side}"
     elif re.search(rf"\b(?:{_HOLD_SHORT_FR})\s+avant\b"

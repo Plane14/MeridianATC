@@ -81,12 +81,22 @@ def ceiling_ft(weather) -> float:
     lowest = math.inf
     for cover, height in getattr(weather, "clouds", None) or []:
         if cover in ("BKN", "OVC", "VV"):
-            lowest = min(lowest, float(height))
+            try:
+                value = float(height)
+            except (TypeError, ValueError):
+                return 0.0
+            if not math.isfinite(value) or value < 0:
+                return 0.0
+            lowest = min(lowest, value)
     return lowest
 
 
 def visibility_m(weather) -> float:
-    return float(getattr(weather, "visibility_sm", 10.0) or 0.0) * STATUTE_MILE_M
+    try:
+        seen = float(getattr(weather, "visibility_sm", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+    return seen * STATUTE_MILE_M if math.isfinite(seen) and seen >= 0 else 0.0
 
 
 def is_night(lat: float, lon: float, region: str,

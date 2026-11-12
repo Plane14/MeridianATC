@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import tempfile
 import threading
 from pathlib import Path
 
@@ -40,19 +42,50 @@ class VoiceTrainer:
     def _read_list(self, path: Path) -> list[str]:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except FileNotFoundError:
             return []
-        return [str(x).strip() for x in data if str(x).strip()] \
-            if isinstance(data, list) else []
+        except (OSError, ValueError):
+            log.warning("voice training file %s is unreadable; check JSON syntax and permissions", path)
+            return []
+        if not isinstance(data, list):
+            log.warning("voice training file %s must contain a list of strings", path)
+            return []
+        if any(not isinstance(x, str) for x in data):
+            log.warning("voice training file %s contains non-text keyterms; skipping them", path)
+        return [x.strip() for x in data if isinstance(x, str) and x.strip()]
 
     def _read_map(self, path: Path) -> dict[str, str]:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except FileNotFoundError:
             return {}
-        return {str(k).strip().lower(): str(v).strip()
-                for k, v in data.items() if str(k).strip() and str(v).strip()} \
-            if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            log.warning("voice training file %s is unreadable; check JSON syntax and permissions", path)
+            return {}
+        if not isinstance(data, dict):
+            log.warning("voice training file %s must contain a text-to-text mapping", path)
+            return {}
+        if any(not isinstance(v, str) for v in data.values()):
+            log.warning("voice training file %s contains non-text corrections; skipping them", path)
+        return {k.strip().lower(): v.strip() for k, v in data.items()
+                if isinstance(v, str) and k.strip() and v.strip()}
+
+    def _write(self, path: Path, data) -> None:
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                             prefix=path.name + ".", suffix=".tmp", delete=False) as stream:
+                temporary = Path(stream.name)
+                stream.write(json.dumps(data, indent=1) + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        except OSError:
+            log.warning("could not save voice training to %s; check folder permissions and free space", path)
+            raise
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     # ------------------------------------------------------------------
     # keyterms
@@ -73,17 +106,15 @@ class VoiceTrainer:
             terms = self.keyterms
             if term.lower() not in {t.lower() for t in terms}:
                 terms.append(term)
+                self._write(self._keyterms_path, terms)
                 self._keyterms = terms
-                self._keyterms_path.write_text(
-                    json.dumps(terms, indent=1) + "\n", encoding="utf-8")
 
     def remove_keyterm(self, term: str) -> None:
         with self._lock:
             terms = [t for t in self.keyterms
                      if t.lower() != str(term).strip().lower()]
+            self._write(self._keyterms_path, terms)
             self._keyterms = terms
-            self._keyterms_path.write_text(
-                json.dumps(terms, indent=1) + "\n", encoding="utf-8")
 
     # ------------------------------------------------------------------
     # corrections
@@ -103,16 +134,15 @@ class VoiceTrainer:
         with self._lock:
             mapping = self.corrections
             mapping[heard] = meant
+            self._write(self._corrections_path, mapping)
             self._corrections = mapping
-            self._corrections_path.write_text(
-                json.dumps(mapping, indent=1) + "\n", encoding="utf-8")
 
     def apply(self, text: str) -> str:
         """Every correction applied to a transcript line."""
         out = text
         for heard, meant in self.corrections.items():
             if heard and meant:
-                out = re.sub(rf"\b{re.escape(heard)}\b", meant, out,
+                out = re.sub(rf"\b{re.escape(heard)}\b", lambda match, replacement=meant: replacement, out,
                              flags=re.I)
         return out
 

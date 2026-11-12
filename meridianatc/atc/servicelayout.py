@@ -133,11 +133,43 @@ def load_layout(path: Path | str | None = None) -> dict:
     where = Path(path) if path else LAYOUT_FILE
     try:
         table = json.loads(where.read_text(encoding="utf-8"))
-        return table if isinstance(table, dict) else {}
+        if not isinstance(table, dict):
+            raise ValueError("expected an object")
+        for section in ("roles", "vehicles", "types", "loaders", "stairs_models", "sill_below_point_m"):
+            entries = table.get(section, {})
+            if not isinstance(entries, dict):
+                raise ValueError(f"{section} must be an object")
+            for name, entry in entries.items():
+                if section == "sill_below_point_m":
+                    if not isinstance(entry, (int, float)) or not math.isfinite(entry):
+                        raise ValueError(f"{section}.{name} must be a finite number")
+                    continue
+                if not isinstance(entry, dict):
+                    raise ValueError(f"{section}.{name} must be an object")
+                if (section == "roles" and entry.get("facing", "door") not in ("door", "away")
+                        and not math.isfinite(float(entry["facing"]))):
+                    raise ValueError(f"roles.{name}.facing must be door, away or a finite heading")
+                for field, value in entry.items():
+                    if field.endswith(("_m", "_deg")) and (not isinstance(value, (int, float)) or not math.isfinite(value)):
+                        raise ValueError(f"{section}.{name}.{field} must be a finite number")
+                if section == "types":
+                    for spot in entry.values():
+                        if not isinstance(spot, list) or len(spot) != 3 or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in spot):
+                            raise ValueError(f"types.{name} needs three-number spots")
+                if section == "loaders" and not {"pivot_up_m", "pivot_forward_m", "end_up_m", "end_forward_m"} <= entry.keys():
+                    raise ValueError(f"loaders.{name} needs pivot and end coordinates")
+                if section == "stairs_models":
+                    for field in ("heights", "reach", "fits"):
+                        values = entry.get(field)
+                        if not isinstance(values, list) or len(values) < 2 or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in values):
+                            raise ValueError(f"stairs_models.{name}.{field} needs a numeric array")
+                    if len(entry["heights"]) != len(entry["reach"]) or any(a >= b for a, b in zip(entry["heights"], entry["heights"][1:], strict=False)):
+                        raise ValueError(f"stairs_models.{name} needs increasing heights and matching reach values")
+        return table
     except FileNotFoundError:
         return {}
-    except Exception:
-        log.info("the service layout %s could not be read", where, exc_info=True)
+    except (OSError, ValueError, TypeError):
+        log.warning("the service layout %s is unreadable or invalid; using default positions", where, exc_info=True)
         return {}
 
 

@@ -9,6 +9,7 @@ not because a model happened to recall it.
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -162,7 +163,9 @@ class Instruction:
     @property
     def owed_items(self) -> list[str]:
         """The items the pilot still has to say back, in the issued order."""
-        required = self.required_items or REQUIRED_READBACK
+        required = REQUIRED_READBACK if self.required_items is None else self.required_items
+        if self.outstanding is not None:
+            required = required & self.outstanding
         return [key for key in self.values if key in required]
 
     def mismatches(self, heard: dict[str, Any]) -> list[str]:
@@ -173,7 +176,7 @@ class Instruction:
         hold-short instructions, squawk and frequency. Reading back a wind
         check is not required and its absence is not an error.
         """
-        required = self.required_items or REQUIRED_READBACK
+        required = REQUIRED_READBACK if self.required_items is None else self.required_items
         if self.outstanding is not None:
             required = required & self.outstanding
         wrong: list[str] = []
@@ -181,7 +184,11 @@ class Instruction:
             if key not in required:
                 continue
             got = heard.get(key)
-            if got is None or not _matches(key, expected, got):
+            try:
+                matched = got is not None and _matches(key, expected, got)
+            except (TypeError, ValueError, OverflowError):
+                matched = False
+            if not matched:
                 wrong.append(key)
         return wrong
 
@@ -240,7 +247,9 @@ def nearly_matches(key: str, expected: Any, got: Any) -> bool:
 
 def _matches(key: str, expected: Any, got: Any) -> bool:
     if key == "frequency":
-        return abs(float(expected) - float(got)) < 0.006
+        from ..navdata.channels import same_channel
+
+        return same_channel(float(expected), float(got), 0)
     if key == "runway":
         from ..navdata.db import normalize_runway
 
@@ -256,7 +265,10 @@ def _matches(key: str, expected: Any, got: Any) -> bool:
             return normalize_runway(expected) == normalize_runway(got)
         return bool(expected) == bool(got)
     if key in ("altitude_ft", "heading", "speed_kt"):
-        return int(expected) == int(got)
+        a, b = float(expected), float(got)
+        if not math.isfinite(a) or not math.isfinite(b):
+            return False
+        return (a - b) % 360 == 0 if key == "heading" else a == b
     if key == "altimeter":
         # Hectopascals to the unit, inches to the hundredth.
         tolerance = 0.006 if float(expected) < 100.0 else 0.5

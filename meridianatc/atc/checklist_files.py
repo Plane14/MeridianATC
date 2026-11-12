@@ -35,6 +35,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import math
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -158,7 +159,7 @@ def _words(value) -> dict:
     if isinstance(value, str):
         return {"en": value}
     if isinstance(value, dict):
-        return {str(k)[:2]: str(v) for k, v in value.items() if v}
+        return {k[:2]: v for k, v in value.items() if isinstance(k, str) and isinstance(v, str) and v.strip()}
     return {}
 
 
@@ -184,9 +185,19 @@ def _check(raw, where: str, problems: list[str]) -> Check | None:
         return None
     try:
         tolerance = float(raw.get("tolerance", 0.0))
+        if not math.isfinite(tolerance) or tolerance < 0:
+            raise ValueError
     except (TypeError, ValueError):
-        problems.append(f"{where}: the tolerance is not a number")
-        tolerance = 0.0
+        problems.append(f"{where}: the tolerance must be finite and nonnegative; the check is skipped")
+        return None
+    if op == "in" and not isinstance(value, list):
+        problems.append(f"{where}: an in check needs a list of values")
+        return None
+    if (op in ("min", "max", "near")
+            and not (isinstance(value, str) and value in REFERENCES)
+            and (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value))):
+        problems.append(f"{where}: {op} needs a finite numeric value or reference")
+        return None
     return Check(var=var, op=op, value=value, tolerance=tolerance)
 
 
@@ -205,13 +216,20 @@ def _item(raw, where: str, problems: list[str]) -> Item | None:
     accept = raw.get("accept") or ["check"]
     if isinstance(accept, str):
         accept = [accept]
+    if not isinstance(accept, list) or not all(isinstance(a, str) for a in accept):
+        problems.append(f"{where}: accept must be a list of answer names")
+        accept = ["check"]
     unknown = [a for a in accept if a not in ANSWERS]
     if unknown:
         problems.append(f"{where}: {', '.join(unknown)} is not an answer "
                         f"({', '.join(ANSWERS)})")
         accept = [a for a in accept if a in ANSWERS] or ["check"]
-    return Item(challenge=_words(raw["challenge"]),
-                response=_words(raw.get("response", "check")),
+    challenge, response = _words(raw["challenge"]), _words(raw.get("response", "check"))
+    if not challenge.get("en") or not response.get("en"):
+        problems.append(f"{where}: challenge and response need English fallback text")
+        return None
+    return Item(challenge=challenge,
+                response=response,
                 accept=tuple(accept),
                 rules=_rules(raw.get("rules"), where, problems),
                 check=_check(raw.get("check"), where, problems),
@@ -238,7 +256,10 @@ def _checklist(name: str, raw, origin: str,
 def _read(path: Path, problems: list[str]) -> dict | None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
     except OSError:
+        problems.append(f"{path.name}: cannot read file; check permissions")
         return None
     except ValueError as exc:
         problems.append(f"{path.name}: not JSON ({exc}); the file is skipped")
@@ -249,6 +270,14 @@ def _read(path: Path, problems: list[str]) -> dict | None:
     if not isinstance(data, dict) or not isinstance(data.get("checklists"), dict):
         problems.append(f"{path.name}: no \"checklists\" in it; the file is skipped")
         return None
+    matches = data.get("match", [])
+    if not isinstance(matches, list) or not all(isinstance(m, str) and m.strip() for m in matches):
+        problems.append(f"{path.name}: match must be a list of nonempty title fragments; the file is skipped")
+        return None
+    unchecked = data.get("no_check", [])
+    if not isinstance(unchecked, list) or not all(isinstance(v, str) for v in unchecked):
+        problems.append(f"{path.name}: no_check must be a list of variable names")
+        data["no_check"] = []
     return data
 
 
@@ -264,7 +293,14 @@ def _add_ons(title: str) -> list[Path]:
         except (OSError, ValueError):
             found.append(path)        # read again, and reported, by _merge
             continue
-        if any(str(m).lower() in title for m in data.get("match") or ()):
+        if not isinstance(data, dict):
+            found.append(path)
+            continue
+        matches = data.get("match", [])
+        if not isinstance(matches, list) or not all(isinstance(m, str) and m.strip() for m in matches):
+            found.append(path)
+            continue
+        if any(m.lower() in title for m in matches):
             found.append(path)
     return found
 
@@ -344,8 +380,14 @@ def load(aircraft_class: str, type_code: str = "",
     if aircraft_class not in CLASSES:
         raise ValueError(f"{aircraft_class!r} is not a class of aeroplane")
     files = _files(aircraft_class, type_code, own, title)
-    stamp = tuple((str(p), p.stat().st_mtime_ns, p.stat().st_size)
-                  for p in files)
+    stamp = []
+    for path in files:
+        try:
+            stat = path.stat()
+            stamp.append((str(path), stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            stamp.append((str(path), None, None))
+    stamp = tuple(stamp)
     key = (aircraft_class, (type_code or "").upper(), str(own),
            tuple(str(p) for p in files))
     with _lock:

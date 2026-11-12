@@ -477,10 +477,17 @@ _RE_BARE_ALT = re.compile(r"\b(\d{3,5})\s*(?:feet|ft)\b")
 
 def extract_altitude(text: str) -> int | None:
     """Altitude in feet, from any of the forms controllers and pilots use."""
+    text = re.split(r"\bexpect(?:ed|ing)?\b", (text or "").lower(), maxsplit=1)[0]
     collapsed = _digit_runs(normalize(text, keep_commas=True))
     # Never the code in "squawk seven thousand", in either reading below.
     collapsed = _RE_SQUAWK_THOUSAND.sub(" ", collapsed)
-    text = re.sub(r"\b(?:squawk|squawking)\s+[a-z]+\s+thousand\b", " ",
+    collapsed = _RE_SQUAWK.sub(" ", collapsed)
+    collapsed = _RE_FREQ_PLAIN.sub(" ", collapsed)
+    collapsed = _RE_FREQ_POINT.sub(" ", collapsed)
+    collapsed = _RE_HEADING.sub(" ", collapsed)
+    collapsed = _RE_SPEED.sub(" ", collapsed)
+    collapsed = re.sub(r"\b(?:qnh|altimeter)\s+[\d.]+\b", " ", collapsed)
+    text = re.sub(r"\b(?:squawk|squawking|transponder|code)\s+[a-z]+\s+thousand\b", " ",
                   (text or "").lower())
 
     m = _RE_FLIGHT_LEVEL.search(collapsed)
@@ -543,7 +550,7 @@ def extract_heading(text: str) -> int | None:
     if not m:
         return None
     value = int(m.group(1))
-    if 0 < value <= 360:
+    if 0 <= value <= 360:
         return value % 360 or 360
     return None
 
@@ -632,7 +639,7 @@ def extract_runway(text: str) -> str | None:
 _RE_SQUAWK = re.compile(r"\b(?:squawk|squawking|transponder|code)\s+(\d{4})\b")
 
 
-_RE_SQUAWK_THOUSAND = re.compile(r"\b(?:squawk|squawking)\s+(\d)\s+thousand\b")
+_RE_SQUAWK_THOUSAND = re.compile(r"\b(?:squawk|squawking|transponder|code)\s+(\d)\s+thousand\b")
 
 
 def extract_squawk(text: str) -> str | None:
@@ -1157,37 +1164,43 @@ class IntentParser:
         that was not quite addressed to us.
         """
         for variant in self.callsign_variants:
-            if variant and variant in norm:
+            if variant and re.search(rf"(?<![a-z0-9]){re.escape(variant)}(?![a-z0-9])", norm):
                 return True
         # The tail alone, at either end: "..., six niner Mike".
         for form in self._own():
             if (norm.startswith(form + " ") or norm.endswith(" " + form) \
                     or norm == form) and len(form.split()) >= 2:
+                prefix = norm[:-len(form)].strip().split() if norm.endswith(form) else []
+                if prefix and prefix[-1] in _VALUE_WORDS:
+                    continue
                 return True
         # Punctuation is not spoken, and the languages do not normalise it the
         # same way: French turns "F-GJIM" into "f gjim" while English leaves
         # the hyphen where it is. A registration would match in one language
         # and not the other, so the letters and digits are compared on their
         # own as well.
-        squashed = re.sub(r"[^a-z0-9]", "", norm)
         for variant in self.callsign_variants:
             bare = re.sub(r"[^a-z0-9]", "", variant)
-            if len(bare) >= 4 and bare in squashed:
+            pattern = r"[\s_-]*".join(re.escape(c) for c in bare)
+            if len(bare) >= 4 and re.search(rf"(?<![a-z0-9]){pattern}(?![a-z0-9])", norm):
                 return True
         # A flight identification with letters in it comes back from the
         # recogniser as "7A8", "7 alpha 8" or "seven alpha eight", and only
         # the last is a variant. Reducing the alphabet and the digit words to
         # characters on both sides makes all three the same "7a8".
-        compact = _compact(norm)
+        tokens = [_compact(t) for t in norm.split()]
         for variant in self.callsign_variants:
             bare = _compact(variant)
-            if len(bare) >= 4 and bare in compact:
-                return True
-        # Fall back to a fuzzy check on the digits alone.
-        for variant in self.callsign_variants:
-            digits = re.sub(r"\D", "", variant)
-            if len(digits) >= 3 and digits in re.sub(r"\D", "", norm):
-                return True
+            if len(bare) < 4:
+                continue
+            for start in range(len(tokens)):
+                candidate = ""
+                for token in tokens[start:]:
+                    candidate += token
+                    if not bare.startswith(candidate):
+                        break
+                    if candidate == bare:
+                        return True
         return False
 
     _STATION_WORDS = re.compile(
