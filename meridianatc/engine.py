@@ -25,6 +25,7 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable
+from concurrent.futures import Future
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -110,6 +111,7 @@ from .navdata.magvar import variation
 from .paths import announcements_dir, command_hint
 from .paths import resolve as _resolve
 from .security.secrets import resolve_secret
+from .sim.capabilities import capabilities
 from .sim.source import ManualSource, StateSource, open_source
 from .sim.state import AircraftState
 from .weather.metar import (
@@ -673,6 +675,8 @@ class Engine:
         # a simulator source in use, and a type check answers a subtly
         # different one that goes wrong the moment anything wraps the class.
         self._sim_source: StateSource | None = None
+        self._sim_attempt: Future | None = None
+        self._sim_lock = threading.RLock()
         # Whether the last tick found the simulator paused, so it is said
         # once rather than four times a second.
         self._was_paused = False
@@ -1126,7 +1130,7 @@ class Engine:
         Attach the renderer for the connected source. A simulator that will
         not have them leaves the radio alone.
         """
-        xplane = self.state.source == "xplane"
+        xplane = capabilities(self.state.source).xplane_traffic
         if xplane != isinstance(self.simtraffic, XPlaneTraffic):
             self.simtraffic.detach()
             options = dict(
@@ -1262,13 +1266,13 @@ class Engine:
         Without one the published data is used and nothing is said about it,
         because there is nothing the pilot can do differently.
         """
-        if self.state.source == "xplane" or not self.config.sim.frequencies_from_sim:
+        if not capabilities(self.state.source).facilities or not self.config.sim.frequencies_from_sim:
             return False
         return self.facilities.open()
 
     def follow_facilities(self, state: AircraftState) -> None:
         """Read the airport under the aeroplane, once, in the background."""
-        if state.source == "xplane" or not self.facilities.available or not state.has_position:
+        if not capabilities(state.source).facilities or not self.facilities.available or not state.has_position:
             return
         airport = self.navdb.home_airport(state.latitude, state.longitude)
         if airport is None:
@@ -1318,7 +1322,7 @@ class Engine:
         handling exactly where it was -- watching the aeroplane's own
         movement, which needs nothing installed.
         """
-        if self.state.source == "xplane" or not self.config.gsx.enabled:
+        if not capabilities(self.state.source).lvars or not self.config.gsx.enabled:
             return ""
         existing = self.gsx.bridge
         if existing is not None and getattr(existing, "available", False):
@@ -1350,7 +1354,9 @@ class Engine:
         self._use_runway_cache()
 
         self._sim_wanted = bool(connect_sim and self.config.sim.enabled)
-        if self._sim_wanted and not self.attach_simulator():
+        self._stop.clear()
+        if self._sim_wanted:
+            self._watch_simulator()
             self.emit(
                 "info",
                 "Simulator not detected. Waiting for it, and flying from the "
@@ -1461,11 +1467,16 @@ class Engine:
         without a simulator carries on rather than losing its position to a
         half-built connection.
         """
-        sim = open_source(poll_interval=self.config.sim.poll_interval_s,
-                          simulator=self.config.sim.simulator,
-                          xplane_host=self.config.sim.xplane_host,
-                          xplane_port=self.config.sim.xplane_port,
-                          dll_path=self.config.sim.simconnect_dll)
+        return self._adopt_simulator(open_source(**self._simulator_options()))
+
+    def _simulator_options(self) -> dict:
+        return dict(poll_interval=self.config.sim.poll_interval_s,
+                    simulator=self.config.sim.simulator,
+                    xplane_host=self.config.sim.xplane_host,
+                    xplane_port=self.config.sim.xplane_port,
+                    dll_path=self.config.sim.simconnect_dll)
+
+    def _adopt_simulator(self, sim) -> bool:
         if isinstance(sim, ManualSource):
             sim.close()
             return False
@@ -1478,16 +1489,12 @@ class Engine:
         # thing that asks gets the aeroplane's real position rather than the
         # placeholder the manual source was holding.
         self.refresh_state()
-        if self.state.source == "xplane":
-            for integration in (self.simvehicles, self.simdoors, self.simsystems,
-                                self.servicepoints, self.simtraffic, self.simwatch):
-                integration.detach()
-            self.facilities.close()
-            bridge = self.gsx.bridge
-            if bridge is not None:
-                bridge.close()
-            self.gsx.attach(None)
-            self.traffic.await_observed = False
+        if not capabilities(self.state.source).lvars:
+            self._detach_simulator_integrations()
+            self.emit("info", "X-Plane uses the browser/desktop panel. GSX, MSFS facilities, "
+                      "native TCAS contact import and simulator flight-plan import are unavailable; "
+                      "use published airport data and load plans manually or via SimBrief.",
+                      key="log.xplane_limits")
         if previous is not sim:
             try:
                 previous.close()
@@ -1499,7 +1506,7 @@ class Engine:
         if self.autonomous_flight and hasattr(self.autonomous_flight, 'sim'):
             self.autonomous_flight.sim = sim
 
-        simulator = "X-Plane 12" if self.state.source == "xplane" else "Microsoft Flight Simulator"
+        simulator = capabilities(self.state.source).name
         self.emit("info", f"Connected to {simulator}.",
                   key="log.sim_connected_name", simulator=simulator)
         # The ground handling, which needs the simulator to be there before
@@ -1520,6 +1527,44 @@ class Engine:
         self._facilities_done.clear()
         return True
 
+    def _detach_simulator_integrations(self) -> None:
+        for integration in (self.simvehicles, self.simdoors, self.simsystems,
+                            self.servicepoints, self.simtraffic, self.simwatch):
+            integration.detach()
+        self.facilities.close()
+        bridge = self.gsx.bridge
+        if bridge is not None:
+            bridge.close()
+        self.gsx.attach(None)
+        self.traffic.await_observed = False
+
+    def _start_simulator_attempt(self) -> None:
+        options = self._simulator_options()
+        attempt = self._sim_attempt = Future()
+
+        def connect():
+            try:
+                attempt.set_result(open_source(**options))
+            except Exception as exc:
+                attempt.set_exception(exc)
+
+        threading.Thread(target=connect, name="MeridianATC-simulator", daemon=True).start()
+
+    def _discard_simulator_attempt(self) -> None:
+        with self._sim_lock:
+            self._discard_simulator_attempt_locked()
+
+    def _discard_simulator_attempt_locked(self) -> None:
+        attempt = self._sim_attempt
+        self._sim_attempt = None
+        if attempt is not None:
+            def close(result):
+                try:
+                    result.result().close()
+                except Exception:
+                    log.debug("discarded simulator attempt", exc_info=True)
+            attempt.add_done_callback(close)
+
     def want_simulator(self, wanted: bool) -> None:
         """Start or stop looking for the simulator, without a restart.
 
@@ -1527,13 +1572,23 @@ class Engine:
         reconnect interval, because a pilot who has just flicked the switch
         is watching for something to happen.
         """
+        with self._sim_lock:
+            self._want_simulator_locked(wanted)
+
+    def _want_simulator_locked(self, wanted: bool) -> None:
         self._sim_wanted = bool(wanted)
         if not self._sim_wanted:
+            self._discard_simulator_attempt()
+            if self._sim_source is not None and self.source is self._sim_source:
+                self._detach_simulator_integrations()
+                self.source.close()
+                self.source = ManualSource(replace(self.state, paused=False))
+                self._sim_source = None
+                self.refresh_state()
             self._next_sim_try = 0.0
             return
         self._next_sim_try = 0.0
-        if self.source is not self._sim_source and self.attach_simulator():
-            self.begin_session()
+        self._watch_simulator()
 
     # The shortest the engine will wait between attempts, whatever the
     # config says. Asking SimConnect for a connection it cannot give costs a
@@ -1554,6 +1609,10 @@ class Engine:
         finished loading -- which is nearly everybody -- got the manual source
         for the entire flight with no way back.
         """
+        with self._sim_lock:
+            self._watch_simulator_locked()
+
+    def _watch_simulator_locked(self) -> None:
         if not self._sim_wanted:
             return
         now = time.monotonic()
@@ -1573,6 +1632,8 @@ class Engine:
             held = replace(self.state)
             held.connected = True
             held.source = "manual"
+            held.paused = False
+            self._detach_simulator_integrations()
             try:
                 link.close()
             except Exception:
@@ -1584,8 +1645,20 @@ class Engine:
 
         if now < self._next_sim_try:
             return
+        if self._sim_attempt is None:
+            self._start_simulator_attempt()
+            return
+        if not self._sim_attempt.done():
+            return
+        attempt = self._sim_attempt
+        self._sim_attempt = None
         self._next_sim_try = now + self._retry_interval()
-        if self.attach_simulator():
+        try:
+            sim = attempt.result()
+        except Exception:
+            log.debug("simulator connection attempt failed", exc_info=True)
+            return
+        if self._adopt_simulator(sim):
             # A flight built around a typed departure field is not the flight
             # the simulator is holding. Rebuild it from what is actually
             # there, which is what stops the panel insisting on the old
@@ -1752,6 +1825,9 @@ class Engine:
 
     def stop(self) -> None:
         self._stop.set()
+        with self._sim_lock:
+            self._sim_wanted = False
+            self._discard_simulator_attempt()
         if self.live_feed is not None:
             self.live_feed.stop()
         self.cabin.stop()
@@ -1995,6 +2071,11 @@ class Engine:
         wherever the flight already is -- parked, taxiing or airborne --
         rather than only at a session's beginning.
         """
+        if not capabilities(self.state.source).autofly:
+            message = ("Autonomous aircraft control is not available for this simulator. "
+                       "The First Officer's radio and checklists remain available.")
+            self.emit("info", message, key="log.autofly_unavailable")
+            return False, message
         fo = self.autonomous_flight
         if fo is None:
             return False, "autonomous flight is not available"
@@ -2026,6 +2107,9 @@ class Engine:
 
     def autonomous_status(self) -> dict:
         """What the panel shows in the FO button."""
+        if not capabilities(self.state.source).autofly:
+            return {"available": False, "enabled": False, "phase": "", "sub": "",
+                    "helicopter": False, "error": "Aircraft control is MSFS-only"}
         fo = self.autonomous_flight
         if fo is None:
             return {"available": False, "enabled": False, "phase": "",
@@ -4153,7 +4237,7 @@ class Engine:
     def _ask_for_ground(self, ident: str) -> None:
         if not ident or ident in self._ground_asked:
             return
-        if not (self.state.source == "simconnect" and self.state.connected):
+        if not (capabilities(self.state.source).facilities and self.state.connected):
             return
         self._ground_asked.add(ident)
 
@@ -4206,7 +4290,7 @@ class Engine:
         """
         if not ident or ident in self._procedures_asked:
             return
-        if not (self.state.source == "simconnect" and self.state.connected):
+        if not (capabilities(self.state.source).facilities and self.state.connected):
             return
         self._procedures_asked.add(ident)
 
@@ -4233,7 +4317,7 @@ class Engine:
         self._ask_for_terminal_procedures(ident)
         if not ident or ident in self._approaches_asked:
             return
-        if not (self.state.source == "simconnect" and self.state.connected):
+        if not (capabilities(self.state.source).facilities and self.state.connected):
             return
         self._approaches_asked.add(ident)
 

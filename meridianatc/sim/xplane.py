@@ -15,7 +15,9 @@ import socket
 import struct
 import threading
 import time
+from dataclasses import fields
 
+from .source import SimConnectSource
 from .state import AircraftState
 
 FT = 3.280839895
@@ -84,6 +86,7 @@ DATAREFS = {
     "rotor_brake_active": ("sim/cockpit2/switches/rotor_brake", 1),
     "rotor_clutch_active": ("sim/cockpit2/switches/clutch_engage", 1),
     "collective_position": ("sim/cockpit2/engine/actuators/prop_ratio[0]", 100),
+    "fuel_selector": ("sim/cockpit2/fuel/fuel_tank_selector", 1),
 }
 for _radio in (1, 2):
     for _standby in (False, True):
@@ -121,6 +124,29 @@ STRINGS = {
     "type_code": ("sim/aircraft/view/acf_ICAO", 40),
     "tail_number": ("sim/aircraft/view/acf_tailnum", 40),
     "title": ("sim/aircraft/view/acf_ui_name", 250),
+}
+
+DERIVED = {
+    "flaps_index": ("flaps", "flap_detents"),
+    "transponder_code": ("squawk",),
+    "transponder_state": ("xp_transponder",),
+    "transponder_mode": ("xp_transponder", "ident"),
+    "autopilot": ("autopilot_mode",),
+    "spoilers_armed": ("speedbrake",),
+    "engines_running": tuple(f"running{i}" for i in range(16)),
+}
+
+WRITABLE = {
+    "BRAKE PARKING POSITION": ("parking_brake", 1),
+    "GEAR HANDLE POSITION": ("gear_down", 1),
+    "ELECTRICAL MASTER BATTERY": ("battery_master", 1),
+    "AVIONICS MASTER SWITCH": ("avionics_master", 1),
+    "LIGHT BEACON": ("beacon_light", 1),
+    "LIGHT LANDING": ("landing_light", 1),
+    "LIGHT TAXI": ("taxi_light", 1),
+    "LIGHT NAV": ("nav_light", 1),
+    "LIGHT STROBE": ("strobe_light", 1),
+    "KOHLSMAN SETTING MB": ("kohlsman_hpa", 1 / 33.86389),
 }
 
 
@@ -273,14 +299,20 @@ class XPlaneSource:
         state.fuel_total_gal = state.fuel_total_lb / 6
         state.fuel_capacity_gal = values.get("fuel_capacity_kg", 0) * LB / 6
         state.est_fuel_flow_pph = sum(values.get(f"flow{i}", 0) for i in range(16)) * LB * 3600
+        known = set(DATAREFS).intersection(values)
+        known.update(key for key, dependencies in DERIVED.items()
+                     if all(dependency in values for dependency in dependencies))
+        state.unavailable = tuple(f.name for f in fields(state) if f.name not in known)
         return state
 
     def read_now(self, attribute):
         if not self.connected:
             return None
-        with self._lock:
-            known = attribute in self._values
-        return getattr(self.read(), attribute, None) if known else None
+        normalized = str(attribute).upper().replace("_", " ")
+        attribute = next((attr for name, attr, _kind, _tier in SimConnectSource.REQUESTS
+                          if name.replace("_", " ") == normalized), attribute)
+        state = self.read()
+        return None if attribute in state.unavailable else getattr(state, attribute, None)
 
     def _dref(self, path, value):
         try:
@@ -329,7 +361,14 @@ class XPlaneSource:
         return self._command("sim/ground_ops/pushback_straight")
 
     def set_variable(self, name, value, unit=None):
-        return False
+        mapping = WRITABLE.get(str(name).upper().replace("_", " "))
+        if mapping is None:
+            return False
+        attribute, scale = mapping
+        try:
+            return self._dref(DATAREFS[attribute][0], float(value) * scale)
+        except (TypeError, ValueError):
+            return False
 
     def _send(self, name, value):
         return False

@@ -219,6 +219,7 @@ class AircraftState:
     # Nothing that watches for a change should believe one while this is set:
     # the aircraft did not take off, it was moved by a menu.
     paused: bool = False
+    unavailable: tuple[str, ...] = ()
 
     # ------------------------------------------------------------------
 

@@ -23,6 +23,7 @@
 ## Next
 
 - Live X-Plane rendering/terrain/labels/TCAS validation with real CSL packages
+- X-Plane aircraft-tested autonomous AP/axis director (currently explicitly unavailable)
 - Reliable native X-Plane traffic identity before importing TCAS contacts
 - Validate macOS native plugin packaging/signing and installer UI on real systems
 

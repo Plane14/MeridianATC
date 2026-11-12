@@ -39,6 +39,7 @@ from enum import StrEnum
 from ..config import Config
 from ..navdata.build import haversine_nm
 from ..navdata.db import Airport, NavDB
+from ..sim.capabilities import capabilities
 from ..sim.source import SimConnectSource
 from . import approach_flight, auto_nav, procedure_legs, vspeeds
 from . import flying as fly
@@ -574,6 +575,11 @@ class AutonomousFlight:
     def begin_flight(self, session: FlightSession) -> None:
         """Start a new autonomous flight."""
         self.session = session
+        aircraft = self.get_state()
+        if self._enabled and aircraft is not None and not capabilities(aircraft.source).autofly:
+            self._enabled = False
+            self._emit("info", "Autonomous aircraft control is MSFS-only; "
+                       "radio and checklists remain available.", "log.autofly_unavailable")
         self.state = AutonomousState()
         self.state.phase, sub = self._entry_phase(session)
         self.state.phase_entered_at = time.monotonic()
@@ -621,6 +627,11 @@ class AutonomousFlight:
 
         state = self.get_state()
         if state is None or not state.connected:
+            return
+        if not capabilities(state.source).autofly:
+            self._enabled = False
+            self._emit("info", "Autonomous aircraft control is MSFS-only; "
+                       "radio and checklists remain available.", "log.autofly_unavailable")
             return
         self._last_state = state
 

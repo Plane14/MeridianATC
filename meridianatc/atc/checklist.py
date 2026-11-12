@@ -660,6 +660,10 @@ class ChecklistRunner:
             self._note("unchecked", self._run, var=check.var,
                        why=f"nothing to check {check.value} against")
             return None, None, None, False
+        if check.var in getattr(self._state, "unavailable", ()):
+            self._note("unchecked", self._run, var=check.var,
+                       why="the simulator does not report this variable")
+            return None, None, expected, False
         actual = getattr(self._state, check.var, None)
         if holds(check, actual, expected):
             return True, actual, expected, False
@@ -678,7 +682,7 @@ class ChecklistRunner:
 
     def _agrees_now(self, item: Item) -> bool:
         check = item.check
-        if check is None:
+        if check is None or check.var in getattr(self._state, "unavailable", ()):
             return False
         expected = self._expected(check)
         if expected is None:

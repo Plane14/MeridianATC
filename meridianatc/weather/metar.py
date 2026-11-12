@@ -417,12 +417,14 @@ def weather_from_sim(state) -> Weather | None:
     wx.wind_kt = float(getattr(state, "ambient_wind_velocity", 0.0) or 0.0)
     wx.qnh_hpa = pressure
     wx.altimeter_inhg = inhg_from_hpa(pressure)
-    wx.temperature_c = float(getattr(state, "ambient_temperature_c", 15.0) or 15.0)
+    temperature = getattr(state, "ambient_temperature_c", None)
+    humidity = getattr(state, "ambient_humidity_pct", None)
+    wx.temperature_c = 15.0 if temperature is None else float(temperature)
     wx.dewpoint_c = wx.temperature_c - max(
-        0.0, (100.0 - float(getattr(state, "ambient_humidity_pct", 60.0) or 60.0)) / 5.0
+        0.0, (100.0 - (60.0 if humidity is None else float(humidity))) / 5.0
     )
-    visibility_m = float(getattr(state, "ambient_visibility_m", 0.0) or 0.0)
-    wx.visibility_sm = min(10.0, visibility_m / 1609.34) if visibility_m else 10.0
+    visibility_m = getattr(state, "ambient_visibility_m", None)
+    wx.visibility_sm = 10.0 if visibility_m is None else max(0.0, min(10.0, float(visibility_m) / 1609.34))
     wx.raw = ""
     return wx
 

@@ -215,6 +215,8 @@
   "set.xplane_plugin_host": "X-Plane traffic plugin host (localhost only)",
   "set.xplane_plugin_port": "X-Plane traffic plugin UDP port",
   "log.xplane_traffic_unavailable": "X-Plane traffic is not available. Install or enable MeridianATC-XP and its CSL models; see xplane/README.md. Traffic stays radio-only.",
+  "log.autofly_unavailable": "Autonomous aircraft control is MSFS-only; the First Officer's radio and checklists remain available.",
+  "log.xplane_limits": "X-Plane uses the browser/desktop panel. GSX, MSFS facilities, native TCAS contact import and simulator flight-plan import are unavailable; use published airport data and load plans manually or via SimBrief.",
   "log.sim_connected_name": "Connected to {simulator}.",
   "set.sim_stand_in": "no simulator — flying on a stand-in position",
   "set.rules_only": "Understanding: rules only.",

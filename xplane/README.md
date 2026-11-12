@@ -43,6 +43,44 @@ then build and run CTest in that directory.
 
 ## Install / CSL models
 
+### Simulator parity
+
+X-Plane uses MeridianATC's **desktop or browser panel**, not the MSFS toolbar
+package. State and radio controls, fuel, native pushback, weather and pause
+readout use the built-in UDP link. RREF switch values also drive the first
+officer's checklists: brake, gear/flaps, lights, battery/avionics, barometer,
+mixture, pitot heat, fuel selector, transponder, autopilot and engine-running
+state. Checklist variable names are AircraftState attributes, not arbitrary
+MSFS simvars; `read_now` accepts the known MSFS read aliases as well. Derived
+flap/transponder/engine values are available, but a UDP cache is not a
+synchronous confirmation that a cockpit switch just moved.
+
+Unsupported or not-yet-received checklist variables are marked unavailable;
+the checklist logs them as unchecked instead of treating dataclass defaults
+as simulator evidence. Rotor RPM percent and custom add-on bindings remain
+unavailable. Converted checklists with empty checks remain verbal: inventing
+an add-on's bindings without measurements would give false confirmation.
+The generic left/right/all fuel-selector numbering differs between simulators;
+the shipped checklist tests only whether it is off.
+
+Basic MSFS-named switch writes map to verified X-Plane datarefs (brake, gear,
+battery, avionics, lights and barometer). **Autonomous flight is not supported
+on X-Plane**: fixed-wing AP modes, flight-control axes, throttle/flap scheduling
+and helicopter cyclic/collective/pedals require an aircraft-tested director,
+not a blind SimConnect-event translation. Engage is refused explicitly and
+configured autonomous control is stopped before it can issue flight commands.
+FO radio and checklist conversation remain available. GSX/LVAR integrations,
+MSFS facility queries, native TCAS-contact import and simulator flight-plan
+import are not supported; use published data and manually loaded plans/SimBrief.
+
+Connection attempts run on a worker, with adoption/session changes on the
+situation thread. A slow MSFS timeout or X-Plane discovery/RREF timeout cannot
+stall normal situation ticks. Disconnect releases simulator integrations and
+holds the last position in manual mode; reconnection retries remain bounded
+to one pending attempt. Switching simulator type/host/port in settings requires
+the advertised app restart. Pausing continues to update the state readout and
+holds situation watchers; no live simulator pause cadence has been measured.
+
 The app's setup wizard offers this plugin when an X-Plane 12 install is found.
 Alternatively run `meridianatc xplane-plugin install`, or pass
 `--to "<X-Plane root>"`. Use `--from "<built MeridianATC folder>"` for a native

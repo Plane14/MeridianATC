@@ -1636,8 +1636,16 @@ def open_source(prefer_sim: bool = True, poll_interval: float = 0.25,
             factories.append(lambda: XPlaneSource(host=xplane_host, port=xplane_port,
                                                    poll_interval=poll_interval))
         for factory in factories:
-            source = factory()
-            if source.connect():
-                return source
-            source.close()
+            source = None
+            try:
+                source = factory()
+                if source.connect():
+                    return source
+            except Exception:
+                log.debug("simulator connection failed", exc_info=True)
+            if source is not None:
+                try:
+                    source.close()
+                except Exception:
+                    log.debug("failed simulator connection cleanup", exc_info=True)
     return ManualSource()

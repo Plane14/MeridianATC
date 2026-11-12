@@ -41,6 +41,7 @@ from ..install import Installer
 from ..logs import METRICS, RING, SESSION_ID, diagnostics
 from ..navdata.channels import carrier_khz, same_channel, shown
 from ..navdata.db import STATION_RANGE_NM
+from ..sim.capabilities import capabilities
 from ..update import Updater, quit_process
 from ..update import cleanup as update_cleanup
 
@@ -1110,7 +1111,7 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         # program's idea of it. A stand-in source reports itself connected --
         # it is, there is a state to read -- so asking it that question gets
         # a yes that means nothing.
-        in_sim = engine.state.source in ("simconnect", "xplane") and engine.state.connected
+        in_sim = capabilities(engine.state.source).live and engine.state.connected
         if radio == 1 and not standby:
             station = engine.tune(mhz)
             return {"ok": True, "station": station.callsign if station else "",
@@ -2233,6 +2234,7 @@ def snapshot(engine: Engine) -> dict[str, Any]:
     return {
         "connected": state.connected,
         "source": state.source,
+        "simulator": capabilities(state.source).name,
         "aircraft": {
             "callsign": session.aircraft.callsign.written if session else "",
             "spoken": session.aircraft.callsign.spoken_full if session else "",
