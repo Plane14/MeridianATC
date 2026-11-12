@@ -12,6 +12,7 @@ import threading
 import time
 from pathlib import Path
 
+import yaml
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -111,11 +112,15 @@ def cmd_setup(args) -> int:
             console.print("voice.engine is now chatterbox")
 
     console.rule("[bold]Speech recognition")
-    from .audio.stt import Recognizer
+    from .audio.stt import Recognizer, engine_model
 
     config = Config.load(args.config)
-    recognizer = Recognizer(model_size=config.speech.model)
-    console.print(f"Loading Whisper {config.speech.model} (first run downloads it)...")
+    wanted = engine_model(config)
+    recognizer = Recognizer(model_size=wanted,
+                            languages=list(config.speech.languages) or ["en"],
+                            device=config.speech.device,
+                            compute_type=config.speech.compute_type)
+    console.print(f"Loading Whisper {wanted} (first run downloads it)...")
     recognizer.warm()
 
     console.rule("[bold]Ready")
@@ -275,7 +280,7 @@ def _controllers_why(reason: str) -> str:
     return "No game controllers detected. Plug one in."
 
 
-def _frequencies_from_sim(ident: str) -> int:
+def _frequencies_from_sim(ident: str, config: Config) -> int:
     """Replace an airport's published frequencies with the simulator's.
 
     Returns 0 when the table that follows should be printed, and a failure code
@@ -284,7 +289,10 @@ def _frequencies_from_sim(ident: str) -> int:
     from .integrations.facilities import SimFacilities, find_simconnect
     from .navdata.localdata import replace_airport
 
-    library = find_simconnect()
+    if config.sim.simulator == "xplane":
+        console.print("X-Plane facility frequency import is unavailable; use published frequencies.")
+        return 1
+    library = find_simconnect(config.sim.simconnect_dll)
     if library is None:
         console.print(
             "[red]No SimConnect library that can answer facility "
@@ -294,7 +302,7 @@ def _frequencies_from_sim(ident: str) -> int:
         )
         return 1
 
-    facilities = SimFacilities()
+    facilities = SimFacilities(dll_path=config.sim.simconnect_dll)
     if not facilities.open():
         console.print("[red]Could not reach the simulator.[/red] "
                       "Is it running?")
@@ -327,7 +335,7 @@ def cmd_freq(args) -> int:
     if getattr(args, "add", None):
         return _add_frequency(args)
     if getattr(args, "from_sim", False):
-        code = _frequencies_from_sim(args.airport)
+        code = _frequencies_from_sim(args.airport, Config.load(args.config))
         if code:
             return code
 
@@ -1445,13 +1453,11 @@ def cmd_gui(args) -> int:
         border_style="green",
     ))
 
-    engine.warm()
-    engine.start(connect_sim=not args.no_sim)
-
-    if not args.no_browser:
-        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-
     try:
+        engine.warm()
+        engine.start(connect_sim=not args.no_sim)
+        if not args.no_browser:
+            threading.Timer(1.0, lambda: webbrowser.open(url)).start()
         serve(engine, broadcaster, args.host, args.port)
     except KeyboardInterrupt:
         pass
@@ -1482,10 +1488,9 @@ def cmd_run(args) -> int:
         border_style="green",
     ))
 
-    engine.warm()
-    engine.start(connect_sim=not args.no_sim)
-
     try:
+        engine.warm()
+        engine.start(connect_sim=not args.no_sim)
         _console_loop(engine)
     except (KeyboardInterrupt, EOFError):
         console.print()
@@ -1736,6 +1741,16 @@ def _apply_overrides(config: Config, args) -> None:
 # --------------------------------------------------------------------------
 
 
+def _port(value: str) -> int:
+    try:
+        port = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("port must be a whole number from 1 to 65535") from exc
+    if not 1 <= port <= 65535:
+        raise argparse.ArgumentTypeError("port must be from 1 to 65535")
+    return port
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="meridianatc",
@@ -1792,7 +1807,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     gui.add_argument("--host", default="127.0.0.1",
                      help="0.0.0.0 to reach it from a tablet on the same network")
-    gui.add_argument("--port", type=int, default=8787)
+    gui.add_argument("--port", type=_port, default=8787)
     gui.add_argument("--no-browser", action="store_true",
                      help="do not open a browser window")
     for target in (app, gui):
@@ -1921,6 +1936,14 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(args)
     except KeyboardInterrupt:
         return 130
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        where = f" at line {mark.line + 1}, column {mark.column + 1}" if mark else ""
+        console.print(f"Invalid YAML configuration{where}. Check indentation and quoted values.")
+        return 1
+    except (OSError, ValueError) as exc:
+        console.print(logs.scrub(str(exc)), markup=False)
+        return 1
 
 
 if __name__ == "__main__":

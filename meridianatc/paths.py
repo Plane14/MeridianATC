@@ -26,6 +26,7 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 APP_NAME = "MeridianATC"
@@ -59,9 +60,8 @@ def _install_dir() -> Path:
 def _writable(directory: Path) -> bool:
     try:
         directory.mkdir(parents=True, exist_ok=True)
-        probe = directory / ".write-test"
-        probe.touch()
-        probe.unlink()
+        with tempfile.TemporaryFile(dir=directory):
+            pass
         return True
     except OSError:
         return False

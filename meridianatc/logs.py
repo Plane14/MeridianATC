@@ -61,7 +61,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .paths import log_dir
+from .paths import log_dir, resolve
+from .security.redact import redact
 
 #: Identifies one run of the program. Stamped on every record so a log file
 #: holding several sessions can be split back into them.
@@ -89,6 +90,9 @@ _SECRET = re.compile(
     r"\s*[:=]?\s*['\"]?([A-Za-z0-9._\-]{8,})"
 )
 _KEY_SHAPED = re.compile(r"\b(sk-[A-Za-z0-9._\-]{8,}|xoxb-[A-Za-z0-9._\-]{8,})\b")
+_CREDENTIAL_NAME = re.compile(
+    r"api[_-]?key|(?:access|refresh|id)[_-]?token|token|password|secret|"
+    r"client[_-]?secret|authorization", re.IGNORECASE)
 
 
 def scrub(text: str) -> str:
@@ -96,7 +100,7 @@ def scrub(text: str) -> str:
     if not text:
         return text
     text = _SECRET.sub(lambda m: f"{m.group(1)}=<redacted>", text)
-    return _KEY_SHAPED.sub("<redacted>", text)
+    return redact(_KEY_SHAPED.sub("<redacted>", text))
 
 
 # --------------------------------------------------------------------------
@@ -109,9 +113,21 @@ class SessionFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         record.session = SESSION_ID
-        if isinstance(record.msg, str):
-            record.msg = scrub(record.msg)
+        try:
+            message = record.getMessage()
+        except (TypeError, ValueError):
+            message = str(record.msg) + " [invalid log arguments]"
+        record.msg = scrub(message)
+        record.args = ()
         return True
+
+
+_SESSION_FILTER = SessionFilter()
+
+
+class TextFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        return scrub(super().format(record))
 
 
 # Fields ``logging`` puts on every record itself. Anything else on a record is
@@ -145,7 +161,7 @@ class JsonlFormatter(logging.Formatter):
         }
         extras = _extras(record)
         if extras:
-            payload["fields"] = {k: _plain(v) for k, v in extras.items()}
+            payload["fields"] = _plain(extras)
         if record.exc_info:
             payload["traceback"] = scrub(self.formatException(record.exc_info))
         return json.dumps(payload, ensure_ascii=False, default=str)
@@ -156,7 +172,8 @@ def _plain(value: Any) -> Any:
     if isinstance(value, (str, int, float, bool)) or value is None:
         return scrub(value) if isinstance(value, str) else value
     if isinstance(value, dict):
-        return {str(k): _plain(v) for k, v in value.items()}
+        return {str(k): "<redacted>" if _CREDENTIAL_NAME.fullmatch(str(k)) else _plain(v)
+                for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [_plain(v) for v in value]
     return scrub(str(value))
@@ -190,7 +207,7 @@ class RingHandler(logging.Handler):
             }
             extras = _extras(record)
             if extras:
-                entry["fields"] = {k: _plain(v) for k, v in extras.items()}
+                entry["fields"] = _plain(extras)
             if record.exc_info:
                 entry["traceback"] = scrub(
                     logging.Formatter().formatException(record.exc_info))
@@ -247,7 +264,7 @@ class RadioLog:
             "time": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "session": SESSION_ID,
             "kind": kind,
-            **{k: _plain(v) for k, v in fields.items()},
+            **_plain(fields),
         }
         line = json.dumps(entry, ensure_ascii=False, default=str)
         try:
@@ -415,7 +432,7 @@ def configure(config=None, *, force: bool = False) -> Path:
     console_level = _level(getattr(settings, "console_level", "WARNING"))
     folder = log_dir()
     if getattr(settings, "directory", ""):
-        folder = Path(settings.directory).expanduser()
+        folder = resolve(settings.directory)
         folder.mkdir(parents=True, exist_ok=True)
     _directory = folder
 
@@ -425,11 +442,6 @@ def configure(config=None, *, force: bool = False) -> Path:
         with suppress(Exception):
             handler.close()
     root.setLevel(min(level, console_level))
-    root.addFilter(SessionFilter())
-    # Last-line defence: a credential-shaped string never reaches a sink,
-    # whatever a call site attached to its record.
-    from .security.redact import RedactingFilter
-    root.addFilter(RedactingFilter())
 
     max_bytes = int(getattr(settings, "max_bytes", 4_000_000) or 4_000_000)
     backups = int(getattr(settings, "backups", 5) or 5)
@@ -439,11 +451,11 @@ def configure(config=None, *, force: bool = False) -> Path:
         backupCount=backups, encoding="utf-8",
     )
     plain.setLevel(level)
-    plain.setFormatter(logging.Formatter(
+    plain.setFormatter(TextFormatter(
         "%(asctime)s %(levelname)-7s [%(session)s] %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     ))
-    plain.addFilter(SessionFilter())
+    plain.addFilter(_SESSION_FILTER)
     root.addHandler(plain)
 
     if getattr(settings, "structured", True):
@@ -453,17 +465,17 @@ def configure(config=None, *, force: bool = False) -> Path:
         )
         structured.setLevel(level)
         structured.setFormatter(JsonlFormatter())
-        structured.addFilter(SessionFilter())
+        structured.addFilter(_SESSION_FILTER)
         root.addHandler(structured)
 
     console = logging.StreamHandler(sys.stderr)
     console.setLevel(console_level)
-    console.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-    console.addFilter(SessionFilter())
+    console.setFormatter(TextFormatter("%(levelname)s %(name)s: %(message)s"))
+    console.addFilter(_SESSION_FILTER)
     root.addHandler(console)
 
     RING.setLevel(level)
-    RING.addFilter(SessionFilter())
+    RING.addFilter(_SESSION_FILTER)
     root.addHandler(RING)
 
     RADIO.path = folder / "radio.jsonl"

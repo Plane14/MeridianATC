@@ -19,7 +19,10 @@ from __future__ import annotations
 
 import io
 import math
+import os
 import re
+import tempfile
+import threading
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any
@@ -32,6 +35,7 @@ from .paths import bundle_root, config_path
 
 ROOT = bundle_root()
 CONFIG_PATH = config_path()
+_SAVE_LOCK = threading.RLock()
 
 
 # --------------------------------------------------------------------------
@@ -1910,17 +1914,19 @@ class Config:
         path = Path(path) if path else CONFIG_PATH
         config = cls()
         if path.exists():
-            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+            raw = {} if raw is None else raw
             _merge(config, raw)
             _read_legacy(config, raw)
+            _validate_loaded(config)
         local = path.with_name(LOCAL_NAME)
         if local.exists():
-            overlay = yaml.safe_load(local.read_text(encoding="utf-8")) or {}
-            if isinstance(overlay, dict):
-                base = asdict(config)
-                _merge(config, overlay)
-                object.__setattr__(config, "_local_base",
-                                   _leaves(overlay, base))
+            overlay = yaml.safe_load(local.read_text(encoding="utf-8"))
+            overlay = {} if overlay is None else overlay
+            base = asdict(config)
+            _merge(config, overlay)
+            _validate_loaded(config)
+            object.__setattr__(config, "_local_base", _leaves(overlay, base))
         # Where a save goes: the file this was read from, which is the one
         # --config named, not always the default one.
         object.__setattr__(config, "_path", path)
@@ -1954,6 +1960,10 @@ class Config:
         of accent colour on the screen. Anything else -- a new file, another
         path, a Config built in code -- is written whole.
         """
+        with _SAVE_LOCK:
+            return self._save(path)
+
+    def _save(self, path: Path | str | None = None) -> Path:
         path = Path(path) if path else getattr(self, "_path", CONFIG_PATH)
         data = asdict(self)
         # What config.local.yaml set stays in config.local.yaml, and what the
@@ -1972,10 +1982,11 @@ class Config:
             changed = _changed(data, saved)
             for keys, _value in kept:
                 changed = _without(changed, keys)
-            _write_keeping_comments(path, changed)
+            _write_keeping_comments(path, changed, fallback=data)
         else:
             _write_keeping_comments(path, data)
-        object.__setattr__(self, "_saved", data)
+        if own_file:
+            object.__setattr__(self, "_saved", data)
         return path
 
 
@@ -2009,7 +2020,7 @@ def _without(data: dict, keys: tuple) -> dict:
     return out
 
 
-def _write_keeping_comments(path: Path, data: dict) -> None:
+def _write_keeping_comments(path: Path, data: dict, fallback: dict | None = None) -> None:
     """Write ``data`` over the file without losing what the pilot wrote.
 
     ruamel.yaml's round trip keeps comments, key order and the keys this
@@ -2039,12 +2050,29 @@ def _write_keeping_comments(path: Path, data: dict) -> None:
             logging.getLogger(__name__).warning(
                 "config.yaml could not be read back (%s); writing it afresh",
                 exc)
+            if fallback is not None:
+                data = fallback
     if not isinstance(document, dict):
+        if document is not None and fallback is not None:
+            data = fallback
         document = CommentedMap()
     _update_in_place(document, data)
     buffer = io.StringIO()
     rt.dump(document, buffer)
-    path.write_text(buffer.getvalue(), encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=f".{path.name}.", suffix=".tmp",
+                                         delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(buffer.getvalue())
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _update_in_place(target, data: dict) -> None:
@@ -2066,6 +2094,11 @@ def _leaves(overlay: dict, base: dict, prefix: tuple = ()) -> list:
     for key, value in overlay.items():
         if not isinstance(base, dict) or key not in base:
             continue
+        if value is None and isinstance(base[key], dict):
+            continue
+        if isinstance(value, bool) and isinstance(base[key], dict) and "enabled" in base[key]:
+            found.append((prefix + (key, "enabled"), base[key]["enabled"]))
+            continue
         if isinstance(value, dict) and isinstance(base[key], dict):
             found += _leaves(value, base[key], prefix + (key,))
         else:
@@ -2075,17 +2108,23 @@ def _leaves(overlay: dict, base: dict, prefix: tuple = ()) -> list:
 
 def _merge(target: Any, values: dict) -> None:
     """Apply a nested dict onto a dataclass, ignoring unknown keys."""
+    if not isinstance(values, dict):
+        raise ValueError("Configuration must be a mapping of settings.")
     known = {f.name: f for f in fields(target)}
     for key, value in (values or {}).items():
         if key not in known:
             continue
         current = getattr(target, key)
-        if is_dataclass(current) and isinstance(value, dict):
-            _merge(current, value)
-        elif (is_dataclass(current) and isinstance(value, bool)
-              and hasattr(current, "enabled")):
-            # A section that used to be a switch: "handling: false".
-            current.enabled = value
+        if is_dataclass(current):
+            if value is None:
+                continue
+            if isinstance(value, dict):
+                _merge(current, value)
+            elif isinstance(value, bool) and hasattr(current, "enabled"):
+                # A section that used to be a switch: "handling: false".
+                current.enabled = value
+            else:
+                raise ValueError(f"Configuration section {key!r} must be a mapping.")
         else:
             setattr(target, key, value)
 
@@ -2258,6 +2297,27 @@ def _setting_or_generic(path: str) -> Setting | None:
                               Setting(tab="advanced", group="internals",
                                       developer=True))
     return None
+
+
+def _validate_loaded(config: Config) -> None:
+    """Check file values without applying the screen's read-only policy."""
+    for path, default in DEFAULTS.items():
+        value = get_path(config, path)
+        setting = _setting_or_generic(path)
+        try:
+            if setting.kind == "list":
+                if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+                    raise ValueError("This must be a list of text values.")
+                checked = list(value)
+            else:
+                if setting.kind == "number" and isinstance(value, bool):
+                    raise ValueError("This must be a number, not a toggle.")
+                if setting.kind not in ("map", "toggle", "number") and isinstance(value, (list, dict)):
+                    raise ValueError("This must be a single value, not a list or table.")
+                checked = _coerce(setting, value, default)
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise ValueError(f"Invalid configuration setting {path}: {exc}") from exc
+        set_path(config, path, checked)
 
 
 def get_path(config: Config, path: str) -> Any:
