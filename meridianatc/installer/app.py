@@ -147,8 +147,9 @@ class Api:
     def simulators(self) -> dict:
         """The simulators, and the Community folders the panel would go in."""
         from ..msfs_panel import community_folders
+        from ..xplane_plugin import install_roots
 
-        found: dict = {"sims": [], "communities": []}
+        found: dict = {"sims": [], "communities": [], "xplanes": []}
         try:
             found["sims"] = core.detect_simulators()
         except Exception:
@@ -157,6 +158,12 @@ class Api:
             found["communities"] = [str(c) for c in community_folders()]
         except Exception:
             log.warning("Community folders not found", exc_info=True)
+        try:
+            found["xplanes"] = [str(root) for root in install_roots()]
+            found["sims"].append({"key": "xplane", "found": bool(found["xplanes"]),
+                                  "path": ", ".join(found["xplanes"])})
+        except Exception:
+            log.warning("X-Plane installs not found", exc_info=True)
         return found
 
     # -- installing -----------------------------------------------------------
@@ -178,7 +185,8 @@ class Api:
                             start_menu=bool(options.get("start_menu", True)),
                             check_updates=bool(options.get("updates", True)),
                             language=str(options.get("language") or ""),
-                            toolbar_panel=bool(options.get("toolbar_panel", True)))
+                            toolbar_panel=bool(options.get("toolbar_panel", True)),
+                            xplane_plugin=bool(options.get("xplane_plugin", True)))
         threading.Thread(target=self._run, args=(target.path, opts),
                          name="meridianatc-setup", daemon=True).start()
         return {"ok": True, "path": str(target.path)}

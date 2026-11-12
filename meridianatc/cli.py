@@ -123,6 +123,30 @@ def cmd_setup(args) -> int:
     return 0
 
 
+def cmd_xplane_plugin(args) -> int:
+    """Install/remove the optional native renderer, never the state link."""
+    from . import xplane_plugin
+
+    try:
+        roots = xplane_plugin.install_roots(args.to)
+        if not roots:
+            console.print("No X-Plane 12 installs found; pass --to <X-Plane root>.")
+            return 1
+        source = xplane_plugin.payload(args.source) if args.action == "install" and not args.check else None
+        for root in roots:
+            if args.check:
+                console.print(f"would {args.action}: {xplane_plugin.plugin_directory(root)}")
+            elif args.action == "install":
+                console.print(f"installed: {xplane_plugin.install(root, source)}")
+            else:
+                console.print(f"removed plugin (INI/CSL kept): {xplane_plugin.uninstall(root)}")
+        console.print("Restart X-Plane. Traffic also needs CSL models; see xplane/README.md.")
+        return 0
+    except (OSError, ValueError) as exc:
+        console.print(str(exc), markup=False)
+        return 1
+
+
 def cmd_doctor(args) -> int:
     """Check that every component is present and working.
 
@@ -1724,6 +1748,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version",
                         version=f"MeridianATC {__version__}")
     sub = parser.add_subparsers(dest="command")
+    xp_plugin = sub.add_parser("xplane-plugin", help="install or remove the X-Plane traffic plugin")
+    xp_plugin.add_argument("action", choices=("install", "uninstall"))
+    xp_plugin.add_argument("--to", help="explicit X-Plane 12 installation root")
+    xp_plugin.add_argument("--from", dest="source", help="built MeridianATC plugin folder")
+    xp_plugin.add_argument("--check", action="store_true", help="show targets without changing files")
+    xp_plugin.set_defaults(func=cmd_xplane_plugin)
 
     run = sub.add_parser(
         "console", aliases=["run"],

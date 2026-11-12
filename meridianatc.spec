@@ -78,6 +78,12 @@ datas = [
      "meridianatc/integrations"),
 ]
 
+_xp_plugin = ROOT / "xplane" / "plugin" / "build" / "MeridianATC"
+if (_xp_plugin / ("win_x64" if WINDOWS else "mac_x64" if sys.platform == "darwin" else "lin_x64") / "MeridianATC.xpl").is_file():
+    datas.append((str(_xp_plugin), "xplane-plugin/MeridianATC"))
+else:
+    print("WARNING: native X-Plane traffic plugin not built; skipping its payload")
+
 # The airline telephony names do ship inside, as the fallback: build.ps1 only
 # copies the navigation folder beside the program when there is a database to
 # copy, and an airliner must not be spelled out because there was not. A copy

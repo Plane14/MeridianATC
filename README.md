@@ -1,6 +1,6 @@
 # ✈️ MeridianATC
 
-**Real air traffic control for Microsoft Flight Simulator 2024 — running entirely on your PC.**
+**Real air traffic control for MSFS 2024 and X-Plane 12 — running entirely on your PC.**
 
 Hold a push-to-talk key, talk to whatever frequency you've dialled into COM1,
 and a controller answers you back. Same voice every flight, correct
@@ -24,6 +24,53 @@ ATC   Delta twelve thirty four, readback correct.
 > published procedure.
 
 ---
+
+## X-Plane 12
+
+The aircraft-state link uses X-Plane's built-in UDP RREF/DREF/CMND interface:
+**no plugin is needed for aircraft state or radios**. Start X-Plane, load a
+flight, and select `sim.simulator: xplane` (or leave `auto`, which tries MSFS
+first). The default state endpoint is `127.0.0.1:49000`.
+
+**No Data Output checkboxes or network destination need enabling for localhost
+RREF subscriptions.** MeridianATC requests the datarefs and X-Plane replies to
+the requesting socket. The Data Output screen's UDP checkboxes configure
+unsolicited **DATA** packets, a different interface. Leave X-Plane's receive
+port at 49000, or match `sim.xplane_port` if you changed it. Firewalls can
+still block UDP; `meridianatc doctor` checks the actual response. This does
+not require the newer X-Plane Web API on port 8086.
+
+To **draw invented traffic**, install **MeridianATC-XP** and an XPMP2-compatible
+CSL aircraft package such as Bluebell. The Windows setup wizard offers the
+plugin beside the MSFS toolbar-panel option when it finds X-Plane. From a
+terminal (or `python -m meridianatc` in a checkout):
+
+```text
+meridianatc xplane-plugin install
+meridianatc xplane-plugin install --to "D:\X-Plane 12"
+meridianatc xplane-plugin uninstall --to "D:\X-Plane 12"
+```
+
+`--check` previews the targets without changing files; `--from <MeridianATC
+folder>` installs a separately downloaded/built native artifact. Discovery
+reads X-Plane's official `x-plane_install_12*.txt` lists under `%LOCALAPPDATA%`,
+`~/Library/Preferences` or `~/.x-plane`, ignoring stale entries. An explicit
+`--to` is the simulator root containing `Resources/plugins`, not the plugins
+folder itself. Start X-Plane once to create its install list.
+
+The plugin goes into `Resources/plugins/MeridianATC`. Updates preserve your
+`meridianatc-xp.ini` and `Resources/CSL`; uninstall removes the renderer but
+also keeps those user files. Restart X-Plane after install/update/uninstall.
+The plugin listens only on **127.0.0.1:49010** by default; its INI port must
+match `traffic.xplane_plugin_port`. Without a responding plugin and usable
+CSL models, invented traffic stays radio-only. MSFS-only integrations such
+as GSX and simulator facility queries are skipped on X-Plane.
+
+Native payloads are optional in app builds: a checkout needs a CMake plugin
+build first; a release without a native payload gives a clear install error.
+See [the X-Plane guide](xplane/README.md) for build/install steps, CSL roots,
+INI options, protocol and limitations. The app's doctor reports discovered
+roots, installed version, RREF response, plugin hello response and CSL count.
 
 ## 🧩 What this build adds
 
@@ -4449,4 +4496,3 @@ python scripts/make_world.py
 *MeridianATC is a simulator toy. Enjoy the radio, don't fly real aeroplanes with
 it, and don't confuse its phraseology with current published procedure.*
 **Happy landings! 🛬**
-

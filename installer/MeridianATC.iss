@@ -60,7 +60,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; The engine: the PyInstaller bundle in its own folder the shell launches.
 Source: "{#EngineDir}\*"; DestDir: "{app}\engine"; \
-    Flags: ignoreversion recursesubdirs createallsubdirs
+    Excludes: "xplane-plugin\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Optional native plugin payload; discovery/install into X-Plane is explicit.
+Source: "{#EngineDir}\xplane-plugin\*"; DestDir: "{app}\engine\xplane-plugin"; \
+    Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 ; The WPF shell: the executable at the top of {app}.
 Source: "{#ShellDir}\*"; DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs

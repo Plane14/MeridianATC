@@ -15,8 +15,16 @@
 - 66 converted checklists + StormATC prompt files
 - .NET 10 WPF shell (10 screens) + xunit tests
 - pytest suite, ruff, CI, Inno installer script
+- X-Plane 12 UDP aircraft-state/radio link and automatic/explicit simulator selection
+- Native MeridianATC-XP XPMP2 traffic renderer and Python snapshot/status backend
+- X-Plane plugin discovery, preserving install/uninstall CLI, Windows setup option,
+  optional native payload packaging, and doctor installation/UDP/CSL checks
 
 ## Next
+
+- Live X-Plane rendering/terrain/labels/TCAS validation with real CSL packages
+- Reliable native X-Plane traffic identity before importing TCAS contacts
+- Validate macOS native plugin packaging/signing and installer UI on real systems
 
 - Streaming Deepgram STT (the WS path the StormATC client used) in addition
   to the REST path this build ships

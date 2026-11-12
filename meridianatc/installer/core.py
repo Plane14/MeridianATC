@@ -423,6 +423,7 @@ class Options:
     # The MeridianATC button in the simulator's toolbar, copied into every
     # Community folder found (meridianatc/msfs_panel.py).
     toolbar_panel: bool = True
+    xplane_plugin: bool = True
 
 
 Progress = Callable[[int, int, str], None]
@@ -430,7 +431,8 @@ Progress = Callable[[int, int, str], None]
 
 def install(payload: Payload, target: Path, options: Options,
             progress: Progress | None = None, register: bool = True,
-            communities: list[Path] | None = None) -> dict:
+            communities: list[Path] | None = None,
+            xplanes: list[Path] | None = None) -> dict:
     """Unpack the program into ``target`` and make it an installed program.
 
     Over an existing installation ``_internal`` is replaced whole (a file the
@@ -497,6 +499,12 @@ def install(payload: Payload, target: Path, options: Options,
 
             communities = community_folders()
         result = install_toolbar_panel(target, communities or [])
+    if options.xplane_plugin:
+        if xplanes is None and register:
+            from ..xplane_plugin import install_roots
+
+            xplanes = install_roots()
+        result.update(install_xplane_plugin(target, xplanes or []))
     if register and sys.platform == "win32":
         shortcuts(target, options)
         register_uninstall(target, payload.size)
@@ -506,6 +514,7 @@ def install(payload: Payload, target: Path, options: Options,
 PANEL_FOLDER = "msfs-panel"
 PANEL_NAME = "meridianatc-ingamepanel"           # msfs_panel.NAME
 PANEL_LIST = "msfs-panel-installed.txt"
+XPLANE_LIST = "xplane-plugin-installed.txt"
 CRLF = chr(13) + chr(10)
 
 
@@ -543,6 +552,34 @@ def install_toolbar_panel(target: Path, communities: list[Path]) -> dict:
     if known:
         listed.write_text(CRLF.join(known) + CRLF, encoding="utf-8-sig", newline="")
     return {"panel": done, "panel_failed": failed}
+
+
+def install_xplane_plugin(target: Path, roots: list[Path]) -> dict:
+    from ..xplane_plugin import install as copy_plugin
+    from ..xplane_plugin import payload
+
+    done, failed = [], []
+    if roots:
+        try:
+            source = payload(app_root=target)
+        except OSError as exc:
+            log.warning("X-Plane plugin not bundled: %s", exc)
+            return {"xplane": [], "xplane_failed": [str(root) for root in roots]}
+        for root in roots:
+            try:
+                copy_plugin(root, source)
+                done.append(str(root))
+            except (OSError, ValueError) as exc:
+                log.warning("X-Plane plugin not installed into %s: %s", root, exc)
+                failed.append(str(root))
+    listed = target / XPLANE_LIST
+    known = listed.read_text(encoding="utf-8-sig").splitlines() if listed.is_file() else []
+    for root in done:
+        if root not in known:
+            known.append(root)
+    if known:
+        listed.write_text(CRLF.join(known) + CRLF, encoding="utf-8-sig", newline="")
+    return {"xplane": done, "xplane_failed": failed}
 
 
 def write_settings(target: Path, check: bool, language: str = "") -> None:
@@ -699,7 +736,8 @@ def register_uninstall(target: Path, size: int) -> None:
 PROGRAM_ITEMS = ("_internal", "MeridianATC.exe", "MeridianATC-console.exe",
                  "MeridianATC.exe.config", "MeridianATC-console.exe.config",
                  "FIRST-RUN.txt", "README.md", "LICENSE.txt", "updates",
-                 ".write-test", PANEL_FOLDER, PANEL_LIST)
+                 ".write-test", PANEL_FOLDER, PANEL_LIST,
+                 "xplane-plugin", XPLANE_LIST, "XPLANE-README.md")
 PILOT_ITEMS = ("data", "logs", "airports", "announcements", "checklists",
                "config.yaml", "config.local.yaml")
 
@@ -751,6 +789,15 @@ if (Test-Path -LiteralPath $panels) {{
     if (-not $community) {{ continue }}
     $panel = Join-Path $community '{PANEL_NAME}'
     if (Test-Path -LiteralPath $panel) {{ Remove-Item -LiteralPath $panel -Recurse -Force -ErrorAction SilentlyContinue }}
+  }}
+}}
+
+# Keep X-Plane's user INI and CSL models, as the CLI uninstaller does.
+$xpList = Join-Path $dir '{XPLANE_LIST}'
+$console = Join-Path $dir 'MeridianATC-console.exe'
+if ((Test-Path -LiteralPath $xpList) -and (Test-Path -LiteralPath $console)) {{
+  foreach ($root in (Get-Content -LiteralPath $xpList -Encoding UTF8)) {{
+    if ($root) {{ & $console xplane-plugin uninstall --to $root | Out-Null }}
   }}
 }}
 

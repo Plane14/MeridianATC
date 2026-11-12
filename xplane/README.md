@@ -43,6 +43,36 @@ then build and run CTest in that directory.
 
 ## Install / CSL models
 
+The app's setup wizard offers this plugin when an X-Plane 12 install is found.
+Alternatively run `meridianatc xplane-plugin install`, or pass
+`--to "<X-Plane root>"`. Use `--from "<built MeridianATC folder>"` for a native
+CI artifact; `--check` previews targets. `xplane-plugin uninstall` removes
+the native renderer, keeping `meridianatc-xp.ini` and `Resources/CSL`.
+The app uninstaller does the same for installations made by its setup wizard.
+
+Discovery follows [Laminar's install-list convention](https://developer.x-plane.com/article/how-to-programmatically-locate-x-plane-9-or-10/):
+`x-plane_install_12*.txt` in `%LOCALAPPDATA%` (Windows),
+`~/Library/Preferences` (macOS), or `~/.x-plane` (Linux). Each line is an
+install root; stale paths without `Resources/plugins` are ignored. An explicit
+path bypasses discovery. Run X-Plane once if its install list is absent.
+
+The app looks for `xplane-plugin/MeridianATC` in its frozen resources or beside
+its executable, and `xplane/plugin/build/MeridianATC` in a checkout. A valid
+payload needs this platform's `.xpl` and XPMP2 resources. CMake emits
+`version.json` for installed-version diagnostics. `build.ps1` and the spec
+bundle an already-built payload; otherwise they warn and skip it. Inno carries
+the optional payload with the engine. CSL aircraft packages are not bundled.
+
+Aircraft state needs **none of this**: built-in UDP RREF at port **49000**
+works on localhost with no Data Output checkboxes or destination settings.
+RREF subscriptions request their own replies; Data Output checkboxes concern
+unsolicited DATA packets instead. Leave the simulator's receive port at 49000
+or match `sim.xplane_port`. This is distinct from the plugin's **49010** port.
+See [the RREF subscription reference](https://xppython3.readthedocs.io/en/latest/development/udp/rref.html)
+and [RREF versus DATA setup](https://flyawaysimulation.com/ask/answers/x-plane-datarefs-network-access/).
+`meridianatc doctor` reports roots, installed version, RREF response, hello
+response and CSL model count; it never sends a traffic snapshot or clear.
+
 Copy the generated **whole** `xplane/plugin/build/MeridianATC` directory into
 `X-Plane 12/Resources/plugins/`. Keep the layout:
 

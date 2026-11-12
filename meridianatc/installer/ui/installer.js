@@ -37,7 +37,8 @@ const state = {
   agree: false,
   check: null,              // the folder as Python resolved it
   checking: 0,
-  opts: { desktop: true, start_menu: true, updates: true, toolbar_panel: true },
+  opts: { desktop: true, start_menu: true, updates: true, toolbar_panel: true, xplane_plugin: true },
+  xplanes: [],
   communities: [],          // where the toolbar panel would go
   sims: null,
   job: null,
@@ -172,7 +173,7 @@ function paintLocation() {
 function paintSims() {
   const box = $("sims");
   box.textContent = "";
-  const rows = [["steam", "sim.steam"], ["store", "sim.store"]];
+  const rows = [["steam", "sim.steam"], ["store", "sim.store"], ["xplane", "sim.xplane"]];
   for (const [key, label] of rows) {
     const found = state.sims && state.sims.find((s) => s.key === key);
     const searching = !state.sims;
@@ -210,6 +211,9 @@ function paintSims() {
     sub.textContent = t("sim.panel_sub", { path: where.map((p) => shortPath(p, 40)).join(", ") });
     sub.title = where.join(" · ");
   }
+  $("xplane-box").hidden = !state.sims || !state.xplanes.length;
+  $("xplane-option").setAttribute("aria-checked", String(state.opts.xplane_plugin));
+  $("xplane-sub").textContent = t("sim.xplane_plugin_sub", { path: state.xplanes.join(", ") });
 }
 
 function phaseOf(job) {
@@ -271,6 +275,12 @@ function paintFinish() {
   else if (done.length) said = t("finish.panel_done");
   line.hidden = !said;
   line.textContent = said;
+  const xpFailed = job.xplane_failed || [];
+  const xpDone = job.xplane || [];
+  const xpLine = $("finish-xplane");
+  xpLine.hidden = !xpFailed.length && !xpDone.length;
+  xpLine.textContent = xpFailed.length ? t("err.xplane_plugin", { path: xpFailed.join(", ") })
+    : xpDone.length ? t("finish.xplane_plugin_done") : "";
 }
 
 function canGoOn() {
@@ -338,6 +348,7 @@ async function findSims() {
   if (state.step !== 3) return;
   state.sims = (found && found.sims) || [];
   state.communities = (found && found.communities) || [];
+  state.xplanes = (found && found.xplanes) || [];
   paint();
 }
 
@@ -410,6 +421,10 @@ function wire() {
   $("launch").addEventListener("click", () => { state.launch = !state.launch; paint(); });
   $("panel-option").addEventListener("click", () => {
     state.opts.toolbar_panel = !state.opts.toolbar_panel;
+    paint();
+  });
+  $("xplane-option").addEventListener("click", () => {
+    state.opts.xplane_plugin = !state.opts.xplane_plugin;
     paint();
   });
   $("path").addEventListener("input", checkPath);

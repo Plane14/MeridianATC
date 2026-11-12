@@ -2,6 +2,7 @@
 
 ```
 MSFS 2024 ──SimConnect──> meridianatc/sim ──> meridianatc/engine.py
+X-Plane 12 ──UDP RREF──>       ↑
                                 │                    │
                 navdata db (SQLite)          atc/* deterministic engine
                                 │                    │ approved text
@@ -16,7 +17,8 @@ MSFS 2024 ──SimConnect──> meridianatc/sim ──> meridianatc/engine.py
 
 ## The rule
 
-* **The simulator is the physical truth.** State comes from SimConnect.
+* **The simulator is the physical truth.** State comes from SimConnect (MSFS)
+  or built-in UDP RREF subscriptions (X-Plane). Auto selection tries MSFS first.
 * **The deterministic engine decides what is permitted.** Phraseology,
   clearances, frequencies, runways, separation — all fixed rules and
   fixed templates.
@@ -26,6 +28,22 @@ MSFS 2024 ──SimConnect──> meridianatc/sim ──> meridianatc/engine.py
   validated against the approved wording. Either can be absent entirely.
 
 ## Layout
+
+Invented traffic uses interchangeable render backends: `SimTraffic` drives
+MSFS AI objects; `XPlaneTraffic` sends full JSON snapshots over localhost UDP
+49010 to the native `xplane/plugin` XPMP2 renderer. Only plugin-confirmed
+`drawn` IDs count as spawned. Missing plugins/models leave traffic radio-only.
+The state link (UDP 49000) is independent of this optional renderer. MSFS-only
+GSX/facility/LVAR features are guarded; native X-Plane TCAS contact import is
+not implemented (identity/deduplication is unresolved).
+
+`meridianatc/xplane_plugin.py` discovers Laminar's official install lists,
+locates bundled or developer-built native payloads, and installs/uninstalls
+without overwriting user INI/CSL data. CLI and installer share this module;
+doctor probes RREF and plugin hello separately. CMake produces a version
+manifest beside each plugin; older payloads without it report version unknown.
+The PyInstaller spec and Windows build include a native payload only when
+built, and both installer formats carry it with the app.
 
 | Path | What it is |
 | --- | --- |

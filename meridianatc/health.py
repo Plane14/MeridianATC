@@ -233,6 +233,53 @@ def _simulator(config: Config) -> Check:
         source.close()
 
 
+def _xplane_installs(config: Config) -> Check:
+    from .xplane_plugin import install_roots, installed
+
+    roots = install_roots()
+    if not roots:
+        return Check("xplane_installs", "X-Plane installs", "warn",
+                     "no registered X-Plane 12 roots; use xplane-plugin install --to <root>")
+    details = []
+    complete = True
+    for root in roots:
+        info = installed(root)
+        complete = complete and info["installed"]
+        details.append(f"{root}: plugin {info['version']}")
+    return Check("xplane_installs", "X-Plane installs", "ok" if complete else "warn",
+                 "; ".join(details))
+
+
+def _xplane_udp(config: Config) -> Check:
+    from .sim.xplane import XPlaneSource
+
+    if not config.sim.enabled or config.sim.simulator == "msfs":
+        return Check("xplane_udp", "X-Plane UDP", "off", "X-Plane state link not selected")
+    source = XPlaneSource(host=config.sim.xplane_host, port=config.sim.xplane_port,
+                          discovery_s=0, timeout_s=.4)
+    try:
+        answered = source.connect()
+        return Check("xplane_udp", "X-Plane UDP", "ok" if answered else "warn",
+                     f"{config.sim.xplane_host}:{config.sim.xplane_port}: "
+                     + ("RREF answered" if answered else "no RREF answer; start X-Plane and load a flight"))
+    finally:
+        source.close()
+
+
+def _xplane_plugin(config: Config) -> Check:
+    from .xplane_plugin import probe
+
+    if config.sim.simulator == "msfs" or not config.traffic.in_simulator or not config.traffic.enabled:
+        return Check("xplane_plugin", "X-Plane traffic plugin", "off", "X-Plane traffic not selected")
+    status = probe(config.traffic.xplane_plugin_host, config.traffic.xplane_plugin_port)
+    if status is None:
+        return Check("xplane_plugin", "X-Plane traffic plugin", "warn",
+                     "no hello response; install/enable MeridianATC-XP; see xplane/README.md")
+    models = status["csl_models"]
+    return Check("xplane_plugin", "X-Plane traffic plugin", "ok" if models else "warn",
+                 f"hello answered: version {status['version']}, {models} CSL models")
+
+
 def _ground(config: Config) -> Check | None:
     """Whether the ground handling can be read, and asked for anything.
 
@@ -429,6 +476,9 @@ CHECKS: tuple[tuple[str, str, Callable[[Config], Check | None]], ...] = (
     ("cabin_out", "Cabin audio", _cabin_out),
     ("audio_devices", "Audio devices", _audio_devices),
     ("simulator", "Simulator", _simulator),
+    ("xplane_installs", "X-Plane installs", _xplane_installs),
+    ("xplane_udp", "X-Plane UDP", _xplane_udp),
+    ("xplane_plugin", "X-Plane traffic plugin", _xplane_plugin),
     ("ground", "Ground handling", _ground),
     ("com1", "COM1", _com1),
     ("frequencies", "Frequencies", _frequencies),

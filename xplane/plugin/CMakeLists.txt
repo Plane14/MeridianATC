@@ -35,6 +35,8 @@ if(MERIDIAN_BUILD_PLUGIN)
         target_compile_options(MeridianATC PRIVATE -Wall -Wextra -Wpedantic -fvisibility=hidden)
     endif()
     set(PLUGIN_ROOT "${CMAKE_BINARY_DIR}/MeridianATC")
+    file(GENERATE OUTPUT "${PLUGIN_ROOT}/version.json"
+        CONTENT "{\"plugin\":\"MeridianATC-XP\",\"version\":\"${PROJECT_VERSION}\",\"xpmp2\":\"3.7.0\"}\n")
     set_target_properties(MeridianATC PROPERTIES PREFIX "" SUFFIX ".xpl"
         LIBRARY_OUTPUT_DIRECTORY "${PLUGIN_ROOT}/${PLATFORM_DIR}"
         RUNTIME_OUTPUT_DIRECTORY "${PLUGIN_ROOT}/${PLATFORM_DIR}")

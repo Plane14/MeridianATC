@@ -133,6 +133,9 @@ if ($SkipIcons) {
 }
 
 Step "Freezing"
+if (-not (Test-Path "xplane\plugin\build\MeridianATC\win_x64\MeridianATC.xpl")) {
+    Write-Warning "Native X-Plane plugin not built; build xplane/plugin with CMake to bundle traffic rendering. Skipping it."
+}
 
 # Build to one side and swap it in at the end, rather than deleting the last
 # good folder and hoping. A half-written bundle is not an obviously broken
@@ -292,6 +295,12 @@ Copy-Item LICENSE "$out\LICENSE.txt" -Force
 # copies it into each Community folder it finds (meridianatc/msfs_panel.py).
 if (Test-Path "$out\msfs-panel") { Remove-Item -Recurse -Force "$out\msfs-panel" }
 Copy-Item -Recurse msfs\package "$out\msfs-panel"
+if (Test-Path "xplane\plugin\build\MeridianATC\win_x64\MeridianATC.xpl") {
+    if (Test-Path "$out\xplane-plugin") { Remove-Item -Recurse -Force "$out\xplane-plugin" }
+    New-Item -ItemType Directory -Force "$out\xplane-plugin" | Out-Null
+    Copy-Item -Recurse xplane\plugin\build\MeridianATC "$out\xplane-plugin\MeridianATC"
+}
+Copy-Item xplane\README.md "$out\XPLANE-README.md" -Force
 
 Step "Runtime configuration"
 
