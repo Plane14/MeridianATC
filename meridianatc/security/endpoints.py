@@ -37,6 +37,7 @@ def is_allowed(provider: str, url: str | None) -> bool:
     scheme, host, path = spec
     try:
         uri = urlsplit(url.strip())
+        port = uri.port
     except ValueError:
         return False
     if (uri.scheme.lower() != scheme
@@ -45,7 +46,6 @@ def is_allowed(provider: str, url: str | None) -> bool:
             or uri.username or uri.password
             or uri.query or uri.fragment):
         return False
-    port = uri.port
     if port is not None and port != (443 if scheme in ("https", "wss") else 80):
         return False
     # The path must be under the pinned prefix on a boundary, so

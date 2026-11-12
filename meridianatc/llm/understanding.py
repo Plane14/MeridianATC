@@ -21,6 +21,8 @@ phraseology templates either way.
 from __future__ import annotations
 
 import logging
+import re
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -86,17 +88,20 @@ class Understanding:
         self.stats = UnderstandingStats()
         self._system = build_system_prompt()
         self._last: LLMResult | None = None
+        self._closed = threading.Event()
+        self._retry_at = 0.0
+        self._failures = 0
 
     # ------------------------------------------------------------------
 
     @property
     def model_available(self) -> bool:
-        if not (self.enabled and self.provider is not None):
+        if self._closed.is_set() or time.monotonic() < self._retry_at or not (self.enabled and self.provider is not None):
             return False
         try:
             return bool(self.provider.available())
         except Exception as exc:
-            log.debug("provider availability check failed: %s", exc)
+            log.debug("provider availability check failed (%s)", type(exc).__name__)
             return False
 
     def describe(self) -> str:
@@ -142,13 +147,13 @@ class Understanding:
                 enriched = to_parsed_intent(result, text, language)
                 # Values the rules did find are more trustworthy than the
                 # model's, so they win where both produced one.
-                merged = dict(enriched.values)
-                merged.update(parsed.values)
+                merged = dict(parsed.values)
+                fix = enriched.values.get("fix")
+                if fix and re.search(rf"\b{re.escape(fix)}\b", text, re.I):
+                    merged.setdefault("fix", fix)
                 enriched.values = merged
                 enriched.readback_items = dict(merged)
-                enriched.callsign_matched = (
-                    parsed.callsign_matched or enriched.callsign_matched
-                )
+                enriched.callsign_matched = parsed.callsign_matched
                 enriched.station_addressed = parsed.station_addressed
                 return enriched
             log.info(
@@ -169,18 +174,24 @@ class Understanding:
             raw = self.provider.classify(prompt, self._system)
         except Exception as exc:
             self.stats.model_failures += 1
-            log.warning("AI classification failed: %s", exc)
+            self._failures += 1
+            self._retry_at = time.monotonic() + min(60.0, 2.0 ** min(self._failures, 6))
+            log.warning("AI classification failed (%s); using rules during retry backoff", type(exc).__name__)
             return None
         finally:
             self.stats.model_calls += 1
             self.stats.model_time_s += time.perf_counter() - started
 
+        if self._closed.is_set():
+            return None
+        self._failures = 0
+        self._retry_at = 0.0
         result = parse_response(raw)
         result.provider = getattr(self.provider, "name", "")
         result.latency_s = time.perf_counter() - started
         self._last = result
         if not result.usable and raw:
-            log.debug("AI returned nothing usable: %r", raw[:200])
+            log.debug("AI returned no usable structured classification")
         return result
 
     # The question asked when the rules made nothing of a short transmission
@@ -203,21 +214,27 @@ class Understanding:
             return ""
         started = time.perf_counter()
         try:
-            raw = self.provider.classify(f"Pilot: {text.strip()}",
+            raw = self.provider.classify(build_prompt(text),
                                          self.CHECKLIST_SYSTEM)
         except Exception as exc:
             self.stats.model_failures += 1
-            log.warning("AI checklist reading failed: %s", exc)
+            log.warning("AI checklist reading failed (%s)", type(exc).__name__)
             return ""
         finally:
             self.stats.model_calls += 1
             self.stats.model_time_s += time.perf_counter() - started
         words = (raw or "").strip().lower().split()
         word = words[0].strip(".,!\"'") if words else ""
-        if word in ANSWERS and word != "value":
+        if not self._closed.is_set() and len(words) == 1 and word in ANSWERS and word != "value":
             log.info("AI read %r as the checklist answer %s", text, word)
             return word
         return ""
+
+    def close(self) -> None:
+        self._closed.set()
+        close = getattr(self.provider, "close", None)
+        if close is not None:
+            close()
 
     @property
     def last_result(self) -> LLMResult | None:

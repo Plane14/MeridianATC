@@ -53,6 +53,8 @@ from dataclasses import dataclass
 import numpy as np
 from scipy import signal as sps
 
+from .samples import pcm, rate
+
 # The AM aviation voice channel. ICAO Annex 10 guarantees 300-2500 Hz; real
 # equipment passes a little more, and 3400 Hz is the usual design figure.
 BAND_LOW_HZ = 300.0
@@ -740,7 +742,7 @@ class RadioEffect:
     """Applies the full transmit and receive chain to a block of speech."""
 
     def __init__(self, sample_rate: int = 22050, profile: RadioProfile = PROFILE_CLEAN):
-        self.sample_rate = sample_rate
+        self.sample_rate = rate(sample_rate)
         self.profile = profile
 
     def process(
@@ -768,11 +770,13 @@ class RadioEffect:
         sr = self.sample_rate
         rng = np.random.default_rng(seed)
 
-        voice = np.asarray(audio, dtype=np.float32).flatten()
+        voice = pcm(audio, mono=True)
         if voice.size == 0:
             return voice
 
-        q = float(np.clip(signal_quality, 0.05, 1.0))
+        q = float(np.clip(signal_quality, 0.05, 1.0)) if math.isfinite(signal_quality) else 0.05
+        if not math.isfinite(pitch_semitones):
+            pitch_semitones = 0.0
 
         # --- at the controller -------------------------------------------
         voice = pitch_shift(voice, pitch_semitones, sr)
@@ -838,7 +842,7 @@ class RadioEffect:
         # Identical peaks across a session is one of the clearest tells that
         # the audio was generated rather than received.
         jitter = _db_to_lin(float(rng.uniform(-p.level_jitter_db, 0.0)))
-        return (source / peak * p.output_peak * jitter).astype(np.float32)
+        return pcm(source / peak * p.output_peak * jitter)
 
     # ------------------------------------------------------------------
 

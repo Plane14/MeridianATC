@@ -17,13 +17,22 @@ gets "say again", which is what a real controller would say anyway.
 from __future__ import annotations
 
 import logging
+import math
 import os
+import time
 
 import requests
 
 from .base import RESPONSE_SCHEMA
 
 log = logging.getLogger(__name__)
+
+
+def _timeout(value) -> float:
+    timeout = float(value)
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("AI timeout must be positive and finite")
+    return timeout
 
 
 # --------------------------------------------------------------------------
@@ -49,25 +58,28 @@ class OllamaProvider:
     ):
         self.model = model
         self.host = host.rstrip("/")
-        self.timeout_s = timeout_s
+        self.timeout_s = _timeout(timeout_s)
         self._checked: bool | None = None
+        self._check_after = 0.0
 
     def available(self) -> bool:
         """Whether the server is up and has the model."""
-        if self._checked is not None:
+        if self._checked is True or (self._checked is False and time.monotonic() < self._check_after):
             return self._checked
         try:
             response = requests.get(f"{self.host}/api/tags", timeout=2.0)
             response.raise_for_status()
             names = {m.get("name", "") for m in response.json().get("models", [])}
         except Exception as exc:
-            log.info("Ollama not reachable at %s: %s", self.host, exc)
+            log.info("Ollama not reachable (%s); retrying after backoff", type(exc).__name__)
             self._checked = False
+            self._check_after = time.monotonic() + 10.0
             return False
 
         # Ollama reports "llama3.2:3b"; a bare "llama3.2" should still match.
-        wanted = self.model.split(":")[0]
-        self._checked = any(name.split(":")[0] == wanted for name in names)
+        wanted = self.model if ":" in self.model else self.model + ":latest"
+        self._checked = wanted in names or self.model in names
+        self._check_after = time.monotonic() + 10.0
         if not self._checked:
             log.warning(
                 "Ollama is running but %s is not installed. Run: ollama pull %s",
@@ -139,7 +151,7 @@ class AnthropicProvider:
     ):
         self.model = model
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-        self.timeout_s = timeout_s
+        self.timeout_s = _timeout(timeout_s)
         self.max_tokens = max_tokens
         self._client = None
         self._checked: bool | None = None
@@ -162,13 +174,23 @@ class AnthropicProvider:
     def _get_client(self):
         if self._client is None:
             import anthropic
+            import httpx
 
-            self._client = (
-                anthropic.Anthropic(api_key=self.api_key, timeout=self.timeout_s)
-                if self.api_key
-                else anthropic.Anthropic(timeout=self.timeout_s)
-            )
+            options = {"api_key": self.api_key} if self.api_key else {}
+            http_client = httpx.Client(follow_redirects=False, trust_env=False)
+            try:
+                self._client = anthropic.Anthropic(
+                    **options, base_url="https://api.anthropic.com",
+                    timeout=self.timeout_s, max_retries=0,
+                    http_client=http_client)
+            except Exception:
+                http_client.close()
+                raise
         return self._client
+
+    def close(self) -> None:
+        if self._client is not None:
+            self._client.close()
 
     def classify(self, prompt: str, system: str) -> str:
         import anthropic
@@ -191,13 +213,13 @@ class AnthropicProvider:
             log.error("Model %s not available to this account", self.model)
             raise
         except anthropic.RateLimitError as exc:
-            log.warning("Claude API rate limited: %s", exc)
+            log.warning("Claude API rate limited (%s)", type(exc).__name__)
             raise
         except anthropic.APIStatusError as exc:
-            log.warning("Claude API error %s: %s", exc.status_code, exc)
+            log.warning("Claude API error %s", exc.status_code)
             raise
         except anthropic.APIConnectionError as exc:
-            log.warning("Claude API unreachable: %s", exc)
+            log.warning("Claude API unreachable (%s)", type(exc).__name__)
             raise
 
         if response.stop_reason == "refusal":
@@ -268,12 +290,13 @@ class OpenAICompatibleProvider:
 
             try:
                 uri = urlsplit(base)
+                port = uri.port
             except ValueError as exc:
                 raise ValueError(
                     "custom provider needs a valid URL") from exc
             if (uri.scheme.lower() != "https" or not uri.hostname
                     or uri.username or uri.password
-                    or uri.query or uri.fragment):
+                    or uri.query or uri.fragment or port not in (None, 443)):
                 raise ValueError(
                     "custom provider needs an https URL without credentials, "
                     "query or fragment")
@@ -282,13 +305,15 @@ class OpenAICompatibleProvider:
         else:
             self.url = self.ENDPOINTS[self.provider]
             self._custom_ok = False
-        self.timeout_s = timeout_s
+        self._pinned_url = self.url
+        self.timeout_s = _timeout(timeout_s)
         self._session = requests.Session()
         self._session.max_redirects = 0
+        self._session.trust_env = False
 
     def available(self) -> bool:
         if self.provider == "custom":
-            return bool(self.api_key) and self._custom_ok
+            return bool(self.api_key) and self._custom_ok and self.url == self._pinned_url
         from ..security.endpoints import is_allowed
 
         return bool(self.api_key) and is_allowed(self.provider, self.url)
@@ -304,6 +329,8 @@ class OpenAICompatibleProvider:
     def chat(self, messages: list[dict[str, str]],
              max_tokens: int = 700) -> str:
         """One completion round-trip; an exception propagates on failure."""
+        if not self.available():
+            raise ValueError("AI endpoint blocked or credentials missing")
         body = {"model": self.model, "messages": messages,
                 "temperature": 0.1, "max_tokens": max_tokens,
                 "stream": False}
@@ -311,8 +338,13 @@ class OpenAICompatibleProvider:
             self.url, json=body, headers=self._headers(),
             timeout=self.timeout_s, allow_redirects=False)
         response.raise_for_status()
+        if 300 <= response.status_code < 400:
+            raise ValueError("AI endpoint redirect refused")
         return (response.json()["choices"][0]["message"]["content"]
                 or "").strip()
+
+    def close(self) -> None:
+        self._session.close()
 
     def classify(self, prompt: str, system: str) -> str:
         """The contract the understanding layer calls on every provider."""

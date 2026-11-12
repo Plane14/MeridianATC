@@ -143,8 +143,9 @@ class Synthesizer:
         # of the program that has nothing to do with speech. The queue is
         # priority first: a controller answering a pilot is never queued
         # behind a safety demonstration.
-        self._render_jobs: queue.PriorityQueue = queue.PriorityQueue()
-        self._render_done: queue.Queue = queue.Queue()
+        self._render_jobs: queue.PriorityQueue = queue.PriorityQueue(maxsize=32)
+        self._render_done: queue.Queue = queue.Queue(maxsize=32)
+        self._render_stop = threading.Event()
         self._render_seq = itertools.count()
         self._render_thread = threading.Thread(
             target=self._render_lane, daemon=True, name="meridianatc-render")
@@ -164,19 +165,49 @@ class Synthesizer:
         finishes in stays off the loop, and the bookkeeping that follows it
         stays on. Priority is lower-is-sooner and the radio is ``0``: cabin
         announcements queue behind the frequency, not ahead of it.
+        A full or stopped lane reports rejection immediately on the caller.
         """
-        self._render_jobs.put((priority, next(self._render_seq),
-                               job, on_done))
+        try:
+            if self._render_stop.is_set():
+                raise queue.Full
+            self._render_jobs.put_nowait((priority, next(self._render_seq), job, on_done))
+        except queue.Full:
+            try:
+                on_done(None, RuntimeError("speech rendering is stopping or its queue is full"))
+            except Exception:
+                log.debug("a rejected render's on_done raised", exc_info=True)
 
     def _render_lane(self) -> None:
-        while True:
-            _prio, _seq, job, on_done = self._render_jobs.get()
+        while not self._render_stop.is_set():
+            try:
+                _prio, _seq, job, on_done = self._render_jobs.get(timeout=0.2)
+            except queue.Empty:
+                continue
             try:
                 result, error = job(), None
             except Exception as exc:
                 result, error = None, exc
-            self._render_done.put((on_done, result, error))
+            while not self._render_stop.is_set():
+                try:
+                    self._render_done.put((on_done, result, error), timeout=0.2)
+                    break
+                except queue.Full:
+                    continue
             self._render_jobs.task_done()
+
+    def stop(self) -> None:
+        self._render_stop.set()
+        for pending in (self._render_jobs, self._render_done):
+            while True:
+                try:
+                    pending.get_nowait()
+                    pending.task_done()
+                except queue.Empty:
+                    break
+        if self._render_thread is not threading.current_thread():
+            self._render_thread.join(timeout=2.0)
+            if self._render_thread.is_alive():
+                log.warning("speech renderer is still finishing an active synthesis during shutdown")
 
     def drain_renders(self) -> None:
         """Run the finished renders' ``on_done`` calls, on this thread.

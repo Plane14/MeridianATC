@@ -264,6 +264,13 @@ class Engine:
                 api_key=resolve_secret(self.config, "speech.deepgram_key", env="DEEPGRAM_API_KEY"),
                 model=self.config.speech.deepgram_model,
                 languages=self.languages,
+                fallback=Recognizer(
+                    model_size=engine_model(self.config),
+                    device=self.config.speech.device,
+                    compute_type=self.config.speech.compute_type,
+                    beam_size=self.config.speech.beam_size,
+                    languages=self.languages,
+                    detection_threshold=self.config.speech.detection_threshold),
             )
         else:
             self.recognizer = Recognizer(
@@ -1863,6 +1870,12 @@ class Engine:
         close("live traffic", self.live_feed, "stop")
         close("cabin", self.cabin, "stop")
         close("push-to-talk", self._ptt, "stop")
+        close("microphone", getattr(self, "microphone", None), "abandon")
+        close("AI understanding", getattr(self, "understanding", None), "close")
+        close("AI phrasing", getattr(self, "phrasing", None), "close")
+        close("speech renderer", getattr(self, "synth", None), "stop")
+        if hasattr(getattr(self, "recognizer", None), "close"):
+            close("speech recognizer", self.recognizer, "close")
         if self._situation_thread is not None and self._situation_thread is not threading.current_thread():
             self._situation_thread.join(timeout=2.0)
             if self._situation_thread.is_alive():
@@ -3741,26 +3754,20 @@ class Engine:
             return
         if not atis:
             self._atc_said_at = time.monotonic()
-        if self.phrasing is not None:
-            # The renderer may only rephrase what was approved; a rejected
-            # render falls back to the deterministic words inside render().
-            text = self.phrasing.render(text)
-        spoken = self.spoken_form(text)
         altitude = self.state.altitude_ft
         radio_fx = self.config.audio.radio_effects
+        def render():
+            phrased = self.phrasing.render(text) if self.phrasing is not None else text
+            return self.synth.speak(
+                self.spoken_form(phrased),
+                facility=station.facility or station.ident,
+                position=station.position, ident=station.ident,
+                language=language, distance_nm=station.distance_nm,
+                altitude_ft=altitude, profile=PROFILE_ATIS if atis else None,
+                radio=radio_fx)
         self._radio_renders += 1
         self.synth.render_soon(
-            lambda: self.synth.speak(
-                spoken,
-                facility=station.facility or station.ident,
-                position=station.position,
-                ident=station.ident,
-                language=language,
-                distance_nm=station.distance_nm,
-                altitude_ft=altitude,
-                profile=PROFILE_ATIS if atis else None,
-                radio=radio_fx,
-            ),
+            render,
             on_done=lambda tr, err: self._spoken(tr, err, station),
             priority=0)
 

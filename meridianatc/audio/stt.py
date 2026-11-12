@@ -27,6 +27,7 @@ from pathlib import Path
 import numpy as np
 
 from ..paths import model_dir
+from .samples import pcm, rate
 
 log = logging.getLogger(__name__)
 
@@ -400,7 +401,8 @@ class Recognizer:
         that the aviation prompt fed to the decoder is in the right language --
         an English prompt actively harms a French transcription.
         """
-        samples = np.asarray(audio, dtype=np.float32).flatten()
+        samples = pcm(audio, mono=True)
+        sample_rate = rate(sample_rate)
         duration = len(samples) / float(sample_rate or SAMPLE_RATE)
         if duration < 0.25:
             return Transcript(text="", duration_s=duration)
@@ -558,6 +560,10 @@ def _looping(text: str) -> bool:
 
 def resample_to(audio: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
     """Rational resampling between two rates."""
+    source_rate, target_rate = rate(source_rate), rate(target_rate)
+    audio = pcm(audio)
+    if not len(audio):
+        return audio
     if source_rate == target_rate:
         return audio.astype(np.float32)
     from fractions import Fraction
@@ -565,7 +571,7 @@ def resample_to(audio: np.ndarray, source_rate: int, target_rate: int) -> np.nda
     from scipy import signal as sps
 
     ratio = Fraction(target_rate, source_rate).limit_denominator(1000)
-    return sps.resample_poly(audio, ratio.numerator, ratio.denominator).astype(np.float32)
+    return pcm(sps.resample_poly(audio, ratio.numerator, ratio.denominator, axis=0))
 
 
 # Model sizes worth using, with rough CPU cost. "small.en" is the sweet spot:

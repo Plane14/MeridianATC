@@ -23,11 +23,48 @@ from dataclasses import dataclass
 import numpy as np
 
 from ..logs import CREW
+from .samples import pcm, rate
 
 log = logging.getLogger(__name__)
 
 CAPTURE_RATE = 16000        # what the recogniser wants
 BLOCK_MS = 30
+
+
+def _input_rate(sd, device, requested: int) -> int:
+    if hasattr(sd, "check_input_settings"):
+        try:
+            sd.check_input_settings(device=device, samplerate=requested, channels=1)
+        except Exception:
+            native = rate(sd.query_devices(device, "input")["default_samplerate"])
+            sd.check_input_settings(device=device, samplerate=native, channels=1)
+            return native
+    return requested
+
+
+def _output_audio(sd, device, audio, sample_rate):
+    sample_rate = rate(sample_rate)
+    channels = 1 if audio.ndim == 1 else audio.shape[1]
+    if not hasattr(sd, "check_output_settings"):
+        return audio, sample_rate
+    try:
+        sd.check_output_settings(device=device, samplerate=sample_rate, channels=channels)
+        return audio, sample_rate
+    except Exception:
+        info = sd.query_devices(device, "output")
+        native = rate(info["default_samplerate"])
+        if info["max_output_channels"] < channels:
+            audio = pcm(audio, mono=True)
+            channels = 1
+        try:
+            sd.check_output_settings(device=device, samplerate=native, channels=channels)
+        except Exception:
+            if channels != 1 or info["max_output_channels"] < 2:
+                raise
+            audio = np.repeat(audio.reshape(-1, 1), 2, axis=1)
+            sd.check_output_settings(device=device, samplerate=native, channels=2)
+        from .stt import resample_to
+        return resample_to(audio, sample_rate, native), native
 
 
 # --------------------------------------------------------------------------
@@ -60,7 +97,9 @@ class MicrophoneCapture:
         channels: int = 1,
     ):
         self.device = device
-        self.sample_rate = sample_rate
+        self.sample_rate = rate(sample_rate)
+        if not np.isfinite(max_seconds) or max_seconds <= 0:
+            raise ValueError("maximum recording duration must be positive and finite")
         self.max_seconds = max_seconds
         self.channels = channels
         self._frames: list[np.ndarray] = []
@@ -68,6 +107,11 @@ class MicrophoneCapture:
         self._recording = False
         self._opened_at = 0.0
         self._lock = threading.Lock()
+        self._buffer_lock = threading.Lock()
+        self._token = None
+        self._captured = 0
+        self._truncated = False
+        self._rate = self.sample_rate
 
     @property
     def recording(self) -> bool:
@@ -107,25 +151,46 @@ class MicrophoneCapture:
             if self._recording:
                 return
             self._frames = []
+            self._captured = 0
+            self._truncated = False
+            self._rate = _input_rate(sd, self.device, self.sample_rate)
+            token = self._token = object()
+            limit = int(self.max_seconds * self._rate)
 
             def callback(indata, _frames, _time_info, status):
                 if status:
                     log.debug("input stream status: %s", status)
-                self._frames.append(indata.copy().reshape(-1))
+                samples = pcm(indata, mono=True)
+                with self._buffer_lock:
+                    if self._token is not token:
+                        return
+                    remaining = max(0, limit - self._captured)
+                    if len(samples) > remaining:
+                        self._truncated = True
+                    if remaining and len(samples):
+                        block = samples[:remaining].copy()
+                        self._frames.append(block)
+                        self._captured += len(block)
 
             try:
                 self._stream = sd.InputStream(
                     device=self.device,
-                    samplerate=self.sample_rate,
+                    samplerate=self._rate,
                     channels=self.channels,
                     dtype="float32",
-                    blocksize=int(self.sample_rate * BLOCK_MS / 1000),
+                    blocksize=max(1, int(self._rate * BLOCK_MS / 1000)),
                     callback=callback,
                 )
                 self._stream.start()
             except BaseException:
-                self._stream = None
+                stream, self._stream = self._stream, None
+                self._token = None
                 self._recording = False
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except Exception:
+                        log.debug("could not close failed microphone stream", exc_info=True)
                 raise
             self._recording = True
             self._opened_at = time.monotonic()
@@ -142,7 +207,9 @@ class MicrophoneCapture:
         """
         with self._lock:
             self._recording = False
-            self._frames = []
+            with self._buffer_lock:
+                self._token = None
+                self._frames = []
             stream, self._stream = self._stream, None
         if stream is not None:
             try:
@@ -156,30 +223,31 @@ class MicrophoneCapture:
                 return CaptureResult(np.zeros(0, dtype=np.float32), self.sample_rate, 0.0, 0.0)
             self._recording = False
             stream, self._stream = self._stream, None
+            with self._buffer_lock:
+                self._token = None
+                frames, self._frames = self._frames, []
+                captured_rate, truncated = self._rate, self._truncated
 
         if stream is not None:
             try:
                 stream.stop()
-                stream.close()
             except Exception as exc:
                 log.warning("error closing input stream: %s", exc)
+            finally:
+                try:
+                    stream.close()
+                except Exception:
+                    log.warning("could not close input stream", exc_info=True)
 
-        if not self._frames:
-            return CaptureResult(np.zeros(0, dtype=np.float32), self.sample_rate, 0.0, 0.0)
+        if not frames:
+            return CaptureResult(np.zeros(0, dtype=np.float32), captured_rate, 0.0, 0.0)
 
-        audio = np.concatenate(self._frames).astype(np.float32)
-        self._frames = []
-
-        truncated = False
-        limit = int(self.max_seconds * self.sample_rate)
-        if audio.shape[0] > limit:
-            audio = audio[:limit]
-            truncated = True
+        audio = np.concatenate(frames).astype(np.float32)
 
         return CaptureResult(
             audio=audio,
-            sample_rate=self.sample_rate,
-            duration_s=audio.shape[0] / float(self.sample_rate),
+            sample_rate=captured_rate,
+            duration_s=audio.shape[0] / float(captured_rate),
             peak=float(np.max(np.abs(audio))) if audio.size else 0.0,
             truncated=truncated,
         )
@@ -214,6 +282,7 @@ class PushToTalk:
         self.on_release = on_release
         self._listener = None
         self._down = False
+        self._active = False
 
     def _matches(self, key) -> bool:
         if self.scan_code:
@@ -247,28 +316,54 @@ class PushToTalk:
     def start(self) -> None:
         from pynput import keyboard
 
+        if self._listener is not None:
+            return
+        self._active = True
+
         def pressed(key):
-            if self._down or not self._matches(key):
+            if not self._active or self._down or not self._matches(key):
                 return
             self._down = True
             if self.on_press:
-                self.on_press()
+                try:
+                    self.on_press()
+                except Exception:
+                    self._down = False
+                    log.warning("push-to-talk press failed", exc_info=True)
 
         def released(key):
             if not self._down or not self._matches(key):
                 return
             self._down = False
             if self.on_release:
-                self.on_release()
+                try:
+                    self.on_release()
+                except Exception:
+                    log.warning("push-to-talk release failed", exc_info=True)
 
         self._listener = keyboard.Listener(on_press=pressed, on_release=released)
         self._listener.daemon = True
-        self._listener.start()
+        try:
+            self._listener.start()
+        except Exception:
+            self.stop()
+            raise
 
     def stop(self) -> None:
+        self._active = False
         if self._listener is not None:
-            self._listener.stop()
+            try:
+                self._listener.stop()
+            except Exception:
+                log.warning("push-to-talk listener did not stop", exc_info=True)
             self._listener = None
+        if self._down:
+            self._down = False
+            if self.on_release:
+                try:
+                    self.on_release()
+                except Exception:
+                    log.warning("push-to-talk release failed", exc_info=True)
 
 
 class JoystickPushToTalk:
@@ -433,7 +528,9 @@ class RadioPlayer:
     def __init__(self, device: int | str | None = None, volume: float = 1.0):
         self.device = device
         self.volume = volume
-        self._queue: queue.Queue[PlaybackItem | None] = queue.Queue()
+        self._queue: queue.Queue[PlaybackItem | None] = queue.Queue(maxsize=32)
+        self._start_lock = threading.Lock()
+        self._stopping = False
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._playing = threading.Event()
@@ -452,14 +549,21 @@ class RadioPlayer:
         # whether it is alive rather than whether it exists. Otherwise a
         # player that had been stopped once accepted transmissions for the
         # rest of the session and played none of them.
-        if self._thread is not None and self._thread.is_alive():
-            return
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
+        with self._start_lock:
+            if self._stopping or (self._thread is not None and self._thread.is_alive()):
+                return
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
 
     def _run(self) -> None:
-        import sounddevice as sd
+        try:
+            import sounddevice as sd
+        except ImportError:
+            log.error("audio playback unavailable; install sounddevice and reconnect the output device")
+            self._stop.set()
+            self.clear()
+            return
 
         while not self._stop.is_set():
             try:
@@ -473,9 +577,9 @@ class RadioPlayer:
             try:
                 if item.on_start:
                     item.on_start()
-                audio = np.asarray(item.audio, dtype=np.float32) * self.volume
-                audio = np.clip(audio, -1.0, 1.0)
-                sd.play(audio, item.sample_rate, device=self.device, blocking=True)
+                audio = pcm(pcm(item.audio) * self.volume)
+                audio, sample_rate = _output_audio(sd, self.device, audio, item.sample_rate)
+                sd.play(audio, sample_rate, device=self.device, blocking=True)
             except Exception as exc:
                 log.error("playback failed: %s", exc)
             finally:
@@ -497,7 +601,7 @@ class RadioPlayer:
         on_done: Callable[[], None] | None = None,
     ) -> None:
         self.start()
-        self._queue.put(PlaybackItem(audio, sample_rate, label, on_start, on_done))
+        _enqueue(self._queue, self._stop, PlaybackItem(audio, sample_rate, label, on_start, on_done))
 
     def wait_until_idle(self, timeout: float = 60.0) -> bool:
         deadline = time.monotonic() + timeout
@@ -517,21 +621,23 @@ class RadioPlayer:
                 break
 
     def stop(self) -> None:
-        self._stop.set()
+        with self._start_lock:
+            self._stopping = True
+            self._stop.set()
         self.clear()
-        # Only if there is a runner to read it: a sentinel left in an empty
-        # queue is read by the *next* runner as its first item, which kills it
-        # before it has played anything.
-        thread, self._thread = self._thread, None
-        if thread is not None:
-            self._queue.put(None)
-            thread.join(timeout=2.0)
+        thread = self._thread
         try:
             import sounddevice as sd
 
             sd.stop()
         except Exception:
             pass
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=2.0)
+            if thread.is_alive():
+                self._thread = thread
+                log.warning("audio output is still stopping; reconnect the output device")
+        self._stopping = False
 
 
 class CabinPlayer:
@@ -633,7 +739,9 @@ class CabinPlayer:
         # thread and nobody is reading its return value, so without this the
         # only symptom of a broken output is a cabin that never speaks.
         self.on_trouble = on_trouble
-        self._queue: queue.Queue[PlaybackItem | None] = queue.Queue()
+        self._queue: queue.Queue[PlaybackItem | None] = queue.Queue(maxsize=32)
+        self._start_lock = threading.Lock()
+        self._stopping = False
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._playing = threading.Event()
@@ -696,12 +804,13 @@ class CabinPlayer:
         # leaves the attribute set, and treating that as "already running"
         # left a player that accepted everything it was given and played none
         # of it -- queue filling, ``busy`` stuck true, crew silent, no error.
-        if self._thread is not None and self._thread.is_alive():
-            return
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True,
-                                        name="MeridianATC-cabin")
-        self._thread.start()
+        with self._start_lock:
+            if self._stopping or (self._thread is not None and self._thread.is_alive()):
+                return
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._run, daemon=True,
+                                            name="MeridianATC-cabin")
+            self._thread.start()
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -768,20 +877,21 @@ class CabinPlayer:
     def _write(self, item: PlaybackItem) -> None:
         import sounddevice as sd
 
-        audio = np.asarray(item.audio, dtype=np.float32) * self.volume
-        audio = np.clip(audio, -1.0, 1.0)
+        audio = pcm(pcm(item.audio) * self.volume)
+        audio, sample_rate = _output_audio(sd, self.device, audio, item.sample_rate)
         if audio.ndim == 1:
             audio = audio.reshape(-1, 1)
-        rate = int(item.sample_rate or 1)
+        rate = sample_rate
         # How much of the way to the target one block can move the gain. A
         # step would click, and the ramp is short enough that the first word
         # of a transmission is already in the clear.
         step = self.BLOCK / max(1.0, self.DUCK_RAMP_S * rate)
-        with sd.OutputStream(samplerate=item.sample_rate,
+        with sd.OutputStream(samplerate=sample_rate,
                              channels=audio.shape[1],
                              device=self.device,
                              dtype="float32",
                              blocksize=self.BLOCK) as stream:
+            self._stream = stream
             for start in range(0, len(audio), self.BLOCK):
                 if self._stop.is_set() or self._skip.is_set():
                     break
@@ -804,7 +914,7 @@ class CabinPlayer:
             self._bed = None
             self._bed_rate = 0
             return
-        block = np.asarray(audio, dtype=np.float32)
+        block = pcm(audio)
         if block.ndim == 1:
             block = block.reshape(-1, 1)
         self._bed_at = 0
@@ -826,16 +936,20 @@ class CabinPlayer:
         """
         import sounddevice as sd
 
-        bed, rate = self._bed, self._bed_rate
+        original = bed = self._bed
+        rate = self._bed_rate
         if bed is None or rate <= 0 or self.ducked:
             return
         step = self.BLOCK / max(1.0, self.DUCK_RAMP_S * rate)
         level = self.BED_LEVEL * self.volume
         try:
+            bed, rate = _output_audio(sd, self.device, bed, rate)
+            step = self.BLOCK / max(1.0, self.DUCK_RAMP_S * rate)
             with sd.OutputStream(samplerate=rate, channels=bed.shape[1],
                                  device=self.device, dtype="float32",
                                  blocksize=self.BLOCK) as stream:
-                while (self._bed is bed and not self._stop.is_set()
+                self._stream = stream
+                while (self._bed is original and not self._stop.is_set()
                        and self._queue.empty()):
                     stream.write(self._shaped(self._next_bed_block(bed), step)
                                  * level)
@@ -857,13 +971,9 @@ class CabinPlayer:
 
     def _next_bed_block(self, bed: np.ndarray) -> np.ndarray:
         """One block of the loop, wrapping round the end without a seam."""
-        end = self._bed_at + self.BLOCK
-        if end <= len(bed):
-            block = bed[self._bed_at:end]
-            self._bed_at = end % len(bed)
-        else:
-            block = np.concatenate([bed[self._bed_at:], bed[:end - len(bed)]])
-            self._bed_at = end - len(bed)
+        indices = (self._bed_at + np.arange(self.BLOCK)) % len(bed)
+        block = bed[indices]
+        self._bed_at = (self._bed_at + self.BLOCK) % len(bed)
         return block
 
     def _shaped(self, block: np.ndarray, step: float) -> np.ndarray:
@@ -888,7 +998,7 @@ class CabinPlayer:
         on_done: Callable[[], None] | None = None,
     ) -> None:
         self.start()
-        self._queue.put(PlaybackItem(audio, sample_rate, label, on_start, on_done))
+        _enqueue(self._queue, self._stop, PlaybackItem(audio, sample_rate, label, on_start, on_done))
 
     def clear(self) -> None:
         """Drop what is queued, and cut what is playing.
@@ -907,18 +1017,26 @@ class CabinPlayer:
                 break
 
     def stop(self) -> None:
-        self._stop.set()
+        with self._start_lock:
+            self._stopping = True
+            self._stop.set()
         self._skip.set()
         self.bed(None)
         self.clear()
-        # The sentinel is only worth queueing if somebody is there to read it.
-        # Left in an empty queue it outlives the shutdown, and the next runner
-        # to start reads it as its first item and exits immediately -- a
-        # player that then swallowed everything it was given in silence.
-        thread, self._thread = self._thread, None
+        stream = getattr(self, "_stream", None)
+        if stream is not None:
+            try:
+                stream.abort()
+            except Exception:
+                log.debug("cabin stream did not abort", exc_info=True)
+        thread = self._thread
         if thread is not None:
-            self._queue.put(None)
-            thread.join(timeout=2.0)
+            if thread is not threading.current_thread():
+                thread.join(timeout=2.0)
+            if thread.is_alive():
+                self._thread = thread
+                log.warning("cabin output is still stopping; reconnect the output device")
+        self._stopping = False
 
 
 # --------------------------------------------------------------------------
@@ -926,12 +1044,31 @@ class CabinPlayer:
 # --------------------------------------------------------------------------
 
 
+def _enqueue(pending, stopped, item: PlaybackItem) -> None:
+    try:
+        if stopped.is_set():
+            raise queue.Full
+        pending.put_nowait(item)
+    except queue.Full:
+        log.error("audio output is stopping or its queue is full; transmission was not queued")
+        if item.on_done:
+            try:
+                item.on_done()
+            except Exception:
+                log.debug("playback completion raised", exc_info=True)
+
+
 def list_audio_devices() -> tuple[list[tuple[int, str]], list[tuple[int, str]]]:
     """``(inputs, outputs)`` as ``[(index, name), ...]``."""
     import sounddevice as sd
 
     inputs, outputs = [], []
-    for index, info in enumerate(sd.query_devices()):
+    try:
+        devices = sd.query_devices()
+    except Exception:
+        log.warning("audio device discovery failed; reconnect the device and refresh", exc_info=True)
+        return inputs, outputs
+    for index, info in enumerate(devices):
         name = info.get("name", "?")
         if info.get("max_input_channels", 0) > 0:
             inputs.append((index, name))
@@ -971,7 +1108,11 @@ class InputMeter:
         """The peak since the last read, 0 to 1, opening the device if needed."""
         with self._lock:
             self._asked = time.monotonic()
-            if self._stream is None or device != self._device:
+            try:
+                active = self._stream is not None and getattr(self._stream, "active", True)
+            except Exception:
+                active = False
+            if not active or device != self._device:
                 self._open(device)
             peak, self._peak = self._peak, 0.0
             return {"ok": self._stream is not None, "peak": round(peak, 4),
@@ -989,18 +1130,19 @@ class InputMeter:
         self._error = ""
 
         def callback(indata, _frames, _time_info, _status):
-            loudest = float(np.max(np.abs(indata))) if indata.size else 0.0
+            samples = pcm(indata)
+            loudest = float(np.max(np.abs(samples))) if samples.size else 0.0
             if loudest > self._peak:
                 self._peak = loudest
 
         try:
             self._stream = sd.InputStream(
-                device=device, samplerate=self.sample_rate, channels=1,
+                device=device, samplerate=_input_rate(sd, device, self.sample_rate), channels=1,
                 dtype="float32", callback=callback,
                 blocksize=int(self.sample_rate * BLOCK_MS / 1000))
             self._stream.start()
         except Exception as exc:
-            self._stream = None
+            self._shut()
             self._error = str(exc)
             log.debug("level meter could not open %r: %s", device, exc)
             return
@@ -1015,9 +1157,13 @@ class InputMeter:
         if stream is not None:
             try:
                 stream.stop()
-                stream.close()
             except Exception:                       # pragma: no cover
                 log.debug("level meter did not close", exc_info=True)
+            finally:
+                try:
+                    stream.close()
+                except Exception:
+                    log.debug("level meter did not close", exc_info=True)
 
     def _idle(self) -> None:
         while True:

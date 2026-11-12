@@ -552,6 +552,7 @@ class ButtonWatch:
         self._stop = threading.Event()
 
     def start(self) -> None:
+        self._stop.clear()
         found, reason = self.hub.list()
         if not found and reason not in ("", NONE):
             raise ControllersUnavailable(reason)
@@ -620,6 +621,15 @@ class ButtonWatch:
             self._thread = None
         if self.controller is not None:
             self.hub.unwatch(self.controller.id)
+        self.controller = None
+        self._armed = False
+        if self._down:
+            self._down = False
+            if self.on_release:
+                try:
+                    self.on_release()
+                except Exception:
+                    log.warning("controller PTT release failed", exc_info=True)
 
 
 # --------------------------------------------------------------------------

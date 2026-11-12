@@ -33,6 +33,7 @@ import numpy as np
 import requests
 
 from ..audio.backends.base import Capabilities
+from ..audio.samples import pcm, rate
 from ..audio.stt import SAMPLE_RATE, Transcript
 from ..security.endpoints import is_allowed
 
@@ -128,7 +129,7 @@ class DeepgramRecognizer:
 
     def __init__(self, api_key: str, model: str = DEFAULT_STT_MODEL,
                  base_url: str = BASE_URL, languages: list[str] | None = None,
-                 keyterms=(), timeout_s: float = 20.0):
+                 keyterms=(), timeout_s: float = 20.0, fallback=None):
         self.api_key = api_key
         self.model = model or DEFAULT_STT_MODEL
         self.base_url = (base_url or BASE_URL).rstrip("/")
@@ -140,6 +141,11 @@ class DeepgramRecognizer:
         self.timeout_s = timeout_s
         self._session = requests.Session()
         self._session.max_redirects = 0
+        self.fallback = fallback
+        if fallback is not None:
+            fallback.allow_download = False
+        self._retry_at = 0.0
+        self._failures = 0
 
     @property
     def multilingual(self) -> bool:
@@ -150,6 +156,8 @@ class DeepgramRecognizer:
         return True
 
     def set_languages(self, languages: list[str]) -> bool:
+        if self.fallback is not None:
+            self.fallback.set_languages(languages)
         wanted = [lang.lower()[:2] for lang in languages if lang] or ["en"]
         if wanted == self.languages:
             return False
@@ -160,6 +168,8 @@ class DeepgramRecognizer:
     def set_context(self, callsign: str = "", stations=()) -> None:
         self.callsign = callsign or ""
         self.stations = list(dict.fromkeys(s for s in stations if s))
+        if self.fallback is not None:
+            self.fallback.set_context(callsign, stations)
 
     def detect(self, samples: np.ndarray) -> tuple[str, float]:
         """Deepgram does its own detection; the first language is nominal."""
@@ -171,7 +181,28 @@ class DeepgramRecognizer:
     def transcribe(self, audio: np.ndarray, sample_rate: int = SAMPLE_RATE,
                    *, prompt: str | None = None,
                    language: str | None = None) -> Transcript:
-        samples = np.asarray(audio, dtype=np.float32).flatten()
+        if self.fallback is None:
+            return self._transcribe_cloud(audio, sample_rate, prompt=prompt, language=language)
+        if self.api_key and time.monotonic() >= self._retry_at:
+            try:
+                result = self._transcribe_cloud(audio, sample_rate, prompt=prompt, language=language)
+                self._failures = 0
+                return result
+            except (DeepgramError, ValueError, TypeError, IndexError, KeyError) as exc:
+                self._failures += 1
+                self._retry_at = time.monotonic() + min(60.0, 2.0 ** min(self._failures, 6))
+                log.warning("cloud recognition failed (%s); using the installed offline model during backoff", type(exc).__name__)
+        elif not self.api_key and not self._failures:
+            self._failures = 1
+            log.warning("cloud recognition key missing; using the installed offline model")
+        return self.fallback.transcribe(audio, sample_rate, prompt=prompt, language=language)
+
+    def close(self) -> None:
+        self._session.close()
+
+    def _transcribe_cloud(self, audio, sample_rate, *, prompt=None, language=None) -> Transcript:
+        samples = pcm(audio, mono=True)
+        sample_rate = rate(sample_rate)
         duration = len(samples) / float(sample_rate or SAMPLE_RATE)
         if duration < 0.25:
             return Transcript(text="", duration_s=duration)
