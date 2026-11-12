@@ -252,6 +252,7 @@ def test_invalid_positions(extra, plugin, link):
 
 
 def test_engine_backend_selection_and_single_notice(monkeypatch, plugin):
+    pytest.importorskip("scipy")
     from meridianatc import engine as module
 
     engine = module.Engine.__new__(module.Engine)

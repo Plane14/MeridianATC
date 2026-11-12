@@ -11,7 +11,6 @@ from test_xptraffic import FakePlugin
 
 from meridianatc import health
 from meridianatc import xplane_plugin as xp
-from meridianatc.cli import main
 from meridianatc.config import Config
 from meridianatc.installer import app, core
 
@@ -125,6 +124,9 @@ def test_invalid_targets_do_not_copy(tmp_path, root, source):
 
 
 def test_cli(root, source, tmp_path, monkeypatch, capsys):
+    pytest.importorskip("rich")
+    from meridianatc.cli import main
+
     args = ["xplane-plugin", "install", "--to", str(root), "--from", str(source)]
     assert main(args + ["--check"]) == 0
     assert not xp.plugin_directory(root).exists()

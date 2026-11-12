@@ -9,7 +9,6 @@ from unittest.mock import Mock
 import pytest
 from test_xplane import FakeXPlane, eventually
 
-from meridianatc import engine as engines
 from meridianatc.atc.checklist import ChecklistRunner
 from meridianatc.atc.checklist_files import Check, Item
 from meridianatc.config import Config, SettingRefused, check
@@ -79,6 +78,9 @@ def test_xplane_switch_writes_weather_and_pause(link):
 
 
 def test_capabilities_and_honest_autofly_refusal():
+    pytest.importorskip("scipy")
+    from meridianatc import engine as engines
+
     assert capabilities("simconnect").facilities and capabilities("simconnect").autofly
     assert capabilities("xplane").live and not capabilities("xplane").lvars
     assert not capabilities("manual").live
@@ -93,6 +95,7 @@ def test_capabilities_and_honest_autofly_refusal():
 
 
 def test_configured_autofly_does_not_send_xplane_controls():
+    pytest.importorskip("scipy")
     from meridianatc.atc.autonomous import AutonomousFlight
 
     fo = AutonomousFlight.__new__(AutonomousFlight)
@@ -118,6 +121,9 @@ def test_exception_in_msfs_attempt_still_falls_back(monkeypatch):
 
 
 def watcher():
+    pytest.importorskip("scipy")
+    from meridianatc import engine as engines
+
     engine = engines.Engine.__new__(engines.Engine)
     engine.config = Config()
     engine._sim_wanted = True
@@ -146,7 +152,7 @@ def test_slow_connection_never_blocks_situation_loop_or_duplicates_attempts(monk
         return connected
 
     factory = Mock(side_effect=connect)
-    monkeypatch.setattr(engines, "open_source", factory)
+    monkeypatch.setattr("meridianatc.engine.open_source", factory)
     engine._watch_simulator()
     assert entered.wait(1)
     attempt = engine._sim_attempt
@@ -176,7 +182,7 @@ def test_disabling_discards_pending_connection(monkeypatch):
         assert release.wait(2)
         return connected
 
-    monkeypatch.setattr(engines, "open_source", connect)
+    monkeypatch.setattr("meridianatc.engine.open_source", connect)
     engine._watch_simulator()
     attempt = engine._sim_attempt
     engine.want_simulator(False)
@@ -232,6 +238,8 @@ def test_simulator_settings_roundtrip_and_validation(tmp_path):
 
 
 def test_api_snapshot_and_settings_validation(monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("scipy")
     from meridianatc.web import server
 
     engine = Mock()

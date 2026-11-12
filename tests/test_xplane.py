@@ -300,6 +300,7 @@ def test_offline_selection_and_defaults():
 
 
 def test_engine_attachment_and_msfs_only_guards(monkeypatch, xp):
+    pytest.importorskip("scipy")
     from meridianatc import engine as module
 
     attach = Mock(return_value=False)
@@ -338,6 +339,7 @@ def test_engine_attachment_and_msfs_only_guards(monkeypatch, xp):
 
 
 def test_failed_engine_attachment_keeps_previous_source(monkeypatch):
+    pytest.importorskip("scipy")
     from meridianatc import engine as module
 
     engine = module.Engine.__new__(module.Engine)
