@@ -1049,9 +1049,8 @@ class SimVehicles:
             wanted = TRAIN_TITLES[kind] + STOCK_TRAIN_TITLES[kind]
         else:
             wanted = STOCK_TRAIN_TITLES[kind]
-        titles = [t for t in wanted if (not listed or t in listed)
+        return [t for t in wanted if (not listed or t in listed)
                   and t not in self._bad_titles]
-        return titles
 
     def _create(self, position: dict, now: float) -> None:
         vehicle_id = position["id"]

@@ -39,7 +39,8 @@ def test_checklist_derived_reads_and_unknown_values(link):
     eventually(lambda: source.read_now("flaps_index") == 1)
     eventually(lambda: source.read_now("transponder_code") == "2000")
     assert source.read_now("transponder_state") == 4
-    assert source.read_now("fuel_selector") == 4
+    # X-Plane's "4" is all; the state carries the SimConnect enum ("1").
+    assert source.read_now("fuel_selector") == 1
     assert source.read_now("BRAKE PARKING POSITION") is False
     assert source.read_now("rotor_rpm_pct") is None
     runner = ChecklistRunner(Mock(), fresh=source.read_now)
@@ -158,7 +159,7 @@ def test_slow_connection_never_blocks_situation_loop_or_duplicates_attempts(monk
         return connected
 
     factory = Mock(side_effect=connect)
-    monkeypatch.setattr("meridianatc.engine.open_source", factory)
+    monkeypatch.setattr("meridianatc.engine.x_the_simulator_link.open_source", factory)
     engine._watch_simulator()
     assert entered.wait(1)
     attempt = engine._sim_attempt
@@ -188,7 +189,7 @@ def test_disabling_discards_pending_connection(monkeypatch):
         assert release.wait(2)
         return connected
 
-    monkeypatch.setattr("meridianatc.engine.open_source", connect)
+    monkeypatch.setattr("meridianatc.engine.x_the_simulator_link.open_source", connect)
     engine._watch_simulator()
     attempt = engine._sim_attempt
     engine.want_simulator(False)

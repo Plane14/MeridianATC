@@ -54,7 +54,7 @@ from ..navdata.build import haversine_nm
 
 log = logging.getLogger(__name__)
 
-USER_AGENT = "MeridianATC (https://github.com/GGTNT/MeridianATC)"
+USER_AGENT = "MeridianATC (https://github.com/Plane14/MeridianATC)"
 
 # One area request this often (after LocalTC): a sixth of adsb.fi's documented
 # one request a second.

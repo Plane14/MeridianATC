@@ -462,6 +462,10 @@ class PilotSpeech:
         return self.call(aircraft, station, self.book.request_taxi,
                          greeting=True)
 
+    def request_pushback(self, aircraft: Aircraft, station: str) -> str:
+        return self.call(aircraft, station, self.book.request_pushback,
+                         greeting=True)
+
     def request_vfr_departure(self, aircraft: Aircraft, station: str) -> str:
         return self.call(aircraft, station, self.book.request_vfr_departure,
                          greeting=True)

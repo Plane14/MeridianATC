@@ -196,6 +196,23 @@ def test_mission_empty_candidates_invalid_position_and_valid_leg():
     assert service.plan_next_leg(40, -74, "KAAA", "N123").number == 1
 
 
+def test_fo_fuel_selector_item_writes_on_not_off():
+    pytest.importorskip("scipy")
+    from meridianatc.atc.autonomous import AutonomousFlight
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.sim = None
+    fo._ap_mode = ""
+    fo._dir = Mock()
+    fo._dir.sim = None
+    # Every fuel_selector check is "not off" (ne 0): expected is the
+    # forbidden value, and writing it closed the selector for good.
+    assert fo._switch_for(None, "fuel_selector", 0)
+    fo._dir.write.assert_called_once_with("FUEL TANK SELECTOR:1", 1.0)
+    fo._dir.write.reset_mock()
+    assert fo._switch_for(None, "fuel_selector", 2)
+    fo._dir.write.assert_called_once_with("FUEL TANK SELECTOR:1", 2.0)
+
+
 def test_autonomous_preserves_north_vector_and_arrival_runway():
     pytest.importorskip("scipy")
     from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState

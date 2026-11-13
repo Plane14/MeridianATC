@@ -198,10 +198,12 @@ def align(lat: float, lon: float, threshold_lat: float, threshold_lon: float,
     along_nm = distance * math.cos(rel)
     # The heading to the threshold is the runway heading only on the
     # centreline; the correction is the difference. Behind the threshold
-    # there is no "on the numbers" to intercept -- the aeroplane is on the
-    # ground short of it or on a departure leg -- so the correction is nil.
+    # there is no "on the numbers" to intercept -- but the centreline
+    # extends back to it, and a hold-short point off that extension is
+    # steered onto it, not held parallel to the runway heading for ever.
     if along_nm <= 0.0:
-        correction = 0.0
+        correction = max(-60.0, min(60.0, -math.degrees(
+            math.atan2(across_nm * 1852.0, 120.0))))
     else:
         # Off to the right, the nose comes left: the correction is the
         # negative of the offset's angle.

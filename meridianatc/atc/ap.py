@@ -162,6 +162,18 @@ class FlightDirector:
     def bank_hold(self, on: bool = True) -> bool:
         return self.send(b"AP_BANK_HOLD_ON" if on else b"AP_BANK_HOLD_OFF", 0)
 
+    def max_bank(self, degrees: float) -> bool:
+        """The autopilot's own bank limit, degrees.
+
+        ``AP_MAX_BANK_ANGLE_SET`` sets the angle directly, overriding the
+        model's bank-mode index; the sim's answer is read back on
+        ``AUTOPILOT MAX BANK``. UNVERIFIED on a running 2024 and ignored
+        by models whose AP has no bank control at all -- a sim or a
+        radio stack without the event answers False and nothing else
+        changes, which is the failure this API asks for.
+        """
+        return self.send(b"AP_MAX_BANK_ANGLE_SET", int(round(degrees)))
+
     # -- vertical ----------------------------------------------------------
 
     def altitude(self, feet: float) -> bool:
@@ -223,10 +235,18 @@ class FlightDirector:
     # -- approach ----------------------------------------------------------
 
     def localizer(self, on: bool = True) -> bool:
+        if on:
+            # The needles, not the flight plan: a GPS still driving NAV1
+            # has the hold tracking legs instead of the localizer.
+            self.write("GPS DRIVES NAV1", 0.0)
         return self.send(b"AP_LOC_HOLD_ON" if on else b"AP_LOC_HOLD_OFF", 0)
 
     def approach(self, on: bool = True) -> bool:
         """LOC and glideslope together, armed or engaged."""
+        if on:
+            # As the localizer: APR follows the CDI's source, and the
+            # source is the radio, not the GPS flight plan.
+            self.write("GPS DRIVES NAV1", 0.0)
         return self.send(b"AP_APR_HOLD_ON" if on else b"AP_APR_HOLD_OFF", 0)
 
     # -- takeoff and go-around power ---------------------------------------
@@ -401,8 +421,7 @@ class FlightDirector:
         """Every battery, the all-units setter first so a second bus
         is not left dead where the model has one."""
         ok = self.send(b"MASTER_BATTERY_SET", 1 if on else 0)
-        ok = self.send(b"BATTERY1_SET", 1 if on else 0) or ok
-        return ok
+        return self.send(b"BATTERY1_SET", 1 if on else 0) or ok
 
     def avionics(self, on: bool = True) -> bool:
         return self.send(b"AVIONICS_MASTER_SET", 1 if on else 0)
@@ -434,6 +453,8 @@ class FlightDirector:
             try:
                 return bool(self.sim.set_squawk(code))
             except Exception:
+                log.debug("the simulator refused squawk %s", code,
+                          exc_info=True)
                 return False
         return False
 

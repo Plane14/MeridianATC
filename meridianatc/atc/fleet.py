@@ -16,7 +16,9 @@ So, in this order (:func:`classify`):
 * a size given by hand (the suite, the panel) decides as before: rank 3 and
   up is an airline field;
 * a field with scheduled service (OurAirports' ``scheduled_service``) is an
-  airline field;
+  airline field -- where the flag can be believed: on a large airport, or
+  where a runway an airliner can use is actually there (Cascais keeps a
+  stale ``yes`` on a 1,400 m one);
 * a large airport with no scheduled-service flag but a 2,500 m runway is
   taken for one whose flag is missing;
 * everything else is an airfield: light singles, a few twins, and business
@@ -41,6 +43,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from . import perftable
 from ..navdata.db import NavDB
 
 FT_PER_M = 3.28084
@@ -64,6 +67,11 @@ BUSINESS_SHARE = 0.06
 # airport with no scheduled-service flag an airline field all the same.
 BUSINESS_RUNWAY_M = 1500.0
 AIRLINE_RUNWAY_M = 2500.0
+# And the shortest runway the scheduled-service flag is believed on its own.
+# OurAirports keeps ``scheduled_service=yes`` on fields that long ago lost
+# it -- Cascais had one and flew Ryanairs -- so on a small airport the flag
+# only counts where a runway an airliner could actually use is there.
+SCHEDULED_RUNWAY_M = 1500.0
 
 # How many of an airfield's VFR flights are circuits, by what the field is:
 # a strip is mostly circuits, a field with business traffic mostly comes and
@@ -147,7 +155,8 @@ def classify(navdb: NavDB, ident: str, size_rank: int | None = None) -> FieldKin
     if size_rank is not None:
         airline = rank >= AIRLINE_RANK
         rule = f"size rank {rank} given by hand"
-    elif scheduled:
+    elif scheduled and (rank >= AIRLINE_RANK
+                        or runway_m >= SCHEDULED_RUNWAY_M):
         airline, rule = True, "scheduled service"
     elif rank >= AIRLINE_RANK and runway_m >= AIRLINE_RUNWAY_M:
         airline = True
@@ -178,6 +187,16 @@ def classify(navdb: NavDB, ident: str, size_rank: int | None = None) -> FieldKin
     return FieldKind(False, business, share, rule, **common, **traffic)
 
 
+def fits_runway(type_code: str, runway_m: float) -> bool:
+    """Whether the field's runway can take this aeroplane, by the table's
+    takeoff figure. A type the table does not know is left to the field's
+    kind rather than refused, and no runway at all refuses nothing."""
+    if runway_m <= 0:
+        return True
+    perf = perftable.type_perf(type_code)
+    return perf is None or not perf.takeoff_m or perf.takeoff_m <= runway_m
+
+
 def light_type(kind: FieldKind, roll) -> str:
     """One aeroplane of an airfield's fleet. ``roll`` is a ``random.Random``,
     so the injector's seed decides."""
@@ -193,4 +212,5 @@ def light_type(kind: FieldKind, roll) -> str:
 
 
 __all__ = ["FieldKind", "classify", "light_type", "longest_runway_m",
+           "fits_runway",
            "SINGLES", "EUROPE_SINGLES", "TWINS", "BUSINESS", "GA_TYPES"]

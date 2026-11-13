@@ -1346,6 +1346,37 @@ watched for: a collapsing main bus or an engine that stops in the air,
 empty fuel, or a fuel figure that was seen and then reads zero all declare
 a MAYDAY, divert to the nearest suitable field and land there.
 
+**The envelope it is kept inside.** The First Officer also watches the load
+factor (`G FORCE` on MSFS, `gforce_normal` on X-Plane) against the
+airframe's limits — the class's normal-category figures (+2.5/−1.0 for a
+transport, +3.8/−1.5 for a light aeroplane), or the model's own where an
+autofly profile declares `positiveGLimit`/`negativeGLimit` in its
+`performance` block. Approaching the limit it warns once; past it the VS
+bug is levelled and the autopilot's bank cap pulled in, and on the
+hand-flown legs — the rotation, the flare, the go-around — the pull itself
+is bounded. Commands are also shaped by how the leg is being flown: the
+vertical-speed bug slews at a few hundred feet a minute a second in the
+cruise, faster in an escape, and the autopilot's bank cap follows the same
+demeanor. A hard touchdown is reported in G, an engine failure below the
+rotate speed is a rejected takeoff, and a windshear on the departure is
+flown as the escape — max power, the configuration held — rather than a
+go-around. `immersion.autonomous_envelope_protection` stands the whole
+watch down for a deliberate out-of-envelope flight; touchdown reporting
+still reads the G it is given. A model that never publishes a load factor
+reads the comfortable default and the watch simply never fires. The
+engines get the same treatment: the type's published ceilings —
+gas-producer/fan speed, turbine temperature, crankshaft RPM, from
+`meridianatc/atc/powerplant.py`'s per-type table — are watched on the
+model's own instruments (`TURB ENG N1`, `TURB ENG ITT`, `GENERAL ENG RPM`),
+a needle past the red line is called once, and the lever itself is capped
+back under the line where the FO holds it — the takeoff roll judged on
+the takeoff rating. A gauge the model never publishes is never a limit.
+Ice protection answers to the type's kit rather than every switch the sim
+has: a carburetted piston gets its induction heat on the carb-ice
+envelope (−4…30 °C with moisture, low power, or the ground run-up —
+tracked so it comes back off), a turbine its engine/inlet anti-ice, and a
+type with no known-ice certification gets the accretion warning earlier.
+
 **Autonomous flight in a helicopter.** `immersion.autonomous_flight` flies a
 rotorcraft too, through its own controller (`meridianatc/atc/autonomous_heli.py`)
 rather than the aeroplane's: engine start on a best-effort basis (the
@@ -1355,7 +1386,21 @@ about 40 kt, a climb, cruise direct to the destination, an approach down to
 a hover, and a landing with a cool-down and rotor brake where fitted. The
 cyclic, collective and pedals are flown closed-loop from the state —
 collective against height and sink rate, cyclic against airspeed, pedals
-against heading — inside conservative limits. **VFR only**: an IFR session
+against heading, and a lateral-cyclic correction against the drift the
+wind is pushing — inside conservative limits. The departure accelerates
+level at skid height through the transition before it climbs, and the
+approach bleeds the speed off with the height rather than chopping to
+the hover figure. The engine and rotor are protected against the type's
+own published ceilings (`atc/powerplant.py`): torque past the takeoff
+figure eases the collective — an EC135's 75% red line is not an S-76's
+100% — and where the model reports rotor RPM, droop unloads the blades
+and an overspeed loads them back down. The rotor's load is watched
+the same way: high G eases the collective, and low G — the mast-bump edge
+on the teetering types, whose profiles carry the lower floor — answers
+with gentle aft cyclic. In an autorotation the normal envelope watches
+stand down by design, the type's own auto speed and flare height are
+flown, and a rotor governor trades collective against Nr. The precision stages fly with tighter axis clamps
+than the escape ones. **VFR only**: an IFR session
 is flown VFR with an `autonomous.rotorcraft.vfr_only` event, because there
 are no helicopter instrument procedures in the navdata; chained flights
 accept heliports and file VFR legs. Everything about it — the event names,

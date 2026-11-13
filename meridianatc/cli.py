@@ -1535,7 +1535,7 @@ def _console_loop(engine) -> None:
 
         if command in ("quit", "exit", "q"):
             break
-        elif command == "help":
+        if command == "help":
             console.print(HELP)
         elif command == "say":
             if rest:

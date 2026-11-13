@@ -600,7 +600,9 @@ def parse_callsign(
     figures: Dialect = ("icao" if (dialect == "icao" and strict_icao_digits)
                         else "faa")
     raw = (raw or "").strip().upper().replace("_", "")
-    if not raw:
+    if not raw.strip("@"):
+        # Empty, or nothing but the "@@@@@@@@" a feed or a model files for
+        # a callsign it never had.
         return Callsign("UNKNOWN", "unknown aircraft", "unknown aircraft")
 
     table = airline_table(airline_names)

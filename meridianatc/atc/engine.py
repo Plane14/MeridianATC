@@ -79,7 +79,7 @@ from .audio.io import (
     RadioPlayer,
 )
 from .audio.prosody import from_config as prosody_for
-from .audio.radio_fx import PROFILE_ATIS
+from .audio.radio_fx import PROFILE_ATIS, PROFILE_HF
 from .audio.stt import Recognizer, SpeechModelMissing, engine_model
 from .audio.tone import from_config as tone_for
 from .audio.tts import Synthesizer
@@ -263,6 +263,7 @@ class Engine:
             self.recognizer = DeepgramRecognizer(
                 api_key=resolve_secret(self.config, "speech.deepgram_key", env="DEEPGRAM_API_KEY"),
                 model=self.config.speech.deepgram_model,
+                stream=self.config.speech.deepgram_stream,
                 languages=self.languages,
                 fallback=Recognizer(
                     model_size=engine_model(self.config),
@@ -452,6 +453,10 @@ class Engine:
         # traffic used to be on the radio and the map whether the simulator
         # had made it or not -- which, in 2024, it never had.
         self.traffic.requires_sim = True
+        self.traffic.energy_model = getattr(
+            self.config.traffic, "energy_model", True)
+        self.traffic.diurnal = getattr(
+            self.config.traffic, "diurnal_rhythm", True)
         self.traffic.max_invented = self.config.traffic.in_simulator_limit
         # And the ones standing at the gates, on a budget of their own.
         self.traffic.parked = max(0, int(self.config.traffic.parked))
@@ -2650,7 +2655,7 @@ class Engine:
         if setter is None or not setter(code):
             return False, "the transponder would not take that code"
         self.state.transponder_code = "".join(
-            c for c in str(code) if c.isdigit())[:4]
+            c for c in str(code) if c.isdigit())[:4].rjust(4, "0")
         return True, ""
 
     def spawn_on_runway(self) -> tuple[bool, str, str]:
@@ -3216,6 +3221,23 @@ class Engine:
             return
         try:
             self.microphone.start()
+            # A streamed recogniser (Deepgram over a websocket) hears the
+            # transmission as it is captured, so its answer is already back
+            # when the button comes up rather than starting its journey then.
+            # Anything without a stream to offer -- the local model -- leaves
+            # the tap None and nothing about the capture changes.
+            try:
+                # The stream's keyterms are fixed when its socket opens, so
+                # the context refresh runs here as well as before the
+                # transcript: a station changed between calls belongs in it.
+                self._tell_the_recogniser()
+                starter = getattr(self.recognizer, "start_stream", None)
+                self.microphone.on_chunk = (
+                    starter(self.microphone.rate) if starter else None)
+            except Exception:
+                log.debug("could not start streamed recognition",
+                          exc_info=True)
+                self.microphone.on_chunk = None
             self.emit("info", "Transmitting...", key="log.transmitting")
         except Exception as exc:
             # Logged as well as shown. A panel line is gone as soon as the
@@ -3270,6 +3292,16 @@ class Engine:
         # this method exists to protect is waiting on that one flag.
         if self.microphone.recording:
             self.microphone.abandon()
+        # A stream opened for this transmission is abandoned with it: nothing
+        # will ever ask for its transcript, and a socket left open still
+        # hears the rest of the flight.
+        abort = getattr(self.recognizer, "abort_stream", None)
+        if abort is not None:
+            try:
+                abort()
+            except Exception:
+                log.debug("could not abandon the recognition stream",
+                          exc_info=True)
 
     def end_transmission(self) -> None:
         if not self.microphone.recording:
@@ -3285,6 +3317,16 @@ class Engine:
 
     def _handle_transmission(self, captured) -> None:
         if not self._busy.acquire(blocking=False):
+            # This transmission is dropped whole. A stream opened for it has
+            # no transcribe coming to collect its finals, so it is ended here
+            # rather than left to its own lifetime bound.
+            abort = getattr(self.recognizer, "abort_stream", None)
+            if abort is not None:
+                try:
+                    abort()
+                except Exception:
+                    log.debug("could not abandon the recognition stream",
+                              exc_info=True)
             self.emit("info", "Still working on the last transmission.",
                       key="log.still_working")
             return
@@ -3504,7 +3546,12 @@ class Engine:
             reply = Reply(p.standby(session.aircraft), station)
 
         if reply.speak:
-            self.emit("atc", reply.text, station.callsign)
+            # An uplink is sent, not said: the message is in the log and
+            # on the panel, and nothing goes out on the voice circuit.
+            datalink = reply.instruction is not None \
+                and reply.instruction.delivery == "cpdlc"
+            self.emit("cpdlc" if datalink else "atc",
+                      reply.text, station.callsign)
             session.note("atc", as_written(reply.text))
             RADIO.write(
                 "atc", text=reply.text, language=spoken,
@@ -3515,8 +3562,10 @@ class Engine:
                       if reply.instruction is not None else []),
                 handoff_to=(reply.handoff_to.callsign
                             if reply.handoff_to is not None else ""),
+                delivery=("cpdlc" if datalink else "voice"),
             )
-            self.speak(reply.text, station, language=spoken)
+            if not datalink:
+                self.speak(reply.text, station, language=spoken)
 
         if reply.handoff_to is not None:
             session.handoff_pending = reply.handoff_to
@@ -3756,6 +3805,13 @@ class Engine:
             self._atc_said_at = time.monotonic()
         altitude = self.state.altitude_ft
         radio_fx = self.config.audio.radio_effects
+        # The path the voice came down: a recording for ATIS, SSB and
+        # static for an oceanic sector's HF, plain VHF otherwise.
+        if atis:
+            profile = PROFILE_ATIS
+        else:
+            from .atc.enroute import is_oceanic
+            profile = PROFILE_HF if is_oceanic(station) else None
         def render():
             phrased = self.phrasing.render(text) if self.phrasing is not None else text
             return self.synth.speak(
@@ -3763,7 +3819,7 @@ class Engine:
                 facility=station.facility or station.ident,
                 position=station.position, ident=station.ident,
                 language=language, distance_nm=station.distance_nm,
-                altitude_ft=altitude, profile=PROFILE_ATIS if atis else None,
+                altitude_ft=altitude, profile=profile,
                 radio=radio_fx)
         self._radio_renders += 1
         self.synth.render_soon(
@@ -6523,6 +6579,7 @@ class Engine:
                  source=sector.frequency_source, invented=sector.invented)
         session.left_at[station_key(station)] = time.monotonic()
         session.oceanic = None
+        session.cpdlc = None      # the oceanic link closes with the ocean
         self._pass_to_station(session, station, nxt)
 
     def _handing_back(self, station: Station) -> bool:
@@ -6652,6 +6709,15 @@ class Engine:
         session.oceanic = oceanic
         session.handoff_pending = oceanic
         session.handoff_offered_at = time.monotonic()
+        # The data link is how a real flight stays worked out here: where
+        # the aircraft carries the box and the switch is on, the oceanic
+        # authority's instructions come down CPDLC rather than HF.
+        from .atc import cpdlc
+        if getattr(self.config.immersion.controller, "cpdlc", True) \
+                and cpdlc.equipped(session):
+            session.cpdlc = cpdlc.open_link(station_key(oceanic))
+            log.info("oceanic: %s logged %s on to CPDLC", oceanic.callsign,
+                     session.aircraft.callsign.written)
         # Nothing in it can be checked: the HF family is not a number the
         # simulator's radio takes. The first call the HF station hears --
         # the readback or a position report -- is its first contact.
@@ -6679,6 +6745,34 @@ class Engine:
         self.station = oceanic
         session.establish(oceanic)
         log.info("now with %s on HF", oceanic.callsign)
+
+    def cpdlc_respond(self, answer: str) -> bool:
+        """The pilot's downlink: WILCO, UNABLE or ROGER on the open uplink.
+
+        The panel POSTs here; the answer settles the instruction the way
+        the spoken readback would, so everything downstream of a readback
+        -- the applied values, the cleared pending -- behaves identically.
+        """
+        session = self.session
+        link = getattr(session, "cpdlc", None)
+        if link is None or session is None:
+            return False
+        downlink = link.respond(answer, session)
+        if downlink is None:
+            return False
+        log.info("cpdlc: %s answers %s to %s",
+                 session.aircraft.callsign.written, answer.upper(),
+                 link.authority)
+        session.note("cpdlc", downlink.text)
+        self.emit("cpdlc", downlink.text,
+                  session.aircraft.callsign.written)
+        return True
+
+    def cpdlc_view(self) -> dict:
+        """The link's state for the panel, or nothing when there is none."""
+        session = self.session
+        link = getattr(session, "cpdlc", None)
+        return link.view() if link is not None else {}
 
     # Close enough to the field that the tower has it whichever way it is
     # pointing. Inside this an aeroplane flying a visual circuit to the

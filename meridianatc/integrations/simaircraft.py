@@ -324,15 +324,15 @@ class SimAircraft:
 
         def heard(data):
             if data.contents.dwID != wanted:
-                return
+                return None
             try:
                 reply = ctypes.cast(
                     data, ctypes.POINTER(_ByTypeMessage)).contents
             except Exception:
                 log.debug("could not read an aircraft reply", exc_info=True)
-                return
+                return None
             if reply.dwRequestID != _REQ_SEEN:
-                return
+                return None
             self.on_aircraft(reply)
             # Ours, and the wrapper has never heard of it: left to pass
             # through, it printed "Event ID: 2461 Not Handled." to the console
@@ -382,6 +382,9 @@ class SimAircraft:
         """
         try:
             registration = _text(reply.callsign)
+            if not registration.strip("@"):
+                # An ATC ID the model never filled reads as its padding.
+                registration = ""
             callsign = radio_callsign(
                 registration,
                 _text(getattr(reply, "airline", b"")),

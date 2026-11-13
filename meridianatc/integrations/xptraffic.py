@@ -85,9 +85,13 @@ class XPlaneTraffic:
     ANSWER_WITHIN_S = 10.0
 
     def __init__(self, enabled=True, limit=12, settle_s=3.0, smooth=True,
-                 host="127.0.0.1", port=49010, timeout_s=.4):
+                 host="127.0.0.1", port=49010, timeout_s=.4,
+                 live_limit=300):
         self.enabled = enabled
         self.limit = max(0, min(512, int(limit)))
+        # The live aeroplanes' own budget (traffic.live.limit), on top of
+        # ``limit`` rather than inside it.
+        self.live_limit = max(0, min(300, int(live_limit)))
         self.smooth, self.settle_s = smooth, settle_s
         self.host, self.port = host, int(port)
         self.timeout_s = max(0, timeout_s)
@@ -223,7 +227,18 @@ class XPlaneTraffic:
                 return
             aircraft = []
             seen = set()
-            for position in positions[:self.limit]:
+            # Live aeroplanes spend their own budget (live_limit); the rest
+            # spend ``limit`` -- in order, so relevance still decides.
+            live_room, room = self.live_limit, self.limit
+            for position in positions:
+                if position.get("source") == "live":
+                    if not live_room:
+                        continue
+                    live_room -= 1
+                elif room:
+                    room -= 1
+                else:
+                    continue
                 try:
                     packet = aircraft_packet(position)
                     if packet["id"] not in seen:

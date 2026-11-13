@@ -355,6 +355,40 @@ PROFILE_DISTANT = RadioProfile(
     squelch_open_ms=160.0,
 )
 
+# Shanwick over the water: single-sideband on the HF bands.
+#
+# Everything about it is the path, not the radio. SSB carries a narrower
+# slice of the voice than VHF AM -- the bottom stays but the top is gone
+# by 2.4 kHz. The ionosphere it bounced off is not a stable reflector:
+# the signal fades and returns on a scale of seconds, and on a bad hour
+# it goes under entirely, which is the slow deep flutter nobody's VHF
+# path has. And the floor is atmospheric noise -- static, other bands
+# bleeding through, the hiss a SELCAL watch sits in all night -- so it
+# sits closer under the words and breathes harder between them.
+PROFILE_HF = RadioProfile(
+    band_high=2400.0,
+    tilt_db=-4.0,
+    noise_db=-21.0,
+    breathing_db=11.0,
+    # Selective fading: slow and deep, where VHF's airborne wobble is
+    # fast and shallow.
+    flutter=0.28,
+    flutter_hz=0.7,
+    # The strength of the return varies wildly hour to hour.
+    level_jitter_db=7.0,
+    open_noise_db=10.0,
+    # A weak distant carrier the squelch is slower to trust and slower
+    # to give up.
+    squelch_open_ms=220.0,
+    squelch_tail_ms=260.0,
+    quieting_ms=140.0,
+    muted_db=-46.0,
+    # An SSB detector is a product detector, not a diode: the asymmetry
+    # reads differently, as a harder edge on the loud syllables.
+    detector_asymmetry=0.55,
+    agc_overshoot_db=4.5,
+)
+
 
 # --------------------------------------------------------------------------
 # building blocks
@@ -1070,6 +1104,7 @@ def signal_quality_for(distance_nm: float, position: str, altitude_ft: float = 0
 __all__ = [
     "RadioEffect", "RadioProfile",
     "PROFILE_CLEAN", "PROFILE_ATIS", "PROFILE_SIDETONE", "PROFILE_DISTANT",
+    "PROFILE_HF",
     "BAND_LOW_HZ", "BAND_HIGH_HZ",
     "bandpass", "highpass", "lowpass", "peaking_eq", "tilt_eq",
     "compress", "soft_clip", "de_ess", "envelope",

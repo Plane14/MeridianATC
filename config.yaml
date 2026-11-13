@@ -127,6 +127,7 @@ gsx:
   client: MeridianATC
 traffic:
   enabled: true
+  invented: true
   from_simulator: true
   in_simulator: true
   in_simulator_limit: 12
@@ -175,6 +176,7 @@ traffic:
   source: meridianatc
   live:
     enabled: true
+    limit: 150
 weather:
   online: true
   prefer_sim: true

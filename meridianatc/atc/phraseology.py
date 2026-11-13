@@ -419,8 +419,7 @@ class Phraseology:
         parts.append(climb)
 
         if departure_freq:
-            label = "departure frequency" if self.dialect == "faa" else "departure frequency"
-            parts.append(f"{label} {self.freq(departure_freq)}")
+            parts.append(f"departure frequency {self.freq(departure_freq)}")
         parts.append(f"squawk {sp.squawk(squawk, self.digit_dialect)}")
         return _join(*parts) + "."
 
@@ -593,8 +592,7 @@ class Phraseology:
                      f"hold short of runway {self.rwy(runway)}") + "."
 
     def hold_position(self, aircraft: Aircraft) -> str:
-        word = "hold position" if self.dialect == "faa" else "hold position"
-        return _join(aircraft.spoken(True), word) + "."
+        return _join(aircraft.spoken(True), "hold position") + "."
 
     def continue_taxi(self, aircraft: Aircraft, route: Sequence[str] = ()) -> str:
         if route:

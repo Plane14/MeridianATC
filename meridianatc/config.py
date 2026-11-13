@@ -217,6 +217,12 @@ class SpeechConfig:
     stt_engine: str = "whisper"
     deepgram_model: str = "nova-3"
     deepgram_voice: str = "aura-2-orpheus-en"
+    # Stream each transmission to Deepgram over a websocket while it is
+    # captured rather than posting the recording when it ends: the answer is
+    # already back when the button comes up. The recording still goes over
+    # REST whenever the socket cannot deliver, so turning this off changes
+    # only the wait, never what can be heard.
+    deepgram_stream: bool = True
     # Stored under DPAPI (security.secrets), never written to this file.
     deepgram_key: str = ""
     # Read as its multilingual twin whatever is written here (audio/stt.py
@@ -259,6 +265,8 @@ describe(
                        choices=("whisper", "deepgram"), restart=True),
     deepgram_model=Setting("radio", "recogniser", restart=True,
                            advanced=True, when="speech.stt_engine=deepgram"),
+    deepgram_stream=Setting("radio", "recogniser", restart=True,
+                            advanced=True, when="speech.stt_engine=deepgram"),
     # The one key covers the TTS too (voice.engine=deepgram): a hosted-voice
     # user with local recognition still needs somewhere to put it, so it is
     # not gated on the recogniser alone.
@@ -1025,6 +1033,12 @@ class LiveTrafficConfig:
     # long after it is first heard, and what it is about to do is known
     # before it does it.
     live_delay_s: float = 30.0
+    # The most live aeroplanes taken in and drawn at once, nearest first --
+    # a budget of their own, on top of the invented ones rather than inside
+    # traffic.in_simulator_limit's. The feeds' answer for a wide radius can
+    # run into the hundreds; zero takes the feed's answers as heard but
+    # draws none of them.
+    limit: int = 150
 
 
 _LIVE = dict(tab="traffic", group="live")
@@ -1041,6 +1055,7 @@ describe(
                              **_LIVE),
     live_delay_s=Setting(min=0, max=120, unit="s", restart=True,
                          advanced=True, **_LIVE),
+    limit=Setting(min=0, max=300, restart=True, **_LIVE),
 )
 
 
@@ -1092,6 +1107,11 @@ class TrafficConfig:
     """
 
     enabled: bool = True
+    # Whether the invented aeroplanes are made at all: the ones this program
+    # generates to fill the field. Off, nothing new is invented and what was
+    # flying stops existing -- the real ones from the live feed and what
+    # somebody else injected are somebody else's and stay.
+    invented: bool = True
     # Whether the aeroplanes somebody else has put in the simulator are worked
     # as well. FSLTL, AIG, the simulator's own live traffic: with this on they
     # are on the strips, in the landing sequence and on the frequency, and the
@@ -1113,6 +1133,16 @@ class TrafficConfig:
     # aeroplane once a tick, which is what jumped on the taxiway and made a
     # takeoff a teleport.
     smooth_motion: bool = True
+    # Whether the invented aeroplanes are moved by the energy model --
+    # the wind triangle, a climb that costs speed, a bank that limits the
+    # turn, drag below the approach figure -- rather than the plain
+    # integrator it replaced. On by default; off for a comparison or a
+    # misbehaving model.
+    energy_model: bool = True
+    # Whether the hour of day sets the rhythm: the morning and evening
+    # banks busy, the small hours nearly quiet, as a real field is.
+    # Off, the density alone decides, as it always did.
+    diurnal_rhythm: bool = True
     # How many aeroplanes stand at the gates on top of that, going nowhere
     # until one of them becomes a departure. Only at a field whose stands the
     # simulator has given us, never on every stand (the moving traffic has
@@ -1206,6 +1236,8 @@ describe(
     TrafficConfig,
     enabled=Setting("traffic", "traffic", label="set.traffic_on",
                     help="set.traffic_why"),
+    invented=Setting("traffic", "traffic", label="set.invented_on",
+                     help="set.invented_why"),
     from_simulator=Setting("traffic", "traffic"),
     in_simulator=Setting("traffic", "traffic", restart=True),
     in_simulator_limit=Setting("traffic", "traffic", min=0, max=60,
@@ -1408,6 +1440,11 @@ class ControllerRealismConfig:
     special_vfr: bool = True
     runway_change: bool = True
     delays: bool = True
+    # Controller-pilot data link: an aircraft that carries the box, logged
+    # on with an oceanic data authority, is uplinked rather than called on
+    # HF -- the clearance arrives as a message and WILCO is its readback
+    # (atc/cpdlc.py). Off, everything stays voice, as before.
+    cpdlc: bool = True
     conditional_clearances: bool = True
     reporting_points: bool = True
     congestion: bool = True
@@ -1700,6 +1737,18 @@ class ImmersionConfig:
     # SimConnect events to set references directly. "managed" is more
     # realistic for modern airliners; "direct" works on more aircraft.
     autonomous_ap_mode: str = "managed"   # managed | direct
+    # Whether the hand-flying axes are flown by the closed-loop control
+    # laws (atc/control.py) with per-class and per-profile gains, rather
+    # than the open-loop rules they replaced. On by default; an aircraft
+    # model that misbehaves under a loop can be returned to the old laws
+    # here without losing the rest of the FO.
+    autonomous_pid: bool = True
+    # Whether the First Officer keeps the airframe inside its envelope:
+    # the load-factor watch that eases commands at the G limits (and
+    # reports the touchdown G), the rotorcraft's high-G offload and
+    # low-G recovery. On by default; a deliberate out-of-envelope
+    # demonstration flight can turn the protection off here.
+    autonomous_envelope_protection: bool = True
     # Minimum time between flights in a chain (seconds). Allows time for
     # shutdown, repositioning, and preflight of the next flight.
     autonomous_chain_delay_s: float = 120.0

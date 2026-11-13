@@ -112,10 +112,19 @@ class MicrophoneCapture:
         self._captured = 0
         self._truncated = False
         self._rate = self.sample_rate
+        # A streamed recogniser's sink (integrations/deepgram.start_stream):
+        # called with each captured block, outside the buffer lock, so the
+        # socket hears the transmission as it is spoken rather than after.
+        self.on_chunk = None
 
     @property
     def recording(self) -> bool:
         return self._recording
+
+    @property
+    def rate(self) -> int:
+        """The rate the stream is actually running at once open."""
+        return self._rate
 
     @property
     def recording_for(self) -> float:
@@ -161,6 +170,7 @@ class MicrophoneCapture:
                 if status:
                     log.debug("input stream status: %s", status)
                 samples = pcm(indata, mono=True)
+                block = None
                 with self._buffer_lock:
                     if self._token is not token:
                         return
@@ -171,6 +181,12 @@ class MicrophoneCapture:
                         block = samples[:remaining].copy()
                         self._frames.append(block)
                         self._captured += len(block)
+                tap = self.on_chunk
+                if block is not None and tap is not None:
+                    try:
+                        tap(block)
+                    except Exception:
+                        log.debug("capture tap raised", exc_info=True)
 
             try:
                 self._stream = sd.InputStream(
@@ -211,6 +227,7 @@ class MicrophoneCapture:
                 self._token = None
                 self._frames = []
             stream, self._stream = self._stream, None
+            self.on_chunk = None
         if stream is not None:
             try:
                 stream.close()
@@ -223,6 +240,7 @@ class MicrophoneCapture:
                 return CaptureResult(np.zeros(0, dtype=np.float32), self.sample_rate, 0.0, 0.0)
             self._recording = False
             stream, self._stream = self._stream, None
+            self.on_chunk = None
             with self._buffer_lock:
                 self._token = None
                 frames, self._frames = self._frames, []

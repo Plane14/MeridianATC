@@ -14,7 +14,7 @@ target-version = "py311"
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "C90", "SIM"]
+select = ["E", "F", "W", "I", "UP", "B", "C90", "SIM", "RET"]
 # The inherited tree has its own conventions; these only bite the new ports.
 ignore = [
     "E501",

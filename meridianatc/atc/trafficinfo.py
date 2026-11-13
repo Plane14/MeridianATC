@@ -168,15 +168,18 @@ def relative(own_lat: float, own_lon: float, own_alt: float, own_track: float,
 # condition report is available, so falling rain or snow at the field is
 # taken as the runway being wet.
 _PRECIPITATION = re.compile(
-    r"(?<!\S)[-+]?(?:TS|SH|FZ)?(?:DZ|RA|SN|SG|PL|GR|GS|UP)+(?!\S)")
+    r"[-+]?(?:TS|SH|FZ)?(?:DZ|RA|SN|SG|PL|GR|GS|UP)+")
 
 
 def runway_wet(weather) -> bool:
     raw = getattr(weather, "raw", "") or ""
     if not raw:
         return False
-    body = raw.split(" RMK ")[0]
-    return bool(_PRECIPITATION.search(body))
+    body = raw.upper().split(" RMK", 1)[0]
+    from ..weather.metar import weather_tokens
+    return any(not token.startswith(("VC", "RE"))
+               and _PRECIPITATION.fullmatch(token)
+               for token in weather_tokens(body))
 
 
 def caution(p, *, wet: bool = False, wake: bool = False) -> str:

@@ -822,6 +822,47 @@ button.pill { cursor: pointer; }
 
 .phrase.primary:hover { background: var(--accent-grad-hover); }
 
+/* The data link's card: an uplink laid out like the clearance it is,
+   monospaced and left-ragged, with its answers underneath. */
+.cpdlc {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-control);
+  background: var(--field);
+}
+.cpdlc-head { display: flex; gap: 10px; align-items: baseline; }
+.cpdlc-tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+.cpdlc-authority { font-size: 12px; color: var(--ink-soft, var(--ink)); opacity: 0.7; }
+.cpdlc-text {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 13.5px;
+  letter-spacing: 0.02em;
+  white-space: pre-wrap;
+}
+.cpdlc-answers { display: flex; gap: 8px; }
+.cpdlc-answers button {
+  padding: 7px 16px;
+  border: 1px solid rgba(var(--tint), 0.16);
+  border-radius: var(--r-control);
+  background: var(--wash);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.cpdlc-answers button:hover { border-color: var(--accent); }
+
 .compose { display: flex; gap: 14px; align-items: center; }
 
 .compose input[type="text"] {

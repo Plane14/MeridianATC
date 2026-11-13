@@ -42,6 +42,12 @@ DATAREFS = {
     "vertical_speed_fpm": ("sim/flightmodel/position/vh_ind_fpm", 1),
     "on_ground": ("sim/flightmodel/failures/onground_any", 1),
     "bank_deg": ("sim/flightmodel/position/phi", 1),
+    # The envelope protection's reads (atc/autonomous/x_the_load): the
+    # normal load factor and the pitch attitude. flightmodel2/misc is
+    # the XP11+ namespace, fine on 12; a build without it lists the
+    # field in state.unavailable and the protections quietly stand down.
+    "g_force": ("sim/flightmodel2/misc/gforce_normal", 1),
+    "pitch_deg": ("sim/flightmodel/position/theta", 1),
     "parking_brake": ("sim/cockpit2/controls/parking_brake_ratio", 1),
     "gear_down": ("sim/cockpit2/controls/gear_handle_down", 1),
     "seatbelt_sign": ("sim/cockpit2/switches/fasten_seat_belts", 1),
@@ -88,6 +94,15 @@ DATAREFS = {
     "rotor_clutch_active": ("sim/cockpit2/switches/clutch_engage", 1),
     "collective_position": ("sim/cockpit2/engine/actuators/prop_ratio[0]", 100),
     "fuel_selector": ("sim/cockpit2/fuel/fuel_tank_selector", 1),
+    # The engine watch's instruments (atc.powerplant): gas-producer/fan
+    # and power-turbine per cent, the turbine temperature (X-Plane's
+    # EGT is what its turbine models carry), the piston crankshaft RPM.
+    # A dataref a model does not publish lands in state.unavailable and
+    # the protection stands down, which is the wanted answer.
+    "eng_n1_pct": ("sim/flightmodel/engine/ENGN_N1_[0]", 1),
+    "eng_n2_pct": ("sim/flightmodel/engine/ENGN_N2_[0]", 1),
+    "eng_itt_c": ("sim/flightmodel/engine/ENGN_EGT_c[0]", 1),
+    "eng_rpm": ("sim/cockpit2/engine/indicators/engine_speed_rpm[0]", 1),
 }
 for _radio in (1, 2):
     for _standby in (False, True):
@@ -293,7 +308,14 @@ class XPlaneSource:
             1 if state.transponder_state == 2 else state.transponder_state)
         state.transponder_code = f"{int(values.get('squawk', 1200)):04d}"
         state.com1_transmit = values.get("transmit", 6) == 6
-        state.autopilot = bool(values.get("control:ap_on", values.get("autopilot_mode") == 2))
+        # servos_on is a boolean, not the autopilot_mode enum of
+        # sim/cockpit/autopilot: the AP is engaged where it reads non-zero.
+        state.autopilot = bool(values.get("control:ap_on",
+                                          values.get("autopilot_mode")))
+        # X-Plane's selector is its own enum (0 none, 1 left, 2 centre,
+        # 3 right, 4 all, 5 aft); the state carries the SimConnect one.
+        state.fuel_selector = {0: 0, 1: 2, 2: 6, 3: 3, 4: 1, 5: 8}.get(
+            int(values.get("fuel_selector", -1)), -1)
         state.gps_drives_nav1 = values.get("hsi_source", 0) in (2, 3)
         state.nav1_has_localizer = bool(int(values.get("nav_type", 0)) & (8 | 16))
         state.ambient_precip_state = 4 if values.get("rain", 0) > 0 else 0
@@ -372,6 +394,15 @@ class XPlaneSource:
                 return False
             if self._controls.set_variable(name, value, unit):
                 return True
+            if name == "FUEL TANK SELECTOR:1":
+                # SimConnect's selector enum to X-Plane's: positions the
+                # model does not have (aux, tips, externals, crossfeeds)
+                # are asked for as all -- fuel flowing beats none.
+                translated = {0: 0, 1: 4, 2: 1, 3: 3, 4: 1, 5: 3, 6: 2,
+                              7: 2, 8: 5, 9: 4, 10: 4, 11: 3, 12: 1,
+                              13: 4, 14: 4, 15: 4, 16: 4, 17: 4, 18: 0,
+                              19: 1, 20: 3}.get(int(value), 4)
+                return self._dref(DATAREFS["fuel_selector"][0], translated)
             mapping = WRITABLE.get(name)
             if mapping is None:
                 return False

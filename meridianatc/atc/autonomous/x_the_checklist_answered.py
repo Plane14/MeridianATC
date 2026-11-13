@@ -1,0 +1,318 @@
+from __future__ import annotations
+
+from ._shared import (
+    fly,
+    holds,
+    ip,
+    log,
+    time,
+)
+
+
+class _The_checklist_answered:
+    # -- the checklist, answered by the FO flying ---------------------------
+
+    def _drive_checklist(self, state, now: float) -> None:
+        """Work an open checklist: do the item, then answer it.
+
+        A pilotless aeroplane has nobody for the first officer to wait
+        on, so when a run is waiting on an item the FO does the item --
+        the runner's own check says whether the aeroplane agrees -- and
+        answers it itself. A held run is carried on after a pause; a run
+        still being read out is left to finish being said. The answer is
+        the runner's ``fo_answer``: the same verification a spoken answer
+        gets, so a switch the simulator says is still wrong is objected
+        to, never waved through.
+        """
+        runner = self.crew.checklists
+        if runner is None:
+            return
+        item, run_state = runner.pending()
+        if item is None:
+            self._checklist_item_id = 0
+            return
+        if id(item) != self._checklist_item_id:
+            self._checklist_item_id = id(item)
+            self._checklist_item_since = now
+            return
+        if run_state == "held":
+            if now - self._checklist_item_since > 4.0:
+                runner.hear(ip.Said(who=ip.FIRST_OFFICER, what=ip.CONTINUE))
+                self._checklist_item_since = now
+            return
+        if run_state != "waiting":
+            return
+        # Do the item where the check names a variable the FO can reach;
+        # the answer goes once the simulator has had a moment to show it.
+        if self._perform_check_item(state, item):
+            self._checklist_item_since = now
+            return
+        if now - self._checklist_item_since >= 2.0:
+            runner.fo_answer()
+            # The next pass sees the advance -- or the objection, which a
+            # re-performed item then answers.
+            self._checklist_item_since = now
+
+    def _perform_check_item(self, state, item) -> bool:
+        """Move the switch an item's check names, where it disagrees.
+
+        True where a control was asked for, so the item is answered on a
+        later pass once the new value shows. An item whose check names
+        nothing the FO can reach, or nothing at all, is not performed --
+        the answer simply reports what is.
+        """
+        check = getattr(item, "check", None)
+        if check is None:
+            return False
+        runner = self.crew.checklists
+        try:
+            expected = runner._expected(check)
+        except Exception:
+            expected = check.value
+        actual = getattr(state, check.var, None)
+        if holds(check, actual, expected):
+            return False
+        return self._switch_for(state, check.var, expected)
+
+    def _switch_for(self, state, var: str, expected) -> bool:
+        """The cockpit control behind a checklist variable."""
+        d = self.director
+        want_on = (expected is True) or expected == "on" \
+            or (isinstance(expected, (int, float))
+                and not isinstance(expected, bool) and expected > 0)
+        table = {
+            "parking_brake": lambda: d.parking_brake(want_on),
+            "gear_down": lambda: d.gear(want_on),
+            "landing_light": lambda: d.landing_light(want_on),
+            "taxi_light": lambda: d.taxi_light(want_on),
+            "nav_light": lambda: d.nav_lights(want_on),
+            "strobe_light": lambda: d.strobes(want_on),
+            "beacon_light": lambda: d.beacon(want_on),
+            "pitot_heat": lambda: d.pitot_heat(want_on),
+            "seatbelt_sign": lambda: d.seatbelts(want_on),
+            "battery_master": lambda: d.battery(want_on),
+            "avionics_master": lambda: d.avionics(want_on),
+            "spoilers_armed": lambda: d.spoilers_arm(want_on),
+            "autopilot": lambda: d.autopilot(want_on),
+            "autothrottle": lambda: (d.autothrottle_arm() if want_on
+                                     else d.autothrottle_disconnect()),
+            "gps_drives_nav1": lambda: d.write("GPS DRIVES NAV1",
+                                               1.0 if want_on else 0.0),
+            # The check asks for "not off", so its expected value is the
+            # off position: writing it would close the selector for good.
+            "fuel_selector": lambda: d.write("FUEL TANK SELECTOR:1",
+                                             float(expected) if float(expected) > 0 else 1.0),
+            "mixture_pct": lambda: d.write("GENERAL ENG MIXTURE LEVER "
+                                           "POSITION:1", float(expected)),
+            "transponder_code": lambda: d.transponder(str(expected)),
+            "kohlsman_hpa": lambda: d.kohlsman(float(expected)),
+            # The check asks for a detent, not a travel: the handle index
+            # where the sim takes it, the fraction where it does not.
+            "flaps_index": lambda: (
+                d.write("FLAPS HANDLE INDEX", float(expected))
+                or d.flaps(min(1.0, float(expected) / 4.0))),
+            "spoilers": lambda: d.spoilers(min(1.0, float(expected))),
+        }
+        action = table.get(var)
+        if action is None:
+            return False
+        try:
+            action()
+        except Exception:
+            log.debug("checklist switch %s failed", var, exc_info=True)
+            return False
+        return True
+
+    def _configure_for_takeoff(self, state) -> None:
+        """Set flaps, trim, lights for takeoff."""
+        d = self.director
+        # Takeoff flaps: the profile's detent where the type declares one,
+        # else the first detent -- whatever the lever was left at, which
+        # is the point of setting it.
+        takeoff_flaps = self.performance.takeoff_flaps or 0.25
+        d.flaps(takeoff_flaps)
+        d.landing_light(True)
+        d.strobes(True)
+
+    def _slew_lever(self, want: float, up_per_s: float = 0.20,
+                    down_per_s: float = 0.60) -> float:
+        """The lever moved toward ``want`` at a hand's speed, not a
+        wire's.
+
+        A lever write that jumps the travel commands an acceleration
+        the engine cannot give, and the model answers it with a surge
+        the passengers would feel. The taxi path calls this at ground
+        rates -- a hand easing the levers open -- and the takeoff roll
+        at faster ones, because even a brisk hand needs seconds to
+        reach the stop. Coming back is always allowed to be quicker:
+        retarding late is how the speed runs away.
+        """
+        now = time.monotonic()
+        last_at = getattr(self, "_lever_at", 0.0)
+        dt = max(0.0, min(now - last_at, 1.0)) if last_at else 0.0
+        self._lever_at = now
+        want = max(0.0, min(1.0, want))
+        lever = float(getattr(self, "_last_lever", 0.0) or 0.0)
+        if want > lever:
+            lever = min(want, lever + up_per_s * dt)
+        else:
+            lever = max(want, lever - down_per_s * dt)
+        self._last_lever = lever
+        return lever
+
+    def _breakaway_lever(self) -> float:
+        """The momentary lever that starts the aeroplane rolling.
+
+        A loaded transport wants a third of the travel to break away
+        from the stand; a light single wants a fifth. Asked for only
+        while the wheels are stopped -- once rolling, the speed law
+        owns the lever and the power comes back to idle, the way the
+        surge ends the moment the aeroplane is moving.
+        """
+        cruise = self.performance.cruise_kt
+        if cruise >= 230.0:
+            return 0.38
+        if cruise >= 140.0:
+            return 0.30
+        return 0.22
+
+    def _set_takeoff_power(self, state=None) -> None:
+        """Takeoff thrust: advanced the way a hand moves the levers --
+        briskly but progressively, not slammed to the stop -- and TO/GA
+        on the autothrottle where the model has one. The one-shot events
+        re-arm on each roll and each go-around; the full-power event
+        confirms once the levers have walked to the stop. The lever
+        itself stays under the engine watch's ceiling: the takeoff
+        rating is a limit, not a target."""
+        d = self.director
+        cap = (self._engine_limit_cap(state, takeoff=True)
+               if state is not None else 1.0)
+        lever = self._slew_lever(min(1.0, cap))
+        d.throttle(lever)
+        if lever >= 1.0:
+            d.takeoff_power()
+        d.toga(True)
+
+    def _ground_still(self, state, now: float) -> bool:
+        """Whether the aeroplane has refused to move under power for a
+        while -- chocked, braked, or boxed in. Taxi power against a
+        stationary aeroplane is how the engine ends up at takeoff rpm on
+        the ramp, so after a dozen seconds of it the levers come back to
+        idle and the phase decides what to do about not moving."""
+        if (state.ground_speed_kt or 0.0) > 1.0:
+            self._ground_still_since = 0.0
+            return False
+        if self._ground_still_since == 0.0:
+            self._ground_still_since = now
+            return False
+        stuck = now - self._ground_still_since
+        if stuck <= 12.0:
+            return False
+        # Idle while it refuses to move, but probe with power for a few
+        # seconds of every half minute: a chock coming out or a brake
+        # releasing should not need a whole new flight to notice. The
+        # lever slews up through the window, so eight seconds is what a
+        # heavy's breakaway needs.
+        return not 22.0 <= stuck % 30.0 < 30.0
+
+    def _ground_steer_limit(self, state) -> float:
+        """How much nosewheel and rudder the ground may take at this
+        speed. Full travel is a parking-stand turn; the same travel at
+        taxi speed is the overturn the corner was always going to invite,
+        so the cap fades as the knots build."""
+        if not state.on_ground:
+            return 0.5
+        gs = state.ground_speed_kt or 0.0
+        if gs >= 35.0:
+            return 0.15
+        return max(0.15, 0.5 - gs * 0.012)
+
+    def _steer(self, state, desired_hdg: float, target_kt: float,
+               max_aileron: float = 0.35) -> None:
+        """Hand-fly a heading and a speed on the ground or in the air.
+
+        The rudder (which is the nosewheel on the ground) takes the
+        heading error; the throttle takes the speed. Used for taxi,
+        line-up, the takeoff roll's directional control and the rollout --
+        the places an autopilot's heading mode does not reach.
+        """
+        d = self.director
+        d.parking_brake(False)
+        err = ((desired_hdg - (state.heading_true or 0.0) + 540.0)
+               % 360.0 - 180.0)
+        if self._use_pids:
+            rudder = self._pid("steer").update(err)
+        else:
+            # The gain is the class's: a heavy needs more nosewheel for
+            # the same error than a light single, and the performance
+            # model's turn rate is the proxy it already carries.
+            divisor = 18.0 if self.performance.turn_rate < fly.RATE_LIGHT \
+                else 28.0
+            rudder = max(-0.5, min(0.5, err / divisor))
+        rudder = max(-self._ground_steer_limit(state),
+                     min(self._ground_steer_limit(state), rudder))
+        d.rudder(rudder)
+        # The nosewheel follows the same demand where the model steers it
+        # separately: a taildragger on rudder alone and a tricycle gear on
+        # STEERING_SET both get their turn.
+        d.steering(rudder)
+        # Taxi and rollout speeds are throttle jobs, not AP jobs -- and
+        # progressive ones: the further below target, the more asked for,
+        # and the lever is walked to the answer at a hand's rate rather
+        # than put there. A lever write that jumps the travel is the
+        # full-throttle departure from the stand this exists to prevent.
+        gs = state.ground_speed_kt or 0.0
+        if self._ground_still(state, time.monotonic()):
+            want = 0.0
+        elif self._use_pids:
+            want = self._pid("taxi").update(target_kt - gs,
+                                            measurement=gs)
+            if gs > target_kt + 4.0 and state.on_ground:
+                want = 0.0
+        elif gs < target_kt - 2.0:
+            want = max(0.05, min(0.6,
+                                 0.10 + (target_kt - gs) * 0.01))
+        elif gs > target_kt + 4.0 and state.on_ground:
+            want = 0.0
+        else:
+            want = self._last_lever
+        # Breakaway: from a standstill the lever gets the momentary push
+        # that starts a loaded aeroplane rolling -- removed again by the
+        # law once it is moving, the way the power comes back to idle as
+        # soon as the wheels are turning.
+        if state.on_ground and target_kt > 0.0 and gs < 2.0 \
+                and want > 0.0:
+            want = max(want, self._breakaway_lever())
+        d.throttle(self._slew_lever(max(0.0, min(0.6, want)),
+                                    up_per_s=0.05, down_per_s=0.15))
+        if state.on_ground:
+            # Fast is brought down on the brakes, not coasted out on the
+            # idle: a squeeze that grows with how far over the speed is,
+            # released again once it is not.
+            if gs > target_kt + 4.0:
+                d.brakes(min(0.5, 0.08 + (gs - target_kt) * 0.03))
+            else:
+                d.brakes(0.0)
+
+    def _stop(self, state, target_kt: float = 0.0) -> None:
+        """Roll out to a stop: idle, braking, controls centred."""
+        d = self.director
+        d.throttle(0.0)
+        d.throttle_idle()
+        # The next pull-away starts the slew from idle, not from
+        # wherever the lever happened to be left.
+        self._last_lever = 0.0
+        gs = state.ground_speed_kt or 0.0
+        if gs <= 1.0:
+            d.brakes(0.0)
+            d.parking_brake(True)
+            d.rudder(0.0)
+            d.steering(0.0)
+            d.center_controls()
+        elif state.on_ground:
+            # The squeeze a pilot gives the pedals: enough to bring the
+            # speed down, never a stomp that skids the nosewheel.
+            d.brakes(min(0.5, 0.10 + gs * 0.02))
+            d.rudder(0.0)
+            d.steering(0.0)
+

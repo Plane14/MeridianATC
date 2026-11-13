@@ -73,20 +73,42 @@ def hpa_from_inhg(inhg: float) -> float:
 
 _RE_WIND = re.compile(r"\b(\d{3}|VRB)(\d{2,3})(?:G(\d{2,3}))?(KT|MPS|KMH)\b")
 _RE_VIS_SM = re.compile(r"\b(\d{1,2})?\s?(\d/\d)?SM\b")
-_RE_VIS_M = re.compile(r"\b(\d{4})\b")
 _RE_TEMP = re.compile(r"\b(M?\d{2})/(M?\d{2})\b")
 _RE_ALTIM_IN = re.compile(r"\bA(\d{4})\b")
 _RE_ALTIM_HPA = re.compile(r"\bQ(\d{4})\b")
 _RE_CLOUD = re.compile(r"\b(FEW|SCT|BKN|OVC|VV)(\d{3})(CB|TCU)?\b")
 _RE_TIME = re.compile(r"\b(\d{2})(\d{2})(\d{2})Z\b")
-# A METAR present-weather group: intensity and/or descriptors then the
-# phenomenon itself, token-shaped. Vicinity (VC) and recent (RE) groups
-# are kept too -- a storm ten miles off still counts as the weather.
+# A METAR present-weather group is one whitespace token: an intensity mark
+# and/or a descriptor (MI PR BC DR BL SH TS FZ), then the phenomena (DZ RA
+# SN SG IC PL GR GS UP BR FG FU VA DU SA HZ PO SQ FC SS DS). "-RASN" is
+# rain and snow together, not "-RA" alone; a bare TS is a thunderstorm.
+# Vicinity (VC) and recent (RE) groups are kept too -- a storm ten miles
+# off still counts as the weather. VC wraps the same group or stands with
+# SH or TS alone ("VCSH", "VCTS"); RE takes it without the intensity mark
+# ("RESHRA", "RETS").
 _RE_WX = re.compile(
-    r"(?<!\S)(?:VC\b|[-+]?(?:TS|SH|FZ|MI|PR|BC|DR|BL)"
+    r"[-+]?(?:MI|PR|BC|DR|BL|SH|TS|FZ)?"
     r"(?:DZ|RA|SN|SG|IC|PL|GR|GS|UP|BR|FG|FU|VA|DU|SA|HZ|PO|SQ|FC|SS|DS)+"
-    r"|[-+]?(?:DZ|RA|SN|SG|IC|PL|GR|GS|UP|BR|FG|FU|VA|DU|SA|HZ|PO|SQ|FC|SS|DS)"
-    r"(?!/))")
+    r"|[-+]?TS"
+    r"|VC(?:(?:MI|PR|BC|DR|BL|SH|TS|FZ)?"
+    r"(?:DZ|RA|SN|SG|IC|PL|GR|GS|UP|BR|FG|FU|VA|DU|SA|HZ|PO|SQ|FC|SS|DS)+"
+    r"|SH|TS)"
+    r"|RE(?:MI|PR|BC|DR|BL|SH|TS|FZ)?"
+    r"(?:DZ|RA|SN|SG|IC|PL|GR|GS|UP|BR|FG|FU|VA|DU|SA|HZ|PO|SQ|FC|SS|DS|TS)+")
+
+
+def weather_tokens(body: str) -> list[str]:
+    """The present/recent/vicinity weather groups in a METAR body.
+
+    Whole tokens only, and only where weather can appear: groups follow
+    the wind (or, a report without one, the observation time). That
+    position is what keeps a station ident out of the list -- a four-
+    letter ident can be a legal weather token: FURA reads as smoke and
+    rain, DURA as dust and rain.
+    """
+    m = _RE_WIND.search(body) or _RE_TIME.search(body)
+    tail = body[m.end():] if m else body
+    return [token for token in tail.split() if _RE_WX.fullmatch(token)]
 
 CLOUD_WORDS = {
     "FEW": "few clouds at",
@@ -158,7 +180,7 @@ def parse_metar(raw: str) -> Weather:
         clouds = []
     wx.clouds = sorted(clouds, key=lambda c: c[1])
 
-    wx.present = " ".join(_RE_WX.findall(body))
+    wx.present = " ".join(weather_tokens(body))
 
     return wx
 

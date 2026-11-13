@@ -198,6 +198,91 @@ def of_state(state) -> AircraftClass:
                     airline=bool(getattr(state, "airline", "")))
 
 
+def min_runway_ft(type_code: str) -> int:
+    """Feet of runway the type is planned to want.
+
+    The figure a crew uses to say a field can take the aeroplane, shared
+    by everything that picks a destination for it -- the autonomous
+    chain flights, the mission planner and the emergency divert. A
+    planning number rather than the performance manual's bare minimum:
+    it is the shortest strip the aeroplane is ever aimed at on its own.
+    """
+    code = (type_code or "").strip().upper()
+    if code in ("C152", "C172", "C182", "PA28", "DA40", "SR22", "BE36",
+                "TB20"):
+        return 2500
+    if code in ("TBM9", "PC12", "C25A", "C25C", "C525", "E55P", "E50P",
+                "AT76", "DH8D", "C208"):
+        return 4000
+    if code in ("CRJ7", "CRJ9", "E170", "E175", "E190", "E195",
+                "F2TH", "H25B", "LJ45", "LJ60", "C680", "C750", "G280"):
+        return 5500
+    if code.startswith(("A3", "B73", "B38", "B39", "B75")):
+        return 7000
+    if code in ("A332", "A333", "A339", "A343", "A346", "A359", "A35K",
+                "A388", "B763", "B764", "B772", "B77W", "B77L", "B77X",
+                "B788", "B789", "B78X", "B744", "B748"):
+        return 9000
+    return 6000
+
+
+def amphibious(type_code: str) -> bool:
+    """Whether the type's Doc 8643 entry is an amphibian ('A' kind)."""
+    return DOC_8643.get((type_code or "").strip().upper(), "L").startswith("A")
+
+
+def runway_usable(runway, type_code: str = "") -> bool:
+    """Whether a runway can take the type: long enough, on a surface it
+    can use.
+
+    Water serves the amphibians only; a strip the database knows is
+    soft serves only the aeroplanes small enough to want one. A surface
+    the data does not name gets the benefit of the doubt, or every
+    field with missing rows would be refused.
+    """
+    if (getattr(runway, "length_ft", 0.0) or 0.0) \
+            < min_runway_ft(type_code):
+        return False
+    surface = (getattr(runway, "surface", "") or "").upper()
+    if "WAT" in surface:
+        return amphibious(type_code)
+    if surface and not getattr(runway, "is_hard", True):
+        return min_runway_ft(type_code) <= 2500
+    return True
+
+
+def airport_usable(airport, runways, type_code: str = "",
+                   helicopter: bool = False) -> bool:
+    """Whether the field can take the aircraft: a kind of airport it can
+    land at, with at least one runway it can use.
+
+    ``runways`` is the nav database's list for the field -- anything
+    carrying ``length_ft`` and ``surface``. A helicopter wants a pad,
+    not a strip; an amphibian is the only aeroplane a seaplane base
+    serves; the heavies want a second runway to take a failure on, or
+    a single one with room to spare.
+    """
+    kind = (getattr(airport, "type", "") or "")
+    if helicopter or classify(type_code).name == HELICOPTER:
+        return kind in ("heliport", "small_airport", "medium_airport",
+                        "large_airport")
+    allowed = ["large_airport", "medium_airport", "small_airport"]
+    if amphibious(type_code):
+        allowed.append("seaplane_base")
+    if kind not in allowed:
+        return False
+    usable = [rw for rw in runways if runway_usable(rw, type_code)]
+    if not usable:
+        return False
+    if (type_code or "").strip().upper() in (
+            "A388", "B744", "B748", "B77W", "B77L", "B77X", "A35K"):
+        if len(usable) < 2 and not any(
+                (rw.length_ft or 0.0) >= 10000 for rw in usable):
+            return False
+    return True
+
+
 __all__ = ["AIRLINER", "AircraftClass", "BUSINESS_JET", "CLASSES", "DOC_8643",
            "HELICOPTER", "PISTON_SINGLE", "PISTON_TWIN", "TURBOPROP_SINGLE",
-           "TURBOPROP_TWIN", "classify", "of_state"]
+           "TURBOPROP_TWIN", "airport_usable", "amphibious", "classify",
+           "min_runway_ft", "of_state", "runway_usable"]

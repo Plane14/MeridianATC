@@ -125,11 +125,32 @@ class AircraftState:
     # UNVERIFIED on a running 2024.
     eng_torque_pct: float = 0.0
     rotor_lateral_trim_pct: float = 0.0
+    # The engine-instrument reads the autonomous engine watch
+    # (atc.powerplant + autonomous/x_the_engines) works against: the
+    # gas-producer/fan per cent (TURB ENG N1), the power-turbine per
+    # cent where the model splits it out (TURB ENG N2), the turbine
+    # temperature Celsius (TURB ENG ITT -- the ITT/MGT/TOT the type's
+    # limits are written against), and the piston crankshaft RPM.
+    # Zero where the model does not publish them; a missing read is
+    # never a limit.
+    eng_n1_pct: float = 0.0
+    eng_n2_pct: float = 0.0
+    eng_itt_c: float = 0.0
+    eng_rpm: float = 0.0
     # What the first officer's callouts watch (meridianatc.atc.callouts): the
     # bank, signed degrees, right positive; NAV1's localizer and glideslope
     # and how far off them the needles are (+/-127 and +/-119, full scale);
     # the speed set on the autopilot, 0 where there is none.
     bank_deg: float = 0.0
+    # The airframe's own readings the autonomous envelope protection works
+    # off: the normal load factor (G FORCE / gforce_normal -- 1.0 is also
+    # what a model that never reports it leaves here, and a parked
+    # aeroplane honestly reads one), the pitch attitude the rotation and
+    # the go-around aim at, and the autopilot's own maximum bank setting,
+    # which the FO reads back after asking the AP to limit it.
+    g_force: float = 1.0
+    pitch_deg: float = 0.0
+    ap_max_bank_deg: float = 0.0
     nav1_has_localizer: bool = False
     nav1_cdi: float = 127.0
     nav1_has_glideslope: bool = False

@@ -61,6 +61,90 @@ class RadioWriter(Protocol):
 
 
 # --------------------------------------------------------------------------
+# the batched read
+# --------------------------------------------------------------------------
+
+
+class _BatchHeader(ctypes.Structure):
+    """A ``SIMCONNECT_RECV_SIMOBJECT_DATA_BYTYPE`` up to ``dwData``.
+
+    The data follows the header immediately: the datums of the definition,
+    packed in the order they were added. Everything in the batch is asked
+    for as FLOAT64, so what follows is that many contiguous doubles.
+    """
+
+    _pack_ = 1
+    _fields_ = [
+        ("dwSize", ctypes.c_uint32),
+        ("dwVersion", ctypes.c_uint32),
+        ("dwID", ctypes.c_uint32),
+        ("dwRequestID", ctypes.c_uint32),
+        ("dwObjectID", ctypes.c_uint32),
+        ("dwDefineID", ctypes.c_uint32),
+        ("dwFlags", ctypes.c_uint32),
+        ("dwentrynumber", ctypes.c_uint32),
+        ("dwoutof", ctypes.c_uint32),
+        ("dwDefineCount", ctypes.c_uint32),
+    ]
+
+
+def _bytype_id() -> int:
+    """The message id carrying a by-type data reply, from the wrapper."""
+    try:
+        from SimConnect.Enum import SIMCONNECT_RECV_ID
+
+        return int(SIMCONNECT_RECV_ID.SIMCONNECT_RECV_ID_SIMOBJECT_DATA_BYTYPE)
+    except Exception:
+        return 9
+
+
+def _objectdata_ids() -> frozenset:
+    """The ids a one-object reply can arrive under.
+
+    A by-type ask against everything in a radius answers as
+    ``SIMOBJECT_DATA_BYTYPE``; the same ask for the USER object answers
+    as ``SIMOBJECT_DATA`` -- the layouts are the same to ``dwData``,
+    the id is not, and a check for only the by-type id reads its own
+    replies as somebody else's traffic for ever.
+    """
+    ids = {_bytype_id()}
+    try:
+        from SimConnect.Enum import SIMCONNECT_RECV_ID
+
+        ids.add(int(SIMCONNECT_RECV_ID.SIMCONNECT_RECV_ID_SIMOBJECT_DATA))
+    except Exception:
+        ids.add(8)
+    return frozenset(ids)
+
+
+def _datatype_id(name: str, fallback: int) -> int:
+    try:
+        from SimConnect.Enum import SIMCONNECT_DATATYPE
+
+        return int(getattr(SIMCONNECT_DATATYPE, f"SIMCONNECT_DATATYPE_{name}"))
+    except Exception:
+        return fallback
+
+
+def _user_type() -> int:
+    try:
+        from SimConnect.Enum import SIMCONNECT_SIMOBJECT_TYPE
+
+        return int(SIMCONNECT_SIMOBJECT_TYPE.SIMCONNECT_SIMOBJECT_TYPE_USER)
+    except Exception:
+        return 0
+
+
+def _unused() -> int:
+    try:
+        from SimConnect.Constants import SIMCONNECT_UNUSED
+
+        return int(SIMCONNECT_UNUSED)
+    except Exception:
+        return -1
+
+
+# --------------------------------------------------------------------------
 # frequency decoding
 # --------------------------------------------------------------------------
 
@@ -199,24 +283,35 @@ def encode_squawk(code: str) -> int:
 
 
 def decode_squawk(raw) -> str:
-    """Transponder code, from BCD or a plain integer."""
+    """Transponder code, from BCD or a plain integer.
+
+    The variable is asked for as BCO16, so each of the value's nibbles is
+    one digit of the code: 1200 comes back as 0x1200. A decimal reading
+    first would call that 4608 -- which is also a legal-looking squawk,
+    so the order matters and the packed reading wins. The plain-integer
+    path is kept for a simulator that ignores the unit.
+    """
     if raw is None:
         return "1200"
     try:
         value = int(float(raw))
     except (TypeError, ValueError):
         return "1200"
+    if 0 <= value <= 0xFFFF:
+        digits = []
+        for shift in (12, 8, 4, 0):
+            nibble = (value >> shift) & 0xF
+            if nibble > 7:
+                digits = []
+                break
+            digits.append(str(nibble))
+        if digits:
+            return "".join(digits)
     if 0 <= value <= 7777:
         text = f"{value:04d}"
         if all(c in "01234567" for c in text):
             return text
-    digits = []
-    for shift in (12, 8, 4, 0):
-        nibble = (value >> shift) & 0xF
-        if nibble > 7:
-            return "1200"
-        digits.append(str(nibble))
-    return "".join(digits)
+    return "1200"
 
 
 def _text(raw) -> str:
@@ -414,13 +509,31 @@ class SimConnectSource:
         # the wings-level hover. "Percent scalar 16K" and "Percent Over
         # 100" are the kinds _convert's pct rule already knows.
         # UNVERIFIED on a running 2024.
-        ("ENG_TORQUE_PERCENT:1", "eng_torque_pct", "pct", "slow"),
+        ("ENG_TORQUE_PERCENT:1", "eng_torque_pct", "pct_wide", "slow"),
+        # The engine watch's instruments (atc.powerplant): the
+        # gas-producer/fan and power-turbine per cent, the turbine
+        # temperature, and the piston crankshaft RPM. All "raw" because
+        # every one of them can honestly exceed 100 per cent (a 105%
+        # Ng, an ITT in hundreds of Celsius, an RPM in thousands).
+        ("TURB_ENG_N1:1", "eng_n1_pct", "raw", "slow"),
+        ("TURB_ENG_N2:1", "eng_n2_pct", "raw", "slow"),
+        ("TURB_ENG_ITT:1", "eng_itt_c", "raw", "slow"),
+        ("GENERAL_ENG_RPM:1", "eng_rpm", "raw", "slow"),
         ("ROTOR_LATERAL_TRIM_PCT", "rotor_lateral_trim_pct", "pct",
          "slow"),
         # The callouts. The bank every read, because "bank" is about a
         # moment; the needles and the selected speed in the rotation, a
         # needle coming alive being worth a second or two of lag.
         ("PLANE_BANK_DEGREES", "bank_deg", "signed_rad", "fast"),
+        # The autonomous envelope protection (atc/autonomous/x_the_load):
+        # the load factor every read like the bank -- a G excursion is
+        # also about a moment -- and the pitch attitude with it, which
+        # the rotation and the go-around aim at. The autopilot's own
+        # bank limit rides the slow rotation: it is read back after the
+        # FO sets it, not chased.
+        ("G_FORCE", "g_force", "raw", "fast"),
+        ("PLANE_PITCH_DEGREES", "pitch_deg", "signed_rad", "fast"),
+        ("AUTOPILOT_MAX_BANK", "ap_max_bank_deg", "signed_rad", "slow"),
         ("NAV_HAS_LOCALIZER:1", "nav1_has_localizer", "bool", "slow"),
         ("NAV_CDI:1", "nav1_cdi", "raw", "slow"),
         ("NAV_HAS_GLIDE_SLOPE:1", "nav1_has_glideslope", "bool", "slow"),
@@ -460,7 +573,7 @@ class SimConnectSource:
         # Most are the wrapper's own HelicopterSpecificData entries;
         # OUR_VARIABLES adds the four it does not have.
         ("COLLECTIVE_POSITION", "collective_position", "pct", "slow"),
-        ("ROTOR_RPM_PCT", "rotor_rpm_pct", "pct", "slow"),
+        ("ROTOR_RPM_PCT", "rotor_rpm_pct", "pct_wide", "slow"),
         ("NUM_OF_MAIN_ROTORS", "num_main_rotors", "int", "slow"),
         ("TAIL_ROTOR_PEDAL_POSITION", "tail_rotor_pedal_position", "pct",
          "slow"),
@@ -553,6 +666,16 @@ class SimConnectSource:
         # little lock.
         self._system_state: dict[int, str] = {}
         self._system_state_lock = threading.Lock()
+        # The one-definition read: every numeric variable in one request's
+        # answer rather than a send-and-wait each. See _make_batch.
+        self._batch_names: tuple[str, ...] = ()
+        self._batch_set: frozenset[str] = frozenset()
+        self._batch_raw: dict[str, float] = {}
+        self._batch_at = 0.0
+        self._batch_def_id = None
+        self._batch_req_id = None
+        self._batch_hook = None
+        self._batch_fails = 0
 
     @property
     def connected(self) -> bool:
@@ -593,6 +716,171 @@ class SimConnectSource:
                          "using the bundled one", library, exc_info=True)
         return SimConnect()
 
+    def _quick_replies(self) -> None:
+        """Wait on each reply at the dispatch thread's cadence, not the
+        wrapper's. Its ``get_data`` sleeps ten milliseconds between checks,
+        so a variable the simulator answered in two still costs the nap --
+        with every variable read one at a time that put a tick's read over
+        half a second. The timeout keeps its own meaning exactly (the
+        request's ``attemps`` count of those naps); only the poll is finer.
+        """
+        sim = self._sim
+        if sim is None:
+            return
+        request_data = sim.request_data
+
+        def get_data(request) -> bool:
+            request_data(request)
+            deadline = (time.monotonic()
+                        + getattr(request, "attemps", 10) * 0.01)
+            while request.outData is None and time.monotonic() < deadline:
+                time.sleep(0.001)
+            return request.outData is not None
+
+        sim.get_data = get_data
+
+    # ------------------------------------------------------------------
+    # one ask for everything
+    # ------------------------------------------------------------------
+    #
+    # The wrapper reads each variable as its own request: a send, then a
+    # wait for the reply to land on the dispatch thread -- a round trip
+    # over the SimConnect pipe of a few milliseconds, more than a hundred
+    # times a read, which is what put "tick.read took 5xx ms" through the
+    # log every quarter second. The same data comes back in a single
+    # message when the variables sit in one definition: asked once, the
+    # reply carries every value packed in definition order. What follows
+    # builds that definition from the same tables the wrapper reads, asks
+    # once a read, and hands the pieces out by name; a variable that will
+    # not join it keeps the per-request path, as do the strings, whose
+    # widths a packed reply cannot be walked for.
+
+    # Consecutive batch requests that go unanswered before the batch is
+    # given up on for the session and every variable is read on its own
+    # again. One silence is a hiccup the old path had the same answer for.
+    BATCH_FAILURES = 3
+
+    def _definition_for(self, name: str):
+        """The ``(variable, unit)`` bytes one request name stands for.
+
+        The same lookup ``AircraftRequests.find`` makes, without the
+        request it would build: an ``:N`` index becomes the ``:index``
+        key, and is put back on the variable rather than left to
+        ``Request.setIndex`` -- the batch has no Request to set one on.
+        """
+        key, index = name, None
+        if ":" in name:
+            base, _, index = name.partition(":")
+            key = f"{base}:index"
+        for helper in getattr(self._requests, "list", ()):
+            entry = getattr(helper, "list", {}).get(key)
+            if entry is None:
+                continue
+            var, unit = entry[1], entry[2]
+            if index is not None:
+                var = var.replace(b":index", (":" + index).encode())
+            return var, unit
+        return None
+
+    def _make_batch(self) -> None:
+        """Build the one definition a read asks for, and the reply hook.
+
+        Every numeric variable in :data:`REQUESTS` that the simulator
+        accepts joins the definition, in REQUESTS order; the reply packs
+        its datums in that order, so the name list kept beside it is the
+        unpacking key. A variable the definition refuses is left to the
+        per-request path, where it fails its own way as before.
+        """
+        sim, requests = self._sim, self._requests
+        if sim is None or requests is None:
+            return
+        try:
+            from ..integrations.aitraffic import install_dispatch
+
+            def_id = sim.new_def_id()
+            req_id = sim.new_request_id()
+        except Exception:
+            log.debug("no free ids for the batched read", exc_info=True)
+            return
+        names: list[str] = []
+        float64 = _datatype_id("FLOAT64", 4)
+        for name, _attribute, kind, _tier in self.REQUESTS:
+            if kind == "text":
+                continue
+            found = self._definition_for(name)
+            if found is None:
+                continue
+            var, unit = found
+            try:
+                err = sim.dll.AddToDataDefinition(
+                    sim.hSimConnect, def_id.value, var, unit, float64,
+                    0, _unused())
+            except Exception:
+                err = 1
+            if sim.IsHR(err, 0):
+                names.append(name)
+            else:
+                # The simulator refused the name outright: it is missing
+                # for this session, which is exactly what _missing means.
+                self._missing.add(name)
+                log.debug("simvar %s refused at definition", name)
+        if not names:
+            return
+        self._batch_names = tuple(names)
+        self._batch_set = frozenset(names)
+        self._batch_def_id = def_id
+        self._batch_req_id = req_id
+        self._batch_hook = install_dispatch(sim, self._batch_heard)
+
+    def _batch_heard(self, data) -> bool:
+        """Take the batch's reply off the pump and file every value."""
+        try:
+            if data.contents.dwID not in _objectdata_ids():
+                return False
+            reply = ctypes.cast(
+                data, ctypes.POINTER(_BatchHeader)).contents
+            if self._batch_req_id is None \
+                    or reply.dwRequestID != self._batch_req_id.value:
+                return False
+            count = len(self._batch_names)
+            if reply.dwDefineCount != count:
+                # A definition the simulator read differently than it was
+                # written would shift every value after the first.
+                log.debug("batched reply holds %d datums, expected %d",
+                          reply.dwDefineCount, count)
+                self._batch_at = 0.0
+                return True
+            base = (ctypes.addressof(data.contents)
+                    + ctypes.sizeof(_BatchHeader))
+            values = (ctypes.c_double * count).from_address(base)
+            self._batch_raw = dict(
+                zip(self._batch_names, values, strict=True))
+            self._batch_at = time.monotonic()
+        except Exception:
+            log.debug("could not read a batched reply", exc_info=True)
+            return False
+        return True
+
+    def _batch_read(self) -> bool:
+        """One ask for the whole definition. True when the lot came back."""
+        sim = self._sim
+        if sim is None or not self._batch_names:
+            return False
+        since = self._batch_at
+        try:
+            err = sim.dll.RequestDataOnSimObjectType(
+                sim.hSimConnect, self._batch_req_id.value,
+                self._batch_def_id.value, 0, _user_type())
+            if not sim.IsHR(err, 0):
+                return False
+        except Exception:
+            return False
+        budget = min(self.request_timeout_ms / 1000.0, 0.4)
+        deadline = time.monotonic() + budget
+        while self._batch_at <= since and time.monotonic() < deadline:
+            time.sleep(0.001)
+        return self._batch_at > since
+
     def connect(self) -> bool:
         try:
             from SimConnect import AircraftRequests, SimConnect
@@ -604,13 +892,18 @@ class SimConnectSource:
             # One call at a time on this session, whichever thread makes it
             # (see meridianatc.sim.serial).
             serialize(self._sim.dll)
+            self._quick_replies()
             self._requests = AircraftRequests(self._sim, _time=self.request_timeout_ms)
             self.define_our_variables(self._requests)
+            self._make_batch()
             self._capture_system_state(self._sim)
             self._connected = True
             # A reconnection is to a different simulator session: the event
             # handles from the last one are stale, and a variable that was
             # missing from the last aircraft may be present in this one.
+            self._batch_raw = {}
+            self._batch_at = 0.0
+            self._batch_fails = 0
             self._events.clear()
             self._freq_event_style.clear()
             self._writers.clear()
@@ -629,6 +922,9 @@ class SimConnectSource:
             self._sim = None
             self._requests = None
             self._connected = False
+            self._batch_names = ()
+            self._batch_set = frozenset()
+            self._batch_raw = {}
             return False
 
     # The variables the wrapper's request table does not have, in its own
@@ -700,6 +996,20 @@ class SimConnectSource:
             b"PUSHBACK ATTACHED", b"Bool", "N"],
     }
 
+    # Entries in the wrapper's own tables whose unit the simulator has
+    # never heard of: AddToDataDefinition refuses them, so the variable
+    # reads as never answering. Fixed here rather than in the wheel.
+    BROKEN_UNITS: dict[str, dict[str, list]] = {
+        # The variable is torque in percent ("Percent over 100" natively;
+        # _convert's pct rule renormalises a 0-16384 answer either way).
+        # The wheel's string is a description, not a unit.
+        "HelicopterSpecificData": {
+            "ENG_TORQUE_PERCENT:index": [
+                "Torque, per cent", b"ENG TORQUE PERCENT:index",
+                b"Percent", "N"],
+        },
+    }
+
     @classmethod
     def define_our_variables(cls, requests) -> None:
         """Add :data:`OUR_VARIABLES` to one session's request table.
@@ -707,6 +1017,10 @@ class SimConnectSource:
         On that session's helper object, not on the wrapper's class, so
         nothing outside this program sees the table change.
         """
+        for helper_name, fixes in cls.BROKEN_UNITS.items():
+            helper = getattr(requests, helper_name, None)
+            if helper is not None:
+                helper.list = {**type(helper).list, **fixes}
         helper = getattr(requests, "MiscellaneousData", None)
         if helper is None:
             return
@@ -733,6 +1047,10 @@ class SimConnectSource:
     def _get(self, name: str):
         if self._requests is None or name in self._missing:
             return None
+        if name in self._batch_set:
+            # The batched read's last answer; a name it has never carried
+            # reads as silence, which is what missing means there too.
+            return self._batch_raw.get(name)
         try:
             return self._requests.get(name)
         except Exception as exc:
@@ -752,7 +1070,20 @@ class SimConnectSource:
         if not self._connected:
             return AircraftState(connected=False, source="simconnect")
 
-        # Everything that moves, every time.
+        # Everything that moves, every time. One ask for the whole
+        # definition fills _batch_raw for every batched name; a run of
+        # unanswered asks drops the batch and every variable is read on
+        # its own again, exactly as before it existed.
+        if self._batch_read():
+            self._batch_fails = 0
+        elif self._batch_names:
+            self._batch_fails += 1
+            if self._batch_fails >= self.BATCH_FAILURES:
+                log.info("the batched read never answered; reading each "
+                         "variable on its own")
+                self._batch_names = ()
+                self._batch_set = frozenset()
+                self._batch_raw = {}
         fresh = 0
         for name, attribute, kind in self._fast:
             if self._fetch(name, attribute, kind):
@@ -886,6 +1217,14 @@ class SimConnectSource:
             # unit; anything over 100 can only be that scale.
             value = float(raw)
             return value / 163.84 if value > 100.0 else value
+        if kind == "pct_wide":
+            # Same percent-over-100 ambiguity as "pct", except these
+            # variables honestly exceed 100 -- a 106% power-off rotor
+            # speed, a 170% OEI torque. Only the 0-16384 scale can
+            # produce a reading over 200, so that is the divider's
+            # threshold.
+            value = float(raw)
+            return value / 163.84 if value > 200.0 else value
         if kind == "throttle":
             # The throttle lever variable reads back percent x100 on the
             # 2024 SDK's SimConnect -- a 20% lever reports 2000 -- while
@@ -1417,6 +1756,17 @@ class SimConnectSource:
 
     def close(self) -> None:
         self._connected = False
+        if self._batch_hook is not None:
+            with contextlib.suppress(Exception):
+                from ..integrations.aitraffic import remove_dispatch
+
+                remove_dispatch(self._sim, self._batch_hook)
+            self._batch_hook = None
+        self._batch_names = ()
+        self._batch_set = frozenset()
+        self._batch_raw = {}
+        self._batch_at = 0.0
+        self._batch_fails = 0
         self._events.clear()
         self._freq_event_style.clear()
         self._writers.clear()

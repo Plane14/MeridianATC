@@ -298,6 +298,38 @@ class TestContinuous:
         cf.stop()
         assert not cf.running
 
+    def test_leg_skips_a_field_the_type_cannot_use(self):
+        """A jet's next leg is only to a field with a runway for it."""
+        class _Typed(_Airport):
+            def __init__(self, ident, lat, lon, kind):
+                super().__init__(ident, lat, lon)
+                self.type = kind
+
+        class _RunDB(_DB):
+            def nearest_airports(self, lat, lon, **kw):
+                return [
+                    (_Typed("KBBB", lat + 0.5, lon, "small_airport"), 30.0),
+                    (_Typed("KCCC", lat + 1.0, lon, "large_airport"), 60.0),
+                    (_Typed("KAAA", lat, lon, "large_airport"), 0.0)]
+
+            def runways(self, ident):
+                from types import SimpleNamespace
+                return {
+                    "KBBB": [SimpleNamespace(
+                        length_ft=1500.0, surface="ASP", is_hard=True)],
+                    "KCCC": [SimpleNamespace(
+                        length_ft=9000.0, surface="ASP", is_hard=True)],
+                }.get(ident, [])
+
+        cf = ContinuousFlights(_RunDB(), seed=1)
+        cf.start(MissionRequest(min_nm=10, max_nm=120))
+        leg = cf.plan_next_leg(40.0, -74.0, "KAAA", "N123",
+                               aircraft_type="B738")
+        assert leg.destination == "KCCC"
+        # A type nobody reports still plans on distance alone.
+        leg = cf.plan_next_leg(40.0, -74.0, "KAAA", "N123")
+        assert leg is not None
+
 
 # --------------------------------------------------------------------------
 # guidance
@@ -450,7 +482,7 @@ class TestAutofly:
     def test_no_match_passthrough(self):
         from meridianatc.atc import flying as fly
         from meridianatc.atc.autofly import override
-        assert override("B738", "PMDG 737-800", fly.AIRLINER) is fly.AIRLINER
+        assert override("B744", "PMDG 747-400", fly.AIRLINER) is fly.AIRLINER
 
 
 class TestDemoPack:

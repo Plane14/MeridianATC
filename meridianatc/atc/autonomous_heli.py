@@ -38,6 +38,7 @@ from dataclasses import dataclass
 
 from .aircraft_class import HELICOPTER
 from .autonomous import AutonomousPhase
+from .powerplant import limits_for
 from .vspeeds import speeds_for
 
 log = logging.getLogger(__name__)
@@ -129,7 +130,13 @@ THROTTLE_CRUISE = int(AXIS_MAX * 0.75)
 
 @dataclass(frozen=True)
 class HeliProfile:
-    """One rotorcraft's envelope: speeds, rates and the ceiling."""
+    """One rotorcraft's envelope: speeds, rates, the ceiling and the
+    rotor's load limits.
+
+    ``pos_g``/``neg_g`` bound the normal load factor; ``low_g`` is the
+    caution floor below which a teetering rotor mast-bumps -- the R44
+    POH's "avoid low-G" made a number. UNVERIFIED like every figure
+    here: the defaults are the light single's book values."""
 
     ias_cruise_kt: float
     ias_approach_kt: float
@@ -139,12 +146,26 @@ class HeliProfile:
     ceiling_ft: float
     transition_kt: float
     landing_vs_fpm: float
+    pos_g: float = 2.5
+    neg_g: float = -0.5
+    low_g: float = 0.2
+    # The autorotation figures: the speed the rotor keeps energy best at
+    # (the type's published auto speed where known, else the approach
+    # figure) and the height the flare starts spending it.
+    auto_kt: float = 0.0
+    auto_flare_ft: float = 40.0
 
 
 def _heli_profile(cruise_tas: float, approach_ias: float, roc_fpm: float,
-                  ceiling_ft: float) -> HeliProfile:
+                  ceiling_ft: float, low_g: float = 0.2,
+                  auto_kt: float = 0.0,
+                  auto_flare_ft: float = 40.0) -> HeliProfile:
     """Derive a profile from the database's raw figures, clamped to what
-    a light helicopter envelope looks like."""
+    a light helicopter envelope looks like.
+
+    ``low_g`` is the teetering-rotor mast-bump floor: 0.4 on the
+    Robinsons and Bells with a two-blade seesaw rotor, the articulated
+    default elsewhere."""
     def clamp(v, lo, hi):
         return min(hi, max(lo, v))
 
@@ -159,7 +180,8 @@ def _heli_profile(cruise_tas: float, approach_ias: float, roc_fpm: float,
         max_ias_kt=min(cruise + 30.0, 160.0),
         ceiling_ft=ceiling_ft,
         transition_kt=clamp(cruise * 0.4, 30.0, 60.0),
-        landing_vs_fpm=-clamp(roc_fpm * 0.3, 200.0, 400.0))
+        landing_vs_fpm=-clamp(roc_fpm * 0.3, 200.0, 400.0),
+        low_g=low_g, auto_kt=auto_kt, auto_flare_ft=auto_flare_ft)
 
 
 DEFAULT_HELI_PROFILE = HeliProfile(
@@ -172,35 +194,41 @@ DEFAULT_HELI_PROFILE = HeliProfile(
 # the AS350 family, EC35 for the EC130/135/145 family, B412 for the
 # medium twins, AS32 for the Super Puma). UNVERIFIED mappings.
 _HELI_PROFILES: dict[str, HeliProfile] = {
-    # Robinson R44: piston, 110 kt, 1,000 fpm.
-    "R44": _heli_profile(110, 80, 1000, 14000),
+    # Robinson R44: piston, 110 kt, 1,000 fpm. Teetering rotor. The POH's
+    # autorotation speed is ~65 KIAS with the flare at about 40 ft.
+    "R44": _heli_profile(110, 80, 1000, 14000, low_g=0.4,
+                         auto_kt=65.0, auto_flare_ft=40.0),
     # Airbus H125 / Leonardo H125 and the AS350 family via Bell 430.
-    "H125": _heli_profile(130, 60, 1400, 14600),
-    "B407": _heli_profile(130, 60, 1400, 14600),
-    "R66": _heli_profile(130, 60, 1400, 14600),
+    "H125": _heli_profile(130, 60, 1400, 14600, auto_kt=65.0),
+    "B407": _heli_profile(130, 60, 1400, 14600, auto_kt=65.0),
+    "R66": _heli_profile(130, 60, 1400, 14600, low_g=0.4, auto_kt=65.0),
     # Leonardo H145 / EC145 via the EC135 row.
-    "H145": _heli_profile(135, 90, 1500, 20000),
+    "H145": _heli_profile(135, 90, 1500, 20000, auto_flare_ft=75.0),
     # Airbus H160 has no database row; EC35 is its closest published kin.
-    "H160": _heli_profile(135, 90, 1500, 20000),
+    "H160": _heli_profile(135, 90, 1500, 20000, auto_flare_ft=75.0),
     # Eurocopter EC130/135/145 family.
     "EC30": _heli_profile(135, 90, 1500, 20000),
-    "EC35": _heli_profile(135, 90, 1500, 20000),
-    "EC45": _heli_profile(135, 90, 1500, 20000),
+    "EC35": _heli_profile(135, 90, 1500, 20000, auto_flare_ft=75.0),
+    "EC45": _heli_profile(135, 90, 1500, 20000, auto_flare_ft=75.0),
     # Airbus AS365 Dauphin via the medium-twin row.
-    "AS50": _heli_profile(125, 60, 1300, 20000),
-    # Bell 206 light single.
-    "B06": _heli_profile(120, 80, 1350, 13500),
-    # Bell 412 / Agusta A139 medium twin.
-    "A139": _heli_profile(125, 60, 1300, 20000),
-    "B412": _heli_profile(125, 60, 1300, 20000),
+    "AS50": _heli_profile(125, 60, 1300, 20000, auto_flare_ft=75.0),
+    # Bell 206 light single. Teetering rotor; the auto speed is inside
+    # the 52-75 KIAS window the RFM draws.
+    "B06": _heli_profile(120, 80, 1350, 13500, low_g=0.4, auto_kt=60.0),
+    # Bell 412 / Agusta A139 medium twin. The 412 is also teetering.
+    "A139": _heli_profile(125, 60, 1300, 20000, auto_flare_ft=75.0),
+    "B412": _heli_profile(125, 60, 1300, 20000, low_g=0.4,
+                          auto_flare_ft=75.0),
     # Sikorsky S-76 medium-lift twin.
-    "S76": _heli_profile(150, 60, 1800, 13800),
+    "S76": _heli_profile(150, 60, 1800, 13800, auto_flare_ft=75.0),
     # Leonardo AW109 light-medium twin.
     "A109": _heli_profile(140, 100, 1900, 19600),
     # Airbus AS332 Super Puma heavy twin.
-    "AS32": _heli_profile(140, 90, 1500, 17000),
-    # Bell UH-1 utility single.
-    "UH1": _heli_profile(110, 60, 1755, 19000),
+    "AS32": _heli_profile(140, 90, 1500, 17000, auto_flare_ft=75.0),
+    # Bell UH-1 utility single. Teetering rotor; the book's auto entry
+    # is 75-90 KIAS.
+    "UH1": _heli_profile(110, 60, 1755, 19000, low_g=0.4,
+                         auto_kt=75.0, auto_flare_ft=60.0),
 }
 
 
@@ -213,7 +241,8 @@ def heli_profile_for(type_code: str) -> HeliProfile:
 # The internal machine. The owner-visible phase (AutonomousPhase) is a
 # coarser view of the same flight.
 STAGES = ("preflight", "start", "hover", "departure", "climb", "cruise",
-          "descent", "approach", "landing", "shutdown", "done")
+          "descent", "approach", "landing", "shutdown", "done",
+          "autorotate")
 
 # stage -> the AutonomousPhase the rest of the program sees
 _STAGE_PHASE = {
@@ -226,6 +255,7 @@ _STAGE_PHASE = {
     "descent": AutonomousPhase.DESCENT,
     "approach": AutonomousPhase.APPROACH,
     "landing": AutonomousPhase.LANDING,
+    "autorotate": AutonomousPhase.DESCENT,
     "shutdown": AutonomousPhase.SHUTDOWN,
     # "done" is deliberately absent: entering it must not park the owner in
     # COMPLETE, or the chain step in ``_done`` would never run.
@@ -290,12 +320,44 @@ class RotorcraftFlight:
         self.on_event = owner.on_event
         self.state = HeliState()
         self._profile = DEFAULT_HELI_PROFILE
+        # The type's published engine/rotor limits (atc.powerplant):
+        # class-pattern figures until begin() resolves the real type.
+        self._limits = limits_for("", HELICOPTER)
         self._transitioned_owner = ""
         self._last_tick = 0.0
+        # The closed-loop axes follow the same switch as the fixed-wing
+        # ones: immersion.autonomous_pid off returns every channel to the
+        # open-loop constants above.
+        self._gains = None
+        self._pids: dict = {}
+        self._tq_warned = False
+        self._nr_warned = ""
         # The situation loop runs faster than a pilot's hand can; the
         # controls are closed-loop, so a few passes a second is plenty and
         # every pass is a SimConnect round trip.
         self.TICK_S = 0.25
+
+    @property
+    def _use_pids(self) -> bool:
+        """The owner's switch, read live."""
+        return bool(getattr(self.owner, "_use_pids", True))
+
+    def _pid(self, channel: str):
+        """The loop on one axis, made on first use, gains the type's."""
+        pids = getattr(self, "_pids", None)
+        if pids is None:
+            pids = self._pids = {}
+        pid = pids.get(channel)
+        if pid is None:
+            if getattr(self, "_gains", None) is None:
+                from .control_gains import rotor_gains
+                code = getattr(getattr(self.session, "aircraft", None),
+                               "type_code", "") or ""
+                self._gains = rotor_gains(code)
+            from .control import Pid
+            pid = Pid(getattr(self._gains, channel))
+            pids[channel] = pid
+        return pid
 
     # -- plumbing ---------------------------------------------------------
 
@@ -308,6 +370,8 @@ class RotorcraftFlight:
     def _goto(self, stage: str) -> None:
         self.state.stage = stage
         self.state.stage_entered_at = time.monotonic()
+        for pid in getattr(self, "_pids", {}).values():
+            pid.reset()
         shown = _STAGE_PHASE.get(stage)
         if shown is not None and shown != self.owner.state.phase:
             self.owner._transition(shown)
@@ -348,6 +412,12 @@ class RotorcraftFlight:
         # an S-76 do not share a transition speed or a ceiling.
         self._profile = heli_profile_for(
             getattr(session.aircraft, "type_code", ""))
+        # The published ceilings this leg's protections compare against:
+        # torque and rotor RPM where the model reports them.
+        self._limits = limits_for(
+            getattr(session.aircraft, "type_code", ""), HELICOPTER)
+        self._tq_warned = False
+        self._nr_warned = ""
         dest = session.destination
         if dest is not None:
             self.state.dest_lat = dest.lat
@@ -408,8 +478,19 @@ class RotorcraftFlight:
             self._done(state)
             return
         stage = self.state.stage
+        # An engine that stops in flight is an autorotation, whatever the
+        # stage was: the rotor's stored energy is spent getting down under
+        # control, not holding the plan.
+        if stage not in ("preflight", "start", "shutdown", "done",
+                         "autorotate") and self._engine_lost(state):
+            if not self.owner.state.emergency_declared:
+                self.owner._declare_emergency("engine", state, mayday=True)
+            self._goto("autorotate")
+            stage = "autorotate"
         try:
-            if stage == "preflight":
+            if stage == "autorotate":
+                self._autorotate(state)
+            elif stage == "preflight":
                 self._preflight(state)
             elif stage == "start":
                 self._start(state)
@@ -432,8 +513,7 @@ class RotorcraftFlight:
             elif stage == "done":
                 self._done(state)
         except Exception as exc:                       # pragma: no cover
-            log.error("rotorcraft stage %s failed: %s", stage, exc,
-                      exc_info=True)
+            log.exception("rotorcraft stage %s failed: %s", stage, exc)
             self.owner._set_error(f"rotorcraft {stage}: {exc}")
 
     # -- preflight and start ----------------------------------------------
@@ -503,14 +583,32 @@ class RotorcraftFlight:
             self._goto("departure")
 
     def _departure(self, state) -> None:
-        """Transition through the H-V curve: light on the skids, ~40 kt,
-        then climb out of ground effect."""
+        """Transition through the H-V curve: accelerate at skid height in
+        ground effect to the transition speed, *then* climb away.
+
+        The old version climbed at the profile rate the whole way, which
+        is the profile for a helicopter that is already flying -- a
+        departing one accelerates level first. Where the type publishes
+        a takeoff-power airspeed ceiling (the H125's 40 kt), the accel
+        stays under it."""
         agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)
         ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
         prof = self._profile
-        self._fly(state, agl_target=HOVER_AGL_FT + 20.0,
-                  ias_target=prof.transition_kt,
-                  vs_target=prof.climb_vs_fpm, throttle=THROTTLE_CLIMB)
+        accel_to = min(prof.transition_kt,
+                       self._limits.top_max_ias_kt or prof.transition_kt)
+        # The gate to the climb is the accel target itself, not the
+        # transition figure: a type whose takeoff-power ceiling sits
+        # under the transition speed (the H125's 40 kt) accelerates to
+        # its own number and climbs on what it has -- gating on the
+        # transition speed would hold it level for ever.
+        if ias < accel_to - 2.0:
+            self._fly(state, agl_target=HOVER_AGL_FT,
+                      ias_target=accel_to,
+                      vs_target=0.0, throttle=THROTTLE_CLIMB)
+        else:
+            self._fly(state, agl_target=HOVER_AGL_FT + 20.0,
+                      ias_target=prof.transition_kt,
+                      vs_target=prof.climb_vs_fpm, throttle=THROTTLE_CLIMB)
         if agl > 100.0 and ias >= prof.transition_kt:
             self._checklist("after_takeoff")
             self._goto("climb")
@@ -569,8 +667,18 @@ class RotorcraftFlight:
                       ias_target=self.state.ias_approach_kt,
                       vs_target=-400.0, throttle=THROTTLE_CRUISE)
         else:
+            # The walk-down: the speed bleeds off with the height --
+            # the approach figure at the top of the descent, a fast
+            # walk over the spot -- rather than a chop to the flare
+            # speed at one altitude.
+            top = FINAL_AGL_FT + 100.0
+            span = top - 50.0
+            frac = _clamp((agl - 50.0) / span, 0.0, 1.0) if span > 0 \
+                else 0.0
+            ias_t = 20.0 + frac * max(
+                0.0, self.state.ias_approach_kt - 20.0)
             self._fly(state, agl_target=0.0,
-                      ias_target=max(self.state.ias_approach_kt - 10.0, 40.0),
+                      ias_target=max(ias_t, 15.0),
                       vs_target=self._profile.landing_vs_fpm,
                       throttle=THROTTLE_CRUISE)
         if agl <= FLARE_AGL_FT + 20.0:
@@ -602,6 +710,106 @@ class RotorcraftFlight:
         if self._elapsed() > 300.0:
             self.owner._set_error("rotorcraft landing timed out")
 
+    # -- the failure ---------------------------------------------------------
+
+    def _demeanor(self, state) -> str:
+        """How hard the axes may travel: smooth, gentle or urgent.
+
+        The precision stages -- the hover, the approach, the landing --
+        spend the last of the cyclic carefully. An autorotation, an
+        engine that has stopped, or an emergency the aeroplane's FO has
+        declared gets everything the clamps allow.
+        """
+        if self.state.stage == "autorotate" or self._engine_lost(state) \
+                or getattr(self.owner.state, "emergency", ""):
+            return "urgent"
+        if self.state.stage in ("hover", "approach", "landing"):
+            return "gentle"
+        return "smooth"
+
+    def _engine_lost(self, state) -> bool:
+        """Whether every engine the sim reports has stopped, airborne."""
+        if getattr(state, "on_ground", True):
+            return False
+        out = self.owner._engines_out(state)
+        count = int(getattr(state, "engine_count", 0) or 0) or 1
+        return 0 < count <= out
+
+    def _autorotate(self, state) -> None:
+        """The engine-out landing: the rotor's energy spent to touch down.
+
+        A real autorotation is three moves -- the collective goes down at
+        once to keep the rotor turning, the cyclic holds the speed the
+        rotor likes (near the type's approach figure), and at the bottom
+        the flare trades speed for rotor and the collective comes up to
+        spend what is left against the last few feet. That is flown here:
+        low collective and approach speed down to FLARE_AGL_FT, the flare
+        and the pull under it, then the ground.
+        """
+        agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)
+        if getattr(state, "on_ground", False):
+            # Down: collective all the way, the rest centred, the leg over.
+            self._collective(0.0)
+            self._send(CYCLIC_LONG_SET, 0)
+            self._send(CYCLIC_LAT_SET, 0)
+            self._send(PEDAL_SET, 0)
+            self._send(TAIL_ROTOR_SET, 0)
+            self._checklist("after_landing")
+            self._goto("shutdown")
+            return
+        self._throttle(0)
+        flare_agl = self._profile.auto_flare_ft or FLARE_AGL_FT
+        if agl > flare_agl:
+            # Preserving the rotor: near-bottom collective, the type's
+            # autorotation speed on the cyclic, pedals holding the track
+            # to the spot.
+            coll = 10.0
+            if self._use_pids:
+                # The rotor is the engine now: where the model reports
+                # Nr, a governor trades collective against it -- droop
+                # unloads the blades, a windmilling rotor takes pitch.
+                # The target sits just above the type's power-off floor.
+                rpm = float(getattr(state, "rotor_rpm_pct", 0.0) or 0.0)
+                if rpm > 0.0:
+                    nr_want = max(90.0,
+                                  (self._limits.nr_auto_min_pct or 90.0)
+                                  + 5.0)
+                    coll += self._pid("rotor").update(rpm - nr_want)
+            self._collective(coll)
+            ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
+            auto_kt = self._profile.auto_kt or self.state.ias_approach_kt
+            err = auto_kt - ias
+            if self._use_pids:
+                axis = CYCLIC_TRIM_AIRBORNE + self._pid("cyclic") \
+                    .update(err, measurement=ias)
+            else:
+                axis = CYCLIC_TRIM_AIRBORNE + CYCLIC_KT_PER_AXIS * err
+            self._send(CYCLIC_LONG_SET,
+                       int(_clamp(axis, -CYCLIC_MAX, CYCLIC_MAX)))
+            self._send(CYCLIC_LAT_SET, self._lateral_trim_axis(state))
+            want_hdg = self._desired_track(state)
+            if want_hdg:
+                err_h = _heading_error(
+                    want_hdg, float(getattr(state, "heading_true", 0.0)
+                                    or 0.0))
+                pedal = int(_clamp(-PEDAL_DEG_PER_AXIS * err_h,
+                                   -PEDAL_MAX, PEDAL_MAX))
+                if not self._send(PEDAL_SET, pedal):
+                    self._send(TAIL_ROTOR_SET, pedal)
+        elif agl > 10.0:
+            # The flare: aft cyclic trades speed for rotor, and the
+            # collective starts up to cushion what is left of the descent.
+            self._send(CYCLIC_LONG_SET, -CYCLIC_TRIM_AIRBORNE)
+            self._collective(45.0)
+        else:
+            # The pull: everything the rotor has left, against the last
+            # feet -- then level the skids for the touchdown.
+            self._collective(85.0)
+            self._send(CYCLIC_LONG_SET, 0)
+            self._send(CYCLIC_LAT_SET, 0)
+        if self._elapsed() > 300.0:
+            self.owner._set_error("rotorcraft autorotation timed out")
+
     # -- shutdown -----------------------------------------------------------
 
     def _shutdown(self, state) -> None:
@@ -610,6 +818,11 @@ class RotorcraftFlight:
         running = bool(getattr(state, "engines_running", False))
         if not self.state.shutdown_at:
             self.state.shutdown_at = time.monotonic()
+            # The cool-down only means anything at idle: the last _fly
+            # pass left the throttle wherever the flight put it, so it
+            # is brought back before the clock starts counting -- the
+            # ITT figure below cannot be reached at cruise throttle.
+            self._throttle(0)
         elapsed = time.monotonic() - self.state.shutdown_at
         if running and not self.state.rotor_brake_sent \
                 and getattr(state, "rotor_brake_available", False) \
@@ -619,7 +832,10 @@ class RotorcraftFlight:
             if not self._send(ROTOR_BRAKE_ON, 0):
                 self._send(ROTOR_BRAKE, 1)
             self.state.rotor_brake_sent = True
-        cooled = elapsed >= SHUTDOWN_COOLDOWN_S or (rpm and rpm < 30.0)
+        itt = float(getattr(state, "eng_itt_c", 0.0) or 0.0)
+        idle_itt = self._limits.itt_idle_c
+        cooled = (elapsed >= SHUTDOWN_COOLDOWN_S or (rpm and rpm < 30.0)
+                  or (idle_itt and 0.0 < itt <= idle_itt))
         if running and cooled and not self.state.shutdown_sent:
             self.state.shutdown_sent = True
             self._send(ENGINE_STOP, 1)
@@ -659,16 +875,24 @@ class RotorcraftFlight:
         ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
         hdg = float(getattr(state, "heading_true", 0.0) or 0.0)
         airborne = not bool(getattr(state, "on_ground", True))
+        # How hard the axes may travel this pass: the precision stages
+        # spend the last of the cyclic carefully; the urgent ones get
+        # everything the clamps allow.
+        axis_max = int(CYCLIC_MAX
+                       * (0.7 if self._demeanor(state) == "gentle" else 1.0))
+        pedal_max = int(PEDAL_MAX * (axis_max / CYCLIC_MAX))
 
         # -- collective: height, or rate of climb --------------------------
         if agl_target is not None:
-            # Hover/landing: feet above the ground, damped towards the
-            # wanted vertical speed rather than towards none -- a landing
-            # asks for three hundred feet a minute down, and holding the
-            # hover asks for zero.
             err = agl_target - agl
-            coll = self.state.coll_trim + COLL_KP_PER_FT * err \
-                + COLL_KD_PER_FPM * ((vs_target or 0.0) - vs)
+            if self._use_pids:
+                # Hover/landing: feet above the ground, damped towards the
+                # wanted vertical speed rather than towards none.
+                coll = self.state.coll_trim + self._pid("collective") \
+                    .update(err, rate=(vs_target or 0.0) - vs)
+            else:
+                coll = self.state.coll_trim + COLL_KP_PER_FT * err \
+                    + COLL_KD_PER_FPM * ((vs_target or 0.0) - vs)
             # Learn the trim only in a steady hover, so a climb does not
             # teach the collective the wrong number.
             if airborne and abs(vs) < 150.0 and abs(err) < 40.0:
@@ -684,8 +908,12 @@ class RotorcraftFlight:
             limit = (min(self._profile.max_vs_fpm, abs(vs_target))
                      if vs_target else self._profile.max_vs_fpm)
             want_vs = _clamp(err * 2.0, -limit, limit)
-            coll = self.state.coll_trim + COLL_KP_PER_FT * err / 10.0 \
-                + COLL_KD_PER_FPM * (want_vs - vs) / 10.0
+            if self._use_pids:
+                coll = self.state.coll_trim + self._pid("collective") \
+                    .update(err * 0.1, rate=(want_vs - vs) * 0.1)
+            else:
+                coll = self.state.coll_trim + COLL_KP_PER_FT * err / 10.0 \
+                    + COLL_KD_PER_FPM * (want_vs - vs) / 10.0
         else:
             coll = self.state.coll_trim
         self._collective(coll)
@@ -698,24 +926,43 @@ class RotorcraftFlight:
             ias_target = min(float(ias_target),
                              self._profile.max_ias_kt * 0.95)
             err = ias_target - ias
-            axis = CYCLIC_TRIM_AIRBORNE + CYCLIC_KT_PER_AXIS * err
+            if self._use_pids:
+                axis = CYCLIC_TRIM_AIRBORNE + self._pid("cyclic") \
+                    .update(err, measurement=ias)
+            else:
+                axis = CYCLIC_TRIM_AIRBORNE + CYCLIC_KT_PER_AXIS * err
             # A helicopter cannot climb vertically forever: bleed speed
             # protection -- if the collective is asking hard and the speed
             # is low, lower the nose rather than stall in the H-V curve.
             if ias < 45.0 and agl > 200.0:
                 axis -= 1500
-            self._send(CYCLIC_LONG_SET, int(_clamp(axis, -CYCLIC_MAX,
-                                                 CYCLIC_MAX)))
+            self._send(CYCLIC_LONG_SET, int(_clamp(axis, -axis_max,
+                                                 axis_max)))
         elif not airborne:
             self._send(CYCLIC_LONG_SET, CYCLIC_TRIM_HOVER)
-        self._send(CYCLIC_LAT_SET, self._lateral_trim_axis(state))
+        # Cyclic lateral: the model's trim, plus a drift correction the
+        # way a pilot adds a touch of into-wind cyclic -- track right of
+        # the nose is wind from the left, so the answer is left bank.
+        # Only forward flight: below ~15 kt a track is not a thing yet.
+        # UNVERIFIED sign, like every cyclic axis.
+        lat = self._lateral_trim_axis(state)
+        if airborne and ias >= 15.0:
+            drift = _heading_error(
+                float(getattr(state, "heading_true", 0.0) or 0.0),
+                float(getattr(state, "track_true", 0.0) or 0.0))
+            lat += int(_clamp(drift * 150.0, -2000.0, 2000.0))
+        self._send(CYCLIC_LAT_SET, int(_clamp(lat, -axis_max, axis_max)))
 
         # -- pedals: heading -------------------------------------------------
         want_hdg = self._desired_track(state)
         if want_hdg:
             err = _heading_error(want_hdg, hdg)
-            pedal = int(_clamp(-PEDAL_DEG_PER_AXIS * err, -PEDAL_MAX,
-                               PEDAL_MAX))
+            if self._use_pids:
+                pedal = int(_clamp(-self._pid("pedals").update(err),
+                                   -pedal_max, pedal_max))
+            else:
+                pedal = int(_clamp(-PEDAL_DEG_PER_AXIS * err, -pedal_max,
+                                   pedal_max))
             if not self._send(PEDAL_SET, pedal):
                 self._send(TAIL_ROTOR_SET, pedal)
             self._send(STEERING_SET, pedal)
@@ -747,23 +994,96 @@ class RotorcraftFlight:
         and never past the torque the engine is rated for, where the
         model reports it."""
         max_vs = self._profile.max_vs_fpm
+        autorotating = self.state.stage == "autorotate"
         if vs > max_vs:
             self._collective(max(0.0, self.state.coll_trim - 10.0))
-        elif vs < -max_vs:
+        elif vs < -max_vs and not autorotating:
+            # A sink past the envelope is met with collective -- except in
+            # the autorotation, where the steep descent is the design and
+            # the rotor's stored speed is spent at the flare, not here.
             self._collective(min(100.0, self.state.coll_trim + 15.0))
-        if ias > self._profile.max_ias_kt:
+        if ias > self._profile.max_ias_kt and not autorotating:
             self._send(CYCLIC_LONG_SET, CYCLIC_MAX)   # nose down, UNVERIFIED sign
         torque = float(getattr(state, "eng_torque_pct", 0.0) or 0.0)
         # The variable is documented as a percent but some models publish
-        # torque in foot-pounds on the same scale; a figure outside the
-        # percent range is not a percent, and limiting on it would hold
-        # the collective down all flight.
-        if 95.0 < torque <= 115.0:
+        # torque in foot-pounds on the same scale; a figure far past the
+        # red line is not a percent, and limiting on it would hold the
+        # collective down all flight. The line itself is the type's own:
+        # the published takeoff figure (atc.powerplant), not a generic
+        # 95 -- an EC135's 75% is a different red line from an S-76's.
+        tq_red = self._limits.tq_takeoff_pct or 100.0
+        if tq_red * 0.97 <= torque <= tq_red * 1.30:
             # At red line the collective comes off, whatever else wants.
             self._collective(max(0.0, self.state.coll_trim - 8.0))
+            if not self._tq_warned:
+                self._tq_warned = True
+                self._emit("info",
+                           f"Torque {torque:.0f}% at the limit "
+                           f"({tq_red:.0f}%): easing the collective",
+                           "autonomous.rotorcraft.torque")
+        elif torque < tq_red * 0.90:
+            self._tq_warned = False
+
+        # Rotor speed, where the model publishes it: droop unloads the
+        # blades so the governor recovers (collective down), an overspeed
+        # loads the rotor to bring it back (collective up). The floors
+        # are the type's power-on figures; in an autorotation the
+        # rotor-PID above owns this job and the watch stands down.
+        rpm = float(getattr(state, "rotor_rpm_pct", 0.0) or 0.0)
+        nr_min = self._limits.nr_min_pct or 90.0
+        nr_max = self._limits.nr_max_pct or 104.0
+        if self.state.stage != "autorotate" and 40.0 < rpm < nr_min:
+            self._collective(max(0.0, self.state.coll_trim - 12.0))
+            if self._nr_warned != "droop":
+                self._nr_warned = "droop"
+                self._emit("info",
+                           f"Rotor droop ({rpm:.0f}% < {nr_min:.0f}%): "
+                           "collective down to recover",
+                           "autonomous.rotorcraft.droop")
+        elif self.state.stage != "autorotate" and rpm > nr_max:
+            self._collective(min(100.0, self.state.coll_trim + 10.0))
+            if self._nr_warned != "overspeed":
+                self._nr_warned = "overspeed"
+                self._emit("info",
+                           f"Rotor overspeed ({rpm:.0f}% > "
+                           f"{nr_max:.0f}%): loading the rotor",
+                           "autonomous.rotorcraft.overspeed")
+        elif nr_min <= rpm <= nr_max:
+            self._nr_warned = ""
         if agl < 15.0 and not getattr(state, "on_ground", True):
             # Effectively landed but not flagged: kill the climb input.
             self._collective(min(self.state.coll_trim, 30.0))
+
+        # The rotor's load. High G is offloaded on the collective the
+        # way the torque is; low G -- the mast-bump edge on a teetering
+        # rotor -- is reloaded with a gentle aft cyclic, which is the
+        # recovery the Robinson POH teaches (UNVERIFIED sign, like the
+        # cyclic axis it writes). An autorotation wants the rotor
+        # unloaded on purpose, so the watch stands down for it.
+        g = float(getattr(state, "g_force", 1.0) or 0.0)
+        if getattr(self.owner, "_envelope_protection", True) \
+                and self.state.stage != "autorotate" \
+                and not getattr(state, "on_ground", True) \
+                and "g_force" not in getattr(state, "unavailable", ()):
+            if g > self._profile.pos_g * 0.85:
+                self._collective(max(0.0, self.state.coll_trim - 8.0))
+                if not getattr(self, "_g_warned", False):
+                    self._g_warned = True
+                    self._emit("info",
+                               f"High rotor load ({g:.1f} G): easing the collective",
+                               "autonomous.rotorcraft.g_limit")
+            if g < self._profile.low_g:
+                self._send(CYCLIC_LONG_SET, int(_clamp(
+                    CYCLIC_TRIM_HOVER + 2000.0, -CYCLIC_MAX, CYCLIC_MAX)))
+                if not getattr(self, "_low_g_warned", False):
+                    self._low_g_warned = True
+                    self._emit("info",
+                               f"Low G ({g:.1f}): gentle aft cyclic",
+                               "autonomous.rotorcraft.low_g")
+            if g < self._profile.pos_g * 0.7 \
+                    and g > self._profile.low_g + 0.1:
+                self._g_warned = False
+                self._low_g_warned = False
 
     def _lateral_trim_axis(self, state=None) -> int:
         """The model's own lateral cyclic trim as an axis value.
@@ -803,10 +1123,15 @@ class RotorcraftFlight:
                 return to_true(float(assigned),
                                variation(state.latitude, state.longitude))
             return float(assigned)
-        if not getattr(state, "has_position", False) \
-                or not self.state.dest_lat:
+        # The live destination, not the one begin() planned: an emergency
+        # divert repoints the whole flight, and the pedals should go the
+        # same way the declaration said.
+        dest = getattr(self.session, "destination", None)
+        lat = getattr(dest, "lat", 0.0) or self.state.dest_lat
+        lon = getattr(dest, "lon", 0.0) or self.state.dest_lon
+        if not getattr(state, "has_position", False) or not lat:
             return float(getattr(state, "heading_true", 0.0) or 0.0)
-        return state.bearing_to(self.state.dest_lat, self.state.dest_lon)
+        return state.bearing_to(lat, lon)
 
     def _hold_hover(self, state) -> None:
         """Feet on the ground, rotor turning: centred controls."""

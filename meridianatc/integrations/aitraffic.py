@@ -456,7 +456,7 @@ def subscribe_frames(simconnect, callback) -> bool:
             frame = ctypes.cast(data, ctypes.POINTER(_Frame)).contents
             if frame.uEventID != _FRAME_EVENT:
                 return False
-            for one in list(callbacks):
+            for one in callbacks:
                 began = time.perf_counter()
                 try:
                     one()
@@ -644,7 +644,8 @@ class SimTraffic:
     """
 
     def __init__(self, enabled: bool = True, limit: int = 12,
-                 settle_s: float = 3.0, smooth: bool = True):
+                 settle_s: float = 3.0, smooth: bool = True,
+                 live_limit: int = 300):
         self.enabled = enabled
         # Drawn every frame from the model's ticks (meridianatc.atc.follow),
         # frozen so the simulator does not move them in between. Off, or on
@@ -684,6 +685,10 @@ class SimTraffic:
         # drawn aeroplane in somebody's simulator, and a busy field would
         # otherwise put thirty on the ramp.
         self.limit = limit
+        # The live aeroplanes' own ceiling (traffic.live.limit), on top of
+        # ``limit`` rather than inside it: a low invented budget must not
+        # take a real aeroplane off the sky.
+        self.live_limit = max(0, min(300, int(live_limit)))
         self._sim = None
         self._dll = None
         self._handle = None
@@ -1141,7 +1146,20 @@ class SimTraffic:
             return
         now = time.monotonic() if now is None else now
         try:
-            wanted = {p["callsign"]: p for p in positions[:self.limit]}
+            # Two budgets in one relevance-sorted list: the live ones spend
+            # their own, the rest spend the invented/observed one. Kept in
+            # order, so what matters most is drawn first either way.
+            live_room, room = self.live_limit, self.limit
+            drawn = []
+            for p in positions:
+                if p.get("source") == "live":
+                    if live_room:
+                        live_room -= 1
+                        drawn.append(p)
+                elif room:
+                    room -= 1
+                    drawn.append(p)
+            wanted = {p["callsign"]: p for p in drawn}
             for callsign in list(self._objects):
                 if callsign not in wanted:
                     self._remove(callsign)

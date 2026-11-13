@@ -47,6 +47,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 import zipfile
 from collections.abc import Callable
@@ -58,7 +59,7 @@ from .paths import FROZEN, _writable, data_root
 
 log = logging.getLogger(__name__)
 
-REPO = "GGTNT/MeridianATC"
+REPO = "Plane14/MeridianATC"
 LATEST_API = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
 USER_AGENT = f"MeridianATC/{__version__} (https://github.com/{REPO})"
@@ -196,8 +197,15 @@ def fetch_latest(opener=urllib.request.urlopen,
         "User-Agent": USER_AGENT,
         "Accept": "application/vnd.github+json",
     })
-    with opener(request, timeout=timeout_s) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    try:
+        with opener(request, timeout=timeout_s) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        # A repository with no releases yet answers /latest with a 404:
+        # that is "no update", not a failed check.
+        if exc.code == 404:
+            return None
+        raise
     return release_from(payload, is_hq_build())
 
 

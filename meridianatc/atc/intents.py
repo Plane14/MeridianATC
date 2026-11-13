@@ -239,8 +239,7 @@ def normalize(text: str, keep_commas: bool = False) -> str:
             out = re.sub(r"[’']", " ", out)
             continue
         out = re.sub(pattern, replacement, out)
-    out = re.sub(r"\s+", " ", out).strip()
-    return out
+    return re.sub(r"\s+", " ", out).strip()
 
 
 # Digit words safe to collapse into a numeric run. The homophones that

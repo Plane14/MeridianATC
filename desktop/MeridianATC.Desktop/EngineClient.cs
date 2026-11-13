@@ -44,14 +44,18 @@ public sealed class EngineClient : IDisposable
         if (await PingAsync(ct))
         {
             Connected = true;
-            _ = ListenAsync();
+            // OnlyOnFaulted: a faulted fire-and-forget task is observed here
+            // rather than surfacing on UnobservedTaskException.
+            _ = ListenAsync().ContinueWith(t => _ = t.Exception,
+                TaskContinuationOptions.OnlyOnFaulted);
             return true;
         }
         if (await TryLaunchAsync(ct) && await PingAsync(ct, retries: 40,
                 delay: TimeSpan.FromMilliseconds(500)))
         {
             Connected = true;
-            _ = ListenAsync();
+            _ = ListenAsync().ContinueWith(t => _ = t.Exception,
+                TaskContinuationOptions.OnlyOnFaulted);
             return true;
         }
         Connected = false;
@@ -168,6 +172,7 @@ public sealed class EngineClient : IDisposable
                 _socket = new ClientWebSocket();
                 await _socket.ConnectAsync(
                     new Uri($"ws://127.0.0.1:{Port}/ws"), token);
+                Connected = true;
                 var buffer = new byte[64 * 1024];
                 while (_socket.State == WebSocketState.Open &&
                        !token.IsCancellationRequested)
@@ -195,6 +200,9 @@ public sealed class EngineClient : IDisposable
             {
                 // Reconnect: the engine may still be starting.
             }
+            // The socket died or the engine closed it: until a new one opens
+            // the API cannot be relied on, whatever the last ping said.
+            Connected = false;
             try { await Task.Delay(2000, token); }
             catch (TaskCanceledException) { break; }
         }
@@ -207,6 +215,8 @@ public sealed class EngineClient : IDisposable
         _listen?.Cancel();
         _socket?.Dispose();
         // The engine belongs to the user: started by us, it may outlive the
-        // window the way a co-pilot outlives the briefing.
+        // window the way a co-pilot outlives the briefing. The Process handle
+        // is still ours to release though.
+        _engine?.Dispose();
     }
 }

@@ -140,14 +140,14 @@ class Crossing:
 
 
 def is_oceanic(station: Station | None) -> bool:
-    return station is not None and (station.description or "").startswith(
-        OCEANIC_MARK)
+    return station is not None and (
+        getattr(station, "description", "") or "").startswith(OCEANIC_MARK)
 
 
 def is_invented(station: Station | None) -> bool:
     """Whether a station's frequency was made up for want of a published one."""
-    return station is not None and (station.description or "").endswith(
-        ", invented)")
+    return station is not None and (
+        getattr(station, "description", "") or "").endswith(", invented)")
 
 
 # --------------------------------------------------------------------------

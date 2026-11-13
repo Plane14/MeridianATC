@@ -124,6 +124,11 @@ class Instruction:
     # Items the controller has asked the pilot to confirm, rather than
     # corrected: "affirm" settles them.
     confirming: set[str] | None = None
+    # How it is delivered: "voice" (said on the frequency, read back out
+    # loud) or "cpdlc" (uplinked to the flight deck, answered WILCO or
+    # UNABLE on the link -- see atc.cpdlc). Stamped by remember(), which
+    # is the one place that decides.
+    delivery: str = "voice"
 
     @property
     def age_s(self) -> float:
@@ -532,6 +537,10 @@ class FlightSession:
     # on COM1, so it is held here, and it is who answers until the next
     # domestic sector takes the flight back (atc/enroute.py).
     oceanic: Station | None = None
+    # The data link, while the flight is logged on with a data authority:
+    # oceanic sectors for an aircraft that carries the box (atc.cpdlc).
+    # Instructions the authority issues ride the link instead of HF.
+    cpdlc: Any = None
     # When the flight was handed away from each en-route station, by
     # station_key: a centre never hands a flight back to the one it has
     # just left (atc/enroute.py, Engine._handing_back).
@@ -582,6 +591,11 @@ class FlightSession:
             self.last_clearance = instruction.text
         if instruction.readback_required:
             self.pending = instruction
+            # A link is up and this is the authority's instruction: it is
+            # uplinked rather than voiced, and WILCO is its readback.
+            link = self.cpdlc
+            if link is not None and link.takes(instruction):
+                link.uplink(instruction)
         return instruction
 
     def clear_pending(self) -> None:

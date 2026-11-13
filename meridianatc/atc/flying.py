@@ -67,6 +67,19 @@ CLIMB_ONSET_FPM_S = 450.0
 FLARE_FT = 40.0
 FLARE_FPM = 160.0
 
+# Gravity in knots a second: the rate energy trades at. A climb spends it
+# (the vertical speed, in knots, over the true airspeed), a descent gives it
+# back -- which is why an aeroplane accelerates going downhill and is in no
+# hurry to speed up on the way up.
+_G_KT_S = 19.05
+
+# The drag index of a configured aeroplane: flaps and gear out make a dirty
+# wing decelerate faster than the book figure and accelerate slower. The
+# model carries no flap handle; the approach speed is where the dirty wing
+# lives, so "at or below the class's approach figure" is where the drag is.
+_DIRTY_DECEL = 1.6
+_DIRTY_ACCEL = 0.7
+
 
 @dataclass(frozen=True)
 class Performance:
@@ -105,21 +118,40 @@ class Performance:
     # callers must not read zero as "cannot fly".
     range_nm: float = 0.0
     ceiling_ft: float = 0.0
+    # Flown-by-hand numbers: the speed over the numbers and the speed a
+    # go-around climbs away at, the bank a pilot would take as his limit
+    # for "stable", and the flap lever positions this type uses for
+    # takeoff and landing (0..1 of travel). Zero means the class's own
+    # figure -- a profile that does not say does not guess.
+    touchdown_kt: float = 0.0
+    goaround_kt: float = 0.0
+    max_bank_deg: float = 0.0
+    takeoff_flaps: float = 0.0
+    landing_flaps: float = 0.0
+    # The structural load limits the autonomous envelope is held inside,
+    # positive and negative G. Zeros mean "the class figure": the
+    # normal-category numbers a type's certification settles at -- a
+    # transport +2.5/-1.0, a light aeroplane +3.8/-1.5 -- rounded, the
+    # way every figure in this table is. An autofly profile that knows
+    # its own limits says them; one that does not gets these.
+    pos_g: float = 0.0
+    neg_g: float = 0.0
 
 
-AIRLINER = Performance()
+AIRLINER = Performance(pos_g=2.5, neg_g=-1.0)
 
 TURBOPROP = Performance(
     turn_rate=RATE_ONE, climb_fpm=1500.0, descend_fpm=1600.0,
     accelerate_kt_s=2.6, decelerate_kt_s=1.8, takeoff_kt_s=3.4,
     rotate_kt=105.0, climb_kt=170.0, cruise_kt=230.0, approach_kt=115.0,
-    braking_kt_s=4.0, pattern_agl_ft=1500.0)
+    braking_kt_s=4.0, pattern_agl_ft=1500.0, pos_g=2.5, neg_g=-1.0)
 
 LIGHT = Performance(
     turn_rate=RATE_LIGHT, climb_fpm=750.0, descend_fpm=900.0,
     accelerate_kt_s=2.2, decelerate_kt_s=2.2, takeoff_kt_s=2.4,
     taxi_kt=10.0, rotate_kt=60.0, climb_kt=85.0, cruise_kt=110.0,
-    approach_kt=70.0, braking_kt_s=3.5, pattern_agl_ft=1000.0)
+    approach_kt=70.0, braking_kt_s=3.5, pattern_agl_ft=1000.0,
+    pos_g=3.8, neg_g=-1.5)
 
 # Which types fly like what. Anything unlisted is judged by the company it
 # keeps: a flight with an operator is an airliner, a registration is not.
@@ -294,14 +326,40 @@ def _towards(value: float, wanted: float, up: float, down: float,
     return max(wanted, value - down * dt)
 
 
+def _turn_rate(performance: Performance, speed_kt: float,
+               on_ground: bool) -> float:
+    """How fast the heading may change here, degrees a second.
+
+    In the air a turn is banked lift: the rate falls out of the speed and
+    the bank the type will take (rate-one at 140 kt is about seventeen
+    degrees; the same rate at 250 is thirty), bounded by the class's own
+    figure so a light aeroplane at circuit speed is not held to a
+    heavy's manners. On the ground below taxi speed the nosewheel steers
+    and a castering wheel turns faster than any bank.
+    """
+    if on_ground and speed_kt < 40.0:
+        return performance.turn_rate * 3.0
+    bank = math.radians(performance.max_bank_deg or 25.0)
+    return min(performance.turn_rate,
+               _G_KT_S * math.tan(bank) * 57.2958 / max(speed_kt, 30.0))
+
+
 def step(flight, target: Target, performance: Performance, dt: float,
-         ground_elevation_ft: float = 0.0) -> None:
+         ground_elevation_ft: float = 0.0, energy: bool = True) -> None:
     """Fly one slice of time.
 
     ``flight`` is anything carrying the six numbers an aeroplane is made of --
     latitude, longitude, altitude_ft, heading, ground_speed_kt, on_ground --
     which is what a :class:`~meridianatc.atc.traffic.Flight` carries. It is moved
     in place.
+
+    With ``energy`` the numbers are coupled the way an airframe couples
+    them: a climb spends the acceleration, a descent lends it, a dirty
+    wing drags the speed to the approach figure, turns cost what the bank
+    allows, and a wind blows the track off the heading. ``ground_speed_kt``
+    is the speed through the air in that case; the track and the rate over
+    the ground are what the wind makes of it. ``energy=False`` is the old
+    integrator, kept for a model or a test that wants it.
     """
     if dt <= 0.0:
         return
@@ -317,20 +375,36 @@ def step(flight, target: Target, performance: Performance, dt: float,
             flight.vertical_rate_fpm = 0.0
             return
     elif target.speed_kt is not None:
+        up = performance.accelerate_kt_s
+        down = (performance.braking_kt_s if flight.on_ground
+                else performance.decelerate_kt_s)
+        if energy and not flight.on_ground:
+            # The energy trade: vertical speed is bought or sold against
+            # the acceleration -- power spent on height is not spent on
+            # speed, and a descent feeds the deceleration a clean wing
+            # otherwise cannot find.
+            vs_kt = flight.vertical_rate_fpm * 0.00987
+            trade = _G_KT_S * vs_kt / max(flight.ground_speed_kt, 30.0)
+            up = max(0.2, up - trade)
+            down = max(0.2, down + trade)
+            # Configured for the arrival: drag is brake below the
+            # approach figure, and thrust fights it above it.
+            if target.speed_kt <= performance.approach_kt * 1.15:
+                up *= _DIRTY_ACCEL
+                down *= _DIRTY_DECEL
+        if target.accel_kt_s is not None:
+            up = target.accel_kt_s
         flight.ground_speed_kt = _towards(
             flight.ground_speed_kt, max(0.0, target.speed_kt),
-            target.accel_kt_s if target.accel_kt_s is not None
-            else performance.accelerate_kt_s,
-            performance.braking_kt_s if flight.on_ground
-            else performance.decelerate_kt_s,
-            dt)
+            up, down, dt)
 
     if target.heading is not None:
-        # On the ground below taxi speed an aeroplane is steered, not turned,
-        # and it can pivot faster than it can bank.
-        rate = (performance.turn_rate * 3.0
-                if flight.on_ground and flight.ground_speed_kt < 40.0
-                else performance.turn_rate)
+        rate = (_turn_rate(performance, flight.ground_speed_kt,
+                           flight.on_ground)
+                if energy else
+                (performance.turn_rate * 3.0
+                 if flight.on_ground and flight.ground_speed_kt < 40.0
+                 else performance.turn_rate))
         flight.heading = turn_towards(flight.heading, target.heading, rate, dt,
                                       target.turn)
 
@@ -342,6 +416,13 @@ def step(flight, target: Target, performance: Performance, dt: float,
         # float every arrival above the slope.
         rate = max(0.0, getattr(flight, "vertical_rate_fpm", 0.0) or 0.0)
         climb = min(performance.climb_fpm, rate + CLIMB_ONSET_FPM_S * dt)
+        if energy:
+            # Accelerating is spent height: an aeroplane speeding up to
+            # its climb speed has less left over to climb with.
+            gap = ((target.speed_kt or 0.0) - flight.ground_speed_kt
+                   if target.speed_kt is not None else 0.0)
+            if gap > 10.0:
+                climb *= max(0.3, 1.0 - gap / 150.0)
         descend = performance.descend_fpm
         if target.max_descent_fpm is not None:
             descend = min(descend, target.max_descent_fpm)
@@ -352,9 +433,28 @@ def step(flight, target: Target, performance: Performance, dt: float,
         flight.vertical_rate_fpm = 0.0
 
     if flight.ground_speed_kt > 0.0:
-        distance = flight.ground_speed_kt * (dt / 3600.0)
+        track = flight.heading
+        speed = flight.ground_speed_kt
+        if energy and not flight.on_ground:
+            # The wind triangle: the aeroplane points at its heading and
+            # travels its track, and the difference is the drift the wind
+            # makes of it. The crew corrects for it -- the model does not
+            # need to be told the crab exists for the crab to be there.
+            wind_kt = float(getattr(flight, "wind_kt", 0.0) or 0.0)
+            if wind_kt > 0.1:
+                wind_deg = float(getattr(flight, "wind_deg", 0.0) or 0.0)
+                hdg = math.radians(flight.heading)
+                wdir = math.radians(wind_deg + 180.0)
+                east = speed * math.sin(hdg) + wind_kt * math.sin(wdir)
+                north = speed * math.cos(hdg) + wind_kt * math.cos(wdir)
+                track = math.degrees(math.atan2(east, north)) % 360.0
+                speed = math.hypot(east, north)
+        track_attr = getattr(flight, "track", None)
+        if track_attr is not None:
+            flight.track = track
+        distance = speed * (dt / 3600.0)
         flight.latitude, flight.longitude = project(
-            flight.latitude, flight.longitude, flight.heading, distance)
+            flight.latitude, flight.longitude, track, distance)
 
 
 def glide_altitude(elevation_ft: float, distance_nm: float,

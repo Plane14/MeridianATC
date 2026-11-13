@@ -316,7 +316,13 @@ function connect() {
     setTimeout(connect, 1500);
   };
   socket.onmessage = (message) => {
-    const payload = JSON.parse(message.data);
+    let payload;
+    try {
+      payload = JSON.parse(message.data);
+    } catch {
+      // One malformed frame is a frame dropped, not the whole handler dead.
+      return;
+    }
     if (payload.kind === "snapshot" || payload.kind === "state") {
       apply(payload.state);
     } else if (payload.kind === "event") {
@@ -369,6 +375,7 @@ function apply(state) {
   app.state = state;
   paintHeader();
   paintComms();
+  paintCpdlc(state.cpdlc);
   paintSettingsLive();
   paintLanding(state.landing);
 
@@ -396,6 +403,29 @@ function apply(state) {
       on_ground: state.position.on_ground,
     };
     paintAirspace();
+  }
+}
+
+// -------------------------------------------------------------- datalink ---
+
+/** The data link's card: the open uplink and its answers, or hidden. */
+function paintCpdlc(link) {
+  const card = $("cpdlc");
+  if (!card) return;
+  const pending = link && link.pending;
+  card.hidden = !pending;
+  if (!pending) return;
+  $("cpdlc-authority").textContent = link.authority || "";
+  $("cpdlc-text").textContent = pending.text || "";
+}
+
+for (const answer of ["wilco", "unable", "roger"]) {
+  const button = $(`cpdlc-${answer}`);
+  if (button) {
+    button.addEventListener("click", async () => {
+      const result = await post("/api/cpdlc", { answer });
+      if (result && result.cpdlc) paintCpdlc(result.cpdlc);
+    });
   }
 }
 
@@ -3680,7 +3710,7 @@ function wireUpdate() {
   });
   on($("update-page"), "click", () => {
     const release = app.update && app.update.release;
-    window.open((release && release.page) || "https://github.com/GGTNT/MeridianATC/releases/latest", "_blank");
+    window.open((release && release.page) || "https://github.com/Plane14/MeridianATC/releases/latest", "_blank");
   });
   on($("update-check-now"), "click", checkForUpdate);
   on($("set-check-updates"), "click", (e) => {

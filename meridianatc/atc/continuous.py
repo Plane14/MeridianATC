@@ -117,12 +117,16 @@ class ContinuousFlights:
             self._request = None
 
     def plan_next_leg(self, at_lat: float, at_lon: float,
-                      current_ident: str, callsign: str) -> Leg | None:
+                      current_ident: str, callsign: str,
+                      aircraft_type: str = "") -> Leg | None:
         """Pick the next destination from where the flight now is.
 
         The nearest airport inside the band, among the scanned candidates,
         excluding the field the flight is on. ``reserve_factor`` shrinks the
         usable upper band so the leg is never the aircraft's last mile.
+        ``aircraft_type`` is the ICAO designator flying the mission: where
+        it is known, only a field with a runway the type can use is a
+        destination at all -- the rest are skipped however near they are.
         ``None`` when nothing qualifies or no mission is running.
         """
         with self._lock:
@@ -142,7 +146,8 @@ class ContinuousFlights:
         current = (current_ident or "").strip().upper()
         eligible = [(ap, nm) for ap, nm in candidates
                     if ap.ident.upper() != current
-                    and request.min_nm <= nm <= max_nm]
+                    and request.min_nm <= nm <= max_nm
+                    and self._can_take(aircraft_type, ap)]
         if not eligible:
             log.warning("no destination inside %.0f-%.0f NM",
                         request.min_nm, max_nm)
@@ -162,6 +167,19 @@ class ContinuousFlights:
             self._legs.append(leg)
         log.info("planned leg %s (%.0f NM)", leg.summary(), distance)
         return leg
+
+    def _can_take(self, aircraft_type: str, airport) -> bool:
+        """Whether the field has a runway the type flying can use.
+
+        No type means the caller did not know what is flying, and the
+        mission plans on distance alone rather than refusing every
+        field a runway is not proved for.
+        """
+        if not (aircraft_type or "").strip():
+            return True
+        from . import aircraft_class as ac
+        return ac.airport_usable(
+            airport, self.navdb.runways(airport.ident), aircraft_type)
 
 
 __all__ = ["ContinuousFlights", "Leg", "MissionRequest"]

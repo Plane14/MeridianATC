@@ -25,8 +25,12 @@ policy is never made, and redirects on credentialed calls are not followed.
 
 from __future__ import annotations
 
+import contextlib
 import io
+import json
 import logging
+import queue
+import threading
 import time
 
 import numpy as np
@@ -115,21 +119,182 @@ def _wav_bytes(samples: np.ndarray, sample_rate: int) -> bytes:
     return buffer.getvalue()
 
 
+class _StreamSession:
+    """One Deepgram listen websocket, fed from the audio callback.
+
+    A ``websockets`` client lives on its own thread with its own event loop;
+    :meth:`feed` is the only call the capture thread makes, and it does no
+    more than hand a queue a PCM frame. :meth:`finish` tells the sender to
+    end the stream (Deepgram answers the ``CloseStream`` message with its
+    last transcripts and then closes), and waits for that close. ``done`` is
+    set however the pump ends -- clean close, refused connect, lost network.
+
+    The session bounds itself: a transmission whose transcript is never asked
+    for -- a second key-press while the first is still being worked on --
+    closes itself rather than holding a socket open for the rest of the
+    flight.
+    """
+
+    #: How long a stream may live un-finished. Well past the microphone's
+    #: own transmission limit.
+    LIFETIME_S = 120.0
+
+    def __init__(self, api_key: str, url: str, sample_rate: int,
+                 lifetime_s: float = LIFETIME_S):
+        self.url = url
+        self.rate = int(sample_rate)
+        self._queue: queue.Queue = queue.Queue()
+        self._closed = False
+        self.done = threading.Event()
+        self.finals: list[str] = []
+        self.confidence = 0.0
+        self.detected = ""
+        self.error: Exception | None = None
+        self._loop = None
+        self._ws = None
+        self._deadline = time.monotonic() + max(5.0, lifetime_s)
+        self._thread = threading.Thread(
+            target=self._run, args=(api_key,), daemon=True,
+            name="meridianatc-dg-stream")
+        self._thread.start()
+
+    # -- the capture thread's side -------------------------------------------
+
+    def feed(self, samples) -> None:
+        """Queue one captured float32 mono block; called on the audio thread."""
+        if self._closed:
+            return
+        pcm16 = (np.clip(np.asarray(samples, dtype=np.float32), -1.0, 1.0)
+                 * 32767.0).astype(np.int16).tobytes()
+        self._queue.put(pcm16)
+
+    # -- the consumer's side ---------------------------------------------------
+
+    def finish(self, timeout_s: float) -> bool:
+        """End the stream and wait for the server's last transcripts.
+
+        False on timeout: the session is still winding down in the
+        background and its partial finals are not trusted, so the caller
+        falls back to sending the same audio over REST.
+        """
+        if not self._closed:
+            self._closed = True
+            self._queue.put(None)
+        return self.done.wait(timeout_s)
+
+    def abort(self) -> None:
+        """Drop a stream nobody will transcribe (watchdog, key-up noise).
+
+        The socket is closed outright, not just stopped being fed: a server
+        that never answers CloseStream would otherwise hold the pump's
+        receive loop open for the rest of the flight.
+        """
+        self._closed = True
+        self._queue.put(None)
+        loop, ws, asyncio = self._loop, self._ws, getattr(self, "_asyncio", None)
+        if loop is not None and ws is not None and asyncio is not None:
+            with contextlib.suppress(Exception):
+                asyncio.run_coroutine_threadsafe(ws.close(), loop)
+        self.done.wait(2.0)
+
+    # -- the pump ------------------------------------------------------------
+
+    def _note(self, raw) -> None:
+        try:
+            message = json.loads(raw)
+        except (TypeError, ValueError):
+            return
+        if message.get("type") != "Results" or not message.get("is_final"):
+            return
+        channel = message.get("channel") or {}
+        alternative = (channel.get("alternatives") or [{}])[0]
+        text = (alternative.get("transcript") or "").strip()
+        if text:
+            self.finals.append(text)
+        confidence = float(alternative.get("confidence") or 0.0)
+        if confidence:
+            self.confidence = confidence
+        detected = (channel.get("detected_language")
+                    or alternative.get("language"))
+        if detected:
+            self.detected = str(detected)[:2]
+
+    async def _send(self, ws, asyncio) -> None:
+        while True:
+            remaining = self._deadline - time.monotonic()
+            if remaining <= 0.0:
+                break
+            try:
+                chunk = await asyncio.to_thread(
+                    self._queue.get, True, min(0.5, remaining))
+            except queue.Empty:
+                continue
+            if chunk is None:
+                break
+            await ws.send(chunk)
+        with contextlib.suppress(Exception):
+            await ws.send(json.dumps({"type": "CloseStream"}))
+
+    async def _pump(self, api_key: str, asyncio, websockets) -> None:
+        self._asyncio = asyncio
+        self._loop = asyncio.get_running_loop()
+        async with websockets.connect(
+                self.url, open_timeout=10.0,
+                additional_headers={
+                    "Authorization": f"Token {api_key}"}) as ws:
+            self._ws = ws
+            sender = asyncio.create_task(self._send(ws, asyncio))
+            try:
+                async for raw in ws:
+                    self._note(raw)
+            finally:
+                sender.cancel()
+                self._ws = None
+
+    def _run(self, api_key: str) -> None:
+        try:
+            import asyncio
+
+            import websockets
+        except ImportError as exc:
+            self.error = exc
+            self.done.set()
+            return
+        try:
+            asyncio.run(self._pump(api_key, asyncio, websockets))
+        except Exception as exc:
+            self.error = exc
+            log.debug("deepgram stream ended early: %s", exc)
+        finally:
+            self._loop = None
+            self.done.set()
+
+
 class DeepgramRecognizer:
-    """Pilot transcription through Deepgram's REST listen endpoint.
+    """Pilot transcription through Deepgram's listen endpoints.
 
     Implements the contract the engine uses on :class:`Recognizer` -- the
     methods it actually calls: ``transcribe``, ``set_languages``,
     ``set_context``, ``detect``, ``loaded``, ``warm`` and the ``multilingual``
     property. There is no model to load: ``loaded`` is always true and
     ``allow_download`` is meaningless here.
+
+    With ``stream`` on and ``websockets`` installed, a transmission is also
+    offered to ``/v1/listen`` over a websocket while it is being captured
+    (:meth:`start_stream`), so the transcript is already back when the button
+    comes up instead of starting its journey then. Whatever the stream does
+    not produce -- a refused connect, a socket that dies mid-flight -- sends
+    the same captured audio to the REST endpoint it always used; the stream
+    only ever saves the wait, it never changes what was heard.
     """
 
     allow_download = False
 
     def __init__(self, api_key: str, model: str = DEFAULT_STT_MODEL,
                  base_url: str = BASE_URL, languages: list[str] | None = None,
-                 keyterms=(), timeout_s: float = 20.0, fallback=None):
+                 keyterms=(), timeout_s: float = 20.0, fallback=None,
+                 stream: bool = True, stream_url: str = STREAM_URL,
+                 stream_finalize_s: float = 4.0):
         self.api_key = api_key
         self.model = model or DEFAULT_STT_MODEL
         self.base_url = (base_url or BASE_URL).rstrip("/")
@@ -146,6 +311,11 @@ class DeepgramRecognizer:
             fallback.allow_download = False
         self._retry_at = 0.0
         self._failures = 0
+        self.stream_enabled = stream
+        self.stream_url = (stream_url or STREAM_URL).rstrip("/")
+        self.stream_finalize_s = max(0.5, stream_finalize_s)
+        self._stream: _StreamSession | None = None
+        self._stream_lock = threading.Lock()
 
     @property
     def multilingual(self) -> bool:
@@ -178,9 +348,106 @@ class DeepgramRecognizer:
     def warm(self) -> None:
         pass
 
+    # ------------------------------------------------------------------
+    # streaming -- the same transcript, heard while it is spoken
+    # ------------------------------------------------------------------
+
+    def start_stream(self, sample_rate: int):
+        """Open a listen websocket for the transmission about to begin.
+
+        Returns the sink the microphone feeds each captured block to, or None
+        when streaming is not on offer -- switched off, no key, a blocked
+        endpoint, no ``websockets`` -- in which case nothing changes: the
+        audio is still recorded and still goes to REST when the button comes
+        up.
+        """
+        if not self.stream_enabled or not self.api_key:
+            return None
+        if not is_allowed("deepgram_stream", self.stream_url):
+            log.debug("deepgram stream blocked by policy: %r", self.stream_url)
+            return None
+        try:
+            import websockets  # noqa: F401
+        except ImportError:
+            log.debug("websockets not installed; streamed recognition off")
+            return None
+        with self._stream_lock:
+            if self._stream is not None:
+                # A session still waiting on its transcribe belongs to the
+                # last transmission: mixing a new one into it would corrupt
+                # both, so it is closed and its audio goes over REST instead.
+                old, self._stream = self._stream, None
+                old.abort()
+            session = _StreamSession(
+                self.api_key, self._stream_url(sample_rate), sample_rate)
+            self._stream = session
+            return session.feed
+
+    def abort_stream(self) -> None:
+        """Drop a stream whose audio will never be transcribed."""
+        with self._stream_lock:
+            session, self._stream = self._stream, None
+        if session is not None:
+            session.abort()
+
+    def _stream_url(self, sample_rate: int) -> str:
+        params = self._listen_params(language=None)
+        params.update({
+            "encoding": "linear16",
+            "sample_rate": str(int(sample_rate)),
+            "channels": "1",
+            # Only finals: interim guesses repaint the transcript for no
+            # benefit -- the pilot sees only the finished call anyway.
+            "interim_results": "false",
+        })
+        terms = build_keyterms(self.user_keyterms, self.callsign,
+                               self.stations)
+        query = "&".join(
+            [f"{k}={v}" for k, v in params.items()]
+            + [f"keyterm={requests.utils.quote(t)}" for t in terms])
+        return f"{self.stream_url}?{query}"
+
+    def _listen_params(self, language: str | None) -> dict:
+        """The query both transports share; the socket adds its encoding."""
+        params = {
+            "model": self.model,
+            "smart_format": "true",
+            "punctuate": "true",
+            "filler_words": "false",
+        }
+        chosen = (language or "").lower()[:2] or self.language
+        if chosen is not None:
+            params["language"] = chosen
+        else:
+            # The one case "multi" is honest: the flight crossed a border and
+            # two languages are genuinely open.
+            params["language"] = "multi"
+        return params
+
     def transcribe(self, audio: np.ndarray, sample_rate: int = SAMPLE_RATE,
                    *, prompt: str | None = None,
                    language: str | None = None) -> Transcript:
+        session = self._take_stream()
+        if session is not None:
+            t0 = time.perf_counter()
+            if session.finish(self.stream_finalize_s) and not session.error:
+                text = " ".join(t for t in session.finals if t).strip()
+                samples = pcm(audio, mono=True)
+                duration = len(samples) / float(rate(sample_rate)
+                                                or SAMPLE_RATE)
+                return Transcript(
+                    text=text, confidence=session.confidence,
+                    duration_s=duration,
+                    decode_s=time.perf_counter() - t0,
+                    language=session.detected or self.language or "en",
+                    language_confidence=session.confidence,
+                    segments=[text] if text else [])
+            session.abort()
+            # The recording is identical either way: whatever the socket
+            # failed to deliver, the REST endpoint is still asked for it.
+            log.info("streamed recognition failed (%s); sending the "
+                     "recording over REST instead",
+                     session.error or "timed out")
         if self.fallback is None:
             return self._transcribe_cloud(audio, sample_rate, prompt=prompt, language=language)
         if self.api_key and time.monotonic() >= self._retry_at:
@@ -197,7 +464,13 @@ class DeepgramRecognizer:
             log.warning("cloud recognition key missing; using the installed offline model")
         return self.fallback.transcribe(audio, sample_rate, prompt=prompt, language=language)
 
+    def _take_stream(self) -> _StreamSession | None:
+        with self._stream_lock:
+            session, self._stream = self._stream, None
+        return session
+
     def close(self) -> None:
+        self.abort_stream()
         self._session.close()
 
     def _transcribe_cloud(self, audio, sample_rate, *, prompt=None, language=None) -> Transcript:
@@ -210,19 +483,7 @@ class DeepgramRecognizer:
             raise DeepgramError(
                 f"endpoint blocked by policy: {self.base_url!r}")
 
-        params = {
-            "model": self.model,
-            "smart_format": "true",
-            "punctuate": "true",
-            "filler_words": "false",
-        }
-        chosen = (language or "").lower()[:2] or self.language
-        if chosen is not None:
-            params["language"] = chosen
-        else:
-            # The one case "multi" is honest: the flight crossed a border and
-            # two languages are genuinely open.
-            params["language"] = "multi"
+        params = self._listen_params(language)
         terms = build_keyterms(self.user_keyterms, self.callsign,
                                self.stations)
         query = "&".join(
@@ -248,8 +509,9 @@ class DeepgramRecognizer:
         alt = (channel.get("alternatives") or [{}])[0]
         text = (alt.get("transcript") or "").strip()
         confidence = float(alt.get("confidence") or 0.0)
-        detected = (channel.get("detected_language")
-                    or alt.get("language") or chosen or "en")
+        requested = params.get("language") or "en"
+        detected = (channel.get("detected_language") or alt.get("language")
+                    or (requested if requested != "multi" else "en"))
         return Transcript(
             text=text, confidence=confidence, duration_s=duration,
             decode_s=decode_s, language=str(detected)[:2],
@@ -318,5 +580,5 @@ class DeepgramTTS:
 
 
 __all__ = ["AVIATION_KEYTERMS", "BASE_URL", "DEFAULT_STT_MODEL",
-           "DEFAULT_VOICE", "DeepgramError", "DeepgramRecognizer",
+           "DEFAULT_VOICE", "STREAM_URL", "DeepgramError", "DeepgramRecognizer",
            "DeepgramTTS", "build_keyterms"]

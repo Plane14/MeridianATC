@@ -14,6 +14,7 @@ wind shift.
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -22,6 +23,8 @@ from ..navdata.db import Airport, NavDB
 from ..navdata.db import transition_altitude as transition_for
 from . import speech as sp
 from .phraseology import Phraseology, Weather
+
+log = logging.getLogger(__name__)
 
 # The information letter cycles through the phonetic alphabet.
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -258,6 +261,9 @@ class AtisGenerator:
             wx.altimeter_inhg if p.dialect == "faa" else wx.qnh_hpa
         ))
 
+        # --- remarks ---
+        parts.extend(self._remarks(wx))
+
         # --- closing ---
         if p.dialect == "faa":
             parts.append(
@@ -282,6 +288,7 @@ class AtisGenerator:
         try:
             side, points = self.vfr_briefing(runways[0])
         except Exception:
+            log.debug("VFR briefing failed", exc_info=True)
             return []
         p = self.phrase
         said: list[str] = []
@@ -301,6 +308,42 @@ class AtisGenerator:
         if points:
             said.append("VFR reporting points " + ", ".join(points))
         return said
+
+    @staticmethod
+    def _remarks(wx: Weather) -> list[str]:
+        """The notices the weather itself makes necessary.
+
+        A real ATIS carries what the day asks for: low visibility
+        procedures when the field is working to them, a wet runway when
+        it is raining on it, a braking-action caution when what is
+        falling freezes on it, a thunderstorm pointed at when there is
+        one. Each is derived from the report, not invented -- a calm
+        clear ATIS has no remarks to make, same as a real one.
+        """
+        present = (wx.present or "").upper()
+        remarks: list[str] = []
+        # Low visibility procedures: what a field below CAT I weather is
+        # actually running, said the way ATISes say it.
+        ceiling = min((h for cover, h in (wx.clouds or [])
+                       if cover in ("BKN", "OVC", "VV")), default=None)
+        if wx.visibility_sm < 0.5 \
+                or (ceiling is not None and ceiling < 200):
+            remarks.append("low visibility procedures in effect")
+        # Wet, then freezing: the two braking-action stories a crew is
+        # briefed for, in the order a real broadcast hedges them.
+        freezing = any(tag in present
+                       for tag in ("FZRA", "FZDZ", "FZFG", "SN", "SG", "PL"))
+        precip = any(tag in present
+                     for tag in ("RA", "DZ", "SN", "SG", "PL", "GR",
+                                 "GS", "SH", "UP"))
+        if freezing or (precip and wx.temperature_c <= 1.0):
+            remarks.append("caution, braking action may be reduced")
+        elif precip:
+            remarks.append("runways wet")
+        # A thunderstorm on the field is never just cloud.
+        if wx.cb or "TS" in present:
+            remarks.append("thunderstorm in the vicinity")
+        return remarks
 
     def _compose_french(self, letter: str, wx: Weather,
                         runways: list[str],

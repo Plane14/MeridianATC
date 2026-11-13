@@ -210,18 +210,11 @@ def _transition_for(procedure: TerminalProcedure, kind: str,
         for trans in transitions:
             if _norm(trans.name) == wanted or _norm(trans.runway) == wanted:
                 return trans
-    if kind == "sid":
-        key = _runway_key(runway)
-        if key:
-            for trans in transitions:
-                if _runway_key(trans.runway) == key:
-                    return trans
-    else:
-        key = _runway_key(runway)
-        if key:
-            for trans in transitions:
-                if _runway_key(trans.runway) == key:
-                    return trans
+    key = _runway_key(runway)
+    if key:
+        for trans in transitions:
+            if _runway_key(trans.runway) == key:
+                return trans
     # The route's fixes name the transition's fixes better than a guess:
     # the one whose fixes the route reaches first wins.
     order = [i.upper() for i in route_fix_idents if i]

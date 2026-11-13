@@ -279,8 +279,9 @@ def written_callsign(flight) -> str:
     """What the radio calls it: the callsign sent, else the registration
     with its dash taken out, which is how a light aeroplane is called."""
     written = (flight.callsign or "").strip().upper()
-    if written:
+    if written.strip("@"):
         return written
+    # "@@@@@@@@" is what a feed carries for a flight with no ident sent.
     return (flight.registration or "").replace("-", "").strip().upper()
 
 

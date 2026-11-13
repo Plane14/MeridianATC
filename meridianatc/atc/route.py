@@ -389,6 +389,10 @@ def _via(name: str) -> str:
 #: (ident, region, kind) -> (lat, lon), or None when nobody knows the fix.
 Resolver = Callable[[str, str, str], "tuple[float, float] | None"]
 
+# No flight plan is legitimately near this: even a round-the-world plan is
+# tens of kilobytes, so anything bigger is a broken or hostile file.
+_PLN_MAX_BYTES = 4 * 1024 * 1024
+
 _PLN_KINDS = {"intersection": "wpt", "vor": "vor", "ndb": "ndb",
               "airport": "apt", "user": "wpt", "runway": "wpt"}
 
@@ -423,6 +427,14 @@ def parse_pln(text: str) -> PlnPlan:
     (measured on a SimBrief export for MSFS 2024, EBBR-LIRF, 27 Oct 2026).
     """
     text = text.lstrip("﻿")
+    # A plan is a file the pilot downloaded from anywhere: ElementTree
+    # expands internal entities, which a crafted document could use to
+    # exhaust memory, and a plan has no business being megabytes anyway.
+    # Raised as ParseError so the caller treats it like any bad plan.
+    if len(text) > _PLN_MAX_BYTES:
+        raise ET.ParseError("flight plan file is too large")
+    if "<!DOCTYPE" in text or "<!ENTITY" in text:
+        raise ET.ParseError("flight plan may not declare a DTD")
     root = ET.fromstring(text)
     fp = root.find("FlightPlan.FlightPlan")
     if fp is None:

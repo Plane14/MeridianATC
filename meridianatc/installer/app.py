@@ -90,7 +90,7 @@ def page(boot: dict) -> str:
                           f"url({_data_uri(font, 'font/woff2')})")
     html = (UI / "index.html").read_text(encoding="utf-8")
     script = (UI / "installer.js").read_text(encoding="utf-8")
-    logo = _data_uri(UI / "logo-wilco.svg", "image/svg+xml")
+    logo = _data_uri(UI / "logo-meridian.svg", "image/svg+xml")
     # Inside a <script>, "</" would end it early whatever JSON says it is.
     boot_json = json.dumps(boot, ensure_ascii=False).replace("</", "<\\/")
     return (html.replace("/*STYLE*/", css)

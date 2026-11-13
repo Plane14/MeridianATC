@@ -18,6 +18,7 @@ import logging
 import threading
 import time
 from collections import deque
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -95,8 +96,12 @@ class Broadcaster:
         loop = self.loop
         if loop is None or loop.is_closed():
             return
+        # The coroutine is made inside the loop's own callback: creating it
+        # here and then finding the loop closed in call_soon_threadsafe would
+        # leave a coroutine nothing ever awaits.
         with contextlib.suppress(RuntimeError):
-            loop.call_soon_threadsafe(asyncio.create_task, self._send(payload))
+            loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(self._send(payload)))
 
     async def _send(self, payload: dict) -> None:
         dead = []
@@ -114,7 +119,22 @@ class Broadcaster:
 
 
 def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
-    app = FastAPI(title="meridianatc", docs_url=None, redoc_url=None)
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        broadcaster.bind(asyncio.get_running_loop())
+        # Push the aircraft state a few times a second so the panel stays live
+        # without the page polling for it. The task is held so shutdown can
+        # cancel it; orphaned, it kept waking on a loop that had gone away.
+        pump = asyncio.create_task(_state_pump(engine, broadcaster))
+        try:
+            yield
+        finally:
+            pump.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await pump
+
+    app = FastAPI(title="meridianatc", docs_url=None, redoc_url=None,
+                  lifespan=lifespan)
 
     # The panel inside the simulator is served by the simulator, from a
     # coui:// address, and every request it makes here is therefore a
@@ -132,13 +152,6 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    @app.on_event("startup")
-    async def _startup() -> None:
-        broadcaster.bind(asyncio.get_running_loop())
-        # Push the aircraft state a few times a second so the panel stays live
-        # without the page polling for it.
-        asyncio.create_task(_state_pump(engine, broadcaster))
 
     # ------------------------------------------------------------------
     # state
@@ -630,6 +643,13 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         await asyncio.to_thread(engine.crew.checklists.start, name)
         return {"ok": True, "checklist": name}
 
+    @app.post("/api/cpdlc")
+    async def cpdlc_answer(payload: dict) -> dict:
+        """The pilot's downlink: WILCO, UNABLE or ROGER on the open uplink."""
+        answer = str((payload or {}).get("answer") or "").strip().lower()
+        ok = await asyncio.to_thread(engine.cpdlc_respond, answer)
+        return {"ok": ok, "cpdlc": engine.cpdlc_view()}
+
     @app.get("/api/surface")
     async def surface() -> dict:
         """Where the aeroplane is on the airport's taxi graph.
@@ -704,13 +724,16 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
             airport = getattr(session, "destination", None) or \
                 getattr(session, "departure", None)
             callsign = ""
+            type_code = ""
             aircraft = getattr(session, "aircraft", None) if session else None
             if aircraft is not None:
                 cs = getattr(aircraft, "callsign", None)
                 callsign = getattr(cs, "written", "") or str(cs or "")
+                type_code = getattr(aircraft, "type_code", "") or ""
             leg = engine.continuous.plan_next_leg(
                 state.latitude, state.longitude,
-                getattr(airport, "ident", "") or "", callsign)
+                getattr(airport, "ident", "") or "", callsign,
+                aircraft_type=type_code)
             if leg is None:
                 return {"ok": False}
             return {"ok": True, "leg": {
@@ -2335,6 +2358,9 @@ def snapshot(engine: Engine) -> dict[str, Any]:
         # are, then everybody on the ground.
         "traffic": _traffic_strips(engine),
         "live": _live_view(engine),
+        # The data link: the open uplink and the exchange so far, while the
+        # flight is logged on with a data authority; {} means none.
+        "cpdlc": engine.cpdlc_view() if hasattr(engine, "cpdlc_view") else {},
         "stats": engine.understanding.stats.summary(),
         "ptt_key": engine.config.ptt.key,
         "ptt_mode": engine.config.ptt.mode,
@@ -2433,7 +2459,13 @@ def create_setup_app(config, broadcaster: Broadcaster) -> FastAPI:
     says what is wrong. When the download finishes the program is restarted and
     comes up properly.
     """
-    app = FastAPI(title="meridianatc setup", docs_url=None, redoc_url=None)
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        broadcaster.bind(asyncio.get_running_loop())
+        yield
+
+    app = FastAPI(title="meridianatc setup", docs_url=None, redoc_url=None,
+                  lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware, allow_origins=["*"], allow_credentials=False,
         allow_methods=["*"], allow_headers=["*"],
@@ -2444,10 +2476,6 @@ def create_setup_app(config, broadcaster: Broadcaster) -> FastAPI:
         on_change=lambda state: broadcaster.publish(
             {"kind": "setup", "setup": state}),
     )
-
-    @app.on_event("startup")
-    async def _startup() -> None:
-        broadcaster.bind(asyncio.get_running_loop())
 
     @app.get("/api/setup")
     async def setup_state() -> dict:

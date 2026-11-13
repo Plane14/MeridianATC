@@ -37,6 +37,9 @@ class FakeXPlane:
         self.writes = []
         self.commands = []
         self.unsubscribed = set()
+        # Paths X-Plane does not know answer nothing, so a read that falls
+        # back on a second dataref can be exercised by listing it here.
+        self.missing = set()
         self.respond = True
         self.stop = threading.Event()
         self.client = None
@@ -68,7 +71,8 @@ class FakeXPlane:
             except TimeoutError:
                 pass
             if self.respond and self.client and time.monotonic() - last > .02:
-                pairs = list(self.subscriptions.items())
+                pairs = [(i, p) for i, p in self.subscriptions.items()
+                         if p not in self.missing]
                 for start in range(0, len(pairs), 100):
                     payload = b"".join(struct.pack("<if", i, self.values.get(path, 0))
                                        for i, path in pairs[start:start + 100])
@@ -202,6 +206,65 @@ def test_radio_and_command_writes_and_safe_noops(xp):
     assert link.fuel_tanks() == []
 
 
+@pytest.mark.parametrize("xp_value,msfs", [(0, 0), (1, 2), (2, 6), (3, 3),
+                                           (4, 1), (5, 8), (9, -1)])
+def test_fuel_selector_enum(xp, xp_value, msfs):
+    # X-Plane's tank enum differs from the SimConnect one the state carries
+    # (0 none/left/centre/right/all/aft vs 0 off, 1 all, 2 left, 3 right,
+    # 6 centre, 8 centre3): left was reaching consumers as "all" and
+    # centre as "left".
+    server, link = xp
+    server.values[DATAREFS["fuel_selector"][0]] = xp_value
+    assert link.connect()
+    eventually(lambda: "fuel_selector" in link._values)
+    assert link.read().fuel_selector == msfs
+
+
+def test_fuel_selector_write_translates(xp):
+    server, link = xp
+    assert link.connect()
+    assert link.set_variable("FUEL TANK SELECTOR:1", 2)   # SimConnect left
+    eventually(lambda: (DATAREFS["fuel_selector"][0], 1) in server.writes)
+    assert link.set_variable("FUEL TANK SELECTOR:1", 1)   # SimConnect all
+    eventually(lambda: (DATAREFS["fuel_selector"][0], 4) in server.writes)
+
+
+def test_autopilot_falls_back_to_servos(xp):
+    # With the cockpit2 autopilot_on read absent, the built-in servos_on
+    # boolean is the answer -- and a boolean is never == 2.
+    from meridianatc.sim.xpcontrols import READS
+
+    server, link = xp
+    server.missing.add(READS["control:ap_on"])
+    server.values[EXTRA["autopilot_mode"]] = 1
+    assert link.connect()
+    eventually(lambda: "autopilot_mode" in link._values)
+    assert link.read().autopilot
+    server.values[EXTRA["autopilot_mode"]] = 0
+    eventually(lambda: not link.read().autopilot)
+
+
+def test_load_factor_and_pitch_datarefs(xp):
+    # The envelope protection's reads: the normal load factor and the
+    # pitch attitude land on the same AircraftState fields MSFS fills
+    # from G FORCE and PLANE PITCH DEGREES.
+    server, link = xp
+    server.values[DATAREFS["g_force"][0]] = 1.42
+    server.values[DATAREFS["pitch_deg"][0]] = 8.5
+    assert link.connect()
+    eventually(lambda: link.read().g_force == pytest.approx(1.42))
+    assert link.read().pitch_deg == pytest.approx(8.5)
+    assert link.read().ap_max_bank_deg == 0.0
+
+
+def test_load_datarefs_report_unavailable_when_unanswered(xp):
+    server, link = xp
+    server.missing.add(DATAREFS["g_force"][0])
+    assert link.connect()
+    eventually(lambda: link.read().connected)
+    assert "g_force" in link.read().unavailable
+
+
 def test_fuel_distribution(xp):
     server, link = xp
     server.values.update({EXTRA["fuel_capacity_kg"]: 100,
@@ -324,7 +387,7 @@ def test_engine_attachment_and_msfs_only_guards(monkeypatch, xp):
                  "simwatch", "facilities", "gsx", "traffic"):
         setattr(engine, name, Mock())
     factory = Mock(return_value=link)
-    monkeypatch.setattr(module, "open_source", factory)
+    monkeypatch.setattr(module.x_the_simulator_link, "open_source", factory)
     assert engine.attach_simulator()
     assert engine.source is link and engine.autonomous_flight.sim is link
     engine.autonomous_flight.enable.assert_called_once()
@@ -349,7 +412,7 @@ def test_failed_engine_attachment_keeps_previous_source(monkeypatch):
     engine = module.Engine.__new__(module.Engine)
     engine.config = Config()
     engine.source = previous = Mock()
-    monkeypatch.setattr(module, "open_source", lambda **kwargs: sources.ManualSource())
+    monkeypatch.setattr(module.x_the_simulator_link, "open_source", lambda **kwargs: sources.ManualSource())
     assert not engine.attach_simulator()
     assert engine.source is previous
     previous.close.assert_not_called()
