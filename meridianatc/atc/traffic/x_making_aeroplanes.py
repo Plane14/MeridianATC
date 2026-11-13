@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from ._shared import (
     CONCURRENT_BY_RANK,
+    field_hour,
     fleets,
+    host_hour,
     livemod,
     roster_for,
-    time,
 )
 
 
@@ -141,7 +142,13 @@ class _Making_aeroplanes:
         """
         if not getattr(self, "diurnal", True):
             return 1.0
-        hour = time.localtime().tm_hour + time.localtime().tm_min / 60.0
+        # The field's own hour -- UTC plus its longitude's share of a day.
+        # The computer's localtime is the pilot's timezone, not the
+        # field's: a field eight hours away ran the rhythm of home.
+        if self.field.latitude or self.field.longitude:
+            hour = field_hour(self.field.longitude)
+        else:
+            hour = host_hour()
         knots = ((0.0, 0.15), (5.0, 0.15), (7.0, 0.7), (9.0, 1.0),
                  (16.0, 0.8), (18.5, 1.0), (21.0, 0.45), (23.0, 0.15),
                  (24.0, 0.15))

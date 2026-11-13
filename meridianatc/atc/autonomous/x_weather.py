@@ -128,7 +128,11 @@ class _Weather:
             want = self._carb_heat_wanted(state)
             if want != self.state.carb_set:
                 self.state.carb_set = want
-                d.write("GENERAL ENG ANTI ICE POSITION:1", 1.0 if want else 0.0)
+                # Every carburetted engine gets its lever: writing only
+                # :1 left a twin's second engine to ice on its own.
+                for index in engines:
+                    d.write(f"GENERAL ENG ANTI ICE POSITION:{index}",
+                            1.0 if want else 0.0)
                 if want:
                     self._emit("info", "Carburettor heat on",
                                "autonomous.weather.carb")

@@ -697,7 +697,9 @@ class _The_phase_machine:
             self._apply_flight_director(
                 state, altitude=self._altitude_target(state),
                 vs_fpm=-min(self.performance.descend_fpm * 2.0, 5000.0),
-                heading=self.session.assigned_heading or -1.0,
+                heading=(self.session.assigned_heading
+                         if self.session.assigned_heading is not None
+                         else -1.0),
                 speed_kt=self._speed_target(state))
         elif sid is not None:
             self._fly_procedure(state, sid)
@@ -714,7 +716,9 @@ class _The_phase_machine:
                       else -self.performance.descend_fpm)
                 self._apply_flight_director(
                     state, altitude=target, vs_fpm=vs,
-                    heading=self.session.assigned_heading or -1.0,
+                    heading=(self.session.assigned_heading
+                             if self.session.assigned_heading is not None
+                             else -1.0),
                     speed_kt=self._speed_target(state))
             else:
                 # No assigned or planned level is not an instruction to

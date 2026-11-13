@@ -5,6 +5,7 @@ from ._shared import (
     RUNWAY_ROLL_S,
     Command,
     Flight,
+    bearing_deg,
 )
 
 
@@ -116,6 +117,25 @@ class _Instructions_and_being:
             flight.assigned_altitude_ft = None
             flight.assigned_speed_kt = None
             flight.next_at = now + self.random.uniform(20.0, 35.0)
+        elif kind == "turn_out":
+            # "Turn out approved" is a heading: at the field it filed
+            # for where the navdata can point at it, and off to the
+            # circuit's side where it cannot -- so the departure
+            # visibly goes its own way rather than holding the runway
+            # heading until it is out of sight.
+            airport = (self.navdb.airport(flight.destination_icao)
+                       if flight.destination_icao else None)
+            if airport is not None:
+                flight.assigned_heading = bearing_deg(
+                    flight.latitude, flight.longitude,
+                    airport.lat, airport.lon)
+            else:
+                side = (-1.0 if flight.pattern_direction != "right"
+                        else 1.0)
+                end = self._threshold(flight.runway)
+                base = end[2] if end is not None else flight.heading
+                flight.assigned_heading = (
+                    base + side * self.random.uniform(25.0, 55.0)) % 360.0
         elif kind == "extend":
             flight.extending = True
         elif kind == "continue":

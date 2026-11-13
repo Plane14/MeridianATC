@@ -352,7 +352,7 @@ class _Where_it_is:
         pattern_ft = (self.field.elevation_ft
                       + flight.performance.pattern_agl_ft)
         if (flight.altitude_ft < pattern_ft - 200.0
-                and flight.distance_nm > -CIRCUIT_UPWIND_NM):
+                and flight.distance_nm < CIRCUIT_UPWIND_NM):
             flight.next_at = now + 3.0
             return
         flight.phase = "upwind"

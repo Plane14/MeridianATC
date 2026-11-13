@@ -74,6 +74,7 @@ from ..flying import (
 from ..flying import LIGHT as LIGHT_PERFORMANCE
 from ..flying import step as fly_step
 from ..language import phraseology_for, reply_language
+from ..local_time import field_hour, host_hour
 from ..operators import (
     FREIGHT,
     LIGHT_FLEET,
@@ -1117,6 +1118,8 @@ __all__ = [
     "fly_step",
     "phraseology_for",
     "reply_language",
+    "field_hour",
+    "host_hour",
     "FREIGHT",
     "LIGHT_FLEET",
     "REGIONAL",

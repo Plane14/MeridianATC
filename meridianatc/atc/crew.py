@@ -137,6 +137,7 @@ from .crew_lines import (
     Line,
 )
 from .landing import APPLAUSE_FPM, touchdown_rate
+from .local_time import field_hour, host_hour
 from .notices import SAFETY as SAFETY_NOTICES
 from .notices import Notices, Watching
 from .session import FlightSession, Phase
@@ -893,7 +894,7 @@ class CrewDirector:
             self._fire("cabin_secure_reply", session, state, delay=12.0)
             # Lights down for a night departure, which is a thing a recording
             # says and a written template cannot.
-            if _after_dark():
+            if _after_dark(self._local_hour()):
                 self._fire("cabin_dim", session, state, delay=6.0)
         if session.cleared_takeoff and state.on_ground:
             self._fire("before_takeoff", session, state)
@@ -1569,12 +1570,31 @@ class CrewDirector:
             log.warning("the boarding music could not be started: %s", exc,
                         exc_info=True)
 
+    def _local_hour(self, airport=None) -> float:
+        """The hour where the aeroplane is, solar: UTC plus longitude.
+
+        The crew's clock is the field's, not the computer's -- a purser
+        reading the host's timezone said "good evening" at a field where
+        it was three in the morning. The aeroplane's own longitude is the
+        best answer; the airport it is being talked about is next; the
+        PC's clock is only what is left when neither can say.
+        """
+        state = self._now
+        lon = float(getattr(state, "longitude", 0.0) or 0.0) \
+            if state is not None else 0.0
+        if not lon and airport is not None:
+            lon = float(getattr(airport, "lon", 0.0) or 0.0)
+        if not lon:
+            departure = getattr(self._session, "departure", None)
+            lon = float(getattr(departure, "lon", 0.0) or 0.0)
+        return field_hour(lon) if lon else host_hour()
+
     def _flight(self) -> Flight:
         """What a recording is being chosen for."""
         return Flight(
             airline=_airline_code(self._callsign),
             aircraft=(self._type or "").upper(),
-            hour=time.localtime().tm_hour,
+            hour=int(self._local_hour()),
             seed=self._seed,
         )
 
@@ -2952,7 +2972,7 @@ class CrewDirector:
             except Exception:
                 log.debug("no weather for the arrival announcement",
                           exc_info=True)
-        return temperature, _clock_now(language)
+        return temperature, _clock_now(language, self._local_hour(airport))
 
     def _gender_for(self, position: str) -> str:
         """The sex the settings ask for in one seat, or "" for either.
@@ -3285,15 +3305,15 @@ _SPEAKER_NAMES: dict[str, str] = {
 }
 
 
-def _after_dark() -> bool:
+def _after_dark(hour: float) -> bool:
     """Whether the cabin lights would be dimmed for departure.
 
-    Local clock time, not a sun angle. The cabin crew dim the lights for a
-    night departure so that eyes are adjusted if the aeroplane has to be got
-    out of in a hurry, and they go by the time of day like everybody else.
+    Local clock time at the field, not a sun angle. The cabin crew dim the
+    lights for a night departure so that eyes are adjusted if the aeroplane
+    has to be got out of in a hurry, and they go by the time of day like
+    everybody else.
     """
-    hour = time.localtime().tm_hour
-    return hour >= 19 or hour < 7
+    return hour >= 19.0 or hour < 7.0
 
 
 def _stable_number(text: str) -> int:
@@ -3472,21 +3492,27 @@ def _duration(session, state, language: str = "en") -> str:
                 minutes=rest)
 
 
-def _clock_now(language: str = "en") -> str:
-    """The local time, as an announcement says it.
+def _clock_now(language: str = "en", hour: float | None = None) -> str:
+    """The local time at the far end, as an announcement says it.
 
     On a twelve-hour dial where the language uses one and a twenty-four hour
     one everywhere else. A German purser saying "3 15 in the afternoon" is
     the same mistake as an English one saying "fifteen fifteen".
     """
-    now = time.localtime()
+    if hour is None:
+        now = time.localtime()
+        hour = now.tm_hour + now.tm_min / 60.0
+    whole = int(hour) % 24
+    minute = int(round((hour - int(hour)) * 60.0))
+    if minute >= 60:
+        whole, minute = (whole + 1) % 24, 0
     if language in _TWELVE_HOUR:
-        part = _say(language, "morning" if now.tm_hour < 12 else (
-            "afternoon" if now.tm_hour < 18 else "evening"))
-        return _say(language, "clock", hour=now.tm_hour % 12 or 12,
-                    minute=f"{now.tm_min:02d}", part=part)
-    return _say(language, "clock", hour=now.tm_hour,
-                minute=f"{now.tm_min:02d}", part="")
+        part = _say(language, "morning" if whole < 12 else (
+            "afternoon" if whole < 18 else "evening"))
+        return _say(language, "clock", hour=whole % 12 or 12,
+                    minute=f"{minute:02d}", part=part)
+    return _say(language, "clock", hour=whole,
+                minute=f"{minute:02d}", part="")
 
 
 __all__ = ["CrewDirector", "CrewState", "CAPTAIN_NAMES"]

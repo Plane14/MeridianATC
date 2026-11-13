@@ -154,13 +154,13 @@ class _Helpers_kept_from:
     def _engage_climb(self, state) -> None:
         """The climb's guidance, once the initial climb is flown."""
         target = self._altitude_target(state)
-        assigned_hdg = self.session.assigned_heading or 0.0
+        assigned_hdg = self.session.assigned_heading
         speed = self._speed_target(state)
         if self._ap_mode == "managed":
             d = self.director
             d.autopilot(True)
             self.state.ap_master = True
-            if assigned_hdg:
+            if assigned_hdg is not None:
                 d.heading(assigned_hdg)
                 self.state.ap_hdg_mode = True
             else:
@@ -179,11 +179,13 @@ class _Helpers_kept_from:
             d.level_change(True)
             self._manage_throttle(state, speed)
         else:
-            self._apply_flight_director(state, altitude=target,
-                                        vs_fpm=self.performance.climb_fpm,
-                                        heading=assigned_hdg or -1.0,
-                                        speed_kt=speed)
-            if not assigned_hdg:
+            self._apply_flight_director(
+                state, altitude=target,
+                vs_fpm=self.performance.climb_fpm,
+                heading=(assigned_hdg if assigned_hdg is not None
+                         else -1.0),
+                speed_kt=speed)
+            if assigned_hdg is None:
                 # No heading to hold is not "wings free": the filed
                 # route is the lateral plan until ATC says otherwise,
                 # the same ask the managed mode makes.
