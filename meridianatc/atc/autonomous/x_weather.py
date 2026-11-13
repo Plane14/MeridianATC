@@ -362,6 +362,16 @@ class _Weather:
             self.state.tod_nm = 0.0
             self.state.weather_gas = 0
             self.state.weather_ga_active = False
+            # The old field's approach scars are done with too: its
+            # go-around count, its flare clock, its gear-up call and the
+            # missed-approach height the throttle gate still reads. A
+            # stale flare clock is the next pass going around the moment
+            # it sinks under sixty feet.
+            self.state.go_arounds = 0
+            self.state.flare_at = 0.0
+            self.state.missed_alt_ft = 0.0
+            self.state.gear_ga_done = False
+            self.state.gear_up_said = False
             self._transition(AutonomousPhase.DESCENT)
             self._goto_sub("")
 

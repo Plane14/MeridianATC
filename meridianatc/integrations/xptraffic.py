@@ -231,6 +231,16 @@ class XPlaneTraffic:
             # spend ``limit`` -- in order, so relevance still decides.
             live_room, room = self.live_limit, self.limit
             for position in positions:
+                # The budget is spent on a packet that will actually be
+                # sent: validating and deduping first keeps an entry the
+                # model rejects from costing a real aeroplane its place.
+                try:
+                    packet = aircraft_packet(position)
+                except (ValueError, TypeError, KeyError, OverflowError):
+                    log.debug("invalid X-Plane traffic position", exc_info=True)
+                    continue
+                if packet["id"] in seen:
+                    continue
                 if position.get("source") == "live":
                     if not live_room:
                         continue
@@ -239,13 +249,8 @@ class XPlaneTraffic:
                     room -= 1
                 else:
                     continue
-                try:
-                    packet = aircraft_packet(position)
-                    if packet["id"] not in seen:
-                        aircraft.append(packet)
-                        seen.add(packet["id"])
-                except (ValueError, TypeError, KeyError, OverflowError):
-                    log.debug("invalid X-Plane traffic position", exc_info=True)
+                aircraft.append(packet)
+                seen.add(packet["id"])
             message = {"v": 1, "t": "traffic", "seq": self._sequence, "ac": aircraft}
             while len(json.dumps(message, separators=(",", ":")).encode()) > 65507:
                 aircraft.pop()

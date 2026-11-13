@@ -793,6 +793,20 @@ class _The_live_ones:
                 decision("live_traffic", event="released",
                          callsign=first.written, why="the pilot is clear")
 
+    def _release_held(self, flight) -> None:
+        """A live aeroplane frozen for the pilot is let go as its strip
+        goes: the roster keeps emitting the held pose for as long as the
+        feed reports it, so an unreleased hold draws a statue forever."""
+        if getattr(flight, "live_held", "") and self.hold_live is not None:
+            self.hold_live(flight.hex, False)
+            flight.live_held = ""
+
+    def _release_all_held(self) -> None:
+        """Every live aeroplane this injector froze, let go -- the roster
+        outlives the strips, so a clear that skips this leaves statues."""
+        for flight in self.flights:
+            self._release_held(flight)
+
     def _rejoin_the_feed(self, seen, now: float) -> list:
         """The live arrivals we sent around and flew, given back to the feed
         once ours is parked (the pilot's rule, 30 Oct 2026): not before --
@@ -806,6 +820,16 @@ class _The_live_ones:
                 continue
             if ours.done or ours.static or ours.parked_at:
                 self._parked_since[object_id] = now
+            elif (ours is None
+                  or (all(f is not ours for f in self.flights)
+                      and all(f is not ours for f in self.statics)
+                      and all(f is not ours for f in self._materialising))):
+                # Ours was dropped before it ever parked -- a field change
+                # or the invented switch took it whole. The suppression
+                # dies with it: held forever, the real aeroplane is
+                # filtered out of this feed for the rest of the session.
+                self._taken_over.discard(object_id)
+                self._flown_for.pop(object_id, None)
         heard = {one.object_id for one in seen
                  if getattr(one, "source", "") == "live"}
         for object_id, since in list(self._parked_since.items()):

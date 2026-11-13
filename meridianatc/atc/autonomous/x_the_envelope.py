@@ -138,9 +138,14 @@ class _The_envelope:
         """Move the flap lever -- an extension is gated by the flap speed.
 
         Retraction is always allowed: bringing them in early is a drag
-        penalty, never an airframe one.
+        penalty, never an airframe one. The lever's last request stands
+        for where it is now: a request below it is coming in, whatever
+        the schedule called the move -- a go-around's first stage asked
+        while past the flap speed must not be held as an extension.
         """
-        if fraction <= 0.0 or self._flaps_allowed(state):
+        retracting = fraction <= getattr(self, "_flaps_asked", 0.0)
+        self._flaps_asked = fraction
+        if retracting or self._flaps_allowed(state):
             self.director.flaps(fraction)
 
     def _lever_position(self, state) -> float:

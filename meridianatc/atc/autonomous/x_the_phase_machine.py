@@ -30,7 +30,7 @@ class _The_phase_machine:
                 # goes to altitude reporting with it.
                 d.write("TRANSPONDER STATE:1", 4.0)
             if getattr(state, "kohlsman_hpa", 0.0) > 0 and self.session.altimeter:
-                d.kohlsman(float(self.session.altimeter))
+                d.kohlsman(self._altimeter_hpa(self.session.altimeter))
             d.beacon(True)
             d.nav_lights(True)
             # The seatbelt event is a toggle, not a set: asking for "on"
@@ -763,7 +763,7 @@ class _The_phase_machine:
                 and self.state.configured != "flaps_final":
             self._set_flaps(state, self.performance.landing_flaps or 1.0)
             self.state.configured = "flaps_final"
-            if state.gear_down is not True:
+            if state.gear_down is not True and self._gear_allowed(state):
                 self.director.gear(True)
             self.director.spoilers_arm(True)
 
@@ -933,6 +933,10 @@ class _The_phase_machine:
             self._run_checklist_for_phase("before_landing")
             if state.on_ground:
                 self.state.touchdown_at = now
+                # The flare's clock belongs to this landing: a
+                # touch-and-go would read it as a fifteen-second float
+                # the moment the next pass sank under sixty feet.
+                self.state.flare_at = 0.0
                 self._goto_sub("rollout")
                 return
             agl = state.altitude_agl_ft or 0.0

@@ -443,7 +443,7 @@ class _The_radios:
             elif now - self._dialled_at >= 5.0 \
                     and self.sim.set_squawk(want):
                 self._dialled_at = now
-        alt = float(getattr(session, "altimeter", 0.0) or 0.0)
+        alt = self._altimeter_hpa(getattr(session, "altimeter", 0.0))
         if alt > 0.0 and abs(alt - self.state.altimeter_dialled) > 0.2:
             have = float(getattr(state, "kohlsman_hpa", 0.0) or 0.0)
             if have > 0.0 and abs(have - alt) <= 0.5:

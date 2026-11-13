@@ -234,7 +234,12 @@ class _Situation_loop:
             # Switched off mid-flight: the aeroplanes stop existing, and the
             # controller stops sequencing the user against them.
             self.brain.traffic = None
+            self.traffic._release_all_held()
             self.traffic.flights.clear()
+            self.traffic.pending.clear()
+            self.traffic._taken_over.clear()
+            self.traffic._flown_for.clear()
+            self.traffic._parked_since.clear()
             self.traffic._drop_invented()
             self._spawned.clear()
             self.traffic.observed_count = 0

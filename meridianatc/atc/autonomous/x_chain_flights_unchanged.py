@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import dataclasses
+
 from ._shared import (
     Airport,
     AutonomousState,
-    Phase,
     fly,
     haversine_nm,
     log,
@@ -126,6 +127,42 @@ class _Chain_flights_unchanged:
             "aircraft_type": self.state.aircraft_type,
         }
 
+    # What survives a leg change on the session: who is flying, where the
+    # leg is going (set from the plan below), the rules it was filed
+    # under, and the transcript log, which is the pane's history of the
+    # whole day rather than of one leg. Everything else the dataclass
+    # declares is per-flight: leg one's readback owed, squawk, QNH,
+    # contacts made and advisories said do not belong to leg two.
+    _SESSION_KEPT = {
+        "aircraft", "departure", "destination", "destination_input",
+        "cruise_altitude_ft", "ifr", "ifr_setting", "profile", "log",
+    }
+
+    def _reset_session_for_leg(self, flight_plan: dict) -> None:
+        """A fresh flight on the same session object.
+
+        The session is shared with the controllers, so it cannot be
+        replaced outright the way ``self.state`` is below -- the fields
+        are walked off the dataclass instead and each per-flight one put
+        back to its declared default. A field list written by hand grew
+        long and still missed the ones added later, and every miss was
+        leg one flown into leg two.
+        """
+        session = self.session
+        for f in dataclasses.fields(session):
+            if f.name in self._SESSION_KEPT:
+                continue
+            if f.default is not dataclasses.MISSING:
+                setattr(session, f.name, f.default)
+            elif f.default_factory is not dataclasses.MISSING:
+                setattr(session, f.name, f.default_factory())
+        session.destination = self.navdb.airport(flight_plan["destination"])
+        session.destination_input = flight_plan["destination"]
+        session.departure = self.navdb.airport(flight_plan["origin"])
+        session.cruise_altitude_ft = flight_plan["cruise_altitude_ft"]
+        session.ifr = flight_plan.get("ifr", True)
+        session.ifr_setting = session.ifr
+
     def _load_next_flight(self, flight_plan: dict) -> None:
         """Load the next flight in the chain."""
         self.config.flight.departure = flight_plan["origin"]
@@ -133,32 +170,7 @@ class _Chain_flights_unchanged:
         self.config.flight.cruise_altitude_ft = flight_plan["cruise_altitude_ft"]
         self.config.flight.ifr = flight_plan.get("ifr", True)
 
-        self.session.destination = self.navdb.airport(flight_plan["destination"])
-        self.session.cruise_altitude_ft = flight_plan["cruise_altitude_ft"]
-        self.session.ifr = flight_plan.get("ifr", True)
-        self.session.phase = Phase.PREFLIGHT
-
-        self.session.clearance_issued = False
-        self.session.clearance_read_back = False
-        self.session.assigned_altitude_ft = 0.0
-        self.session.assigned_heading = None
-        self.session.assigned_speed_kt = None
-        self.session.cleared_takeoff = False
-        self.session.cleared_landing = False
-        self.session.lined_up = False
-        self.session.sid = ""
-        self.session.descend_via = ""
-        self.session.star_join = ""
-        self.session.departure_runway = ""
-        self.session.arrival_runway = ""
-        self.session.hold_short_of = ""
-        self.session.taxi_path = []
-        self.session.taxi_route = []
-        self.session.taxi_nodes = []
-        self.session.taxi_crossings = []
-        self.session.taxi_rest = []
-        self.session.taxi_split_at = None
-        self.session.going_around = False
+        self._reset_session_for_leg(flight_plan)
 
         # A fresh state for the leg: the list of fields one by one grew
         # long and still missed the ones added later -- a go-around's
@@ -180,7 +192,13 @@ class _Chain_flights_unchanged:
         self._speeds = None
         self._perf = None
 
-        self.session.departure = self.navdb.airport(flight_plan["origin"])
+        # The crew is re-begun for the leg the way a new session would
+        # begin it: its once-per-flight bookkeeping -- the said-set, the
+        # callouts, the checklist runner's offered and done -- is leg
+        # one's otherwise, and leg two flies silent.
+        self.crew.begin(
+            self.session,
+            getattr(self.crew, "_language_heard", "en") or "en")
 
         from ..route import from_string, resolver
 

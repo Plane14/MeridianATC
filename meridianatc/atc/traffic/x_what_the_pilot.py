@@ -42,6 +42,9 @@ class _What_the_pilot:
         self._spawn(now)
         self._advance(now)
         self.pending = [c for c in self.pending if c.at > now]
+        for flight in self.flights:
+            if flight.done:
+                self._release_held(flight)
         self.flights = [f for f in self.flights if not f.done]
 
     def poll(self, now: float, listening_on: str = "",
@@ -75,6 +78,9 @@ class _What_the_pilot:
             # A call on another frequency is simply dropped: it happened, the
             # user was not listening to it.
         self.pending = keep
+        for flight in self.flights:
+            if flight.done:
+                self._release_held(flight)
         self.flights = [f for f in self.flights if not f.done]
         return due
 

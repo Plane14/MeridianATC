@@ -67,7 +67,11 @@ class _The_real_aeroplanes:
                           exc_info=True)
         live = self._live_seen()
         if not self.config.traffic.from_simulator and self.live_feed is None:
-            return
+            # Nothing new was read -- but set_observed finishes the strip
+            # of anything it is not given, so skipping the call freezes
+            # every observed aeroplane at its last position instead of
+            # letting the strips go.
+            seen = []
         try:
             self.traffic.set_observed(seen + live, time.monotonic())
         except Exception:
@@ -105,7 +109,14 @@ class _The_real_aeroplanes:
         # listed first.
         limit = max(0, min(300, int(self.config.traffic.live.limit)))
         if len(seen) > limit:
-            centre = self._live_centre()
+            # Nearest the field being worked, not the pilot: where the
+            # two differ the budget must keep the aeroplanes the tower
+            # is talking about -- an arrival on this field's final --
+            # not the ones merely nearest whoever is listening.
+            centre = ((self.traffic.field.latitude,
+                       self.traffic.field.longitude)
+                      if self.traffic.field.ident
+                      else self._live_centre())
             if centre is not None:
                 lat0, lon0 = centre
                 cos_lat = math.cos(math.radians(lat0))

@@ -279,7 +279,9 @@ def _offset(lat: float, lon: float, bearing: float, distance_nm: float
     """A point ``distance_nm`` along ``bearing`` from a position."""
     if distance_nm <= 0:
         return lat, lon
-    angular = distance_nm / 60.0
+    # A nautical mile is a minute of arc: the great-circle formula wants
+    # the angle in radians, not the degrees the /60 produces.
+    angular = math.radians(distance_nm / 60.0)
     lat1 = math.radians(lat)
     lon1 = math.radians(lon)
     brg = math.radians(bearing)
@@ -305,7 +307,7 @@ def _leg_end(leg: ProcedureLeg, from_lat: float, from_lon: float
         return None
     distance_nm = 0.0
     if leg.route_distance:
-        distance_nm = (leg.route_distance / 60.0 if leg.distance_minute
+        distance_nm = (leg.route_distance * 4.0 if leg.distance_minute
                        else leg.route_distance / M_PER_NM)
     elif leg.rho_m:
         distance_nm = leg.rho_m / M_PER_NM
@@ -327,15 +329,14 @@ def _arc_points(leg: ProcedureLeg, from_lat: float, from_lon: float
     start_brg = bearing_deg(centre_lat, centre_lon, from_lat, from_lon)
     end_brg = bearing_deg(centre_lat, centre_lon, leg.lat, leg.lon)
     turn = leg.turn
+    # The bearing from the centre runs clockwise around it, so a
+    # right-hand arc's sweep counts up and a left-hand's counts down --
+    # whatever the size: a 270-degree arc is not the 90 flown the other
+    # way.
     if turn == "L":
-        sweep = (end_brg - start_brg) % 360.0
-        if sweep > 180.0:
-            sweep -= 360.0
+        sweep = -((start_brg - end_brg) % 360.0)
     elif turn == "R":
-        sweep = (start_brg - end_brg) % 360.0
-        if sweep > 180.0:
-            sweep -= 360.0
-        sweep = -sweep
+        sweep = (end_brg - start_brg) % 360.0
     else:
         sweep = ((end_brg - start_brg + 540.0) % 360.0) - 180.0
     steps = max(2, int(abs(sweep) / 15.0) + 1)
@@ -357,7 +358,7 @@ def _turn_points(leg: ProcedureLeg, from_lat: float, from_lon: float
         course = to_true(course, variation(from_lat, from_lon))
     outbound = leg.route_distance
     if leg.distance_minute:
-        outbound *= M_PER_NM / 60.0 * 4.0  # ~4 NM a minute, a jet's guess
+        outbound *= 4.0  # ~4 NM a minute, a jet's guess
     else:
         outbound /= M_PER_NM
     if course > 0 and outbound > 0:

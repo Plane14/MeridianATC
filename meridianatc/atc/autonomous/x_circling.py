@@ -143,7 +143,8 @@ class _Circling:
         # asked: up or unanswered both get the command. The inverted
         # check used to ask only the aeroplane already configured.
         if (agl < 2000 or (distance is not None and distance < 10.0)) \
-                and state.gear_down is not True:
+                and state.gear_down is not True \
+                and self._gear_allowed(state):
             d.gear(True)
         if distance is not None and distance < 6.0 and agl < 2500:
             self._set_flaps(state, 0.75)
@@ -352,7 +353,7 @@ class _Circling:
             hdg = self._magnetic(self.state.runway_heading, state)
         self._apply_flight_director(state, altitude=self.state.missed_alt_ft,
                                     vs_fpm=self.performance.climb_fpm,
-                                    heading=hdg if hdg > 0 else -1.0,
+                                    heading=hdg if hdg and hdg > 0 else -1.0,
                                     speed_kt=(self.performance.goaround_kt
                                               or self.state.climb_kt
                                               or 180.0))
@@ -364,6 +365,9 @@ class _Circling:
                 and abs(state.vertical_speed_fpm or 0.0) < 300:
             self.state.stabilized = False
             self.state.configured = ""
+            # The missed is flown: the next approach's throttle is its
+            # own, not held at climb power under the old missed height.
+            self.state.missed_alt_ft = 0.0
             if self.state.weather_gas >= 2 and self._weather_reactions:
                 self._divert_for_weather(state)
                 return

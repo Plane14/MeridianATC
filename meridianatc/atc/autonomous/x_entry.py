@@ -53,8 +53,11 @@ class _Entry:
         # same way ``engage`` enters mid-flight.
         if self.session is not None and self.state.phase in (
                 AutonomousPhase.INIT, AutonomousPhase.COMPLETE,
-                AutonomousPhase.ERROR, AutonomousPhase.SHUTDOWN,
-                AutonomousPhase.PARKED, AutonomousPhase.CHAIN_NEXT):
+                AutonomousPhase.ERROR, AutonomousPhase.SHUTDOWN):
+            # PARKED and CHAIN_NEXT are live phases, not dead ones:
+            # PARKED is mid-turnaround and CHAIN_NEXT holds the legs
+            # still to fly -- re-beginning either replaces the state
+            # wholesale and the chain's bookkeeping goes with it.
             self.begin_flight(self.session)
 
     def disable(self) -> None:
@@ -199,10 +202,13 @@ class _Entry:
         self._fuel_capacity_seen = 0.0
         self._checklist_item_id = 0
         self._checklist_item_since = 0.0
+        self._checklist_perform_since = 0.0
+        self._checklist_sent = set()
         self._dialled_at = 0.0
         self._comms_settled = True
         self._call_tried_at = 0.0
         self._last_lever = 0.0
+        self._flaps_asked = 0.0
         self._lever_at = 0.0
         self._ground_still_since = 0.0
         self._held_at_split = False
@@ -210,6 +216,10 @@ class _Entry:
     def begin_flight(self, session: FlightSession) -> None:
         """Start a new autonomous flight."""
         self.session = session
+        # The config's own word on chaining, re-read each flight: an
+        # emergency's kill is this flight's, not the program's.
+        self._chained = bool(
+            self.config.immersion.autonomous_chained_flights)
         aircraft = self.get_state()
         if self._enabled and aircraft is not None and autofly_limit(aircraft):
             self._enabled = False

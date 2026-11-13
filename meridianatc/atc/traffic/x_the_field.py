@@ -31,6 +31,15 @@ class _The_field:
         """
         ident = (ident or "").upper()
         if ident != self.field.ident:
+            # Held live aeroplanes are let go before the roster is
+            # emptied: the feed outlives a field change, and a hold left
+            # on the roster draws a statue at the field we just left.
+            # The taken-over bookkeeping goes the same way -- those
+            # aeroplanes are gone, so nothing of theirs stays suppressed.
+            self._release_all_held()
+            self._taken_over.clear()
+            self._flown_for.clear()
+            self._parked_since.clear()
             self.flights.clear()
             self._asked_for.clear()
             self._reserved.clear()

@@ -215,9 +215,11 @@ def test_fo_fuel_selector_item_writes_on_not_off():
 
 def test_autonomous_preserves_north_vector_and_arrival_runway():
     pytest.importorskip("scipy")
-    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+    from meridianatc.atc.autonomous import (
+        AutonomousFlight, AutonomousPhase, AutonomousState)
     fo = AutonomousFlight.__new__(AutonomousFlight)
     fo.state = AutonomousState()
+    fo.state.phase = AutonomousPhase.APPROACH
     fo.session = SimpleNamespace(assigned_heading=0, assigned_altitude_ft=5000,
                                  assigned_speed_kt=200, departure_runway="09",
                                  arrival_runway="36", destination=SimpleNamespace(ident="KBBB"))

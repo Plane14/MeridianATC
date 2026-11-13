@@ -368,6 +368,9 @@ class _Test_tools_traffic:
             stand = self._free_stand(airliner=flight.operator is not None
                                      or flight.ifr)
             if stand is None:
+                # No departure and no aeroplane: the callsign is given
+                # back too, or a full apron burns one every attempt.
+                self._used_callsigns.discard(flight.written)
                 return None
             self._park(flight, stand)
         else:

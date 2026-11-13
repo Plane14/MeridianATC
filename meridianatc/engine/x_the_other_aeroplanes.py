@@ -412,11 +412,17 @@ class _The_other_aeroplanes:
             self._keep_systems_real(now)
         self._say_traffic_status(now)
         self._say_motion_status(now)
-        if not self.simtraffic.drawing:
-            # What was already queued from an aeroplane that no longer exists
-            # is not said either.
-            self._traffic_queue = [c for c in self._traffic_queue
-                                   if c.flight.observed]
+        # What was already queued from an aeroplane that no longer exists
+        # is not said either: a strip finished since the call was made
+        # speaks for nobody, drawing or not. And when the simulator is
+        # not drawing, nothing of ours is out there to speak for either.
+        self._traffic_queue = [c for c in self._traffic_queue
+                               if not c.flight.done
+                               and (self.simtraffic.drawing or c.flight.observed)]
+        for flight in dropped:
+            # One the simulator never made never gets its notice either:
+            # without the pop its callsign sits in _spawned forever.
+            self._spawned.pop(flight.written, None)
         for flight in confirmed:
             runway = self._spawned.pop(flight.written, None)
             if runway is None:

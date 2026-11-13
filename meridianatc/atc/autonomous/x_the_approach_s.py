@@ -30,10 +30,13 @@ class _The_approach_s:
             self.state.runway_heading = 0.0
             self.state.runway_key = ()
             return
-        # The arrival runway is the answer wherever it was named: a
-        # departure's align() asks before the tower has spoken, so its
-        # runway is the departure one's.
-        name = (self.session.arrival_runway or self.session.departure_runway or "")
+        # The runway named for this end of the flight is the answer:
+        # the arrival's for an aeroplane coming in, the departure's
+        # until then -- a departure asking after the destination's
+        # runway either finds nothing or, worse, a same-numbered one
+        # pointed the wrong way.
+        name = ((self.session.arrival_runway if arrival
+                 else self.session.departure_runway) or "")
         key = (airport.ident, name, arrival)
         if self.state.runway_heading > 0 and self.state.runway_key == key:
             return

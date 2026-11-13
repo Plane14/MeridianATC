@@ -676,6 +676,9 @@ class _Flying_them:
         self._stands_filled = False
         gone = {id(f) for f in self.flights if not f.observed}
         if gone:
+            for f in self.flights:
+                if id(f) in gone:
+                    self._release_held(f)
             self.flights = [f for f in self.flights if id(f) not in gone]
             self.pending = [c for c in self.pending
                             if id(c.flight) not in gone]

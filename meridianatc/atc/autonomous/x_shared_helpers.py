@@ -21,6 +21,19 @@ _BANK_CAP_DEG = {"smooth": 20.0, "gentle": 15.0, "urgent": 30.0}
 class _Shared_helpers:
     # -- shared helpers ------------------------------------------------------
 
+    @staticmethod
+    def _altimeter_hpa(value) -> float:
+        """The altimeter setting in hPa, whatever the dialect gave.
+
+        The session stores the setting as it was said: FAA positions
+        give inches of mercury, everyone else hectopascals -- a figure
+        under a hundred is inches. The Kohlsman event and the cockpit's
+        own readback are both hectopascals, so the conversion lives in
+        one place rather than at each call.
+        """
+        value = float(value or 0.0)
+        return value * 33.8639 if 0.0 < value < 100.0 else value
+
     def _demeanor(self, state) -> str:
         """How hard the FO is flying right now: smooth, gentle or urgent.
 

@@ -107,7 +107,12 @@ class Pid:
         # recovery would have to pay off.
         if t.ki and fresh:
             trial = self._i + err * dt
-            trial = max(-t.integral_cap, min(t.integral_cap, trial))
+            # The cap is in output units and the integrator's own units
+            # are error-seconds: what it may hold is the cap divided by
+            # the gain -- a cap of one lever means ki*_i may reach one
+            # lever, not that _i itself may reach one.
+            cap = t.integral_cap / t.ki
+            trial = max(-cap, min(cap, trial))
             would = t.kp * err + t.ki * trial
             saturating_up = t.high < math.inf and would >= t.high
             saturating_dn = t.low > -math.inf and would <= t.low
@@ -165,7 +170,8 @@ class Pid:
         self._i = 0.0
         if output is not None and t.ki:
             self._i = output / t.ki
-            self._i = max(-t.integral_cap, min(t.integral_cap, self._i))
+            cap = t.integral_cap / t.ki
+            self._i = max(-cap, min(cap, self._i))
         self._prev_error = None
         self._prev_measure = None
         self._out = output

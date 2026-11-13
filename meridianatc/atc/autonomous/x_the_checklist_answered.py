@@ -10,6 +10,10 @@ from ._shared import (
 
 
 class _The_checklist_answered:
+    # The checklist vars whose control is a toggle rather than a set:
+    # asking twice flips the switch back off, so each is asked once.
+    _TOGGLED_ONCE = frozenset({"seatbelt_sign"})
+
     # -- the checklist, answered by the FO flying ---------------------------
 
     def _drive_checklist(self, state, now: float) -> None:
@@ -34,6 +38,8 @@ class _The_checklist_answered:
         if id(item) != self._checklist_item_id:
             self._checklist_item_id = id(item)
             self._checklist_item_since = now
+            self._checklist_perform_since = now
+            self._checklist_sent.clear()
             return
         if run_state == "held":
             if now - self._checklist_item_since > 4.0:
@@ -44,9 +50,14 @@ class _The_checklist_answered:
             return
         # Do the item where the check names a variable the FO can reach;
         # the answer goes once the simulator has had a moment to show it.
+        # A model that publishes the variable but does not honour the
+        # event is not asked forever: a few seconds in, the item is
+        # answered as it stands and the runner's own objection machinery
+        # says what disagrees, rather than stalling the checklist on it.
         if self._perform_check_item(state, item):
-            self._checklist_item_since = now
-            return
+            if now - self._checklist_perform_since < 4.0:
+                self._checklist_item_since = now
+                return
         if now - self._checklist_item_since >= 2.0:
             runner.fo_answer()
             # The next pass sees the advance -- or the objection, which a
@@ -72,7 +83,15 @@ class _The_checklist_answered:
         actual = getattr(state, check.var, None)
         if holds(check, actual, expected):
             return False
-        return self._switch_for(state, check.var, expected)
+        if check.var in self._TOGGLED_ONCE \
+                and check.var in self._checklist_sent:
+            # A toggle event has no "on": asked again it would flip the
+            # switch back off. One ask per item is all it gets.
+            return True
+        asked = self._switch_for(state, check.var, expected)
+        if asked:
+            self._checklist_sent.add(check.var)
+        return asked
 
     def _switch_for(self, state, var: str, expected) -> bool:
         """The cockpit control behind a checklist variable."""
@@ -82,7 +101,12 @@ class _The_checklist_answered:
                 and not isinstance(expected, bool) and expected > 0)
         table = {
             "parking_brake": lambda: d.parking_brake(want_on),
-            "gear_down": lambda: d.gear(want_on),
+            # Gear out goes through the same gear-speed gate the flying
+            # uses: a checklist item does not put the wheels out past
+            # Vlo. Retraction is its own item and asks the sim directly.
+            "gear_down": lambda: (not want_on
+                                  or self._gear_allowed(state))
+                                 and d.gear(want_on),
             "landing_light": lambda: d.landing_light(want_on),
             "taxi_light": lambda: d.taxi_light(want_on),
             "nav_light": lambda: d.nav_lights(want_on),
@@ -105,12 +129,13 @@ class _The_checklist_answered:
             "mixture_pct": lambda: d.write("GENERAL ENG MIXTURE LEVER "
                                            "POSITION:1", float(expected)),
             "transponder_code": lambda: d.transponder(str(expected)),
-            "kohlsman_hpa": lambda: d.kohlsman(float(expected)),
+            "kohlsman_hpa": lambda: d.kohlsman(
+                self._altimeter_hpa(expected)),
             # The check asks for a detent, not a travel: the handle index
-            # where the sim takes it, the fraction where it does not.
-            "flaps_index": lambda: (
-                d.write("FLAPS HANDLE INDEX", float(expected))
-                or d.flaps(min(1.0, float(expected) / 4.0))),
+            # where the sim takes it, the fraction where it does not --
+            # and an extension only within the flap speed, the gate the
+            # flying path uses too.
+            "flaps_index": lambda: self._checklist_flaps(state, expected),
             "spoilers": lambda: d.spoilers(min(1.0, float(expected))),
         }
         action = table.get(var)
@@ -122,6 +147,19 @@ class _The_checklist_answered:
             log.debug("checklist switch %s failed", var, exc_info=True)
             return False
         return True
+
+    def _checklist_flaps(self, state, expected) -> bool:
+        """The flap detent a checklist item names, behind the same
+        direction-aware speed gate the flying uses: coming in is always
+        allowed, going out never past the flap speed."""
+        want = min(1.0, float(expected) / 4.0)
+        if want > getattr(self, "_flaps_asked", 0.0) \
+                and not self._flaps_allowed(state):
+            return False
+        self._flaps_asked = want
+        d = self.director
+        return bool(d.write("FLAPS HANDLE INDEX", float(expected))
+                    or d.flaps(want))
 
     def _configure_for_takeoff(self, state) -> None:
         """Set flaps, trim, lights for takeoff."""
