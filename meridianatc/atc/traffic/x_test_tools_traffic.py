@@ -211,6 +211,25 @@ class _Test_tools_traffic:
                  live=live, simulator=sim, invented=invented, room=room,
                  why=why)
 
+    # Codes a discrete squawk must never be: the emergency triplet, the
+    # conspicuity codes VFR carries, and the blocks' own headers.
+    _RESERVED_SQUAWKS = {"0000", "1200", "2000", "7000", "7500", "7600",
+                       "7700", "7777"}
+
+    def _new_squawk(self) -> str:
+        """A discrete code nobody else on the scope already has.
+
+        Drawn octal so 8 and 9 never appear -- and never an emergency or a
+        conspicuity code, which a random decimal draw could otherwise hand
+        an airliner.
+        """
+        taken = {f.squawk for f in self.flights} | self._RESERVED_SQUAWKS
+        for _ in range(64):
+            code = format(self.random.randint(0o1000, 0o7777), "04o")
+            if code not in taken:
+                return code
+        return "4521"
+
     def _new_flight(self, now: float, arriving: bool | None = None,
                     parked: bool = True,
                     category: str | None = None) -> Flight | None:
@@ -275,6 +294,7 @@ class _Test_tools_traffic:
         runway = (self.field.arrival_runway if arriving
                   else self.field.departure_runway)
         flight = Flight(
+            squawk=self._new_squawk(),
             written=written,
             type_code=type_code,
             aircraft=aircraft,
@@ -284,8 +304,6 @@ class _Test_tools_traffic:
             runway=runway,
             destination=self._elsewhere(),
             origin=self._elsewhere(),
-            squawk=f"{self.random.randint(1000, 7777):04d}".replace("8", "5")
-                                                            .replace("9", "6"),
             phase="inbound" if arriving else "clearance",
             next_at=now + self.random.uniform(2.0, 12.0),
             ifr=airline_field,

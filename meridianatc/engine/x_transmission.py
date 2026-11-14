@@ -226,10 +226,11 @@ class _Transmission:
                          extra={"confidence": round(transcript.confidence, 3),
                                 "heard": transcript.text})
 
-            self.handle_text(transcript.text, transcript.language,
-                             speaker=self._talk_speaker,
-                             confidence=transcript.confidence)
+            speaker = self._talk_speaker
             self._talk_speaker = ""
+            self.handle_text(transcript.text, transcript.language,
+                             speaker=speaker,
+                             confidence=transcript.confidence)
         except SpeechModelMissing:
             self.emit("error", "The speech recognition has not been downloaded "
                       "yet. Open Settings, then Components, and press Download.",

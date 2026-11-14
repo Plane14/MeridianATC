@@ -61,8 +61,7 @@ class _An_aeroplane_asked:
             # clouds: what launches is on a clearance, not circuits.
             flight.ifr = True
             flight.pattern_work = False
-            flight.squawk = f"{self.random.randint(1000, 7777):04d}" \
-                .replace("8", "5").replace("9", "6")
+            flight.squawk = self._new_squawk()
             self._assign_route(flight, arriving=False)
         flight.sequence = 0
         legs = self._legs_from_the_ramp(flight)

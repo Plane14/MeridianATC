@@ -235,6 +235,25 @@ class XPlaneTraffic:
                 log.debug("could not attach X-Plane traffic", exc_info=True)
                 return False
 
+    def followme(self, on, lat=0.0, lon=0.0, hdg=0.0):
+        """Draw or withdraw the follow-me car the plugin renders.
+
+        ``on`` keeps it on the taxiway at (lat, lon) facing ``hdg``; off it
+        goes back to the depot. Latest wins -- a car has no sequence worth
+        replaying.
+        """
+        with self._lock:
+            if self._socket is None:
+                return False
+            try:
+                return self._send({
+                    "v": 1, "t": "followme", "on": int(bool(on)),
+                    "lat": _number(lat, -90, 90),
+                    "lon": _number(lon, -180, 180),
+                    "hdg": _number(hdg, -1e9, 1e9) % 360})
+            except (ValueError, TypeError, OverflowError):
+                return False
+
     def sync(self, positions, now=None):
         with self._lock:
             self.on_frame()

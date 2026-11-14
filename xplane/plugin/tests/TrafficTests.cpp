@@ -52,6 +52,25 @@ void Protocol() {
     j["ac"] = Json::array(); for (int i = 0; i < 513; ++i) j["ac"].push_back(a);
     Reject([&] { Parse(j.dump()); });
 }
+void FollowMePacket() {
+    auto p = Parse(R"({"v":1,"t":"followme","on":1,"lat":48.1,"lon":11.2,"hdg":275})");
+    Check(p.kind == "followme" && p.followme.on, "followme parses");
+    Check(std::abs(p.followme.lat - 48.1) < .001 && std::abs(p.followme.hdg - 275) < .001,
+          "followme fields");
+    Session session;
+    Check(session.Apply(p, 10) && session.FollowmeActive(10), "car active");
+    Check(!session.FollowmeActive(25.1), "car expires when updates stop");
+    auto off = Parse(R"({"v":1,"t":"followme","on":0,"lat":0,"lon":0,"hdg":0})");
+    Check(session.Apply(off, 12) && !session.FollowmeActive(12), "car withdrawn");
+    Reject([] { Parse(R"({"v":1,"t":"followme","on":1,"lat":91,"lon":0,"hdg":0})"); });
+    Reject([] { Parse(R"({"v":1,"t":"followme","on":1,"lat":0,"lon":0})"); });
+    // The car is the owner's business, like the traffic stream.
+    Session other;
+    auto hello = Parse(R"({"v":1,"t":"hello"})");
+    other.Apply(hello, 0, 1);
+    Check(other.Apply(p, 1, 2), "followme claims the slot");
+    Check(!other.Apply(off, 2, 3), "foreign followme rejected");
+}
 void Ownership() {
     Session session;
     auto hello = Parse(R"({"v":1,"t":"hello"})");
@@ -125,6 +144,6 @@ void Socket() {
     server.Close(); Check(server.Open(port), "clean socket reopen");
 }
 int main() {
-    try { Protocol(); Ownership(); Movement(); Socket(); std::cout << "protocol, ownership, snapshot lifecycle, motion and UDP tests passed\n"; }
+    try { Protocol(); FollowMePacket(); Ownership(); Movement(); Socket(); std::cout << "protocol, ownership, snapshot lifecycle, motion and UDP tests passed\n"; }
     catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

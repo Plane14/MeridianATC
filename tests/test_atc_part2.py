@@ -611,6 +611,7 @@ class TestTrafficChatter:
 
     def _parsed(self, text, matched=False):
         from unittest.mock import MagicMock
+
         from meridianatc.atc.intents import normalize
         return MagicMock(text=text, normalized=normalize(text),
                          callsign_matched=matched)
@@ -680,3 +681,58 @@ class TestTrafficChatter:
             None, None, None)
         # throttled: no second call inside the window
         assert not inj.maybe_call_the_user(self._session(), "CTAF", 9999.5)
+
+
+class TestFollowMeCar:
+    """The follow-me car's spot on the cleared taxi route."""
+
+    def _path(self):
+        # ~500 m north then ~500 m east, from the origin
+        return [(0.0, 0.0), (0.0045, 0.0), (0.0045, 0.0072)]
+
+    def test_car_leads_along_route(self):
+        from meridianatc.atc.taxi import car_ahead
+        lat, lon, hdg = car_ahead(0.0, 0.0, self._path(), 35.0)
+        assert hdg < 1.0 and 0.0002 < lat < 0.0004 and lon == 0.0
+
+    def test_car_turns_the_corner(self):
+        from meridianatc.atc.taxi import car_ahead
+        _, _, hdg = car_ahead(0.0044, 0.0, self._path(), 80.0)
+        assert hdg > 45.0
+
+    def test_car_pulls_off_at_the_limit(self):
+        from meridianatc.atc.taxi import car_ahead
+        assert car_ahead(0.0045, 0.0070, self._path(), 35.0,
+                         done_m=30.0) is None
+
+    def test_no_car_off_route_or_no_route(self):
+        from meridianatc.atc.taxi import car_ahead
+        assert car_ahead(0.02, 0.0, self._path(), 35.0) is None
+        assert car_ahead(0.0, 0.0, [(0.0, 0.0)], 35.0) is None
+        assert car_ahead(0.0, 0.0, [], 35.0) is None
+
+    def test_car_clamps_at_route_end(self):
+        from meridianatc.atc.taxi import car_ahead
+        lat, lon, hdg = car_ahead(0.0045, 0.0068, self._path(), 200.0,
+                                  done_m=5.0)
+        end = self._path()[-1]
+        assert abs(lat - end[0]) < 1e-9 and abs(lon - end[1]) < 1e-9
+        assert hdg > 45.0
+
+    def test_followme_wire(self):
+        import json
+
+        from meridianatc.integrations.xptraffic import XPlaneTraffic
+        xp = XPlaneTraffic()
+        assert xp.followme(True, 48.0, 11.0, 270.0) is False
+        sent = []
+
+        class Sock:
+            def sendto(self, w, e):
+                sent.append(w)
+        xp._socket = Sock()
+        xp._endpoint = ("127.0.0.1", 49010)
+        assert xp.followme(True, 48.0, 11.0, 270.0)
+        msg = json.loads(sent[0])
+        assert msg["t"] == "followme" and msg["on"] == 1
+        assert msg["lat"] == 48.0 and msg["hdg"] == 270.0

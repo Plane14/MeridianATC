@@ -3,6 +3,7 @@
 #include "XPMPAircraft.h"
 #include "XPLMDataAccess.h"
 #include "XPLMGraphics.h"
+#include "XPLMInstance.h"
 #include "XPLMMenus.h"
 #include "XPLMPlugin.h"
 #include "XPLMProcessing.h"
@@ -113,6 +114,49 @@ public:
 std::map<std::string, std::unique_ptr<TrafficAircraft>> aircraft;
 std::set<std::string> unmatched;
 
+// The follow-me car is no aircraft: an instanced object placed on the
+// taxiway ahead of the pilot from the engine's position stream.
+XPLMObjectRef followmeObject = nullptr;
+XPLMInstanceRef followmeInstance = nullptr;
+XPLMProbeRef terrainProbe = nullptr;
+void LoadFollowMe() {
+    const auto path = (root / "Resources" / "FollowMe.obj").string();
+    followmeObject = XPLMLoadObject(path.c_str());
+    if (!followmeObject)
+        Log("FollowMe.obj not loadable -- the follow-me car is off");
+}
+void FollowMeCar(double now) {
+    if (!session.FollowmeActive(now)) {
+        if (followmeInstance) {
+            XPLMDestroyInstance(followmeInstance);
+            followmeInstance = nullptr;
+        }
+        return;
+    }
+    if (!followmeObject) return;
+    if (!followmeInstance) {
+        followmeInstance = XPLMCreateInstance(followmeObject, nullptr);
+        if (!followmeInstance) return;
+    }
+    if (!terrainProbe) terrainProbe = XPLMCreateProbe(xplm_ProbeY);
+    const auto& f = session.followme;
+    double x, y, z;
+    XPLMWorldToLocal(f.lat, f.lon, 0, &x, &y, &z);
+    if (terrainProbe) {
+        XPLMProbeInfo_t info{};
+        info.structSize = sizeof(info);
+        if (XPLMProbeTerrainXYZ(terrainProbe, static_cast<float>(x),
+                static_cast<float>(y), static_cast<float>(z), &info)
+                == xplm_ProbeHitTerrain)
+            y = info.locationY;
+    }
+    XPLMDrawInfo_t draw{};
+    draw.structSize = sizeof(draw);
+    draw.x = static_cast<float>(x); draw.y = static_cast<float>(y);
+    draw.z = static_cast<float>(z); draw.heading = static_cast<float>(f.hdg);
+    XPLMInstanceSetPosition(followmeInstance, &draw, nullptr);
+}
+
 std::string Trim(std::string s) {
     auto first = s.find_first_not_of(" \t\r\n");
     return first == std::string::npos ? "" : s.substr(first, s.find_last_not_of(" \t\r\n") - first + 1);
@@ -181,13 +225,14 @@ void Sync(double now) {
         } catch (const std::exception&) { aircraft.erase(id); unmatched.insert(id); }
     }
 }
-Json Status() {
+Json Status(double now) {
     int xp, sdk; XPLMHostApplicationID host; XPLMGetVersions(&xp, &sdk, &host);
     Json drawn = Json::array();
     for (const auto& [id, ac] : aircraft) if (ac->IsVisible() && ac->IsRendered()) drawn.push_back(id);
     return {{"v", 1}, {"t", "status"}, {"plugin", "MeridianATC-XP"}, {"version", Version},
         {"xpmp2", MERIDIAN_XPMP2_VERSION}, {"xplane", xp}, {"csl_models", XPMPGetNumberOfInstalledModels()},
-        {"aircraft", session.snapshot.size()}, {"drawn", drawn}, {"unmatched", unmatched}};
+        {"aircraft", session.snapshot.size()}, {"drawn", drawn}, {"unmatched", unmatched},
+        {"followme", session.FollowmeActive(now)}};
 }
 float Poll(float, float, int, void*) {
     try {
@@ -198,7 +243,7 @@ float Poll(float, float, int, void*) {
             try {
                 auto packet = Parse(wire);
                 if (packet.kind == "hello") {
-                    udp.Send(Status().dump(), from);
+                    udp.Send(Status(now).dump(), from);
                     continue;
                 }
                 auto sender = (static_cast<uint64_t>(ntohl(from.sin_addr.s_addr)) << 16) | ntohs(from.sin_port);
@@ -207,8 +252,11 @@ float Poll(float, float, int, void*) {
                 Sync(now);
             } catch (const std::exception&) { /* Invalid datagrams leave the current snapshot intact. */ }
         }
+        // Outside the receive loop: the car must also react to silence --
+        // expired updates pull it off the taxiway.
+        FollowMeCar(now);
         if (session.Connected(now) && now - lastStatus >= 1) {
-            udp.Send(Status().dump(), peer); lastStatus = now;
+            udp.Send(Status(now).dump(), peer); lastStatus = now;
         }
     } catch (const std::exception& e) { Log(e.what()); }
     return -1;
@@ -226,7 +274,7 @@ void Menu(void*, void* item) {
             case 1: config.labels = !config.labels; Labels(); break;
             case 2: config.tcas = !config.tcas; TCAS(); break;
             case 3: aircraft.clear(); LoadCSL(); Sync(Now()); break;
-            case 4: Log(Status().dump()); break;
+            case 4: Log(Status(Now()).dump()); break;
         }
         Checks();
     } catch (const std::exception& e) { Log(e.what()); }
@@ -235,6 +283,9 @@ int Connected(void*) { return initialized && session.Connected(Now()) ? 1 : 0; }
 int AircraftCount(void*) { return static_cast<int>(session.snapshot.size()); }
 void Shutdown() {
     if (loop) { XPLMDestroyFlightLoop(loop); loop = nullptr; }
+    if (followmeInstance) { XPLMDestroyInstance(followmeInstance); followmeInstance = nullptr; }
+    if (terrainProbe) { XPLMDestroyProbe(terrainProbe); terrainProbe = nullptr; }
+    if (followmeObject) { XPLMUnloadObject(followmeObject); followmeObject = nullptr; }
     aircraft.clear(); unmatched.clear(); session = Session{}; udp.Close();
     if (initialized) { XPMPMultiplayerDisable(); XPMPMultiplayerCleanup(); initialized = false; }
 }
@@ -273,7 +324,7 @@ PLUGIN_API int XPluginEnable() {
         const char* result = XPMPMultiplayerInit("MeridianATC-XP", (root / "Resources").string().c_str(), Preferences, "A320");
         if (*result) { Log(result); XPMPMultiplayerCleanup(); return 0; }
         initialized = true;
-        LoadCSL(); Labels(); TCAS(); Checks();
+        LoadCSL(); Labels(); TCAS(); Checks(); LoadFollowMe();
         if (!udp.Open(config.port)) throw std::runtime_error("Cannot bind localhost UDP port " + std::to_string(config.port));
         XPLMCreateFlightLoop_t params{}; params.structSize = sizeof(params);
         params.phase = xplm_FlightLoop_Phase_AfterFlightModel; params.callbackFunc = Poll;

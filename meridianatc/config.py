@@ -1147,6 +1147,9 @@ class TrafficConfig:
     # operational minimum -- a dry one-liner, never a safety word. Off,
     # every answer is the operational one.
     humor: bool = False
+    # Whether a follow-me car leads the aeroplane along its cleared taxi
+    # route in X-Plane, drawn by the plugin while a route stands.
+    follow_me: bool = True
     # Whether the hour of day sets the rhythm: the morning and evening
     # banks busy, the small hours nearly quiet, as a real field is.
     # Off, the density alone decides, as it always did.
@@ -1272,6 +1275,8 @@ describe(
                         help="set.traffic_pilots_talk_why"),
     humor=Setting("traffic", "traffic", label="set.traffic_humor",
                   help="set.traffic_humor_why"),
+    follow_me=Setting("traffic", "traffic", label="set.traffic_follow_me",
+                      help="set.traffic_follow_me_why"),
     handling_doors=Setting("traffic", "handling", restart=True,
                            advanced=True),
     engines_and_lights=Setting("traffic", "handling", restart=True,

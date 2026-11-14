@@ -541,12 +541,15 @@ class DeviationAssistWatch:
 
     def _off_now(self, session: FlightSession, state) -> list[str]:
         out = []
+        # Mode C is QNH-corrected by the radar, so what the controller sees
+        # is true altitude whatever the Kollsman window says -- a mis-set
+        # altimeter is a deviation here exactly as it would be on a scope.
         if session.assigned_altitude_ft \
                 and abs((getattr(state, "altitude_ft", 0.0) or 0.0)
                         - session.assigned_altitude_ft) > self.ALT_FT:
             out.append("altitude")
         if session.assigned_heading \
-                and _heading_off(getattr(state, "heading_true", 0.0) or 0.0,
+                and _heading_off(self._magnetic(state),
                                  session.assigned_heading) > self.HDG_DEG:
             out.append("heading")
         if session.assigned_speed_kt \
@@ -555,6 +558,22 @@ class DeviationAssistWatch:
                         - session.assigned_speed_kt) > self.SPD_KT:
             out.append("speed")
         return out
+
+    @staticmethod
+    def _magnetic(state) -> float:
+        """The aeroplane's magnetic heading: assigned headings are magnetic.
+
+        The simulator's own magnetic value where it gives one; the true
+        heading corrected by the local variation else -- a stand-in source
+        leaves the magnetic at zero, and comparing an assigned heading with
+        a true one deviates by the variation itself.
+        """
+        heading = float(getattr(state, "heading_magnetic", 0.0) or 0.0)
+        if heading or not getattr(state, "has_position", False):
+            return heading
+        from ..navdata.magvar import to_magnetic, variation
+        true = float(getattr(state, "heading_true", 0.0) or 0.0)
+        return to_magnetic(true, variation(state.latitude, state.longitude))
 
     @staticmethod
     def _verify(kind: str, p, session: FlightSession, state) -> str:

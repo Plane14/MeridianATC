@@ -412,6 +412,7 @@ class _The_other_aeroplanes:
         self._choose_models(positions, now)
         with timed("tick.traffic.sync", warn_over_ms=500):
             self.simtraffic.sync(positions, now)
+        self._follow_me_car()
         confirmed, dropped = self.traffic.confirm(
             self.simtraffic.has, self.simtraffic.failed, now)
         with timed("tick.traffic.handling", warn_over_ms=500):
@@ -453,6 +454,36 @@ class _The_other_aeroplanes:
                           f"so it is not on the runway.",
                           key="log.traffic_spawn_failed",
                           callsign=flight.written)
+
+    # How far ahead of the aeroplane the follow-me car drives, and how close
+    # to the clearance limit counts as arrived.
+    FOLLOWME_LEAD_M = 35.0
+
+    def _follow_me_car(self) -> None:
+        """The follow-me car on the pilot's cleared route, X-Plane only.
+
+        While a taxi route stands, the car drives it a short way ahead of
+        the aeroplane to the clearance limit; the simulator draws it from
+        the position the route says, not from anything it can see. Off the
+        route it simply waits -- deviation is TaxiWatch's call.
+        """
+        from ..atc import taxi
+        xp = self.simtraffic
+        session, state = self.session, self.state
+        car = None
+        if (self.config.traffic.follow_me and session is not None
+                and state is not None and state.has_position
+                and state.on_ground
+                and session.phase in (Phase.TAXI_OUT, Phase.TAXI_IN)):
+            car = taxi.car_ahead(state.latitude, state.longitude,
+                                 session.taxi_path, self.FOLLOWME_LEAD_M)
+        if car is not None and isinstance(xp, XPlaneTraffic) and xp.available:
+            xp.followme(True, *car)
+            self._followme_on = True
+        elif getattr(self, "_followme_on", False):
+            if isinstance(xp, XPlaneTraffic):
+                xp.followme(False)
+            self._followme_on = False
 
     def _choose_models(self, positions: list[dict], now: float) -> None:
         """Mark each invented aeroplane with the level of detail it should

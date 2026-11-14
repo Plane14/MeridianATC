@@ -404,6 +404,71 @@ def _length(legs) -> float:
                for p, q in zip(leg.points, leg.points[1:], strict=False))
 
 
+def car_ahead(latitude: float, longitude: float,
+              path: list[tuple[float, float]], lead_m: float,
+              done_m: float = 20.0
+              ) -> tuple[float, float, float] | None:
+    """Where a follow-me car belongs on ``path`` while the aeroplane taxis.
+
+    The route is a lat/lon polyline (``FlightSession.taxi_path``). The car
+    leads the aeroplane by ``lead_m`` along the line, clamped to the line's
+    end -- the clearance limit -- and pulls off entirely once the aeroplane
+    is within ``done_m`` of it. Returns (lat, lon, heading) for the car, or
+    None when the drive is over or the aeroplane is nowhere near the route
+    (off-route is TaxiWatch's call, not the car's: it just waits).
+
+    Distances use the same equirectangular metre as :meth:`TaxiWatch` --
+    close enough at taxi distances, and free.
+    """
+    if len(path) < 2:
+        return None
+    kx = 111320.0 * math.cos(math.radians(latitude))
+    ky = 110540.0
+    xy = [((lon - longitude) * kx, (lat - latitude) * ky)
+          for lat, lon in path]
+
+    # The aeroplane's progress: the length of line already behind the point
+    # it is closest to, projected onto its nearest segment.
+    progress, total, best_t, best_d = 0.0, 0.0, 0.0, math.inf
+    best_seg, best_seg_len = 0, 0.0
+    for i, ((ax, ay), (bx, by)) in enumerate(zip(xy, xy[1:], strict=False)):
+        dx, dy = bx - ax, by - ay
+        seg = math.hypot(dx, dy)
+        t = 0.0
+        if seg > 0:
+            t = max(0.0, min(1.0, -(ax * dx + ay * dy) / (seg * seg)))
+        px, py = ax + t * dx, ay + t * dy
+        d = math.hypot(px, py)
+        if d < best_d:
+            best_d, best_seg, best_t, best_seg_len = d, i, t, seg
+        total += seg
+    for (ax, ay), (bx, by) in zip(xy[:best_seg + 1],
+                                  xy[1:best_seg + 1], strict=False):
+        progress += math.hypot(bx - ax, by - ay)
+    progress += best_t * best_seg_len
+
+    if best_d > 250.0 or total - progress <= done_m:
+        return None
+
+    # The car's spot: lead metres further along, on whatever segment holds
+    # that distance, aimed down the route.
+    want = min(progress + lead_m, total)
+    run, last_hdg = 0.0, 0.0
+    for (ax, ay), (bx, by) in zip(xy, xy[1:], strict=False):
+        seg = math.hypot(bx - ax, by - ay)
+        if seg > 0:
+            last_hdg = math.degrees(math.atan2(bx - ax, by - ay)) % 360.0
+        if run + seg >= want and seg > 0:
+            f = (want - run) / seg
+            x, z = ax + f * (bx - ax), ay + f * (by - ay)
+            lat = latitude + z / ky
+            lon = longitude + x / kx if kx else longitude
+            return lat, lon, last_hdg
+        run += seg
+    last = path[-1]
+    return last[0], last[1], last_hdg
+
+
 def _threshold(lines: list[RunwayLine], runway: str):
     """(threshold xy, heading, length) for a runway end, or None."""
     wanted = normalize_runway(runway)

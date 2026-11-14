@@ -827,5 +827,7 @@
   "set.traffic_pilots_talk": "Pilots can call you",
   "set.traffic_pilots_talk_why": "On an uncontrolled frequency, a crew that has not heard you before asks your position and intentions, as one does.",
   "set.traffic_humor": "The occasional dry answer",
-  "set.traffic_humor_why": "A crew answering a call to them may add a line beyond the operational minimum. Never a safety word."
+  "set.traffic_humor_why": "A crew answering a call to them may add a line beyond the operational minimum. Never a safety word.",
+  "set.traffic_follow_me": "Follow-me car",
+  "set.traffic_follow_me_why": "In X-Plane, a follow-me car leads your aircraft along its cleared taxi route to the clearance limit."
 }

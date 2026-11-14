@@ -46,10 +46,16 @@ inline bool Light(const Json& j, const char* key) {
     return value == 1;
 }
 
+struct FollowMe {
+    bool on = false;
+    double lat = 0, lon = 0, hdg = 0;
+};
+
 struct Packet {
     std::string kind;
     uint64_t seq = 0;
     std::map<std::string, AircraftState> aircraft;
+    FollowMe followme;
 };
 
 inline Packet Parse(const std::string& wire) {
@@ -67,6 +73,13 @@ inline Packet Parse(const std::string& wire) {
     Packet p;
     p.kind = Text(j, "t", 16, true);
     if (p.kind == "clear" || p.kind == "hello") return p;
+    if (p.kind == "followme") {
+        p.followme.on = Light(j, "on");
+        p.followme.lat = Number(j, "lat", -90, 90);
+        p.followme.lon = Number(j, "lon", -180, 180);
+        p.followme.hdg = Wrap(Number(j, "hdg", -360, 360));
+        return p;
+    }
     if (p.kind != "traffic" || !j.at("seq").is_number_unsigned())
         throw std::invalid_argument("message type or sequence");
     p.seq = j.at("seq").get<uint64_t>();
@@ -142,19 +155,26 @@ class Session {
     bool hasSequence = false;
     uint64_t sequence = 0;
     double trafficAt = -1e9;
+    double followmeAt = -1e9;
     bool ownerKnown = false;
     uint64_t owner = 0;
     double ownerAt = -1e9;
 public:
     std::map<std::string, AircraftState> snapshot;
+    FollowMe followme;
     bool Connected(double now) const { return ownerKnown && now - ownerAt < 10; }
+    // A silent engine leaves the car where it last stood for a few seconds,
+    // then pulls it -- a parked car on the taxiway is worse than none.
+    bool FollowmeActive(double now) const { return followme.on && now - followmeAt < 15; }
     bool Apply(const Packet& packet, double now, uint64_t sender = 0) {
         if (packet.kind == "hello") return true;
         if (Connected(now) && sender != owner) return false;
         if (!Connected(now)) Clear();
         if (packet.kind == "traffic" && now - trafficAt < 10 && hasSequence && packet.seq <= sequence) return false;
         if (packet.kind == "clear") Clear();
-        else {
+        else if (packet.kind == "followme") {
+            followme = packet.followme; followmeAt = now;
+        } else {
             snapshot = packet.aircraft;
             trafficAt = now; sequence = packet.seq; hasSequence = true;
         }
@@ -165,6 +185,9 @@ public:
         if (now - trafficAt < 10 || !hasSequence) return false;
         Clear(); return true;
     }
-    void Clear() { snapshot.clear(); hasSequence = false; trafficAt = -1e9; }
+    void Clear() {
+        snapshot.clear(); hasSequence = false; trafficAt = -1e9;
+        followme.on = false; followmeAt = -1e9;
+    }
 };
 }
