@@ -264,12 +264,11 @@ class _The_checklist_answered:
         sent left and a rightward answer is agreement.
 
         A vote only means something when the evidence is the wheel's
-        own: the demand must have held its side across calls (a demand
-        that just flipped inherits the old turn's yaw), and the yaw
-        rate must be one steering can plausibly make -- a spin already
-        underway answers an older command, not this one. Five disagreed
-        answers flip the sign; the count is re-seeded positive after a
-        flip so a correctly-wired model never chatters between the two.
+        own: the demand must have held its side across calls, since a
+        demand that just flipped or alternates inherits yaw that
+        belongs to an older command. Five disagreed answers flip the
+        sign; the count is re-seeded positive after a flip so a
+        correctly-wired model never chatters between the two.
         """
         prev = getattr(self, "_pedal_demand", 0.0)
         self._pedal_demand = demand
@@ -277,8 +276,7 @@ class _The_checklist_answered:
         streak = streak + 1 if prev and (demand > 0.0) == (prev > 0.0) \
             else 0
         self._demand_streak = streak
-        if abs(prev) < 0.3 or abs(rate) < 3.0 or abs(rate) > 20.0 \
-                or gs < 1.0 or streak < 2:
+        if abs(prev) < 0.3 or abs(rate) < 3.0 or gs < 1.0 or streak < 3:
             return
         votes = getattr(self, "_pedal_votes", 0)
         votes += 1 if (rate > 0.0) == (prev > 0.0) else -1
@@ -414,19 +412,16 @@ class _The_checklist_answered:
         if commit:
             err = commit * max(60.0, abs(err))
         rate = self._turn_rate(hdg)
-        lead = self._steer_lead(err, rate)
-        if self._use_pids:
-            rudder = self._pid("steer").update(lead, measurement=hdg)
-        else:
-            # The gain is the class's: a heavy needs more nosewheel for
-            # the same error than a light single, and the performance
-            # model's turn rate is the proxy it already carries. The
-            # band stays proportional out to a real turn -- a law that
-            # saturates inside a dozen degrees is bang-bang under a tick
-            # or two of lag, and the apron shows the weave that makes.
-            divisor = 36.0 if self.performance.turn_rate < fly.RATE_LIGHT \
-                else 60.0
-            rudder = max(-0.5, min(0.5, lead / divisor))
+        # A rate servo, not a bare proportional law: the error asks for
+        # a yaw rate -- capped at a brisk taxi turn -- and the pedal
+        # answers the difference between the rate wanted and the rate
+        # measured. Braking is then built in: a nose already swinging
+        # gets counter-pedal whether or not the error has even shrunk,
+        # which is the damping a loop running on seconds-old reads needs
+        # and a proportional term cannot supply -- the apron showed the
+        # slalom the other shape makes.
+        want_rate = max(-15.0, min(15.0, err / 4.0))
+        rudder = max(-0.5, min(0.5, (want_rate - rate) * 0.03))
         limit = self._ground_steer_limit(state)
         rudder = max(-limit, min(limit, rudder))
         gs = state.ground_speed_kt or 0.0

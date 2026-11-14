@@ -305,8 +305,7 @@ def _pedal_check(self, demand: int, hdg: float) -> None:
     if dt <= 0.5:
         return
     rate = _heading_error(hdg, prev_hdg) / dt
-    if abs(prev) < PEDAL_MAX * 0.3 or abs(rate) < 5.0 \
-            or abs(rate) > 30.0 or streak < 2:
+    if abs(prev) < PEDAL_MAX * 0.3 or abs(rate) < 5.0 or streak < 3:
         return
     votes = getattr(self, "_pedal_votes", 0)
     votes += 1 if (rate > 0.0) == (prev > 0) else -1
