@@ -425,11 +425,20 @@ class TaxiWatch:
     # stopped traffic are not a deviation.
     SETTLE_S = 20.0
     MOVING_KT = 6.0
+    # The give-way call: on the corridor the route uses, this far ahead.
+    # Narrower than a parallel taxiway's spacing and far enough to be
+    # said before it is met, whatever either aeroplane is doing.
+    CONFLICT_CORRIDOR_M = 30.0
+    GIVE_WAY_M = 150.0
 
     def __init__(self, navdb: NavDB, brain: ControllerBrain):
         self.navdb = navdb
         self.brain = brain
         self._off_since: float | None = None
+        # The aeroplanes a give-way has been said for on this taxi --
+        # cleared when the corridor is, so a fresh conflict is a fresh
+        # call rather than a silent second one.
+        self._advised: set[str] = set()
 
     def look(self, session: FlightSession, station: Station | None, state,
              language: str = "en") -> Reply | None:
@@ -437,15 +446,19 @@ class TaxiWatch:
             return None
         if session.phase not in (Phase.TAXI_OUT, Phase.TAXI_IN):
             self._off_since = None
+            self._advised.clear()
             return None
         path = session.taxi_path
         if len(path) < 2 or state is None or not state.has_position \
                 or not state.on_ground:
             return None
-        if (getattr(state, "ground_speed_kt", 0.0) or 0.0) < self.MOVING_KT:
-            return None
+        # On the route, ahead of the off-route question, is the collision
+        # one: whatever the rest of the line is about to meet is given
+        # way to, and its passing answered with "continue taxi".
         if self._off_route_nm(state, path) <= self.OFF_ROUTE_NM:
             self._off_since = None
+            return self._give_way(session, station, state, path, language)
+        if (getattr(state, "ground_speed_kt", 0.0) or 0.0) < self.MOVING_KT:
             return None
         now = time.monotonic()
         if self._off_since is None:
@@ -460,6 +473,53 @@ class TaxiWatch:
             decision("taxi_off_route", station=station.callsign,
                      distance_nm=round(self._off_route_nm(state, path), 3))
             return Reply(p.taxi_off_route(session.aircraft), station)
+        return None
+
+    def _give_way(self, session: FlightSession, station: Station, state,
+                  path, language: str) -> Reply | None:
+        """"Give way to the ..." for whatever the cleared route meets.
+
+        The controller's whole picture answers -- the invented traffic,
+        the live aeroplanes this program flies, and the simulator's own,
+        which obey nobody: a give-way is exactly the call for the one the
+        ground cannot instruct. Said once per aeroplane per conflict, and
+        "continue taxi" once the corridor is clear again.
+        """
+        from .auto_nav import traffic_ahead
+
+        contacts = getattr(self.brain, "contacts", None)
+        if contacts is None:
+            return None
+        try:
+            found = traffic_ahead(state.latitude, state.longitude,
+                                  list(path), contacts(),
+                                  corridor_m=self.CONFLICT_CORRIDOR_M,
+                                  look_m=self.GIVE_WAY_M)
+        except Exception:
+            log.debug("the give-way check raised", exc_info=True)
+            return None
+        p = self.brain.for_station(station, language)
+        session.aircraft.language = language_of(p)
+        # Moving traffic is a conflict whatever its distance; standing
+        # traffic only once it is genuinely in the way -- a parked
+        # aeroplane thirty metres off the line is not a call to make.
+        relevant = [one for one in found
+                    if (one[0].ground_speed_kt or 0.0) >= 3.0
+                    or one[1] <= 95.0]
+        if relevant:
+            contact = relevant[0][0]
+            key = getattr(contact, "written", "") or repr(id(contact))
+            if key in self._advised:
+                return None
+            self._advised.add(key)
+            decision("taxi_give_way", station=station.callsign,
+                     traffic=key,
+                     ahead_m=round(relevant[0][1]))
+            return Reply(p.give_way(session.aircraft,
+                                    contact.describe(language)), station)
+        if self._advised:
+            self._advised.clear()
+            return Reply(p.continue_taxi(session.aircraft), station)
         return None
 
     @staticmethod

@@ -13,6 +13,13 @@ from ._shared import (
 class _The_phase_machine:
     # -- the phase machine ----------------------------------------------------
 
+    # How far down the runway the entry is before getting to the departure
+    # end counts as a backtrack rather than a line-up -- an intersection
+    # this near the numbers is just a lineup; and how close to the end the
+    # backtrack turns round: enough pavement for the turn, none wasted.
+    BACKTRACK_MIN_M = 250.0
+    BACKTRACK_TURN_M = 60.0
+
     def _phase_preflight(self, state, now: float) -> None:
         """Preflight: aircraft configured, checks done, clearance next."""
         d = self.director
@@ -427,6 +434,13 @@ class _The_phase_machine:
                 if self.session.cleared_takeoff:
                     self._transition(AutonomousPhase.TAKEOFF)
                 return
+            # Somebody on the strip the aeroplane is cleared onto: wait
+            # where the hold is rather than drive on behind them. A
+            # departure rolling frees the strip in seconds; an arrival
+            # rolling out is gone by the time the lineup is steered.
+            if self._runway_blocked():
+                self._stop(state)
+                return
             # Taxi onto the centreline and align with the runway heading.
             # ``align`` says how far off the extended centreline the
             # aeroplane is and the heading that puts it back on; steering
@@ -435,6 +449,12 @@ class _The_phase_machine:
             err = auto_nav.align(state.latitude, state.longitude,
                                  self.state.runway_lat, self.state.runway_lon,
                                  self.state.runway_heading)
+            if err["along_m"] > self.BACKTRACK_MIN_M:
+                # Joined the runway far from the departure end: the way
+                # to the threshold is along the pavement itself. Enter
+                # facing the way back, drive it, turn round at the end.
+                self._goto_sub("backtrack")
+                return
             hdg_err = abs((self.state.runway_heading
                             - (state.heading_true or 0.0) + 540.0)
                            % 360.0 - 180.0)
@@ -456,15 +476,71 @@ class _The_phase_machine:
                 self._transition(AutonomousPhase.HOLDING_SHORT)
                 return
 
+        elif sub == "backtrack":
+            # Down the runway toward the departure end, pointed at it:
+            # the centreline at the reciprocal heading, until the
+            # threshold end is near enough to turn round on.
+            back_hdg = (self.state.runway_heading + 180.0) % 360.0
+            err = auto_nav.align(state.latitude, state.longitude,
+                                 self.state.runway_lat, self.state.runway_lon,
+                                 self.state.runway_heading)
+            steer_err = auto_nav.align(
+                state.latitude, state.longitude,
+                self.state.runway_lat, self.state.runway_lon, back_hdg)
+            steer_hdg = (back_hdg + steer_err["correction_deg"]) % 360.0
+            if abs(steer_err["offset_m"]) < 60.0:
+                steer_hdg = back_hdg
+            d.parking_brake(False)
+            self._steer(state, steer_hdg, self.performance.taxi_kt)
+            if err["along_m"] <= self.BACKTRACK_TURN_M:
+                self._goto_sub("turn_out")
+                self._emit("info", "At the departure end: turning round",
+                           "autonomous.backtrack.turn")
+            elif self._sub_age() > 300.0:
+                # The backtrack is not getting made: take the lineup
+                # where the aeroplane is rather than wear the runway
+                # length out driving up and down it.
+                self._goto_sub("align")
+
+        elif sub == "turn_out":
+            # The 180 at the end of the backtrack: walking pace, and the
+            # committed-reversal law in ``_steer`` picks the side and
+            # sees it through.
+            d.parking_brake(False)
+            self._steer(state, self.state.runway_heading, 3.0)
+            hdg_err = abs((self.state.runway_heading
+                            - (state.heading_true or 0.0) + 540.0)
+                          % 360.0 - 180.0)
+            if hdg_err < 15.0 or self._sub_age() > 120.0:
+                self._goto_sub("align")
+
         elif sub == "set":
             # Aligned: brakes on, checks complete, wait for the roll.
+            # "Lined up and wait" can be a long wait at a busy field --
+            # the clearance is the tower's to give in its time, and an
+            # aeroplane parked on the numbers with its engines running
+            # is exactly what was asked for, not a failure.
+            # Still where the roll wants it? A blown turn or a nudge is
+            # a re-align, not a takeoff begun beside the centreline.
+            if self.state.runway_heading > 0:
+                err = auto_nav.align(state.latitude, state.longitude,
+                                     self.state.runway_lat,
+                                     self.state.runway_lon,
+                                     self.state.runway_heading)
+                hdg_err = abs((self.state.runway_heading
+                               - (state.heading_true or 0.0) + 540.0)
+                              % 360.0 - 180.0)
+                if abs(err["offset_m"]) > 40.0 or hdg_err > 20.0:
+                    self.state.aligned = False
+                    self._goto_sub("align")
+                    return
             d.parking_brake(True)
             self._stop(state)
             self._configure_for_takeoff(state)
-            if self.session.cleared_takeoff or self.session.phase == Phase.TAKEOFF:
+            if (self.session.cleared_takeoff
+                    or self.session.phase == Phase.TAKEOFF) \
+                    and not self._runway_blocked():
                 self._transition(AutonomousPhase.TAKEOFF)
-            elif self._sub_age() > 300.0:
-                self._set_error("Lined up but never cleared for takeoff")
 
     def _phase_takeoff(self, state, now: float) -> None:
         """Takeoff roll, rotation, initial climb."""
@@ -478,15 +554,27 @@ class _The_phase_machine:
                 return
             d.parking_brake(True)
             self._stop(state)
-            if self.session.cleared_takeoff:
-                self.state.rejected = False
+            # Held for the clearance: as long as the aeroplane is on the
+            # numbers with its engines running it is doing exactly what
+            # "cleared for takeoff" is waited for. A rejected takeoff
+            # latches -- nothing re-rolls after one.
+            if self.session.cleared_takeoff and not self.state.rejected:
+                if self._runway_blocked():
+                    # The strip was clear when the clearance came; it is
+                    # not now -- wait for it again rather than roll over
+                    # whoever arrived in between.
+                    return
+                if self.state.runway_heading > 0 \
+                        and not self.state.aligned:
+                    # Cleared but never made the lineup: the roll starts
+                    # on the centreline pointing down it, so the lineup
+                    # is made first.
+                    self._transition(AutonomousPhase.LINE_UP)
+                    return
                 # The power events are one-shot: a new roll is a new
                 # press of TO/GA and THROTTLE_FULL.
                 self.director.forget("takeoff_power", "toga")
                 self._goto_sub("roll")
-            elif self._sub_age() > 300.0:
-                self._set_error("Takeoff clearance never came")
-                return
             return
 
         if sub == "roll":
@@ -532,11 +620,21 @@ class _The_phase_machine:
             d.steering(keep if (state.indicated_airspeed_kt or 0.0) < 35.0
                        else 0.0)
             rotate_at = (self.state.vr_kt
-                         or self.state.min_rotation_kt
+                         or getattr(state, "min_rotation_kt", 0.0) or 0.0
                          or self.performance.rotate_kt)
             self.state.rotate_speed_kt = rotate_at
             v1 = self.state.v1_kt or (rotate_at - 10.0)
-            if self._engines_out(state) and ias < v1:
+            if ias < v1 and self._runway_blocked():
+                # Somebody on the strip below V1 is a stop, not a
+                # continued takeoff -- the same rule the engine gets.
+                self.state.rejected = True
+                self._emit("error",
+                           "Rejected takeoff: traffic on the runway",
+                           "autonomous.rejected_runway")
+                self._goto_sub("abort")
+                return
+            engines_out, _ = self._engines_out(state)
+            if engines_out and ias < v1:
                 # An engine that quits below V1 is a stop, not a
                 # continued takeoff; past it the aeroplane flies.
                 self.state.rejected = True
@@ -600,16 +698,33 @@ class _The_phase_machine:
             return
 
         if sub == "abort":
-            # Rejected takeoff: idle, maximum braking, off the runway when
-            # able, and the flight is over -- a rejected takeoff is not a
-            # flight to continue.
+            # Rejected takeoff: idle, maximum braking -- and then a live
+            # aeroplane held on the runway, not a shutdown on it. There is
+            # no cleared way off the strip from mid-run, so the FO waits
+            # powered for the tower to work it: switching the flight off
+            # where it stopped is the thing that was wrong.
             d.throttle_cut()
             d.throttle_idle()
-            d.parking_brake(True)
-            self._emit("info", "Rejected takeoff complete",
-                       "autonomous.rejected_done")
-            self._transition(AutonomousPhase.SHUTDOWN)
-            self._goto_sub("secure")
+            self._stop(state)
+            if not self.state.abort_announced:
+                self.state.abort_announced = True
+                self._emit("info",
+                           "Rejected takeoff: holding on the runway",
+                           "autonomous.rejected_done")
+            self._goto_sub("await")
+            return
+
+        if sub == "await":
+            # Powered hold where the roll stopped: brakes on, levers
+            # idle, waiting on the tower or the pilot to take it. A taxi
+            # instruction is the way off -- the runway is vacated along
+            # whatever route it clears.
+            self._stop(state)
+            if getattr(self.session, "taxi_path", None):
+                if self.session.phase == Phase.TAXI_IN:
+                    self._transition(AutonomousPhase.TAXI_IN)
+                elif self.session.phase == Phase.TAXI_OUT:
+                    self._transition(AutonomousPhase.TAXI_OUT)
             return
 
         if sub == "initial_climb":

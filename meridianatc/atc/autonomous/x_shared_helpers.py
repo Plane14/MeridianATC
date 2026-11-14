@@ -3,6 +3,7 @@ from __future__ import annotations
 from ._shared import (
     AutonomousPhase,
     Phase,
+    log,
     time,
 )
 
@@ -471,4 +472,47 @@ class _Shared_helpers:
                 # to give, and the aeroplane waits for it.
                 return False
         return self._sub_age() > 10.0
+
+    def _surface_contacts(self) -> list:
+        """Every aeroplane the controller's picture holds, for yielding to.
+
+        The invented traffic, the live aeroplanes this program flies, and
+        the simulator's own -- which obey nobody. A picture that cannot be
+        asked is treated as empty: an absent picture is no reason to hold
+        position for ever.
+        """
+        brain = getattr(self, "brain", None)
+        contacts = getattr(brain, "contacts", None)
+        if contacts is None:
+            return []
+        try:
+            return list(contacts() or [])
+        except Exception:
+            log.debug("could not read the traffic picture", exc_info=True)
+            return []
+
+    def _runway_blocked(self, runway: str = "", airport=None) -> bool:
+        """Whether anybody is on the strip the flight is about to use.
+
+        The departure runway unless told otherwise, resolved the way
+        :meth:`_find_runway` resolves it, and measured against every
+        contact -- the tower's view of occupancy
+        (:func:`meridianatc.atc.occupancy.on_the_runway`), not just the
+        traffic this program is flying.
+        """
+        session = self.session
+        name = runway or getattr(session, "departure_runway", "") \
+            or (self.state.runway_key[1] if self.state.runway_key else "")
+        airport = airport or getattr(session, "departure", None) \
+            or getattr(session, "destination", None) \
+            or self._get_current_airport()
+        if not name or airport is None:
+            return False
+        try:
+            from .. import occupancy
+            return bool(occupancy.on_the_runway(
+                self.navdb, airport, name, self._surface_contacts()))
+        except Exception:
+            log.debug("the runway occupancy check failed", exc_info=True)
+            return False
 

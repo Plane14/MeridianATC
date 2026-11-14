@@ -147,6 +147,8 @@ class AutonomousState:
     airborne_at: float = 0.0
     rotate_speed_kt: float = 0.0
     rejected: bool = False
+    # The rejected takeoff's own "holding" word, said once.
+    abort_announced: bool = False
     # The speeds this leg is flown at, from vspeeds.
     v1_kt: float = 0.0
     vr_kt: float = 0.0

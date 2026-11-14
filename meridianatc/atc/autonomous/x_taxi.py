@@ -4,6 +4,7 @@ from ._shared import (
     AutonomousPhase,
     Phase,
     auto_nav,
+    haversine_nm,
     log,
     time,
 )
@@ -18,6 +19,17 @@ class _Taxi:
     # it stops, because a stopped aeroplane hits nothing.
     OFF_PATH_STOP_M = 50.0
     REJOIN_M = 15.0
+
+    # The corridor the cleared route is given the benefit of: narrower than
+    # a parallel taxiway's spacing, wide enough that an aeroplane ahead on
+    # the same line is seen, and the look ahead is far enough to stop for
+    # whatever is coming the other way rather than meet it.
+    CONFLICT_CORRIDOR_M = 30.0
+    CONFLICT_LOOK_M = 90.0
+    # The hold is the route's last point -- the holding point the planner
+    # picked: stop with the nose just short of the bars, not a taxiway
+    # length back from them.
+    HOLD_BARS_M = 15.0
 
     def _taxi_along_path(self, state, outbound: bool) -> None:
         """Follow ``session.taxi_path`` at taxi speed, or hold short.
@@ -84,11 +96,29 @@ class _Taxi:
             if rejoin is not None and rejoin.get("heading") is not None:
                 steer["heading"] = rejoin["heading"]
 
+        # The corridor the rest of the route runs through: whatever is on
+        # it ahead -- head-on, crossing, or stopped -- is given way to
+        # rather than met. The AI gives the pilot the same courtesy at
+        # 35 m; the FO stops further out than that, so in a head-on it is
+        # the one already holding when the other aeroplane arrives.
+        if self._yield_to_traffic(state, remaining_path):
+            self._stop(state)
+            warned_at = getattr(self, "_yield_warned_at", 0.0)
+            if time.monotonic() - warned_at > 30.0:
+                self._yield_warned_at = time.monotonic()
+                log.info("traffic on the taxi route ahead: holding")
+            return
+
         # Slow for the end of the route, and for corners: the turn the
         # path asks for sets the speed before the steering has to make
         # it, so a sharp corner is arrived at slowly instead of scrubbed
         # through fast.
         remaining = steer["remaining_m"]
+        # The route's last point, as the crow flies: the outbound hold is
+        # judged by distance to the bars, not path left, so a curved last
+        # leg still stops with the nose at them.
+        end_m = haversine_nm(state.latitude, state.longitude,
+                             path[-1][0], path[-1][1]) * 1852.0
         turn = abs((steer["heading"] - (state.heading_true or 0.0)
                     + 540.0) % 360.0 - 180.0)
         target_kt = self.performance.taxi_kt
@@ -106,7 +136,14 @@ class _Taxi:
         if turn > 20.0:
             target_kt = min(target_kt, max(
                 4.0, target_kt * (1.0 - (turn - 20.0) / 80.0)))
-        if remaining < 25.0:
+        if outbound:
+            # Creep the last metres to the bars instead of stopping a
+            # taxiway short of them.
+            if end_m <= self.HOLD_BARS_M:
+                target_kt = 0.0
+            elif end_m < 60.0:
+                target_kt = min(target_kt, 4.0)
+        elif remaining < 25.0:
             target_kt = 0.0
 
         if target_kt <= 0.0 \
@@ -120,16 +157,22 @@ class _Taxi:
         if outbound:
             if self.session.taxi_split_at is not None:
                 lat, lon = self.session.taxi_split_at
-                if state.distance_to(lat, lon) * 1852.0 < 60.0:
+                if haversine_nm(state.latitude, state.longitude,
+                                lat, lon) * 1852.0 < 60.0:
                     # A taxiway hold, not the runway's: ground gives the
                     # rest of the route here, and HOLDING_SHORT is for
                     # the end of it.
                     self._held_at_split = True
                     self._goto_sub("hold_point")
                     return
-            # The path is done: at the hold point. HOLDING_SHORT runs the
-            # before-takeoff checklist and waits for the line-up clearance.
-            if steer.get("done") or remaining < 30.0:
+            # At the bars -- or stopped just short of them and unable to
+            # close the last metres: holding either way. HOLDING_SHORT
+            # runs the before-takeoff checklist and waits for the line-up
+            # clearance.
+            if end_m <= self.HOLD_BARS_M or (
+                    end_m <= self.HOLD_BARS_M * 3
+                    and (state.ground_speed_kt or 0.0) <= 1.0
+                    and self._sub_age() > 10.0):
                 self._held_at_split = False
                 self._goto_sub("hold_point")
                 self._transition(AutonomousPhase.HOLDING_SHORT)
@@ -139,6 +182,25 @@ class _Taxi:
             if steer.get("done"):
                 self._goto_sub("park")
                 return
+
+    def _yield_to_traffic(self, state, path) -> object | None:
+        """The first aeroplane on the corridor the route uses, if any.
+
+        ``path`` is what is left of the route in lat/lon. On any failure
+        to look, the answer is none: a picture that cannot be read is not
+        a reason to park for ever.
+        """
+        try:
+            found = auto_nav.traffic_ahead(
+                state.latitude, state.longitude, list(path),
+                self._surface_contacts(),
+                corridor_m=self.CONFLICT_CORRIDOR_M,
+                look_m=self.CONFLICT_LOOK_M)
+        except Exception:
+            log.debug("could not look up the taxi route's traffic",
+                      exc_info=True)
+            return None
+        return found[0][0] if found else None
 
     def _taxi_without_path(self, state, outbound: bool) -> None:
         """No simulator taxiway route: steer at the runway, hold short."""
@@ -158,11 +220,18 @@ class _Taxi:
                 # threshold itself is what it holds short of. ``hold_point``
                 # does the stopping and the move to HOLDING_SHORT, the
                 # same end a planned route arrives at.
-                if state.distance_to(rwy_lat, rwy_lon) * 1852.0 <= 90.0:
+                if haversine_nm(state.latitude, state.longitude,
+                                rwy_lat, rwy_lon) * 1852.0 <= 90.0:
                     self._goto_sub("hold_point")
                     return
+                # No route, so the corridor is the way being steered.
                 hdg = auto_nav.bearing_deg(state.latitude, state.longitude,
                                            rwy_lat, rwy_lon)
+                if self._yield_to_traffic(
+                        state, [(state.latitude, state.longitude),
+                                (rwy_lat, rwy_lon)]):
+                    self._stop(state)
+                    return
                 self._steer(state, hdg, self.performance.taxi_kt)
             else:
                 self._steer(state, self.state.runway_heading,

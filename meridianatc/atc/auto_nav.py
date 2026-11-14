@@ -143,6 +143,66 @@ def path_steering(lat: float, lon: float, path: list[tuple[float, float]],
             "done": done}
 
 
+def traffic_ahead(lat: float, lon: float, path: list[tuple[float, float]],
+                  contacts, corridor_m: float = 30.0,
+                  look_m: float = 150.0) -> list:
+    """The aeroplanes the rest of a taxi route is about to reach.
+
+    ``path`` is a lat/lon polyline like ``session.taxi_path``; ``contacts``
+    anything with ``latitude``, ``longitude`` and ``on_ground`` (the
+    controller's ``Contact`` is that shape). A contact counts when it is on
+    the ground, within ``corridor_m`` of the line and within ``look_m``
+    along it ahead of the aircraft. The answer is ``(contact, along_m)``
+    pairs, nearest first -- for the FO's give-way and the controller's
+    "give way to the ..." call, both of which want the first thing met,
+    not every thing heard.
+    """
+    if len(path) < 2 or not contacts:
+        return []
+    # The aircraft's own spot on the line: the segment it is closest to
+    # and how far along it, exactly as path_steering picks it.
+    best = None
+    for i, (a, b) in enumerate(zip(path, path[1:], strict=False)):
+        along, side = _point_segment_distance(lat, lon, a, b)
+        off = abs(side)
+        if best is None or off < best[0]:
+            best = (off, i, along)
+    if best is None:
+        return []
+    _, first_seg, first_along = best
+
+    found = []
+    for contact in contacts:
+        if not getattr(contact, "on_ground", False):
+            continue
+        clat = getattr(contact, "latitude", None)
+        clon = getattr(contact, "longitude", None)
+        if clat is None or clon is None:
+            continue
+        # Walk the path from the aircraft's spot forward, projecting the
+        # contact on each segment: ``covered`` is the distance along the
+        # line from the aircraft to the segment's start -- negative on
+        # the first segment, where the aircraft sits ``first_along`` in.
+        covered = -first_along
+        best_hit = None
+        for i in range(first_seg, len(path) - 1):
+            a, b = path[i], path[i + 1]
+            seg_m = haversine_nm(a[0], a[1], b[0], b[1]) * 1852.0
+            along, side = _point_segment_distance(clat, clon, a, b)
+            ahead_m = covered + min(max(along, 0.0), seg_m)
+            if abs(side) <= corridor_m and ahead_m >= -5.0:
+                hit = (max(ahead_m, 0.0), contact)
+                if best_hit is None or hit[0] < best_hit[0]:
+                    best_hit = hit
+            covered += seg_m
+            if covered > look_m:
+                break
+        if best_hit is not None and best_hit[0] <= look_m:
+            found.append(best_hit)
+    found.sort(key=lambda pair: pair[0])
+    return [(contact, along) for along, contact in found]
+
+
 def runway_end(runways, runway: str):
     """The threshold and heading for a runway designation.
 
@@ -214,5 +274,5 @@ def align(lat: float, lon: float, threshold_lat: float, threshold_lon: float,
             "correction_deg": (correction + 540.0) % 360.0 - 180.0}
 
 
-__all__ = ["path_steering", "runway_end", "glide", "align",
+__all__ = ["path_steering", "traffic_ahead", "runway_end", "glide", "align",
            "TAXI_LOOKAHEAD_M", "PATH_REACHED_M", "STOPPED_KT"]

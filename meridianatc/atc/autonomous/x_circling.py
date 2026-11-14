@@ -238,6 +238,14 @@ class _Circling:
             self.state.gear_up_said = True
             self._emit("info", "Gear still up: landing gear-up",
                        "autonomous.gear_up_landing")
+        # Somebody on the runway this close to it is a missed approach,
+        # not a landing on top of them -- the tower's call or not, and
+        # it applies whether or not the landing clearance ever came.
+        if 0.0 < agl < 500.0 and self._runway_blocked(
+                getattr(self.session, "arrival_runway", "") or "",
+                airport=getattr(self.session, "destination", None)
+                or getattr(self.session, "departure", None)):
+            return True
         # Never stabilized by the flare's gate is a go-around however
         # the numbers looked on the way down.
         if 0.0 < agl < 200.0 and not self.state.stabilized:

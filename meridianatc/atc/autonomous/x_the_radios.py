@@ -396,6 +396,14 @@ class _The_radios:
                 # Ready-for-departure is called from a stopped aeroplane.
                 return
             kind = "ready"
+        elif phase in (AutonomousPhase.LINE_UP, AutonomousPhase.TAKEOFF):
+            if session.cleared_takeoff or self.state.rejected \
+                    or self.state.sub not in ("set", "wait_clearance"):
+                return
+            if (state.ground_speed_kt or 0.0) > 1.0:
+                return
+            # Lined up and still not released: the call that says so.
+            kind = "ready"
         else:
             return
         tried = getattr(self, "_call_tried_at", 0.0)

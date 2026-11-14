@@ -702,7 +702,7 @@ def test_a_helicopter_engine_loss_flies_an_autorotation():
     heli._transitioned_owner = ""
     heli._last_tick = 0.0
     heli.TICK_S = 0.25
-    owner._engines_out = lambda s: 1
+    owner._engines_out = lambda s: (1, 1)
     # Airborne with the one engine not combusting: an autorotation.
     state = SimpleNamespace(
         connected=True, on_ground=False, altitude_agl_ft=500.0,

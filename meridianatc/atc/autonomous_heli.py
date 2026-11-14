@@ -825,9 +825,9 @@ class RotorcraftFlight:
         """Whether every engine the sim reports has stopped, airborne."""
         if getattr(state, "on_ground", True):
             return False
-        out = self.owner._engines_out(state)
-        count = int(getattr(state, "engine_count", 0) or 0) or 1
-        return 0 < count <= out
+        out, seen = self.owner._engines_out(state)
+        count = int(getattr(state, "engine_count", 0) or 0)
+        return out > 0 and out >= max(count, seen)
 
     def _autorotate(self, state) -> None:
         """The engine-out landing: the rotor's energy spent to touch down.

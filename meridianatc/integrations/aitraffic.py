@@ -706,6 +706,9 @@ class SimTraffic:
         # or put there by a full write when they touched down. See
         # _MOVE_GROUND for why the difference matters.
         self._grounded: set[str] = set()
+        # The gear state last asserted on each object, for the path that
+        # writes once a tick: the per-frame ``_drawn["gear"]`` is its own.
+        self._move_gear: dict[str, bool] = {}
         self._pending: dict[int, str] = {}      # request id -> callsign
         # When each request went, so one the simulator never answers is
         # given up on rather than waited for forever.
@@ -1389,6 +1392,9 @@ class SimTraffic:
                 self._painted.pop(callsign, None)
             lod_log.info("lod: %s is now object %d (%s)", callsign, new, level)
             self._drawn.pop(callsign, None)
+            # A fresh object: its gear state is asserted on the next write
+            # rather than inherited from the model it replaces.
+            self._move_gear.pop(callsign, None)
             self._start_reading(callsign, new)
             if self.on_swapped is not None:
                 try:
@@ -1418,6 +1424,22 @@ class SimTraffic:
         where.heading = float(position["heading"])
         where.airspeed = float(position.get("ground_speed_kt") or 0.0)
         where.on_ground = 1.0 if position.get("on_ground") else 0.0
+        # The gear, the same rules Follower.pose works by: down on the
+        # ground, down low on the way in and just after liftoff, up the
+        # rest of the time. Without it an object spawned gear-up in the
+        # air keeps it up on the apron.
+        phase = position.get("phase") or ""
+        motion = position.get("motion") or {}
+        agl = (float(position["altitude_ft"])
+               - float(motion.get("surface_ft", 0.0) or 0.0))
+        arriving = phase in ("inbound", "joining", "final", "landed")
+        gear = bool(where.on_ground) \
+            or (arriving and agl < 2000.0) \
+            or (not arriving and agl < 300.0)
+        if gear != self._move_gear.get(callsign):
+            self._event(self._objects[callsign],
+                        _EV_GEAR_DOWN if gear else _EV_GEAR_UP, 0)
+            self._move_gear[callsign] = gear
         if where.on_ground and callsign in self._grounded:
             # On the surface the simulator's ground is right and the
             # published elevation is not; see _MOVE_GROUND.
@@ -1714,7 +1736,11 @@ class SimTraffic:
                 packet = self._last_packet()
                 if packet is not None and len(self._velocity_packets) < 8:
                     self._velocity_packets.add(packet)
-        if pose.gear_down != drawn.get("gear", True):
+        # The gear is asserted, not assumed: a fresh object may have been
+        # spawned by the simulator with it up -- an aeroplane created in
+        # the air, or one swapped in on a stand -- and a "True" default
+        # here was how one sat on the apron with it retracted.
+        if pose.gear_down != drawn.get("gear"):
             self._event(object_id, _EV_GEAR_DOWN if pose.gear_down
                         else _EV_GEAR_UP, 0)
         drawn["gear"] = pose.gear_down
@@ -1723,6 +1749,7 @@ class SimTraffic:
         with self._follow_lock:
             self._followers.pop(callsign, None)
         self._drawn.pop(callsign, None)
+        self._move_gear.pop(callsign, None)
         self._stop_reading(callsign)
         self._grounded.discard(callsign)
         self._titles.pop(callsign, None)

@@ -331,7 +331,7 @@ def _heli(stage="cruise", type_code=""):
         sim=None, get_state=lambda: None, crew=Mock(), on_event=Mock(),
         state=AutonomousState(),
         _send_event=Mock(return_value=True),
-        _emit=Mock(), _engines_out=lambda state: 0,
+        _emit=Mock(), _engines_out=lambda state: (0, 0),
         _use_pids=False,
         _envelope_protection=True,
         _set_error=Mock())
