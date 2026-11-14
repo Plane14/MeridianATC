@@ -963,6 +963,33 @@ def test_an_unstaffed_field_taxis_on_the_airports_own_taxiways():
     assert flight.session.taxi_crossings == ["17"]
 
 
+def test_a_tower_with_no_ground_position_taxis_the_flight_itself():
+    """LPPR has no Ground frequency: the position lookup falls back to
+    the tower itself, which is also who the pilot is already talking
+    to -- "contact Tower" said by Tower is a loop that never ends."""
+    from meridianatc.atc.intents import Intent
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession, Phase
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.db import Station
+    brain = _ground_brain(pending=False)
+    brain.staffed = lambda s: True
+    brain.realism = SimpleNamespace(tower_continue=False)
+    tower = Station("LPPR", "TWR", 118.005, "Porto", "Porto Tower")
+    # Asking for Ground here answers the tower itself.
+    brain.navdb.station_for = lambda ident, position: tower
+    brain.navdb.station_for_runway = Mock(return_value=None)
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    session.departure_runway = "35"
+    parsed = SimpleNamespace(intent=Intent.REQUEST_TAXI)
+    weather = SimpleNamespace(qnh_hpa=1013, altimeter_inhg=29.92)
+    reply = brain._tower(parsed, session, tower, weather,
+                         brain.for_station(tower), None)
+    assert "contact" not in reply.text.lower()
+    assert session.taxi_route
+    assert session.phase is Phase.TAXI_OUT
+
+
 def test_a_split_taxi_waits_for_the_rest_not_the_runway():
     """Held at the split taxiway: resume on the rest, never HOLDING_SHORT."""
 

@@ -111,12 +111,13 @@ class _Tower:
                 # it to call Ground is telling it to call somebody who cannot
                 # do anything for it until it has landed.
                 return Reply(p.already_airborne(aircraft), station)
-            ground = self.controller_at(station.ident, "GND")
-            if ground:
-                return Reply(
-                    p.handoff(aircraft, self._station_name(ground, p, short=True), ground.mhz),
-                    station, handoff_to=ground,
-                )
+            # ``_send_on`` will not hand the call to the station it came in
+            # on: where there is no Ground position the lookup falls back
+            # to the tower itself, and "contact Tower" to an aeroplane that
+            # already is talking to the tower is a loop that never ends.
+            sent = self._send_on(session, station, p, "GND")
+            if sent is not None:
+                return sent
             # A field whose tower also works the ground taxis them itself,
             # rather than asking them to say again what they clearly said --
             # to parking when they are in, to the runway when they are out.
