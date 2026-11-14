@@ -10,6 +10,19 @@ include(CTest)
 
 if(MERIDIAN_BUILD_PLUGIN)
     set(INCLUDE_FMOD_SOUND 0 CACHE STRING "FMOD disabled: no external sound dependency" FORCE)
+    # XPMP2 links mingw_stdthreads unconditionally under MinGW, but that shim
+    # exists for toolchains without std::thread; on a modern MinGW it only
+    # shadows the real standard headers. Define an empty stand-in when the
+    # toolchain already has threads, so XPMP2 skips adding its own.
+    if(MINGW)
+        include(CheckCXXSourceCompiles)
+        check_cxx_source_compiles("#include <thread>
+            int main() { std::thread t([]{ }); t.join(); return 0; }"
+            MINGW_NATIVE_STDTHREADS)
+        if(MINGW_NATIVE_STDTHREADS)
+            add_library(mingw_stdthreads INTERFACE)
+        endif()
+    endif()
     add_subdirectory(lib/XPMP2 EXCLUDE_FROM_ALL)
     target_compile_definitions(XPMP2 PUBLIC XPLM302=1 XPLM410=1 XPLM420=1 XPLM430=1)
     add_library(MeridianATC MODULE src/Plugin.cpp)
