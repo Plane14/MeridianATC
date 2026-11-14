@@ -835,6 +835,13 @@ class _The_live_ones:
         for object_id, since in list(self._parked_since.items()):
             ours = self._flown_for.get(object_id)
             if object_id in heard:
+                if ours is not None and not (
+                        ours.static or ours.parked_at or ours.done):
+                    # Ours parked once, was boarded and is moving again: a
+                    # real aeroplane heard on the feed does not put down a
+                    # live departure of ours -- the suppression stands
+                    # until ours is done or parked again.
+                    continue
                 if ours is not None:
                     ours.done = True
                     self._used_callsigns.discard(ours.written)
@@ -896,6 +903,178 @@ class _The_live_ones:
             command=("go_around", {}),
             urgent=True,
         )
+
+    def _live_arriving(self, flight: Flight, one) -> bool | None:
+        """Whether a live aeroplane is this field's arrival or its
+        departure: the route the feed looked up first, what it is doing
+        second. None airborne and just passing -- an overflight is not
+        adopted, however near it comes."""
+        ident = self.field.ident
+        if (flight.origin or "").upper() == ident:
+            return False
+        if (flight.destination or "").upper() == ident:
+            return True
+        if one.on_ground:
+            # Taxiing in or taxiing out: the one it flew here for first.
+            return one.hex in self._live_flew
+        if self._final_distance(one) is not None:
+            return True                     # lined up and closing
+        if (one.vertical_speed_fpm > 300.0
+                and flight.phase in ("taxi", "holding", "lineup",
+                                     "takeoff", "departed")):
+            return False                    # climbing out of the field
+        return None
+
+    def _adopt_live(self, flight: Flight, one, now: float) -> bool:
+        """Take a live aeroplane off the feed and fly it like an invented
+        one (traffic.live.managed).
+
+        The callsign, type, route and where it is are the real flight's;
+        what it does from here is the tower's to say. The feed's copy of it
+        is suppressed the way a sent-around one's is (``_taken_over``), and
+        handed back when ours is parked and the real one is heard again
+        (:meth:`_rejoin_the_feed`).
+
+        False for the ones that are nobody's to fly from here: a parked
+        aeroplane (adopted when the real one starts moving), an overflight
+        just passing, and anything on the ground at a field whose taxiways
+        the simulator has not given -- with no layout a mid-taxi adoption
+        would have nowhere to drive it.
+        """
+        arriving = self._live_arriving(flight, one)
+        if arriving is None:
+            return False
+        layout = self.ground
+        stand = None
+        taxi = None
+        if one.on_ground and not self._on_runway(one):
+            if layout is None:
+                return False
+            x, z = layout.to_xy(one.latitude, one.longitude)
+            stand = layout.stand_at(x, z)
+            if (one.ground_speed_kt < TAXIING_KT
+                    and one.hex not in self._live_flew and stand is not None):
+                return False                # parked: not the tower's yet
+            if arriving:
+                stand = self._free_stand(
+                    airliner=flight.operator is not None or flight.ifr)
+                taxi = stand is not None and layout.to_stand(x, z, stand)
+                if not taxi:
+                    return False            # nowhere to send it
+        # Committed. Ours now, the feed's copy suppressed.
+        self._taken_over.add(flight.observed_id)
+        self._flown_for[flight.observed_id] = flight
+        self._release_held(flight)
+        flight.observed = False
+        flight.step = 0
+        flight.next_at = now + 1.0
+        flight.commands.clear()
+        flight.doing = None
+        flight.lead_at = None
+        flight.lead_distance_nm = 0.0
+        flight.live_held = ""
+        flight.performance = perftable.traffic_performance(
+            flight.type_code,
+            light=livemod.flight_category(flight) == livemod.GA)
+        flight.latitude = one.latitude
+        flight.longitude = one.longitude
+        flight.heading = one.heading
+        flight.altitude_ft = one.altitude_ft
+        flight.ground_speed_kt = one.ground_speed_kt
+        flight.vertical_rate_fpm = one.vertical_speed_fpm
+        flight.arriving = arriving
+        flight.runway = ((self.field.arrival_runway
+                          or self.field.departure_runway) if arriving
+                         else (self.field.departure_runway
+                               or self.field.arrival_runway))
+        if not one.on_ground:
+            flight.airborne_model = True
+            flight.on_ground = False
+            if arriving:
+                to_run = self._final_distance(one)
+                end = self._threshold(flight.runway)
+                flight.distance_nm = (
+                    to_run if to_run is not None
+                    else haversine_nm(flight.latitude, flight.longitude,
+                                      end[0], end[1]) if end else 0.0)
+                flight.phase = "final" if to_run is not None else "inbound"
+            else:
+                flight.phase = "departed"
+                flight.distance_nm = haversine_nm(
+                    self.field.latitude, self.field.longitude,
+                    flight.latitude, flight.longitude)
+        elif self._on_runway(one):
+            flight.airborne_model = True
+            flight.on_ground = True
+            if arriving:
+                flight.phase = "landed"
+            else:
+                flight.phase = ("takeoff" if one.ground_speed_kt
+                                >= ROLLING_KT else "lineup")
+        else:
+            flight.on_layout = True
+            if arriving:
+                flight.stand = stand.index if stand is not None else None
+                flight.planned_stand = None
+                flight.taxi = taxi
+                flight.phase = "taxi_in"
+            else:
+                flight.stand = stand.index if stand is not None else None
+                flight.phase = "taxi"
+        if not arriving and not flight.destination:
+            if flight.ifr:
+                flight.destination, flight.destination_icao = self._route_end(
+                    flight.operator, flight.type_code,
+                    getattr(flight.performance, "range_nm", 0.0) or 0.0)
+            else:
+                flight.destination = (self._nearby_field()
+                                      or self._elsewhere())
+        decision("live_traffic", event="adopted", callsign=flight.written,
+                 phase=flight.phase,
+                 arriving=flight.arriving,
+                 why="traffic.live.managed")
+        return True
+
+    def _unadopt(self, flight: Flight, now: float) -> None:
+        """Hand an adopted live aeroplane back to the feed: the managed
+        switch gone off, it is read rather than flown again, and drawn
+        wherever the real one now is -- the same snap a fed one takes when
+        it first appears."""
+        object_id = flight.observed_id
+        self._taken_over.discard(object_id)
+        self._flown_for.pop(object_id, None)
+        self._parked_since.pop(object_id, None)
+        self._release_all(flight)
+        flight.observed = True
+        flight.airborne_model = False
+        flight.on_layout = False
+        flight.taxi = None
+        flight.line_up = None
+        flight.planned = None
+        flight.stand = None
+        flight.commands.clear()
+        flight.doing = None
+        flight.assigned_heading = None
+        flight.assigned_altitude_ft = None
+        flight.assigned_speed_kt = None
+        flight.target.clear()
+        flight.extending = False
+        flight.held_since = 0.0
+        flight.step = 0
+        flight.next_at = 0.0
+        # Nothing we said to it is still its to answer: the exchanges half
+        # queued go with the strip, not onto the frequency.
+        self.pending = [c for c in self.pending if c.flight is not flight]
+        if flight.static:
+            # A parked one becomes somebody else's parked one again: the
+            # feed's copy of the real aeroplane stands there instead.
+            flight.static = False
+            flight.done = True
+            if flight in self.statics:
+                self.statics.remove(flight)
+        decision("live_traffic", event="back to the feed",
+                 callsign=flight.written,
+                 why="traffic.live.managed off")
 
     def set_user(self, user: UserAircraft | None) -> None:
         """Tell the traffic where the person flying actually is.

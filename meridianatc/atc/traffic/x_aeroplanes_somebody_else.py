@@ -39,6 +39,14 @@ class _Aeroplanes_somebody_else:
         # its doors opened by this program for the ten seconds it took.
         user_known = self.user is not None and self.user.has_position
         self._observed_read = seen is not None and user_known
+        if not self.live_managed:
+            # The managed switch off again: every live aeroplane that was
+            # adopted is handed back to the feed, wherever the real one
+            # now is -- before `known` is built, so the feed's copy lands
+            # back on the same strip rather than a second one.
+            for f in list(self.flights) + list(self.statics):
+                if not f.observed and f.source == "live":
+                    self._unadopt(f, now)
         known = {f.observed_id: f for f in self.flights if f.observed}
         here: set[int] = set()
         # The ones this program put there itself. They are in the simulator
@@ -135,6 +143,13 @@ class _Aeroplanes_somebody_else:
                              origin=flight.origin,
                              destination=flight.destination,
                              on_ground=bool(one.on_ground))
+            if (self.live_managed and getattr(one, "source", "") == "live"
+                    and flight.observed and flight.source == "live"):
+                self._adopt_live(flight, one, now)
+            if not flight.observed:
+                # Adopted this pass or adopted already: ours flies it,
+                # the feed no longer writes its position.
+                continue
             self._read_observed(flight, one, now)
 
         # Anything that has gone is gone. It landed and taxied out of range,

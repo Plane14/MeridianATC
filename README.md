@@ -3871,6 +3871,16 @@ runway and the final, then the rest of the air, the taxiways, then the parked
 aircraft nearest first. Their radio is the invented traffic's, and only your
 frequency is heard.
 
+**Or fly them yourself.** Turn *Fly the live traffic* on in Traffic and every
+real aeroplane working the field is adopted where the feed has it — real
+callsign, type and route — then flown by the same flight model and worked by
+the same tower as the invented ones: it pushes back, taxis out, holds for its
+clearance, is sequenced onto final and parked, rather than replaying the real
+one's day thirty seconds behind. A real aeroplane already parked keeps to the
+feed until it starts moving, and one just passing overhead is left alone.
+Turn it off again and each adopted flight is handed back, drawn wherever the
+real one now is.
+
 Only the aeroplanes working the field are drawn. Drawing the ones overflying
 it, for the TCAS, is an option for later. What's sent is in [What leaves your
 machine](#-what-leaves-your-machine).

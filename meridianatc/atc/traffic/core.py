@@ -131,6 +131,10 @@ class TrafficInjector(_The_field, _Flying_them, _What_the_pilot, _Making_aeropla
         # real ones from the live feed and what somebody else injected are
         # somebody else's and stay.
         self.invented = True
+        # Whether the live aeroplanes are adopted and flown like the invented
+        # ones (traffic.live.managed). Off, they are observed: read off the
+        # feed and described rather than instructed.
+        self.live_managed = False
         # Invented aeroplanes asked of the simulator and not yet confirmed by
         # it, with the moment each is given up on. Kept off ``flights`` so
         # that nothing -- the radio, the map, the runway, the sequence --

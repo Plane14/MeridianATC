@@ -1456,6 +1456,11 @@ function paintSettings() {
     // With FSLTL flying the traffic there is no live feed to switch on.
     $("set-traffic-live").disabled = config.traffic.source_resolved === "fsltl";
   }
+  toggle("set-live-managed", !!(config.traffic.live && config.traffic.live.managed));
+  if ($("set-live-managed")) {
+    // No live feed to take over with FSLTL flying the traffic.
+    $("set-live-managed").disabled = config.traffic.source_resolved === "fsltl";
+  }
   toggle("set-strict-digits", config.atc.strict_icao_digits);
   toggle("set-handoff", config.atc.proactive_handoff);
   toggle("set-radio-power", config.atc.radio_needs_power);
@@ -2917,6 +2922,7 @@ function wire() {
     "set-invented": "traffic.invented",
     "set-traffic-gsx": "traffic.handling.gsx_vehicles",
     "set-traffic-live": "traffic.live.enabled",
+    "set-live-managed": "traffic.live.managed",
     "set-wx-online": "weather.online",
     "set-wx-sim": "weather.prefer_sim",
     "set-sim": "sim.enabled",
@@ -2924,7 +2930,8 @@ function wire() {
   for (const [id, path] of Object.entries(switches)) {
     const noteId = id.startsWith("set-wx") ? "saved-weather"
       : id === "set-traffic" || id === "set-traffic-gsx"
-        || id === "set-invented" || id === "set-traffic-live" ? "saved-traffic"
+        || id === "set-invented" || id === "set-traffic-live"
+        || id === "set-live-managed" ? "saved-traffic"
       : id === "set-sim" ? "saved-sim" : "saved-atc";
     on($(id), "click", (e) => {
       const next = e.currentTarget.getAttribute("aria-pressed") !== "true";

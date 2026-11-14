@@ -234,6 +234,10 @@ class _Situation_loop:
             # somebody else's and stay.
             self.traffic.invented = bool(
                 getattr(self.config.traffic, "invented", False))
+            # Whether the live ones are worked like the invented ones,
+            # read the same way (traffic.live.managed).
+            self.traffic.live_managed = bool(
+                getattr(self.config.traffic.live, "managed", False))
             # The live feed's switch, read the same way: on starts the
             # ADS-B thread mid-flight, off stops it.
             self._refresh_live_feed()

@@ -1039,12 +1039,22 @@ class LiveTrafficConfig:
     # run into the hundreds; zero takes the feed's answers as heard but
     # draws none of them.
     limit: int = 150
+    # Whether the live aeroplanes are worked the way the invented ones are:
+    # adopted where the feed has them, then flown by the flight model and
+    # instructed by the tower -- a real departure pushes, taxis and holds for
+    # its clearance rather than replaying the real one's day thirty seconds
+    # behind. Off by default: the real ones keep to the feed, described
+    # rather than told. Off again, each one already adopted is handed back
+    # to wherever the real one now is.
+    managed: bool = False
 
 
 _LIVE = dict(tab="traffic", group="live")
 describe(
     LiveTrafficConfig,
     enabled=Setting(**_LIVE),
+    managed=Setting(label="set.live_managed", help="set.live_managed_why",
+                    **_LIVE),
     poll_s=Setting(min=6, max=60, unit="s", restart=True, advanced=True,
                    **_LIVE),
     radius_nm=Setting(min=5, max=250, unit="nm", restart=True,

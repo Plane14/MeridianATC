@@ -672,9 +672,14 @@ class _Flying_them:
         self._asked_for.clear()
         self._materialising.clear()
         self._materialise_by.clear()
-        self.statics.clear()
+        # The live ones adopted under traffic.live.managed are not
+        # invented: a real aeroplane stays what it is for the invented
+        # switch, and is dropped only when traffic is off altogether.
+        keep = ("live", "taken over")
+        self.statics = [f for f in self.statics if f.source in keep]
         self._stands_filled = False
-        gone = {id(f) for f in self.flights if not f.observed}
+        gone = {id(f) for f in self.flights
+                if not f.observed and f.source not in keep}
         if gone:
             for f in self.flights:
                 if id(f) in gone:

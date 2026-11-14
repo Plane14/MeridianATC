@@ -692,6 +692,8 @@
   "set.source_next": "Takes effect at the next session.",
   "set.traffic_live": "Live traffic (adsb.lol, adsb.fi)",
   "set.traffic_live_why": "The real aircraft around you, shown 30 s behind the real ones. Only your position and a radius are sent.",
+  "set.live_managed": "Fly the live traffic",
+  "set.live_managed_why": "The real aeroplanes are adopted where the feed has them and flown like the invented ones: pushed back, sequenced and worked by the tower with their own callsigns and routes. Off, they keep to the feed and are only described. Off again, each one already adopted is handed back to wherever the real one now is.",
   "set.live_credit": "Live positions courtesy of",
   "live.state": "{status}: {source}, {age} s old · {live} real, {invented} invented",
   "live.live": "Live",

@@ -177,6 +177,7 @@ traffic:
   live:
     enabled: true
     limit: 150
+    managed: false
 weather:
   online: true
   prefer_sim: true
