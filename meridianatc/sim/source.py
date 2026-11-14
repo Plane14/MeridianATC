@@ -88,6 +88,32 @@ class _BatchHeader(ctypes.Structure):
     ]
 
 
+class _ExcHeader(ctypes.Structure):
+    """The header of a SIMCONNECT_RECV_EXCEPTION, to ``dwSendID``."""
+
+    _pack_ = 1
+    _fields_ = [
+        ("dwSize", ctypes.c_uint32),
+        ("dwVersion", ctypes.c_uint32),
+        ("dwID", ctypes.c_uint32),
+        ("dwException", ctypes.c_uint32),
+        ("UNKNOWN_SENDID", ctypes.c_uint32),
+        ("dwSendID", ctypes.c_uint32),
+        ("UNKNOWN_INDEX", ctypes.c_uint32),
+        ("dwIndex", ctypes.c_uint32),
+    ]
+
+
+def _exception_id() -> int:
+    """The message id carrying a simulator refusal, from the wrapper."""
+    try:
+        from SimConnect.Enum import SIMCONNECT_RECV_ID
+
+        return int(SIMCONNECT_RECV_ID.SIMCONNECT_RECV_ID_EXCEPTION)
+    except Exception:
+        return 2
+
+
 def _bytype_id() -> int:
     """The message id carrying a by-type data reply, from the wrapper."""
     try:
@@ -676,6 +702,10 @@ class SimConnectSource:
         self._batch_req_id = None
         self._batch_hook = None
         self._batch_fails = 0
+        # Send id -> name for the definition's AddToDataDefinition calls,
+        # so an UNRECOGNIZED exception can be tied to the variable that
+        # raised it (they arrive on the pump, not as the call's result).
+        self._batch_send_names: dict[int, str] = {}
 
     @property
     def connected(self) -> bool:
@@ -803,7 +833,11 @@ class SimConnectSource:
             log.debug("no free ids for the batched read", exc_info=True)
             return
         names: list[str] = []
+        send_names: dict[int, str] = {}
         float64 = _datatype_id("FLOAT64", 4)
+        # The hook goes on before the asks: a refused variable is refused on
+        # the pump, possibly while the loop is still adding the rest.
+        self._batch_hook = install_dispatch(sim, self._batch_heard)
         for name, _attribute, kind, _tier in self.REQUESTS:
             if kind == "text":
                 continue
@@ -819,6 +853,16 @@ class SimConnectSource:
                 err = 1
             if sim.IsHR(err, 0):
                 names.append(name)
+                try:
+                    send_id = ctypes.c_uint32(0)
+                    sim.dll.GetLastSentPacketID(
+                        sim.hSimConnect, ctypes.byref(send_id))
+                    if send_id.value:
+                        send_names[int(send_id.value)] = name
+                except Exception:
+                    # No send id, no refused-name bookkeeping: the batch
+                    # still answers, the old strict count decides.
+                    pass
             else:
                 # The simulator refused the name outright: it is missing
                 # for this session, which is exactly what _missing means.
@@ -828,13 +872,40 @@ class SimConnectSource:
             return
         self._batch_names = tuple(names)
         self._batch_set = frozenset(names)
+        self._batch_send_names = send_names
         self._batch_def_id = def_id
         self._batch_req_id = req_id
-        self._batch_hook = install_dispatch(sim, self._batch_heard)
 
     def _batch_heard(self, data) -> bool:
-        """Take the batch's reply off the pump and file every value."""
+        """Take the batch's reply off the pump and file every value.
+
+        A variable the simulator does not have is not refused at
+        AddToDataDefinition -- that answers 0 and the refusal arrives as an
+        exception on the pump, and the definition quietly ships without the
+        datum. Its replies then carry one fewer value than names, which a
+        strict count reads as corruption every pass: three of those and the
+        batch is dropped for the session, back to a send-and-wait per
+        variable. The exception's send id ties it to the call that raised
+        it, so the name it cost is taken out of the unpacking key -- and
+        out of the per-variable rotation too, since there is nothing to
+        hear there either.
+        """
         try:
+            if data.contents.dwID == _exception_id():
+                exc = ctypes.cast(
+                    data, ctypes.POINTER(_ExcHeader)).contents
+                # UNKNOWN_SENDID is the send id of the call that failed;
+                # dwSendID is the simulator's own and the same for all.
+                refused = self._batch_send_names.pop(
+                    int(exc.UNKNOWN_SENDID), None)
+                if refused is not None:
+                    self._missing.add(refused)
+                    self._batch_names = tuple(
+                        n for n in self._batch_names if n != refused)
+                    self._batch_set = frozenset(self._batch_names)
+                    log.debug("simvar %s refused in the batched "
+                              "definition; reading without it", refused)
+                return False
             if data.contents.dwID not in _objectdata_ids():
                 return False
             reply = ctypes.cast(

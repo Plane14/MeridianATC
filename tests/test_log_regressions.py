@@ -423,6 +423,62 @@ def test_the_user_object_reply_is_also_a_batch_reply():
         assert source._batch_raw[name] == i + 0.5
 
 
+def test_a_refused_variable_leaves_the_batch_and_the_reply_unpacks():
+    """An AddToDataDefinition the sim did not know throws its exception on
+    the pump, not as the call's return: the definition ships without the
+    datum, every reply is one short, and without the send-id bookkeeping
+    the strict count dropped the batch forever (the ~500 ms tick.read of
+    the live logs). The send id in the exception ties it to the name, the
+    name leaves the key and the missing list, and the survivors unpack."""
+    import ctypes
+
+    from meridianatc.sim.source import (
+        _BatchHeader, _ExcHeader, _bytype_id, _exception_id)
+
+    source = _batched_source()
+    source._missing = set()
+    count = len(source._batch_names)
+    names = list(source._batch_names)
+    refused = names[1]
+    # The send id the sim reported for that AddToDataDefinition.
+    source._batch_send_names = {42: refused}
+    send_id = 42
+
+    class _Exception(ctypes.Structure):
+        _pack_ = 1
+        _fields_ = _ExcHeader._fields_
+
+    message = _Exception()
+    message.dwID = _exception_id()
+    message.UNKNOWN_SENDID = send_id
+    pointer = ctypes.cast(
+        ctypes.pointer(message), ctypes.POINTER(_Exception))
+    assert source._batch_heard(pointer) is False
+    assert refused in source._missing
+    assert refused not in source._batch_names
+    assert len(source._batch_names) == count - 1
+
+    # The reply that follows is one datum short, and still unpacks.
+    class _Message(ctypes.Structure):
+        _pack_ = 1
+        _fields_ = _BatchHeader._fields_ + [
+            ("values", ctypes.c_double * (count - 1))]
+
+    reply = _Message()
+    reply.dwID = _bytype_id()
+    reply.dwRequestID = 8
+    reply.dwDefineCount = count - 1
+    for i in range(count - 1):
+        reply.values[i] = i + 0.5
+    pointer = ctypes.cast(
+        ctypes.pointer(reply), ctypes.POINTER(_Message))
+    assert source._batch_heard(pointer)
+    survivors = [n for n in names if n != refused]
+    for i, name in enumerate(survivors):
+        assert source._batch_raw[name] == i + 0.5
+    assert refused not in source._batch_raw
+
+
 def _flier(performance=None):
     """The flight with only what the flying phases touch."""
     from meridianatc.atc import flying
