@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from ._shared import (
-    fly,
     holds,
     ip,
     log,
@@ -276,6 +275,21 @@ class _The_checklist_answered:
         streak = streak + 1 if prev and (demand > 0.0) == (prev > 0.0) \
             else 0
         self._demand_streak = streak
+        # Gain autoadjust: the degrees a second that one unit of pedal
+        # buys on this model, learned from the answer each demand got.
+        # The magnitude carries the information -- the sign can be
+        # backwards while the axis is still being voted on -- and the
+        # sample must not wait for the streak the vote does: a hot
+        # axis alternates demands fast enough that no streak forms,
+        # which is exactly when the estimate matters most. The
+        # aeroplane must be rolling too: a tug or the wind can put
+        # rate on a parked airframe that the pedal never made.
+        if abs(prev) >= 0.15 and abs(rate) >= 3.0 and gs >= 1.0:
+            sample = abs(rate) / abs(prev)
+            if 5.0 <= sample <= 150.0:
+                learned = getattr(self, "_yaw_authority", 0.0)
+                self._yaw_authority = sample if learned <= 0.0 \
+                    else 0.6 * learned + 0.4 * sample
         if abs(prev) < 0.3 or abs(rate) < 3.0 or gs < 1.0 or streak < 3:
             return
         votes = getattr(self, "_pedal_votes", 0)
@@ -421,7 +435,14 @@ class _The_checklist_answered:
         # and a proportional term cannot supply -- the apron showed the
         # slalom the other shape makes.
         want_rate = max(-15.0, min(15.0, err / 4.0))
-        rudder = max(-0.5, min(0.5, (want_rate - rate) * 0.03))
+        # The gain autoadjusts to the airframe: ``_yaw_authority`` is
+        # the degrees a second one unit of pedal buys on this model,
+        # learned in ``_pedal_check``; until it has evidence the demand
+        # assumes a middling answer and the estimate corrects it.
+        authority = getattr(self, "_yaw_authority", 0.0)
+        if authority < 5.0:
+            authority = 30.0
+        rudder = max(-0.5, min(0.5, (want_rate - rate) / authority))
         limit = self._ground_steer_limit(state)
         rudder = max(-limit, min(limit, rudder))
         gs = state.ground_speed_kt or 0.0

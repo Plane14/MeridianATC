@@ -139,6 +139,7 @@ class _Entry:
         self._pedal_votes = 0
         self._pedal_demand = 0.0
         self._demand_streak = 0
+        self._yaw_authority = 0.0
         self._steer_want = None
         self._turn_commit = 0
         self._turn_rate_dps = 0.0
