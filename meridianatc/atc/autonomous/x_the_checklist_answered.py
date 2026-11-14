@@ -344,6 +344,21 @@ class _The_checklist_answered:
         d.parking_brake(False)
         hdg = state.heading_true or 0.0
         err = ((desired_hdg - hdg + 540.0) % 360.0 - 180.0)
+        # A near-reversal is the shortest-path law's singular case: at
+        # ~180 degrees out a degree of wobble flips which way is
+        # "shorter", and a loop free to re-pick slams the wheel from
+        # stop to stop while the aeroplane pivots in place -- the donut
+        # the apron shows. Commit to the side the first big error
+        # showed, the way a pilot picks a side for the turnaround, and
+        # keep it until the turn is genuinely made.
+        commit = getattr(self, "_turn_commit", 0)
+        if commit and abs(err) < 60.0:
+            commit = 0
+        if not commit and abs(err) > 150.0:
+            commit = 1 if err > 0.0 else -1
+        self._turn_commit = commit
+        if commit:
+            err = commit * max(60.0, abs(err))
         rate = self._turn_rate(hdg)
         lead = self._steer_lead(err, rate)
         if self._use_pids:
@@ -437,8 +452,10 @@ class _The_checklist_answered:
         d.throttle(0.0)
         d.throttle_idle()
         # The next pull-away starts the slew from idle, not from
-        # wherever the lever happened to be left.
+        # wherever the lever happened to be left, and a turnaround in
+        # progress is forgotten so the next ask picks its own side.
         self._last_lever = 0.0
+        self._turn_commit = 0
         gs = state.ground_speed_kt or 0.0
         if gs <= 1.0:
             d.brakes(0.0)
