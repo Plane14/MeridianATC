@@ -206,6 +206,32 @@ class _The_checklist_answered:
         self._last_lever = lever
         return lever
 
+    def _slew_rudder(self, want: float, per_s: float = 0.2) -> float:
+        """The nosewheel walked through a change of side, not thrown.
+
+        The answer the steering law computes describes an error a tick
+        or two old, and a wheel free to swing stop to stop in one write
+        is the weave the apron keeps showing: full left while the
+        measured error was left, full right once it has gone past. A
+        demand that keeps its side is followed at once -- tracking it
+        is what steering is; one that crosses centre is the weave's
+        other half, and the wheel walks through at a hand's rate so
+        the alternating asks average out before either stop is met.
+        """
+        now = time.monotonic()
+        last_at = getattr(self, "_rudder_at", 0.0)
+        dt = max(0.0, min(now - last_at, 1.0)) if last_at else 0.0
+        self._rudder_at = now
+        want = max(-1.0, min(1.0, want))
+        was = float(getattr(self, "_last_rudder", 0.0) or 0.0)
+        if was * want >= 0.0:
+            self._last_rudder = want
+            return want
+        step = per_s * dt
+        rudder = max(was - step, min(was + step, want))
+        self._last_rudder = rudder
+        return rudder
+
     def _breakaway_lever(self) -> float:
         """The momentary lever that starts the aeroplane rolling.
 
@@ -261,6 +287,24 @@ class _The_checklist_answered:
         # heavy's breakaway needs.
         return not 22.0 <= stuck % 30.0 < 30.0
 
+    def _stuck_probe(self, state, now: float) -> int:
+        """Which pull-away probe a stuck aeroplane is being given.
+
+        0 while it is free to roll -- moving, not yet stuck, or idling
+        in the stretch between probes -- and the count of the open probe
+        window otherwise, so each retry may ask the engine for more than
+        the attempt that failed to move it. The window arithmetic is the
+        same ``_ground_still`` does: the probe is the last eight seconds
+        of every thirty stuck.
+        """
+        if (state.ground_speed_kt or 0.0) > 1.0 \
+                or not getattr(self, "_ground_still_since", 0.0):
+            return 0
+        stuck = now - self._ground_still_since
+        if not 22.0 <= stuck % 30.0 < 30.0:
+            return 0
+        return int(stuck // 30) + 1
+
     def _ground_steer_limit(self, state) -> float:
         """How much nosewheel and rudder the ground may take at this
         speed. Full travel is a parking-stand turn; the same travel at
@@ -291,12 +335,16 @@ class _The_checklist_answered:
         else:
             # The gain is the class's: a heavy needs more nosewheel for
             # the same error than a light single, and the performance
-            # model's turn rate is the proxy it already carries.
-            divisor = 18.0 if self.performance.turn_rate < fly.RATE_LIGHT \
-                else 28.0
+            # model's turn rate is the proxy it already carries. The
+            # band stays proportional out to a real turn -- a law that
+            # saturates inside a dozen degrees is bang-bang under a tick
+            # or two of lag, and the apron shows the weave that makes.
+            divisor = 36.0 if self.performance.turn_rate < fly.RATE_LIGHT \
+                else 60.0
             rudder = max(-0.5, min(0.5, err / divisor))
         rudder = max(-self._ground_steer_limit(state),
                      min(self._ground_steer_limit(state), rudder))
+        rudder = self._slew_rudder(rudder)
         d.rudder(rudder)
         # The nosewheel follows the same demand where the model steers it
         # separately: a taildragger on rudder alone and a tricycle gear on
@@ -308,7 +356,10 @@ class _The_checklist_answered:
         # than put there. A lever write that jumps the travel is the
         # full-throttle departure from the stand this exists to prevent.
         gs = state.ground_speed_kt or 0.0
-        if self._ground_still(state, time.monotonic()):
+        now = time.monotonic()
+        still = self._ground_still(state, now)
+        probe = 0 if still else self._stuck_probe(state, now)
+        if still:
             want = 0.0
             if self._use_pids:
                 # A wound-up integrator is why the next probe comes in
@@ -337,8 +388,20 @@ class _The_checklist_answered:
         if state.on_ground and target_kt > 0.0 and gs < 2.0 \
                 and want > 0.0:
             want = max(want, self._breakaway_lever())
-        d.throttle(self._slew_lever(max(0.0, min(0.6, want)),
-                                    up_per_s=0.05, down_per_s=0.15))
+        if probe:
+            # A lever that already failed to move the aeroplane is not
+            # asked again: each probe wants more, walked up faster than
+            # a pull-away's hand would move it, so a heavy or a sticky
+            # pair of tyres finds its breakaway rather than dying at the
+            # same setting every half minute. Still capped -- the probe
+            # is a probe, not a held takeoff rating.
+            want = max(want, self._breakaway_lever() + 0.12 * (probe - 1))
+            lever = self._slew_lever(min(want, 0.75), up_per_s=0.15,
+                                     down_per_s=0.15)
+        else:
+            lever = self._slew_lever(max(0.0, min(0.6, want)),
+                                     up_per_s=0.05, down_per_s=0.15)
+        d.throttle(lever)
         if state.on_ground:
             # Fast is brought down on the brakes, not coasted out on the
             # idle: a squeeze that grows with how far over the speed is,
@@ -356,6 +419,7 @@ class _The_checklist_answered:
         # The next pull-away starts the slew from idle, not from
         # wherever the lever happened to be left.
         self._last_lever = 0.0
+        self._last_rudder = 0.0
         gs = state.ground_speed_kt or 0.0
         if gs <= 1.0:
             d.brakes(0.0)

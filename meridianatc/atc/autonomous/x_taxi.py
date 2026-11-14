@@ -69,8 +69,12 @@ class _Taxi:
             if time.monotonic() - warned_at > 15.0:
                 self._off_path_warned_at = time.monotonic()
                 log.warning(
-                    "the aeroplane is %.0f m off the taxi route; holding "
-                    "rather than crossing the apron", off)
+                    "the aeroplane is %.0f m off the taxi route (heading "
+                    "%.0f for %.0f, leg %d of %d); holding rather than "
+                    "crossing the apron",
+                    off, state.heading_true or 0.0,
+                    steer["heading"] or 0.0,
+                    getattr(self, "_taxi_progress", 0), len(path) - 1)
             return
         rejoining = off > self.REJOIN_M
         if rejoining:

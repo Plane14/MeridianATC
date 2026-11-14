@@ -523,10 +523,15 @@ class _The_phase_machine:
             # rudder takes over as the airflow comes alive. Both get the
             # same demand; a model that only honours one still tracks.
             # The demand is kept small: a hard pedal at eighty knots is
-            # the swerve a takeoff roll is lost to, not saved by.
+            # the swerve a takeoff roll is lost to, not saved by. The
+            # band stays proportional out to a real excursion -- a law
+            # saturated inside a few degrees under a tick or two of lag
+            # is the same weave the apron showed, at eighty knots.
             err = ((self.state.runway_heading - (state.heading_true or 0.0)
                     + 540.0) % 360.0 - 180.0)
-            keep = 0.0 if abs(err) < 2.0 else max(-0.4, min(0.4, err / 18.0))
+            keep = self._slew_rudder(
+                0.0 if abs(err) < 2.0
+                else max(-0.4, min(0.4, err / 36.0)))
             d.rudder(keep)
             d.steering(keep if (state.indicated_airspeed_kt or 0.0) < 35.0
                        else 0.0)
@@ -994,7 +999,9 @@ class _The_phase_machine:
                     err = ((self.state.runway_heading
                             - (state.heading_true or 0.0) + 540.0)
                            % 360.0 - 180.0)
-                    d.rudder(max(-0.4, min(0.4, err / 15.0)))
+                    d.rudder(self._slew_rudder(
+                        0.0 if abs(err) < 2.0
+                        else max(-0.4, min(0.4, err / 36.0))))
                 xwind = float(getattr(state, "aircraft_wind_x_kt", 0.0)
                               or 0.0)
                 d.aileron(max(-0.15, min(0.15, xwind * 0.02)))
@@ -1099,7 +1106,9 @@ class _The_phase_machine:
                 err = ((self.state.runway_heading
                         - (state.heading_true or 0.0) + 540.0)
                        % 360.0 - 180.0)
-                rudder = max(-0.4, min(0.4, err / 15.0))
+                rudder = self._slew_rudder(
+                    0.0 if abs(err) < 2.0
+                    else max(-0.4, min(0.4, err / 36.0)))
                 d.rudder(rudder)
                 d.steering(rudder if gs < 35.0 else 0.0)
             return

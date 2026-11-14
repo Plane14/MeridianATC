@@ -63,14 +63,16 @@ class RotorGains:
 
 
 # --- fixed wing ------------------------------------------------------------
-# Seeded from the laws they replace (autonomous._steer divided error by 18 or
-# 28; _manage_throttle stepped ~0.006/kt; the flare was (sink-150)/1800) and
-# given the damping and integration those laws never had.
+# Seeded from the laws they replace (autonomous._steer divided error by 36 or
+# 60; _manage_throttle stepped ~0.006/kt; the flare was (sink-150)/1800) and
+# given the damping and integration those laws never had. The steering bands
+# are twice the originals': a law that saturates inside a dozen degrees is
+# bang-bang under a tick or two of lag, which is the apron weave.
 
 AIRLINER_GAINS = FixedWingGains(
     throttle=PidTerms(kp=0.008, ki=0.004, deadband=3.0,
                       integral_cap=1.0, low=0.05, high=0.97, slew=0.5),
-    steer=PidTerms(kp=1.0 / 18.0, ki=0.002, kd=1.0 / 9.0,
+    steer=PidTerms(kp=1.0 / 36.0, ki=0.002, kd=1.0 / 9.0,
                    low=-0.5, high=0.5, wrap=360.0),
     taxi=PidTerms(kp=0.010, ki=0.003, deadband=1.0,
                   integral_cap=0.7, low=0.0, high=0.6, slew=0.4),
@@ -86,7 +88,7 @@ AIRLINER_GAINS = FixedWingGains(
 TURBOPROP_GAINS = FixedWingGains(
     throttle=PidTerms(kp=0.010, ki=0.005, deadband=3.0,
                       integral_cap=1.0, low=0.05, high=0.97, slew=0.6),
-    steer=PidTerms(kp=1.0 / 18.0, ki=0.003, kd=1.0 / 10.0,
+    steer=PidTerms(kp=1.0 / 36.0, ki=0.003, kd=1.0 / 10.0,
                    low=-0.5, high=0.5, wrap=360.0),
     taxi=PidTerms(kp=0.010, ki=0.004, deadband=1.0,
                   integral_cap=0.7, low=0.0, high=0.6, slew=0.5),
@@ -102,7 +104,7 @@ TURBOPROP_GAINS = FixedWingGains(
 LIGHT_GAINS = FixedWingGains(
     throttle=PidTerms(kp=0.012, ki=0.006, deadband=3.0,
                       integral_cap=1.0, low=0.05, high=0.97, slew=0.7),
-    steer=PidTerms(kp=1.0 / 28.0, ki=0.004, kd=1.0 / 14.0,
+    steer=PidTerms(kp=1.0 / 60.0, ki=0.004, kd=1.0 / 14.0,
                    low=-0.5, high=0.5, wrap=360.0),
     taxi=PidTerms(kp=0.012, ki=0.005, deadband=1.0,
                   integral_cap=0.7, low=0.0, high=0.6, slew=0.6),
