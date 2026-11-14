@@ -121,9 +121,11 @@ class _Helpers_kept_from:
 
     def _request_pushback(self) -> None:
         """Request pushback through the ramp, then the simulator's own tug."""
-        # The tug cannot move the aeroplane with the parking brake set. The
-        # brake goes back on only after the push has stopped the aircraft.
-        self._release_parking_brake()
+        # The tug cannot move the aeroplane with the parking brake set,
+        # but a tug still on its way is no reason to release it: the brake
+        # that held the start holds the wait too, and comes off only once
+        # the tug is attached -- an idling aeroplane creeps without it.
+        # The brake goes back on again after the push has stopped.
         ground = getattr(self.brain, "ground", None)
         if ground is not None:
             try:

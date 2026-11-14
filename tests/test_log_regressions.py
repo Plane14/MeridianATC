@@ -1201,6 +1201,28 @@ def test_the_tugs_ready_question_is_answered_yes():
     flight.brain.ground.request.assert_called_once_with("confirm")
 
 
+def test_the_brake_holds_until_the_tug_is_on():
+    """A tug on its way is not a tug attached: the brake that held the
+    start holds the wait -- an idling aeroplane creeps without it."""
+    import time as _time
+
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _taxi_flight(stations=[_gnd()])
+    flight.state.phase = AutonomousPhase.PUSHBACK
+    flight.state.sub = "wait"
+    flight.state.sub_entered_at = _time.monotonic() - 10.0
+    state = SimpleNamespace(
+        pushback_wait=True, pushback_attached=False,
+        ground_speed_kt=0.0, on_ground=True)
+    flight._phase_pushback(state, 10.0)
+    flight._dir.parking_brake.assert_called_once_with(True)
+    # Attached is what lets it off.
+    flight._dir.parking_brake.reset_mock()
+    state.pushback_attached = True
+    flight._phase_pushback(state, 11.0)
+    flight._dir.parking_brake.assert_called_once_with(False)
+
+
 def test_the_final_call_is_the_clearance_nobody_gives():
     """On a broadcast frequency each leg is announced; final clears."""
     from meridianatc.atc.autonomous import AutonomousPhase

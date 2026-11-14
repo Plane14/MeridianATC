@@ -145,6 +145,9 @@ class _The_phase_machine:
         sub = self.state.sub or "engines"
 
         if sub == "engines":
+            # The start happens on the brake: an idling twin creeps on
+            # its own thrust, and it stays on until the tug is attached.
+            d.parking_brake(True)
             if not state.engines_running:
                 if self.state.engines_started_at == 0.0:
                     self._start_engines(state)
@@ -233,24 +236,32 @@ class _The_phase_machine:
                     return
                 self._ground_confirm_push()
             if not self.state.moved_since_push:
-                # Whether the simulator has a live request: PUSHBACK WAIT
-                # while the tug is on its way, PUSHBACK ATTACHED once it
-                # is on the nosewheel. The request event is a toggle, so
-                # asking again while either is true cancels the push that
-                # is coming -- the retry is only for a request that never
-                # landed at all.
-                engaged = bool(getattr(state, "pushback_wait", False)
-                               or getattr(state, "pushback_attached",
-                                          False))
-                if engaged:
-                    # The tug is coming or on the nosewheel -- including
-                    # the one a controller's approval sent: the brake
-                    # after_start set has to be off for it to push. And
-                    # where GSX asks the flight deck whether it is ready,
-                    # the FO's answer is yes: the brake is off for it.
+                # The tug on the nosewheel is what lets the brake off:
+                # PUSHBACK ATTACHED, or GSX's own word for "on the tug".
+                # A tug still on its way (PUSHBACK WAIT -- X-Plane never
+                # sets it) is not a reason to release, because an idling
+                # aeroplane creeps forward the moment the brake is.
+                attached = bool(getattr(state, "pushback_attached", False))
+                coming = attached or getattr(state, "pushback_wait", False)
+                gstate = getattr(getattr(self.brain, "ground", None),
+                                 "state", None)
+                if getattr(gstate, "being_pushed", False):
+                    attached = coming = True
+                if attached:
+                    # The tug is on the nosewheel -- including the one a
+                    # controller's approval sent: the brake that held the
+                    # start has to be off for it to push. And where GSX
+                    # asks the flight deck whether it is ready, the FO's
+                    # answer is yes: the brake is off for it.
                     d.parking_brake(False)
                     if self._sub_age() > 15.0:
                         self._ground_confirm_push()
+                elif coming:
+                    # Dispatched but not on the nosewheel yet: the brake
+                    # stays on. The request event is a toggle, so asking
+                    # again while a tug is coming would cancel it -- the
+                    # wait is simply kept, brakes held.
+                    d.parking_brake(True)
                 else:
                     # A call on the frequency is repeated with patience,
                     # not streamed -- and one never answered falls back
