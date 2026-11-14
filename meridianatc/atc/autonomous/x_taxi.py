@@ -30,6 +30,12 @@ class _Taxi:
     # picked: stop with the nose just short of the bars, not a taxiway
     # length back from them.
     HOLD_BARS_M = 15.0
+    # Held off the cleared line this long, the route is asked for again:
+    # planned from where the aeroplane actually is, it is a route it can
+    # rejoin rather than one it holds short of for ever. Twice is enough
+    # to tell a stuck aeroplane from a slow one.
+    REASK_AFTER_S = 60.0
+    REASK_MAX = 2
 
     def _taxi_along_path(self, state, outbound: bool) -> None:
         """Follow ``session.taxi_path`` at taxi speed, or hold short.
@@ -48,6 +54,8 @@ class _Taxi:
         if getattr(self, "_taxi_route", None) is not self.session.taxi_path:
             self._taxi_route = self.session.taxi_path
             self._taxi_progress = 0
+            self._off_path_since = 0.0
+            self._taxi_reask = False
 
         # The walk only moves forward: the nearest segment of what is
         # left, never of what is behind. A whole-path search re-picks a
@@ -77,9 +85,25 @@ class _Taxi:
         off = abs(steer["cross_track_m"])
         if off > self.OFF_PATH_STOP_M:
             self._stop(state)
+            now = time.monotonic()
+            if not getattr(self, "_off_path_since", 0.0):
+                self._off_path_since = now
+            elif now - self._off_path_since > self.REASK_AFTER_S \
+                    and getattr(self, "_taxi_reasks", 0) < self.REASK_MAX \
+                    and self._taxi_issuing_position() is not None:
+                # Stopped where no rejoin is safe: asking for the route
+                # again gets one planned from where the aeroplane is,
+                # which is a route it can follow rather than a line to
+                # hold short of for ever. The clock restarts so the
+                # flag is raised once per hold, not once a tick.
+                log.info("off the taxi route for %.0f s: asking for "
+                         "the route again", now - self._off_path_since)
+                self._taxi_reasks = getattr(self, "_taxi_reasks", 0) + 1
+                self._taxi_reask = True
+                self._off_path_since = now
             warned_at = getattr(self, "_off_path_warned_at", 0.0)
-            if time.monotonic() - warned_at > 15.0:
-                self._off_path_warned_at = time.monotonic()
+            if now - warned_at > 15.0:
+                self._off_path_warned_at = now
                 log.warning(
                     "the aeroplane is %.0f m off the taxi route (heading "
                     "%.0f for %.0f, leg %d of %d); holding rather than "
@@ -88,6 +112,7 @@ class _Taxi:
                     steer["heading"] or 0.0,
                     getattr(self, "_taxi_progress", 0), len(path) - 1)
             return
+        self._off_path_since = 0.0
         rejoining = off > self.REJOIN_M
         if rejoining:
             rejoin = auto_nav.path_steering(
@@ -212,6 +237,19 @@ class _Taxi:
                 return
             if self.state.runway_heading <= 0:
                 return
+            # Where nobody issues a route -- an empty frequency, an
+            # advisory service -- the taxi is the crew's own navigation,
+            # and where the airport's own taxiways are known it is
+            # flown on them rather than straight across the apron.
+            if self._taxi_issuing_position() is None:
+                if self._self_plan_taxi(state):
+                    return
+                # Still reading the field's taxiways is not "there are
+                # none": the straight line is for the read that came
+                # back empty, not the one that has not come back yet.
+                if self._layout_still_coming():
+                    self._stop(state)
+                    return
             rwy_lat = self.state.runway_lat
             rwy_lon = self.state.runway_lon
             if rwy_lat and rwy_lon:
@@ -252,4 +290,77 @@ class _Taxi:
                 # Slow with nowhere to go: stop and wait for the taxi
                 # instruction rather than roll the runway's length.
                 self._stop(state)
+
+    # A failed self-plan is not retried every tick -- the answer is the
+    # same until the layout arrives or the aeroplane has moved on.
+    SELF_PLAN_RETRY_S = 10.0
+
+    def _self_plan_taxi(self, state) -> bool:
+        """Plan the taxi-out on the airport's own taxiways, where nobody
+        will give a route.
+
+        At a field with no staffed surface position the way to the
+        runway is the crew's own navigation: a real crew follows the
+        airport diagram, not the crow. Where the simulator has said
+        what the taxiways are, the aeroplane is taxied on them -- and
+        where it has not, this answers False and the old rule holds:
+        steer for the threshold. Returns True once a path is on the
+        session for ``_taxi_along_path`` to pick up.
+        """
+        now = time.monotonic()
+        if now - getattr(self, "_self_plan_at", 0.0) < self.SELF_PLAN_RETRY_S:
+            return False
+        self._self_plan_at = now
+        ask = getattr(getattr(self, "brain", None), "ground_layout", None)
+        airport = getattr(self.session, "departure", None) \
+            or self._get_current_airport()
+        if ask is None or airport is None or self.navdb is None:
+            return False
+        runway = self.session.departure_runway \
+            or (self.state.runway_key[1] if self.state.runway_key else "")
+        if not runway:
+            return False
+        try:
+            layout = ask(airport.ident)
+        except Exception:
+            log.debug("could not ask for %s's taxiways", airport.ident,
+                      exc_info=True)
+            return False
+        if layout is None:
+            return False
+        from .. import taxi as taxiplan
+        try:
+            lines = taxiplan.runway_lines(
+                layout, self.navdb.runways(airport.ident))
+            plan, _why = taxiplan.plan_departure(
+                layout, state.latitude, state.longitude, runway, lines)
+        except Exception:
+            log.debug("self-planned taxi at %s raised", airport.ident,
+                      exc_info=True)
+            return False
+        if plan is None or len(plan.points or ()) < 2:
+            return False
+        self.session.taxi_path = list(plan.points)
+        self.session.taxi_crossings = list(plan.crossings)
+        self.session.crossing_index = 0
+        self.session.crossing_granted = ""
+        log.info("%s: taxiing on the airport's own taxiways "
+                 "(no route issued)", airport.ident)
+        return True
+
+    def _layout_still_coming(self) -> bool:
+        """Whether this field's taxiways are still being read -- an
+        answer that is coming, told apart from one that never did."""
+        pending = getattr(getattr(self, "brain", None),
+                          "ground_pending", None)
+        if pending is None:
+            return False
+        airport = getattr(self.session, "departure", None) \
+            or self._get_current_airport()
+        if airport is None:
+            return False
+        try:
+            return bool(pending(airport.ident))
+        except Exception:
+            return False
 

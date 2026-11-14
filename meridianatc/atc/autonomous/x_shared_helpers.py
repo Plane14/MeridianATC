@@ -459,19 +459,39 @@ class _Shared_helpers:
                            "autonomous.stand.hold")
             return False
         session = self.session
-        if session.phase in (Phase.TAXI_OUT, Phase.HOLDING_SHORT,
-                             Phase.LINED_UP, Phase.TAKEOFF) \
-                or getattr(session, "taxi_path", None):
+        # TAXI_OUT alone is not the clearance: the phase also flips on
+        # groundspeed alone, which is how an aeroplane pushed back fast
+        # taxied out on no instruction at all. ``taxi_route`` is the
+        # names the controller gave and ``taxi_path`` the line they
+        # planned; either one is an instruction received, and the
+        # phases past taxi are its consequences.
+        if session.phase in (Phase.HOLDING_SHORT, Phase.LINED_UP,
+                             Phase.TAKEOFF) \
+                or getattr(session, "taxi_path", None) \
+                or getattr(session, "taxi_route", None):
             return True
+        if self._taxi_issuing_position() is not None:
+            # Somebody owns the surface: the instruction is theirs
+            # to give, and the aeroplane waits for it.
+            return False
+        return self._sub_age() > 10.0
+
+    def _taxi_issuing_position(self):
+        """The staffed position a real taxi route comes from, if any.
+
+        Ground, delivery or tower -- the positions an actual taxi
+        instruction is issued on. An AFIS advises ("at your
+        discretion") and a CTAF hears only announcements: neither owes
+        a route, and waiting on either is a wait for a voice that
+        never comes.
+        """
         staffed = getattr(getattr(self, "brain", None), "staffed", None)
         for position in ("GND", "DEL", "TWR"):
             station = self._surface_position((position,))
             if station is not None \
                     and (staffed is None or staffed(station)):
-                # Somebody owns the surface: the instruction is theirs
-                # to give, and the aeroplane waits for it.
-                return False
-        return self._sub_age() > 10.0
+                return station
+        return None
 
     def _surface_contacts(self) -> list:
         """Every aeroplane the controller's picture holds, for yielding to.

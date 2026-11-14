@@ -123,6 +123,16 @@ class AutonomousFlight(_Plumbing, _Entry, _The_loop, _Shared_helpers, _The_envel
         # Whether the hold the taxi is stopped at is a cut route's split
         # taxiway rather than the runway's holding point.
         self._held_at_split = False
+        # The "taxi" call's own bookkeeping: whether the announcement has
+        # gone out where nobody answers it, whether a stop off the route
+        # wants the route asked for again (and how many times it already
+        # has been), when the off-route hold began, and when a self-planned
+        # taxi was last tried where nobody gives one.
+        self._taxi_announced = False
+        self._taxi_reask = False
+        self._taxi_reasks = 0
+        self._off_path_since = 0.0
+        self._self_plan_at = 0.0
         # The closed-loop axes. Gains are resolved per aircraft like the
         # performance figures (class bundle, autofly profile refinements);
         # the controllers are made lazily, one per channel, and the

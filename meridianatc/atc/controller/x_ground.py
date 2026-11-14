@@ -148,6 +148,10 @@ class _Ground:
     # read is None, and asking is what starts the read -- and without it, or
     # without an answer, the taxi is the invented one it always was.
     ground_layout = None
+    # And ``ident -> bool``: whether a field's read is still in flight.
+    # A taxi asked for in that gap is told to stand by rather than cleared
+    # on the invented route it would then keep for ever.
+    ground_pending = None
 
     def _layout_for(self, ident: str):
         if self.ground_layout is None:
@@ -157,6 +161,17 @@ class _Ground:
         except Exception:
             log.debug("the ground layout for %s raised", ident, exc_info=True)
             return None
+
+    def _layout_pending(self, ident: str) -> bool:
+        """Whether the field's taxiways are still being read: an answer
+        that is coming, as opposed to one that never did."""
+        if self.ground_pending is None:
+            return False
+        try:
+            return bool(self.ground_pending(ident))
+        except Exception:
+            log.debug("the pending check for %s raised", ident, exc_info=True)
+            return False
 
     def _ground_traffic(self, layout):
         """Every other aeroplane on the ground, as (x, z, radius) in the
@@ -278,6 +293,13 @@ class _Ground:
         session.departure_runway = runway
 
         plan, why = self._safely_plan(session, station, state, inbound=False)
+        if plan is None and self._layout_pending(station.ident):
+            # The field's taxiways are still being read: "stand by" now
+            # and the next ask gets the real route, where answering the
+            # invented one would have been kept for the whole taxi.
+            decision("taxi_route", airport=station.ident, runway=runway,
+                     source="waiting", why="the taxiways are still being read")
+            return Reply(p.standby(session.aircraft), station)
         self._keep_taxi(session, plan)
         hold_at = ""
         if plan is not None:
@@ -335,6 +357,10 @@ class _Ground:
 
     def _issue_taxi_in(self, session, station, p, state=None) -> Reply:
         plan, why = self._safely_plan(session, station, state, inbound=True)
+        if plan is None and self._layout_pending(station.ident):
+            decision("taxi_route", airport=station.ident, inbound=True,
+                     source="waiting", why="the taxiways are still being read")
+            return Reply(p.standby(session.aircraft), station)
         self._keep_taxi(session, plan)
         hold_short = ""
         hold_at = ""

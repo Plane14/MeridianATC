@@ -195,6 +195,15 @@ class _The_other_aeroplanes:
             self._ask_for_ground(ident)
         return layout
 
+    def ground_pending(self, ident: str) -> bool:
+        """Whether this airport's taxiways are still being read -- an
+        answer that is coming, told apart from one that never did: the
+        airport was asked, is not yet read, and its read did not fail."""
+        ident = (ident or "").upper()
+        return (ident in self._ground_asked
+                and ident not in self._ground_ready
+                and ident not in self._ground_dead)
+
     # How close to the destination a layout is asked for whatever the phase
     # says. The read takes seconds on a worker; at 250 knots sixty miles is a
     # quarter of an hour, and a pilot who never called for descent is still
@@ -296,11 +305,15 @@ class _The_other_aeroplanes:
                 found = reader.layout(ident)
             except Exception:
                 log.debug("could not read %s's taxiways", ident, exc_info=True)
-                return
+                found = None
             if found is not None:
-                log.info("%s: %d stands and %d taxi nodes from the simulator",
-                         ident, len(found.stands), len(found.xy))
+                log.info("%s: %d stands and %d taxi nodes from %s",
+                         ident, len(found.stands), len(found.xy),
+                         "the simulator" if reader is self.simground
+                         else "apt.dat")
                 self._ground_ready[ident] = found
+            else:
+                self._ground_dead.add(ident)
 
         threading.Thread(target=read, name=f"MeridianATC-taxi-{ident}",
                          daemon=True).start()

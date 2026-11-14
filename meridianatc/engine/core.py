@@ -376,6 +376,9 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
 
         self.xpground = XPlaneGround()
         self._ground_asked: set[str] = set()
+        # Fields whose taxiway read came back empty or failed -- dead for
+        # the session, so "still coming" and "never came" tell apart.
+        self._ground_dead: set[str] = set()
         # And the approaches each airport publishes, so the ILS is only
         # promised where there is one. Asked once per airport, on a worker,
         # and handed to the brain as the answers come in.
@@ -403,6 +406,10 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         # drives on, and reaches them the way it reaches the traffic: handed
         # a service, so nothing in atc/ imports the engine.
         self.brain.ground_layout = self.ground_layout
+        # And whether a field's read is still in flight, so a taxi asked
+        # for in the gap is told to stand by rather than given the
+        # invented route it would then keep for ever.
+        self.brain.ground_pending = self.ground_pending
         # And the ATIS each field is broadcasting, so a call reporting an old
         # letter is told the current one.
         self.brain.atis = self.atis_for

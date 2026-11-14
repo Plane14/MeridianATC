@@ -224,6 +224,11 @@ class _Entry:
         self._lever_at = 0.0
         self._ground_still_since = 0.0
         self._held_at_split = False
+        self._taxi_announced = False
+        self._taxi_reask = False
+        self._taxi_reasks = 0
+        self._off_path_since = 0.0
+        self._self_plan_at = 0.0
         self._seed_control_learning()
 
     def _seed_control_learning(self) -> None:

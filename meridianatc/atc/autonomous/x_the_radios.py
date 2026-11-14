@@ -397,21 +397,35 @@ class _The_radios:
         """
         phase = self.state.phase
         if phase == AutonomousPhase.TAXI_OUT:
-            if not getattr(self, "_held_at_split", False) and (
-                    session.phase in (Phase.TAXI_OUT, Phase.HOLDING_SHORT,
+            reask = getattr(self, "_taxi_reask", False)
+            if not reask and not getattr(self, "_held_at_split", False) and (
+                    session.phase in (Phase.HOLDING_SHORT,
                                       Phase.LINED_UP, Phase.TAKEOFF)
-                    or getattr(session, "taxi_path", None)):
+                    or getattr(session, "taxi_path", None)
+                    or getattr(session, "taxi_route", None)):
                 # Under a clearance already -- except held at a cut
                 # taxi's split, where the call is the "ready to
-                # continue" that brings the rest of the route.
+                # continue" that brings the rest of the route, and
+                # except the re-ask a stop off the route wants.
+                # TAXI_OUT alone does not count: the phase flips on
+                # groundspeed without an instruction ever having
+                # landed, and trusting it is how the aeroplane went
+                # off down the apron on no route at all.
+                return
+            if not reask and getattr(self, "_taxi_announced", False) \
+                    and self._taxi_issuing_position() is None:
+                # Where nobody issues a route the call is the
+                # announcement itself: made once, not repeated to an
+                # empty room.
                 return
             kind = "taxi"
         elif phase == AutonomousPhase.TAXI_IN:
             # Inbound the stand is the ground controller's to name: the
             # aeroplane asks where to park until the instruction or its
             # route arrives, the same ask the outbound one makes.
-            if session.phase not in (Phase.LANDED,) \
-                    or getattr(session, "taxi_path", None):
+            if not getattr(self, "_taxi_reask", False) and (
+                    session.phase not in (Phase.LANDED,)
+                    or getattr(session, "taxi_path", None)):
                 return
             kind = "taxi"
         elif phase == AutonomousPhase.HOLDING_SHORT:
@@ -437,7 +451,11 @@ class _The_radios:
                 or not self._unkeyed():
             return
         self._call_tried_at = now
-        self._fo_say(kind)
+        if self._fo_say(kind) and kind == "taxi":
+            # The taxi call went out: on an unanswered frequency it is
+            # the announcement, not something to keep asking for.
+            self._taxi_announced = True
+            self._taxi_reask = False
 
     def _check_in_once(self, state, session, now: float) -> None:
         """The first call on a new airborne station: the level, and

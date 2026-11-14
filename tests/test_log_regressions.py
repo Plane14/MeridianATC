@@ -775,8 +775,10 @@ def test_taxi_waits_for_the_instruction_at_a_controlled_field():
     flight._phase_taxi_out(state, 60.0)
     flight._taxi_along_path.assert_not_called()
     flight._stop.assert_called()
-    # Cleared: the session's own phase is the instruction.
+    # Cleared: the route itself is the instruction. TAXI_OUT alone is
+    # not -- it also flips on groundspeed alone.
     flight.session.phase = "taxi_out"
+    flight.session.taxi_route = "via A to holding point runway 35"
     flight._phase_taxi_out(state, 65.0)
     flight._taxi_along_path.assert_called_once()
 
@@ -830,6 +832,135 @@ def test_a_published_but_unworked_ground_announces_and_goes():
     flight.state.sub_entered_at = _time.monotonic() - 15.0
     flight._phase_taxi_out(state, 15.0)
     flight._taxi_along_path.assert_called_once()
+
+
+def _ground_brain(layout=None, pending=False):
+    """A controller brain whose field's taxiways answer what the test
+    says: a layout, nothing yet, or a read still in flight."""
+    from meridianatc.atc.controller import ControllerBrain
+    from meridianatc.atc.phraseology import Phraseology
+    navdb = Mock()
+    navdb.airport.return_value = SimpleNamespace(
+        ident="LPPR", lat=41.24, lon=-8.67)
+    navdb.runways.return_value = []
+    navdb.runway_ends.return_value = []
+    brain = ControllerBrain(navdb, Phraseology())
+    brain.ground_layout = lambda ident: layout
+    brain.ground_pending = lambda ident: pending
+    brain.traffic = None
+    return brain
+
+
+def _ground_station():
+    from meridianatc.navdata.db import Station
+    return Station("LPPR", "GND", 121.75, "Porto Ground")
+
+
+def test_a_taxi_asked_while_the_layout_reads_gets_standby():
+    """The read takes seconds on a worker: "stand by" is the answer the
+    real route arrives on, not the invented one a pilot would keep."""
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession, Phase
+    from meridianatc.atc.speech import parse_callsign
+    brain = _ground_brain(pending=True)
+    station = _ground_station()
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    session.departure_runway = "35"
+    weather = SimpleNamespace(qnh_hpa=1013, altimeter_inhg=29.92)
+    reply = brain._issue_taxi(
+        session, station, weather, brain.for_station(station))
+    assert "standby" in reply.text.lower()
+    # Nothing is kept: no invented route, no empty path, and the phase
+    # stays where it was -- the next ask gets the real route.
+    assert not session.taxi_route
+    assert not session.taxi_path
+    assert session.phase is not Phase.TAXI_OUT
+
+
+def test_a_taxi_asked_with_the_layout_dead_gets_the_invented_route():
+    """No read coming is a different answer: the invented route, kept."""
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession, Phase
+    from meridianatc.atc.speech import parse_callsign
+    brain = _ground_brain(pending=False)
+    station = _ground_station()
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    session.departure_runway = "35"
+    weather = SimpleNamespace(qnh_hpa=1013, altimeter_inhg=29.92)
+    reply = brain._issue_taxi(
+        session, station, weather, brain.for_station(station))
+    assert "standby" not in reply.text.lower()
+    assert session.taxi_route
+    assert session.phase is Phase.TAXI_OUT
+
+
+def test_the_straight_line_waits_while_the_layout_reads():
+    """No route and nobody to ask is still not a reason to aim at the
+    runway while the field's taxiways are mid-read."""
+    flight = _path_flight(None)
+    flight.session.phase = "cleared"
+    flight.session.departure_runway = "35"
+    flight.session.departure = SimpleNamespace(ident="LPPR")
+    flight.state.runway_heading = 353.0
+    flight.state.runway_key = ("LPPR", "35", False)
+    flight.state.runway_lat = 41.27
+    flight.state.runway_lon = -8.68
+    flight._find_runway = Mock()
+    flight._taxi_issuing_position = Mock(return_value=None)
+    flight._layout_still_coming = Mock(return_value=True)
+    flight._self_plan_taxi = Mock(return_value=False)
+    flight._get_current_airport = lambda: flight.session.departure
+    flight._taxi_without_path(
+        _ground_state(41.24, -8.67, gs=0.0), outbound=True)
+    flight._stop.assert_called()
+    assert not flight._steer.called
+
+
+def test_the_straight_line_steers_when_no_layout_is_coming():
+    """The fallback itself is kept: nothing read and nothing coming,
+    the runway is still the way out."""
+    flight = _path_flight(None)
+    flight.session.phase = "cleared"
+    flight.session.departure_runway = "35"
+    flight.session.departure = SimpleNamespace(ident="LPPR")
+    flight.state.runway_heading = 353.0
+    flight.state.runway_key = ("LPPR", "35", False)
+    flight.state.runway_lat = 41.27
+    flight.state.runway_lon = -8.68
+    flight._find_runway = Mock()
+    flight._taxi_issuing_position = Mock(return_value=None)
+    flight._layout_still_coming = Mock(return_value=False)
+    flight._self_plan_taxi = Mock(return_value=False)
+    flight._get_current_airport = lambda: flight.session.departure
+    flight._yield_to_traffic = Mock(return_value=False)
+    flight._taxi_without_path(
+        _ground_state(41.24, -8.67, gs=0.0), outbound=True)
+    assert flight._steer.called
+
+
+def test_an_unstaffed_field_taxis_on_the_airports_own_taxiways():
+    """Nobody giving a route does not mean no route: with the taxiways
+    read, the crew follows the airport diagram, not the crow."""
+    flight = _path_flight(None)
+    flight.session.phase = "cleared"
+    flight.session.departure_runway = "35"
+    flight.session.departure = SimpleNamespace(ident="LPPR")
+    flight.state.runway_key = ("LPPR", "35", False)
+    flight.navdb = SimpleNamespace(runways=lambda ident: [])
+    flight.brain = SimpleNamespace(
+        ground_layout=lambda ident: object())
+    flight._get_current_airport = lambda: flight.session.departure
+    planned = SimpleNamespace(
+        points=[(41.240, -8.672), (41.242, -8.672)], crossings=["17"])
+    flight._self_plan_at = 0.0
+    from unittest.mock import patch
+    with patch("meridianatc.atc.taxi.runway_lines", return_value=[]), \
+            patch("meridianatc.atc.taxi.plan_departure",
+                  return_value=(planned, "")):
+        assert flight._self_plan_taxi(
+            _ground_state(41.24, -8.67, gs=0.0)) is True
+    assert flight.session.taxi_path == list(planned.points)
+    assert flight.session.taxi_crossings == ["17"]
 
 
 def test_a_split_taxi_waits_for_the_rest_not_the_runway():
@@ -1012,6 +1143,7 @@ def test_taxi_holds_while_the_jetway_is_still_on():
 
     from meridianatc.atc.autonomous import AutonomousPhase
     flight = _taxi_flight(stations=[_gnd()], phase="taxi_out")
+    flight.session.taxi_route = "via A to holding point runway 35"
     flight.brain.ground = _gsx(can_taxi=False, why="jetway connected")
     flight.state.phase = AutonomousPhase.TAXI_OUT
     flight.state.sub = "taxi"
