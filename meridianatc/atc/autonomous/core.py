@@ -144,7 +144,6 @@ class AutonomousFlight(_Plumbing, _Entry, _The_loop, _Shared_helpers, _The_envel
         # paper after it is a failure -- never a quiet re-file to VFR.
         self.CLEARANCE_TIMEOUT = 240.0
         self.ENGINE_START_TIMEOUT = 240.0
-        self.PUSHBACK_TIMEOUT = 300.0
         self.TAKEOFF_TIMEOUT = 240.0
         self.CLIMB_TIMEOUT = 3600.0
         self.DESAT_TIMEOUT = 3600.0

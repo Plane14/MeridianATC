@@ -290,8 +290,6 @@ class _The_phase_machine:
                             self._set_error("Pushback did not move the "
                                             "aircraft")
                             return
-            if now - self.state.phase_entered_at > self.PUSHBACK_TIMEOUT:
-                self._set_error("Pushback timeout")
 
     def _phase_taxi_out(self, state, now: float) -> None:
         """Taxi to the departure runway along the planned route."""

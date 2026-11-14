@@ -1061,7 +1061,6 @@ def test_the_tugs_ready_question_is_answered_yes():
     flight.state.phase = AutonomousPhase.PUSHBACK
     flight.state.sub = "wait"
     flight.state.sub_entered_at = _time.monotonic() - 20.0
-    flight.PUSHBACK_TIMEOUT = 600.0
     flight._fo_say = Mock(return_value=True)
     state = SimpleNamespace(
         pushback_wait=False, pushback_attached=True,
