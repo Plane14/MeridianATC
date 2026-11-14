@@ -4,12 +4,20 @@ from ._shared import (
     AutonomousPhase,
     Phase,
     auto_nav,
+    log,
     time,
 )
 
 
 class _Taxi:
     # -- taxi -----------------------------------------------------------------
+
+    # Far enough off the cleared route that aiming for it is a diagonal
+    # across the apron -- through whatever scenery the taxiway graph does
+    # not know is there. Closer than this the aeroplane rejoins; past it
+    # it stops, because a stopped aeroplane hits nothing.
+    OFF_PATH_STOP_M = 50.0
+    REJOIN_M = 15.0
 
     def _taxi_along_path(self, state, outbound: bool) -> None:
         """Follow ``session.taxi_path`` at taxi speed, or hold short.
@@ -24,10 +32,53 @@ class _Taxi:
             self._taxi_without_path(state, outbound)
             return
 
-        steer = auto_nav.path_steering(state.latitude, state.longitude, path)
+        # A new clearance is a new walk from the start.
+        if getattr(self, "_taxi_route", None) is not self.session.taxi_path:
+            self._taxi_route = self.session.taxi_path
+            self._taxi_progress = 0
+
+        # The walk only moves forward: the nearest segment of what is
+        # left, never of what is behind. A whole-path search re-picks a
+        # nearer parallel leg or a segment already passed, and the
+        # pursuit target teleporting between them is the weave that
+        # leaves the taxiway.
+        at = min(getattr(self, "_taxi_progress", 0), len(path) - 2)
+        remaining_path = path[at:]
+        # The pursuit's lead scales with speed -- thirty metres at a
+        # standstill, about eight seconds of travel once rolling -- so a
+        # slow aeroplane rejoins instead of cutting every junction the
+        # way a fixed airliner lookahead does.
+        gs = state.ground_speed_kt or 0.0
+        lookahead = max(30.0, min(auto_nav.TAXI_LOOKAHEAD_M,
+                                gs * 1.852 * 8.0 / 3.6))
+        steer = auto_nav.path_steering(state.latitude, state.longitude,
+                                       remaining_path, lookahead_m=lookahead)
         if steer is None or steer.get("heading") is None:
             self._stop(state)
             return
+        self._taxi_progress = at + steer["nearest"]
+
+        # Off the route the fixed lookahead is a diagonal across the
+        # apron. Near the line, rejoin it gently; far from it the line
+        # back is scenery the graph does not know, and the aeroplane
+        # stops rather than find out what.
+        off = abs(steer["cross_track_m"])
+        if off > self.OFF_PATH_STOP_M:
+            self._stop(state)
+            warned_at = getattr(self, "_off_path_warned_at", 0.0)
+            if time.monotonic() - warned_at > 15.0:
+                self._off_path_warned_at = time.monotonic()
+                log.warning(
+                    "the aeroplane is %.0f m off the taxi route; holding "
+                    "rather than crossing the apron", off)
+            return
+        rejoining = off > self.REJOIN_M
+        if rejoining:
+            rejoin = auto_nav.path_steering(
+                state.latitude, state.longitude, remaining_path,
+                lookahead_m=min(30.0, off))
+            if rejoin is not None and rejoin.get("heading") is not None:
+                steer["heading"] = rejoin["heading"]
 
         # Slow for the end of the route, and for corners: the turn the
         # path asks for sets the speed before the steering has to make
@@ -37,6 +88,10 @@ class _Taxi:
         turn = abs((steer["heading"] - (state.heading_true or 0.0)
                     + 540.0) % 360.0 - 180.0)
         target_kt = self.performance.taxi_kt
+        if rejoining:
+            # Back to the line at walking pace: crossing the apron is a
+            # job for the slowest speed the aeroplane will hold.
+            target_kt = min(target_kt, 5.0)
         if remaining < 60.0 or turn > 60.0:
             target_kt = max(4.0, target_kt * 0.5)
         if turn > 20.0:

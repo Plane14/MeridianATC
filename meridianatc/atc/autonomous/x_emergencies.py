@@ -27,6 +27,11 @@ class _Emergencies:
                 AutonomousPhase.TAXI_OUT, AutonomousPhase.SHUTDOWN,
                 AutonomousPhase.COMPLETE, AutonomousPhase.ERROR):
             return
+        # Parked is parked: a tank near empty on the stand is a fuelling
+        # order rather than a distress, and nothing on the ground is
+        # declared onto a frequency the urgency does not belong on.
+        if state.on_ground:
+            return
 
         # Electrical: the main bus collapsing in the air. A 14-volt bus
         # reads under twelve when it is gone; a 28-volt bus -- most

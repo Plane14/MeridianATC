@@ -1696,7 +1696,8 @@ class CrewDirector:
         synthesised only once the paragraph before it had stopped.
         """
         now = time.monotonic()
-        if self.player.busy or self._radio_is_live():
+        live = self._radio_is_live()
+        if self.player.busy or live:
             # Somebody is already talking. Waiting is the whole of the fix for
             # two voices at once, and the wait is spent rendering what comes
             # next rather than idling through it.
@@ -1708,12 +1709,14 @@ class CrewDirector:
             # rendered, nothing is ever played.
             if self.player.busy:
                 self._blocked("the cabin player", self.BLOCKED_PLAYER_S)
-            else:
-                self._blocked("the frequency to clear",
-                              self.BLOCKED_FREQUENCY_S)
-            self._prepare()
-            return
-        self._blocked_since = 0.0
+                self._prepare()
+                return
+            self._blocked("the frequency to clear", self.BLOCKED_FREQUENCY_S)
+            if not self._yield_over(now):
+                self._prepare()
+                return
+        if not live:
+            self._blocked_since = 0.0
         due = None
         dropped: list[str] = []
         with self._lock:
@@ -1739,6 +1742,11 @@ class CrewDirector:
                         dropped.append(pending.cue)
                 elif floor and pending.cue != floor:
                     keep.append(pending)      # somebody is mid-announcement
+                elif live and pending.cue == "radio_call":
+                    # The one line the yield cannot be lifted for: a call
+                    # goes out on the frequency itself, and a busy one
+                    # leaves it no room however long it has waited.
+                    keep.append(pending)
                 else:
                     due = pending
             self.state.queue = keep
@@ -1833,6 +1841,23 @@ class CrewDirector:
         log.warning("the cabin has been waiting %.0fs for %s, with %d line(s) "
                     "to say", waited, why, waiting,
                     extra={"why": why, "waited_s": round(waited, 1)})
+
+    def _yield_over(self, now: float) -> bool:
+        """Whether the cabin stops holding its tongue for the frequency.
+
+        The yield is a courtesy, not a law: a frequency live without a
+        break past the blocked row's threshold has had the cabin's
+        patience, and the answer to a purser who can never start is to
+        start anyway -- the player's own ducking keeps the transmission
+        on top. A radio call does not count: it goes out on the frequency
+        itself, and a busy one leaves it no room.
+        """
+        if not self._blocked_since \
+                or now - self._blocked_since < self.BLOCKED_FREQUENCY_S:
+            return False
+        with self._lock:
+            return any(p.at <= now and p.cue != "radio_call"
+                       for p in self.state.queue)
 
     def _radio_is_live(self) -> bool:
         """Whether the frequency is busy, so nobody in here speaks over it.

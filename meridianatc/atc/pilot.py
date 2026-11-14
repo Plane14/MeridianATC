@@ -102,6 +102,12 @@ class PilotBook:
     # A runway crossing clearance, read back. UNVERIFIED in every language
     # but English.
     cross_runway: str = "cross runway {runway}"
+    # A VFR release, read back: the way out where one was named, the
+    # ceiling it stays under, the departure frequency and the code.
+    # UNVERIFIED in every language but English.
+    vfr_release_via: str = "via {point}"
+    vfr_release_ceiling: str = "not above {altitude}"
+    departure_frequency: str = "departure frequency {frequency}"
 
 
 ENGLISH = PilotBook(
@@ -165,6 +171,9 @@ FRENCH = PilotBook(
     go_around="remise de gaz",
     contact="contact {station} {frequency}",
     squawk="affiche {code}",
+    vfr_release_via="par {point}",
+    vfr_release_ceiling="sans dépasser {altitude}",
+    departure_frequency="fréquence départ {frequency}",
     climb="montons {altitude}",
     descend="descendons {altitude}",
     heading="cap {heading}",
@@ -214,6 +223,9 @@ SPANISH = PilotBook(
     go_around="motor y al aire",
     contact="contactamos {station} {frequency}",
     squawk="transpondedor {code}",
+    vfr_release_via="vía {point}",
+    vfr_release_ceiling="no por encima de {altitude}",
+    departure_frequency="frecuencia de salida {frequency}",
     climb="ascendemos {altitude}",
     descend="descendemos {altitude}",
     heading="rumbo {heading}",
@@ -262,6 +274,9 @@ GERMAN = PilotBook(
     go_around="wir starten durch",
     contact="rufen {station} {frequency}",
     squawk="Squawk {code}",
+    vfr_release_via="über {point}",
+    vfr_release_ceiling="nicht über {altitude}",
+    departure_frequency="Abflugfrequenz {frequency}",
     climb="steigen {altitude}",
     descend="sinken {altitude}",
     heading="Kurs {heading}",
@@ -310,6 +325,9 @@ ITALIAN = PilotBook(
     go_around="riattacchiamo",
     contact="contattiamo {station} {frequency}",
     squawk="transponder {code}",
+    vfr_release_via="via {point}",
+    vfr_release_ceiling="non oltre {altitude}",
+    departure_frequency="frequenza di partenza {frequency}",
     climb="saliamo {altitude}",
     descend="scendiamo {altitude}",
     heading="prua {heading}",
@@ -358,6 +376,9 @@ PORTUGUESE = PilotBook(
     go_around="arremetemos",
     contact="contactamos {station} {frequency}",
     squawk="transponder {code}",
+    vfr_release_via="via {point}",
+    vfr_release_ceiling="não acima de {altitude}",
+    departure_frequency="frequência de partida {frequency}",
     climb="subimos {altitude}",
     descend="descemos {altitude}",
     heading="proa {heading}",
@@ -628,6 +649,30 @@ class PilotSpeech:
     def squawk(self, aircraft: Aircraft, code: str) -> str:
         return self.report(aircraft,
                            self.book.squawk.format(code=self.p.d(code)))
+
+    def vfr_release(self, aircraft: Aircraft, squawk: str,
+                    mhz: float = 0.0, ceiling_ft: float = 0.0,
+                    exit_point: str = "") -> str:
+        """A VFR release read back: the way out where one was named, the
+        ceiling, the departure frequency and the code. The frequency and
+        the code are what the controller is holding the readback to; the
+        ceiling and the point are what a pilot says along with them."""
+        parts = []
+        if exit_point:
+            try:
+                exit_point = self.p.vrp(exit_point)
+            except Exception:
+                pass
+            parts.append(self.book.vfr_release_via.format(point=exit_point))
+        if ceiling_ft:
+            parts.append(self.book.vfr_release_ceiling.format(
+                altitude=self.p.vfr_alt(ceiling_ft)))
+        if mhz:
+            parts.append(self.book.departure_frequency.format(
+                frequency=self.p.freq(mhz)))
+        if squawk:
+            parts.append(self.book.squawk.format(code=self.p.d(squawk)))
+        return self.report(aircraft, _join(*parts))
 
     def clearance(self, aircraft: Aircraft, destination: str, squawk: str,
                   initial_altitude: float = 0.0, sid: str = "") -> str:

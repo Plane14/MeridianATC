@@ -89,8 +89,13 @@ class _The_phase_machine:
                 and getattr(last, "kind", "") == "below_minima":
             self.session.ifr = True
             self.state.has_ifr_clearance = False
+            self.state.clearance_asked_at = 0.0
             self._emit("info", "VFR refused below minima; filing IFR",
                        "autonomous.clearance.re_filed")
+        # The radio is what the ask goes out on: a flight that reached
+        # this phase still dark has nothing to call on, and the clock
+        # below must not punish silence it could not help.
+        self._ensure_systems_on(state)
         # A call the first officer could not make is not a call made: the
         # frequency may be busy or a readback may be owed first, so the ask
         # is retried until one goes out -- and again after that while the
@@ -100,6 +105,8 @@ class _The_phase_machine:
                 or now - self.state.last_radio_at >= 15.0
         ) and self._request_clearance_via_fo():
             self.state.has_ifr_clearance = True
+            if not self.state.clearance_asked_at:
+                self.state.clearance_asked_at = now
         if self._clearance_position() is None:
             # Nobody here issues anything -- a broadcast frequency or an
             # advisory service: the call is the announcement, and after a
@@ -115,10 +122,13 @@ class _The_phase_machine:
                            "autonomous.clearance.broadcast")
                 self._transition(AutonomousPhase.PUSHBACK)
             return
-        if now - self.state.phase_entered_at > self.CLEARANCE_TIMEOUT:
+        if self.state.clearance_asked_at \
+                and now - self.state.clearance_asked_at > self.CLEARANCE_TIMEOUT:
             # Somebody who issues is working the field: the wait for the
             # paper is real, and a flight that never gets it is not
-            # quietly re-filed VFR to leave on time.
+            # quietly re-filed VFR to leave on time. The clock is the
+            # first ask's and not the phase's -- a radio that took a
+            # minute to come alive has not been refused anything yet.
             rules = "IFR clearance" if self.session.ifr else "VFR release"
             self._set_error(f"No {rules} was issued")
 

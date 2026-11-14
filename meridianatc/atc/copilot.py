@@ -155,6 +155,17 @@ def readback(instruction: Instruction, aircraft: Aircraft,
                 float(values.get("altitude_ft", 0) or 0),
                 sid=str(values.get("sid", "")),
             )
+        if kind == "vfr_release":
+            # A release has no case of its own anywhere else: without one
+            # it fell through to the squawk branch and the departure
+            # frequency was never read back, which is a correction loop
+            # with no way out of it.
+            return speech.vfr_release(
+                aircraft,
+                str(values.get("squawk", "")),
+                float(values.get("frequency", 0) or 0),
+                float(values.get("vfr_ceiling_ft", 0) or 0),
+                str(values.get("exit_point", "")))
         if kind == "diversion" and values.get("airport"):
             return speech.cleared_to(aircraft, str(values["airport"]),
                                      float(values.get("altitude_ft", 0) or 0))

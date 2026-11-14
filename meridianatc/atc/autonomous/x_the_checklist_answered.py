@@ -126,8 +126,16 @@ class _The_checklist_answered:
             # off position: writing it would close the selector for good.
             "fuel_selector": lambda: d.write("FUEL TANK SELECTOR:1",
                                              float(expected) if float(expected) > 0 else 1.0),
-            "mixture_pct": lambda: d.write("GENERAL ENG MIXTURE LEVER "
-                                           "POSITION:1", float(expected)),
+            # The checklist's figure is a percent; the lever variable is
+            # a fraction ("Percent over 100"), so a bare write asked for
+            # a mixture travel it does not have. A source without named
+            # units takes the percent it always did.
+            "mixture_pct": lambda: (
+                d.write("GENERAL ENG MIXTURE LEVER POSITION:1",
+                        float(expected) / 100.0,
+                        unit="Percent over 100")
+                or d.write("GENERAL ENG MIXTURE LEVER POSITION:1",
+                           float(expected))),
             "transponder_code": lambda: d.transponder(str(expected)),
             "kohlsman_hpa": lambda: d.kohlsman(
                 self._altimeter_hpa(expected)),
@@ -302,11 +310,19 @@ class _The_checklist_answered:
         gs = state.ground_speed_kt or 0.0
         if self._ground_still(state, time.monotonic()):
             want = 0.0
+            if self._use_pids:
+                # A wound-up integrator is why the next probe comes in
+                # as a surge: drop it, so a chock leaving sees the
+                # gentle pull-away, not the debt.
+                self._pid("taxi").reset(0.0)
         elif self._use_pids:
             want = self._pid("taxi").update(target_kt - gs,
                                             measurement=gs)
             if gs > target_kt + 4.0 and state.on_ground:
                 want = 0.0
+                # Over target the throttle is off: keeping the integral
+                # charged through it is how the speed-off swing starts.
+                self._pid("taxi").reset(0.0)
         elif gs < target_kt - 2.0:
             want = max(0.05, min(0.6,
                                  0.10 + (target_kt - gs) * 0.01))

@@ -94,12 +94,26 @@ class FlightDirector:
         for key in keys:
             self._sent.discard(key)
 
-    def write(self, variable: str, value: float) -> bool:
-        """A sim variable, where the source can write one."""
+    def write(self, variable: str, value: float,
+              unit: str | None = None) -> bool:
+        """A sim variable, where the source can write one.
+
+        ``unit`` is handed through where the source takes one -- the
+        simulator's lever and surface variables live in named units, and
+        the wrong one is a value off by a hundred.
+        """
         if self.sim is None or not hasattr(self.sim, "set_variable"):
             return False
         try:
-            return bool(self.sim.set_variable(variable, value))
+            if unit is None:
+                return bool(self.sim.set_variable(variable, value))
+            return bool(self.sim.set_variable(variable, value, unit=unit))
+        except TypeError:
+            try:
+                return bool(self.sim.set_variable(variable, value))
+            except Exception as exc:
+                log.debug("simvar %s failed: %s", variable, exc)
+                return False
         except Exception as exc:
             log.debug("simvar %s failed: %s", variable, exc)
             return False
@@ -288,8 +302,16 @@ class FlightDirector:
         position = max(0.0, min(1.0, position))
         ok = False
         for engine in range(1, 5):
-            if self.write(f"GENERAL ENG THROTTLE LEVER POSITION:{engine}",
-                          position * 100.0):
+            # The simulator's lever variable is "Percent over 100" --
+            # the same fraction this method takes, so that unit is asked
+            # for first. A source without named units (X-Plane's table
+            # takes the 0..100 it always did) answers False and gets the
+            # percent value it expects. Guessing the scale got a 0.57
+            # lever read back as 5700% and the engine pinned to the
+            # stop on every taxi call.
+            name = f"GENERAL ENG THROTTLE LEVER POSITION:{engine}"
+            if self.write(name, position, unit="Percent over 100") \
+                    or self.write(name, position * 100.0):
                 ok = True
         if ok:
             return True
@@ -297,11 +319,13 @@ class FlightDirector:
         # which a one-DWORD send cannot reach -- the value would land in
         # the index slot. ``THROTTLE_SET``'s single value is the right
         # shape here; the numbered axes cover a model that takes only
-        # per-engine commands.
+        # per-engine commands -- and those axes are signed like a
+        # joystick's, where the unipolar value asks 50% for idle.
         value = int(round(position * 16383.0))
         ok = self.send(b"THROTTLE_SET", value)
+        axis = int(round(-16383.0 + position * 32766.0))
         for engine in range(1, 5):
-            if self.send(f"AXIS_THROTTLE{engine}_SET".encode(), value):
+            if self.send(f"AXIS_THROTTLE{engine}_SET".encode(), axis):
                 ok = True
         return ok
 

@@ -105,6 +105,10 @@ class AutonomousState:
     # Flight plan and route
     has_ifr_clearance: bool = False
     clearance_read_back: bool = False
+    # When the first clearance ask actually went out on the frequency --
+    # the timeout's clock, so a radio that was still dead at phase entry
+    # is not counted against the controller's answer.
+    clearance_asked_at: float = 0.0
     departure_runway: str = ""
     arrival_runway: str = ""
     assigned_altitude_ft: float = 0.0

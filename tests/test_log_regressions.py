@@ -95,6 +95,7 @@ def _autonomous(stations=(), staffed=True):
     flight._set_error = Mock()
     flight._transition = Mock()
     flight._emit = Mock()
+    flight._ensure_systems_on = Mock()
     return flight
 
 
@@ -152,11 +153,47 @@ def test_clearance_timeout_errors_never_refiles_vfr():
     now = 100.0
     flight.state.phase_entered_at = now
     flight.state.has_ifr_clearance = True
+    flight.state.clearance_asked_at = now     # the ask went out on time
     flight.state.last_radio_at = now
     flight._phase_request_clearance(None, now + 61.0)
     assert flight.session.ifr is True          # never downgraded
     flight._set_error.assert_called_once()
     flight._transition.assert_not_called()
+
+
+def test_a_ask_that_never_went_out_is_not_timed_out():
+    """A dead radio is not a refused clearance: the flight keeps trying
+    rather than erroring on silence it could not help."""
+    flight = _autonomous(stations=[_gnd()])
+    now = 100.0
+    flight.state.phase_entered_at = now
+    flight._request_clearance_via_fo = lambda: False
+    flight._phase_request_clearance(None, now + 500.0)
+    flight._set_error.assert_not_called()
+
+
+def test_the_clearance_clock_starts_at_the_ask():
+    """A radio that took a minute to come alive has not been refused for
+    the whole phase -- the wait is measured from the first call that
+    actually went out."""
+    flight = _autonomous(stations=[_gnd()])
+    now = 100.0
+    flight.state.phase_entered_at = now
+    asks = []
+    flight._request_clearance_via_fo = lambda: asks.append(1) or False
+    # Radio dead for fifty seconds, then the first ask goes out.
+    flight._phase_request_clearance(None, now + 50.0)
+    flight._request_clearance_via_fo = lambda: asks.append(1) or True
+    flight._phase_request_clearance(None, now + 50.5)
+    assert flight.state.clearance_asked_at == now + 50.5
+    # Fifty-nine seconds of unanswered asking is still inside the wait.
+    flight.state.last_radio_at = now + 50.5
+    flight._phase_request_clearance(None, now + 109.5)
+    flight._set_error.assert_not_called()
+    # Past the timeout it is the failure it always was.
+    flight.state.last_radio_at = now + 60.0
+    flight._phase_request_clearance(None, now + 112.0)
+    flight._set_error.assert_called_once()
 
 
 def test_an_uncontrolled_field_departs_after_its_announcement():
@@ -214,6 +251,32 @@ def test_vfr_refused_below_minima_files_ifr():
     assert flight.session.ifr is True
     assert not flight.state.has_ifr_clearance
     flight._emit.assert_called()
+
+
+def test_a_vfr_release_readback_says_the_frequency():
+    """The release loop in the live log: the FO answered the squawk and
+    never the departure frequency, and the controller corrected it
+    forever. The readback is built from the issued values, so the
+    frequency owed is the frequency said."""
+    from meridianatc.atc.copilot import readback
+    from meridianatc.atc.intents import IntentParser
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import Instruction
+    from meridianatc.atc.speech import Callsign
+
+    aircraft = Aircraft(callsign=Callsign(
+        written="TUI123", spoken_full="tui one two three",
+        spoken_short="tui one two three", telephony="Tomjet",
+        is_airline=True))
+    instruction = Instruction(
+        kind="vfr_release", station_key="LPPT:del",
+        values={"squawk": "7366", "frequency": 120.910,
+                "vfr_ceiling_ft": 2500.0})
+    said = readback(instruction, aircraft, Phraseology("icao"))
+    heard = IntentParser().parse(said, "en").readback_items
+    assert heard.get("frequency") == 120.910
+    assert heard.get("squawk") == "7366"
+    assert not instruction.mismatches(heard)
 
 
 def test_no_releases_on_github_is_no_update_not_an_error():
@@ -1254,3 +1317,137 @@ def test_taxi_in_tunes_the_arrival_fields_ground_not_the_departures():
     flight._get_current_airport = lambda: flight.session.destination
     flight._manage_comms(state, 1000.0)
     assert dialled == [121.90]
+
+
+# ---------------------------------------------------------------------
+# The Porto taxi crash: the follower cut across the apron at the fixed
+# lookahead, the lever variable was written a hundred times too large,
+# and the wound integrator kept the surges coming.
+# ---------------------------------------------------------------------
+
+def _path_flight(path, taxi_kt=14.0):
+    """The flight with only what _taxi_along_path touches."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+    flight = AutonomousFlight.__new__(AutonomousFlight)
+    flight.state = AutonomousState()
+    flight.session = SimpleNamespace(
+        taxi_path=path, taxi_split_at=None, cleared_takeoff=False,
+        phase=None)
+    flight._perf = SimpleNamespace(taxi_kt=taxi_kt)
+    flight._stop = Mock()
+    flight._steer = Mock()
+    flight._goto_sub = Mock()
+    flight._transition = Mock()
+    flight._ground_still = Mock(return_value=False)
+    flight._held_at_split = False
+    return flight
+
+
+def _ground_state(lat, lon, gs=0.0, hdg=0.0):
+    return SimpleNamespace(
+        latitude=lat, longitude=lon, ground_speed_kt=gs,
+        heading_true=hdg, on_ground=True)
+
+
+# A straight northbound leg at LPPR: 0.002 of latitude, ~220 m.
+_TAXI_PATH = [(41.2400, -8.6725), (41.2420, -8.6725),
+              (41.2420, -8.6700)]
+
+
+def test_taxi_on_the_route_steers_at_taxi_speed():
+    flight = _path_flight(list(_TAXI_PATH))
+    state = _ground_state(41.2405, -8.6725, gs=5.0)
+    flight._taxi_along_path(state, outbound=True)
+    assert flight._steer.called
+    assert flight._steer.call_args[0][2] > 5.0
+    assert not flight._stop.called
+
+
+def test_off_the_route_rejoins_at_walking_pace():
+    """~30 m east of the leg: back to the line at 5 kt, not across the
+    apron at the full lookahead."""
+    flight = _path_flight(list(_TAXI_PATH))
+    state = _ground_state(41.2410, -8.67214, gs=0.0)
+    flight._taxi_along_path(state, outbound=True)
+    assert flight._steer.called
+    assert flight._steer.call_args[0][2] <= 5.0
+    assert not flight._stop.called
+
+
+def test_far_off_the_route_stops_instead_of_crossing_the_apron():
+    """The building strike: 100+ m off the route is scenery the graph
+    does not know -- a stopped aeroplane hits nothing."""
+    flight = _path_flight(list(_TAXI_PATH))
+    state = _ground_state(41.2410, -8.6713, gs=0.0)
+    flight._taxi_along_path(state, outbound=True)
+    assert flight._stop.called
+    assert not flight._steer.called
+
+
+def test_the_taxi_walk_never_steps_back():
+    """Once the route's second leg is the nearest, passing close to an
+    earlier segment does not swing the pursuit target backwards."""
+    flight = _path_flight(list(_TAXI_PATH))
+    state = _ground_state(41.2420, -8.6712, gs=5.0)
+    flight._taxi_along_path(state, outbound=True)
+    progress = flight._taxi_progress
+    assert progress >= 1
+    # Nearer to the first leg now, and far off everything: the follower
+    # stops, but the walk it keeps is still the forward one.
+    flight._steer.reset_mock()
+    state2 = _ground_state(41.2405, -8.6715, gs=0.0)
+    flight._taxi_along_path(state2, outbound=True)
+    assert flight._taxi_progress >= progress
+
+
+def test_a_new_taxi_route_restarts_the_walk():
+    flight = _path_flight(list(_TAXI_PATH))
+    state = _ground_state(41.2420, -8.6712, gs=5.0)
+    flight._taxi_along_path(state, outbound=True)
+    assert flight._taxi_progress >= 1
+    flight.session.taxi_path = [(41.2400, -8.6725), (41.2420, -8.6725)]
+    flight._taxi_along_path(_ground_state(41.2410, -8.6725, gs=5.0),
+                            outbound=True)
+    assert flight._taxi_progress == 0
+
+
+def test_the_throttle_lever_is_written_as_a_fraction():
+    """GENERAL ENG THROTTLE LEVER POSITION is "Percent over 100": a 0.5
+    lever writes 0.5, not the 50.0 that read back as 5000% and pinned
+    the engine to the stop on every taxi call."""
+    from meridianatc.atc.ap import FlightDirector
+    writes = []
+
+    class Sim:
+        def set_variable(self, name, value, unit="Number"):
+            writes.append((name, value, unit))
+            return True
+
+    director = FlightDirector(Sim())
+    assert director.throttle(0.5)
+    lever = [w for w in writes
+             if "THROTTLE LEVER POSITION" in w[0]]
+    assert lever
+    for _name, value, unit in lever:
+        assert 0.0 <= value <= 1.0
+        assert unit == "Percent over 100"
+
+
+def test_the_throttle_lever_falls_back_to_percent_without_units():
+    """A source with no named units (X-Plane's table takes 0..100)
+    still gets the percent it always did."""
+    from meridianatc.atc.ap import FlightDirector
+    writes = []
+
+    class Sim:
+        def set_variable(self, name, value, unit=None):
+            writes.append((name, value, unit))
+            return unit is None
+
+    director = FlightDirector(Sim())
+    assert director.throttle(0.5)
+    lever = [w for w in writes
+             if "THROTTLE LEVER POSITION" in w[0] and w[2] is None]
+    assert lever
+    for _name, value, _unit in lever:
+        assert value == 50.0

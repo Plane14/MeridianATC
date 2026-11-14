@@ -978,12 +978,17 @@ class RotorcraftFlight:
 
     def _collective(self, pct: float) -> None:
         pct = _clamp(pct, 0.0, 100.0)
-        self._send(COLLECTIVE_SET, int(pct / 100.0 * AXIS_MAX))
+        # The collective axis is signed like a joystick's: -16383 is the
+        # floor. A bare 0..16384 put zero collective at mid-stick.
+        self._send(COLLECTIVE_SET, int(-16383.0 + pct / 100.0 * 32766.0))
 
     def _throttle(self, value: int) -> None:
         """The helicopter throttle events, best effort: the axis where the
-        model has it, the named events where it does not."""
-        if not self._send(HELI_THROTTLE_SET, value):
+        model has it, the named events where it does not. The axis is
+        signed -- a unipolar value leaves the lowest throttle at half."""
+        axis = int(-16383.0
+                   + _clamp(value, 0, AXIS_MAX) / AXIS_MAX * 32766.0)
+        if not self._send(HELI_THROTTLE_SET, axis):
             self._send(THROTTLE_ALL_SET, value)
         if value >= AXIS_MAX * 0.9:
             self._send(THROTTLE_ALL_FULL, 0)

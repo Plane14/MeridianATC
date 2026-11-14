@@ -371,7 +371,7 @@ def test_heli_torque_window_is_per_type_not_a_flat_95():
     heli._protect(AircraftState(on_ground=False, eng_torque_pct=90.0),
                   vs=0.0, ias=80.0, agl=1000.0)
     sent = _sent(heli)
-    assert any(c.args[0] == COLLECTIVE_SET and c.args[1] < 8192
+    assert any(c.args[0] == COLLECTIVE_SET and c.args[1] < 0
                for c in sent)
     # ...but inside the Bell 412's window (red line 100%).
     heli2 = _heli(type_code="B412")
@@ -397,15 +397,17 @@ def test_rotor_droop_unloads_and_overspeed_loads():
     heli._protect(AircraftState(on_ground=False, rotor_rpm_pct=95.0),
                   vs=0.0, ias=80.0, agl=1000.0)
     sent = _sent(heli)
-    assert any(c.args[0] == COLLECTIVE_SET and c.args[1] < 8192
+    assert any(c.args[0] == COLLECTIVE_SET and c.args[1] < 0
                for c in sent)
     assert "autonomous.rotorcraft.droop" in _emit_keys_heli(heli)
-    # B407 winding to 106%: over its 104% ceiling -- collective up.
+    # B407 winding to 106%: over its 104% ceiling -- collective up. The
+    # collective axis is signed: under the floor is below zero, over the
+    # ceiling above it.
     heli2 = _heli(type_code="B407")
     heli2._protect(AircraftState(on_ground=False, rotor_rpm_pct=106.0),
                    vs=0.0, ias=80.0, agl=1000.0)
     sent2 = _sent(heli2)
-    assert any(c.args[0] == COLLECTIVE_SET and c.args[1] > 8192
+    assert any(c.args[0] == COLLECTIVE_SET and c.args[1] > 0
                for c in sent2)
     assert "autonomous.rotorcraft.overspeed" in _emit_keys_heli(heli2)
 
@@ -473,10 +475,11 @@ def test_autorotation_flies_the_types_auto_speed_and_flare():
                                    indicated_airspeed_kt=65.0,
                                    rotor_rpm_pct=0.0))
     sent = _sent(heli)
-    # Throttle chopped, collective near the bottom (~10%).
+    # Throttle chopped, collective near the bottom (~10%) -- deep into
+    # the bottom half of a signed axis.
     assert any(c.args[0] == HELI_THROTTLE_SET for c in sent)
     coll = [c.args[1] for c in sent if c.args[0] == COLLECTIVE_SET]
-    assert coll and coll[-1] <= 16384 * 0.15
+    assert coll and coll[-1] < -8000
 
 
 def test_shutdown_idles_the_throttle_for_the_cooldown():
@@ -489,7 +492,8 @@ def test_shutdown_idles_the_throttle_for_the_cooldown():
     heli._shutdown(AircraftState(on_ground=True, engines_running=True,
                                  rotor_rpm_pct=60.0))
     sent = _sent(heli)
-    assert any(c.args[0] == HELI_THROTTLE_SET and c.args[1] == 0
+    # Idle on a signed throttle axis is the bottom of its travel.
+    assert any(c.args[0] == HELI_THROTTLE_SET and c.args[1] == -16383
                for c in sent)
 
 
