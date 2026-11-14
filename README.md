@@ -3974,8 +3974,8 @@ dropped connection doesn't stop the ATIS.
 
 Nothing you say: the recogniser, the voices and the controllers all run here.
 What goes out is the weather request for the fields you fly to, your SimBrief
-username when you load a plan, and, only with live traffic switched on
-(`traffic.live.enabled`, off by default), **your position and a radius**,
+username when you load a plan, and, with live traffic on
+(`traffic.live.enabled`, on by default), **your position and a radius**,
 every six seconds, to [adsb.lol](https://adsb.lol) and
 [adsb.fi](https://adsb.fi). Those two return the real aeroplanes around you.
 The callsigns they broadcast are looked up at

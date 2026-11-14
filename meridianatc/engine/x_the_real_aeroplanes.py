@@ -17,6 +17,31 @@ class _The_real_aeroplanes:
     live_feed = None
     _live_said: tuple = ("", "")
     _live_down_said = False
+    _live_asked: frozenset = frozenset()
+
+    def _refresh_live_feed(self) -> None:
+        """The panel's live-traffic switch, read every tick: off stops the
+        ADS-B thread now, on starts it here rather than at the next launch.
+        A source that will not take it (traffic.source: FSLTL flies the
+        traffic) is asked once per choice, not once per tick."""
+        live = self.config.traffic.live
+        if not live.enabled:
+            if self.live_feed is not None:
+                decision("live_feed", event="stopped",
+                         why="traffic.live.enabled off")
+                self.live_feed.stop()
+                self.live_feed = None
+                self.live_roster = None
+            self._live_asked = frozenset()
+            return
+        if self.live_feed is not None:
+            return
+        from ..integrations.fsltl import traffic_source
+        source = traffic_source(self.config.traffic)
+        if source in self._live_asked:
+            return
+        self._live_asked = self._live_asked | {source}
+        self.start_live_feed()
 
     def start_live_feed(self, run: bool = True):
         """Start asking the ADS-B sources, when the pilot has switched live
@@ -158,8 +183,10 @@ class _The_real_aeroplanes:
                  dropped=list(state.dropped))
         if state.status == DOWN and not self._live_down_said:
             self._live_down_said = True
-            self.emit("warning", "Live traffic: no source answering, invented "
-                      "traffic in use.", key="log.live_down")
+            # With the invented traffic on it takes the density back; off,
+            # the field is simply quiet until a source answers again.
+            self.emit("warning", "Live traffic: no source answering.",
+                      key="log.live_down")
         elif state.status != DOWN and self._live_down_said and state.source:
             self._live_down_said = False
             self.emit("info", f"Live traffic is back, from {state.source}.",

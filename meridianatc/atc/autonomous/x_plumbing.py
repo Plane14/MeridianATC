@@ -53,6 +53,14 @@ class _Plumbing:
             and getattr(self.config.immersion, "autonomous_pid", True))
 
     @property
+    def _adaptive(self) -> bool:
+        """Whether the loops may learn and remember this model's
+        peculiarities, read live like ``_use_pids``."""
+        return bool(getattr(
+            getattr(self, "config", None), "immersion", None)
+            and getattr(self.config.immersion, "autonomous_adaptive", True))
+
+    @property
     def gains(self):
         """The closed-loop gains for what is being flown.
 
@@ -78,8 +86,14 @@ class _Plumbing:
             pids = self._pids = {}
         pid = pids.get(channel)
         if pid is None:
-            from ..control import Pid
-            pid = Pid(getattr(self.gains, channel))
+            adapt = getattr(self, "_adapt", None)
+            if adapt is not None:
+                from ..adaptation import AdaptivePid
+                pid = AdaptivePid(channel, adapt,
+                                  getattr(self.gains, channel))
+            else:
+                from ..control import Pid
+                pid = Pid(getattr(self.gains, channel))
             pids[channel] = pid
         return pid
 

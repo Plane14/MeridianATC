@@ -344,7 +344,7 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         # situation loop re-reads it every tick so a mid-flight toggle
         # drops what was flying and makes no more.
         self.traffic.invented = bool(
-            getattr(self.config.traffic, "invented", True))
+            getattr(self.config.traffic, "invented", False))
         # And the ones standing at the gates, on a budget of their own.
         self.traffic.parked = max(0, int(self.config.traffic.parked))
         # The aeroplanes the pilot put on the runway, waiting to be said once

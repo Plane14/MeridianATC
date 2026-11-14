@@ -27,6 +27,11 @@ class _The_loop:
             self._emit("info", reason, "log.autofly_unavailable")
             return
         self._last_state = state
+        # What the loops have learned about this model is written down
+        # on a slow clock while the flight runs, not only when it ends.
+        if getattr(self, "_adapt", None) is not None:
+            from .. import adaptation
+            adaptation.save()
         if not self._can_fly_phase(state):
             self._manual_control_required()
             return

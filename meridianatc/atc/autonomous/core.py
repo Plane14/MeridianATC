@@ -126,6 +126,10 @@ class AutonomousFlight(_Plumbing, _Entry, _The_loop, _Shared_helpers, _The_envel
         # open-loop rules they replaced for a model that misbehaves.
         self._gains = None
         self._pids: dict = {}
+        # What this airframe has taught the loops before -- trims, gain
+        # scales, control polarities -- per aircraft model, kept on disk.
+        # None until begin_flight resolves the model it is flying.
+        self._adapt = None
 
         # Compute aircraft range for chain planning. The engine builds this
         # before a flight exists, so the session can be None.
@@ -140,7 +144,6 @@ class AutonomousFlight(_Plumbing, _Entry, _The_loop, _Shared_helpers, _The_envel
         self.CLEARANCE_TIMEOUT = 240.0
         self.ENGINE_START_TIMEOUT = 240.0
         self.PUSHBACK_TIMEOUT = 300.0
-        self.TAXI_TIMEOUT = 600.0
         self.TAKEOFF_TIMEOUT = 240.0
         self.CLIMB_TIMEOUT = 3600.0
         self.DESAT_TIMEOUT = 3600.0

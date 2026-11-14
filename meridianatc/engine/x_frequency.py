@@ -91,7 +91,7 @@ class _Frequency:
         a different one if it cannot.
         """
         if not (self.config.traffic.enabled
-                and getattr(self.config.traffic, "invented", True)):
+                and getattr(self.config.traffic, "invented", False)):
             return False, "", "traffic_off"
         self.traffic.can_invent = self.simtraffic.drawing
         flight, why = self.traffic.spawn_on_runway(time.monotonic())

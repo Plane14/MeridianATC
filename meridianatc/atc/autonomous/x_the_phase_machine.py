@@ -310,9 +310,6 @@ class _The_phase_machine:
                 self._transition(AutonomousPhase.HOLDING_SHORT)
                 return
 
-        if now - self.state.phase_entered_at > self.TAXI_TIMEOUT:
-            self._set_error("Taxi timeout")
-
     def _phase_holding_short(self, state, now: float) -> None:
         """Holding short of runway, run before-takeoff checklist."""
         if (state.ground_speed_kt or 0.0) > 1.0:
@@ -349,12 +346,6 @@ class _The_phase_machine:
                        "No tower on this frequency; departing after "
                        "self-announcement", "autonomous.depart.broadcast")
             self._transition(AutonomousPhase.LINE_UP)
-
-        # The wait for the clearance is bounded like the taxi that led to
-        # it: a tower that never says "cleared for takeoff" is not waited
-        # on forever at the holding point.
-        if now - self.state.phase_entered_at > self.TAXI_TIMEOUT:
-            self._set_error("Held short: no takeoff clearance")
 
     def _departure_possible(self, state) -> bool:
         """Whether the aeroplane may be taken onto the runway at all.
@@ -1138,17 +1129,17 @@ class _The_phase_machine:
 
         if self.session.phase == Phase.PARKED:
             self._transition(AutonomousPhase.PARKED)
-        elif now - self.state.phase_entered_at > self.TAXI_TIMEOUT:
-            if (state.ground_speed_kt or 0.0) > 1.0:
-                self._set_error("Taxi-in timed out")
-            else:
-                # Stopped on the movement area with nowhere left to go:
-                # the flight is done where it stands rather than held
-                # on the taxi phase for ever.
-                self.director.parking_brake(True)
-                self._emit("info", "Parked where it stands: no stand "
-                           "route came", "autonomous.taxi_in.parked")
-                self._transition(AutonomousPhase.PARKED)
+        elif sub == "taxi" \
+                and not getattr(self.session, "taxi_path", None) \
+                and (state.ground_speed_kt or 0.0) <= 1.0 \
+                and self._sub_age() > 90.0:
+            # Stopped on the movement area with nowhere left to go:
+            # the flight is done where it stands rather than held on
+            # the taxi phase for ever.
+            self.director.parking_brake(True)
+            self._emit("info", "Parked where it stands: no stand "
+                       "route came", "autonomous.taxi_in.parked")
+            self._transition(AutonomousPhase.PARKED)
 
     def _phase_parked(self, state, now: float) -> None:
         """At parking position: the shutdown checklist, then the sequence."""

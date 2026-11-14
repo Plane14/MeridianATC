@@ -233,7 +233,10 @@ class _Situation_loop:
             # flying and makes no more; the real and observed ones are
             # somebody else's and stay.
             self.traffic.invented = bool(
-                getattr(self.config.traffic, "invented", True))
+                getattr(self.config.traffic, "invented", False))
+            # The live feed's switch, read the same way: on starts the
+            # ADS-B thread mid-flight, off stops it.
+            self._refresh_live_feed()
             with timed("tick.traffic", warn_over_ms=500):
                 self._run_traffic(state, session)
             # A simulator that will not create AI aircraft says so once,

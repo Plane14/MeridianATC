@@ -683,7 +683,6 @@ def _taxi_flight(stations=(), ground_control=True, phase="cleared",
         flight.brain.issues_clearances = staffed
     flight._held_at_split = False
     flight._get_current_airport = lambda: flight.session.departure
-    flight.TAXI_TIMEOUT = 600.0
     flight.state.phase_entered_at = 0.0
     flight._run_checklist_for_phase = Mock()
     flight._taxi_along_path = Mock()

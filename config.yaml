@@ -127,7 +127,7 @@ gsx:
   client: MeridianATC
 traffic:
   enabled: true
-  invented: true
+  invented: false
   from_simulator: true
   in_simulator: true
   in_simulator_limit: 12

@@ -541,7 +541,7 @@ function paintComms() {
 const LIVE_STATUS = {
   live: ["live.live", "Live"],
   empty: ["live.empty", "No aircraft near"],
-  down: ["live.down", "No source answering, invented traffic in use"],
+  down: ["live.down", "No source answering"],
   starting: ["live.starting", "Starting"],
 };
 
@@ -1439,6 +1439,7 @@ function paintSettings() {
   toggle("set-gsx-control", config.gsx ? config.gsx.control : true);
   toggle("set-gsx-voice", config.gsx ? config.gsx.voice : true);
   toggle("set-traffic", config.traffic.enabled);
+  toggle("set-invented", !!config.traffic.invented);
   toggle("set-traffic-gsx", config.traffic.gsx_vehicles);
   if ($("set-traffic-gsx")) {
     // Nothing to choose without GSX Pro: shown, but not pressable.
@@ -2913,6 +2914,7 @@ function wire() {
     "set-handoff": "atc.proactive_handoff",
     "set-radio-power": "atc.radio_needs_power",
     "set-traffic": "traffic.enabled",
+    "set-invented": "traffic.invented",
     "set-traffic-gsx": "traffic.handling.gsx_vehicles",
     "set-traffic-live": "traffic.live.enabled",
     "set-wx-online": "weather.online",
@@ -2922,7 +2924,7 @@ function wire() {
   for (const [id, path] of Object.entries(switches)) {
     const noteId = id.startsWith("set-wx") ? "saved-weather"
       : id === "set-traffic" || id === "set-traffic-gsx"
-        || id === "set-traffic-live" ? "saved-traffic"
+        || id === "set-invented" || id === "set-traffic-live" ? "saved-traffic"
       : id === "set-sim" ? "saved-sim" : "saved-atc";
     on($(id), "click", (e) => {
       const next = e.currentTarget.getAttribute("aria-pressed") !== "true";

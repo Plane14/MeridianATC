@@ -290,8 +290,13 @@ class _The_checklist_answered:
                 learned = getattr(self, "_yaw_authority", 0.0)
                 self._yaw_authority = sample if learned <= 0.0 \
                     else 0.6 * learned + 0.4 * sample
+                adapt = getattr(self, "_adapt", None)
+                if adapt is not None:
+                    adapt.learn("steer.authority",
+                                self._yaw_authority, blend=0.4)
         if abs(prev) < 0.3 or abs(rate) < 3.0 or gs < 1.0 or streak < 3:
             return
+        adapt = getattr(self, "_adapt", None)
         votes = getattr(self, "_pedal_votes", 0)
         votes += 1 if (rate > 0.0) == (prev > 0.0) else -1
         if votes <= -5:
@@ -299,7 +304,11 @@ class _The_checklist_answered:
             votes = 3
             log.warning("steering axis answers backwards on this "
                         "model; pedal sign flipped")
+            if adapt is not None:
+                adapt.set("steer.flip", 1.0 if self._pedal_flip else 0.0)
         self._pedal_votes = votes
+        if adapt is not None:
+            adapt.learn_votes("steer", votes)
 
     def _breakaway_lever(self) -> float:
         """The momentary lever that starts the aeroplane rolling.

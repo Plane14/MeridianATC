@@ -1005,14 +1005,14 @@ describe(
 class LiveTrafficConfig:
     """The real aeroplanes round the pilot, from the free ADS-B sources
     (integrations/adsb.py): adsb.lol, adsb.fi, and a receiver of the pilot's
-    own. Off until a real flight has been flown with it.
+    own. On by default.
 
     What leaves the machine is the pilot's position and a radius, nothing
     else; adsbdb.com is asked the routes and types of the callsigns the
     sources have just broadcast, and its answers are kept on this PC.
     """
 
-    enabled: bool = False
+    enabled: bool = True
     # One area request this often; the sources' fair use is one a second at
     # most (adsb.fi), and 6 s is what LocalTC asks at. Never less than 6.
     poll_s: float = 6.0
@@ -1044,7 +1044,7 @@ class LiveTrafficConfig:
 _LIVE = dict(tab="traffic", group="live")
 describe(
     LiveTrafficConfig,
-    enabled=Setting(restart=True, **_LIVE),
+    enabled=Setting(**_LIVE),
     poll_s=Setting(min=6, max=60, unit="s", restart=True, advanced=True,
                    **_LIVE),
     radius_nm=Setting(min=5, max=250, unit="nm", restart=True,
@@ -1055,7 +1055,7 @@ describe(
                              **_LIVE),
     live_delay_s=Setting(min=0, max=120, unit="s", restart=True,
                          advanced=True, **_LIVE),
-    limit=Setting(min=0, max=300, restart=True, **_LIVE),
+    limit=Setting(min=0, max=300, **_LIVE),
 )
 
 
@@ -1108,10 +1108,12 @@ class TrafficConfig:
 
     enabled: bool = True
     # Whether the invented aeroplanes are made at all: the ones this program
-    # generates to fill the field. Off, nothing new is invented and what was
-    # flying stops existing -- the real ones from the live feed and what
-    # somebody else injected are somebody else's and stay.
-    invented: bool = True
+    # generates to fill the field. Off by default: the field is the real
+    # aeroplanes -- the live feed's and what somebody else injected -- until
+    # this is turned on. Off, nothing new is invented and what was flying
+    # stops existing -- the real ones from the live feed and what somebody
+    # else injected are somebody else's and stay.
+    invented: bool = False
     # Whether the aeroplanes somebody else has put in the simulator are worked
     # as well. FSLTL, AIG, the simulator's own live traffic: with this on they
     # are on the strips, in the landing sequence and on the frequency, and the
@@ -1167,9 +1169,11 @@ class TrafficConfig:
     debug: TrafficDebugConfig = field(default_factory=TrafficDebugConfig)
     # The old name of traffic.debug.force_types, still read.
     debug_force_types: list = field(default_factory=list)
-    # FSLTL's model matching table, for the airlines' own liveries. Empty
-    # finds it in the Community folder the simulator records; a path names
-    # the file for an installation that is somewhere else.
+    # The AI packs' model matching tables, for the airlines' own liveries:
+    # FSLTL's FSLTL_Rules.vmr, AIG's, any pack's .vmr in the Community
+    # folder, all of them read. Empty finds them where the simulator
+    # records its packages; a path names one file outright for an
+    # installation that is somewhere else.
     fsltl_rules: str = ""
     # Whether the aeroplanes this program parks are handled: a power unit,
     # stairs at a ramp, a baggage loader, a caterer and a fuel truck call on
@@ -1239,7 +1243,7 @@ class TrafficConfig:
     # nothing is detected. "auto" is fsltl when FSLTL is in the Community
     # folder, else meridianatc (integrations/fsltl.traffic_source).
     source: str = "auto"           # auto | meridianatc | fsltl
-    # The real aeroplanes round you. See LiveTrafficConfig; off.
+    # The real aeroplanes round you. See LiveTrafficConfig; on.
     live: LiveTrafficConfig = field(default_factory=LiveTrafficConfig)
 
 
@@ -1761,6 +1765,13 @@ class ImmersionConfig:
     # model that misbehaves under a loop can be returned to the old laws
     # here without losing the rest of the FO.
     autonomous_pid: bool = True
+    # Whether the closed-loop axes may learn the model in front of them
+    # and remember it for next time (atc/adaptation.py): the lever a
+    # channel converges to is preloaded as its trim, gains grow on a
+    # loop that saturates unanswered and shrink on one that chases
+    # itself, and a control wired backwards stays flipped. On by
+    # default; off, every flight starts from the tuned figures.
+    autonomous_adaptive: bool = True
     # Whether the First Officer keeps the airframe inside its envelope:
     # the load-factor watch that eases commands at the G limits (and
     # reports the touchdown G), the rotorcraft's high-G offload and

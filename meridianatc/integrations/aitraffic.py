@@ -55,17 +55,21 @@ import time
 
 from ..atc.follow import Follower
 from ..atc.lod import DETAILED, LIGHT
+from .aimodels import is_helicopter_type
 
 log = logging.getLogger(__name__)
 lod_log = logging.getLogger("meridianatc.lod")
 motion_log = logging.getLogger("meridianatc.traffic.motion")
 
-# What to ask the simulator for, by ICAO type, in order. The 2024 AI models
-# come first: they are what that simulator draws its own traffic with, they
-# are light enough to have a dozen of on a ramp, and every one of them was
-# read off a running installation (SimConnect_EnumerateSimObjectsAndLiveries).
-# The 2020 titles follow, for the simulator that has those instead. Where
-# there is no model of the type itself, the nearest one of the same size.
+# What to ask the simulator for, by ICAO type, in order, where the
+# simulator's own listing has nothing -- see aimodels for the catalogue of
+# every installed title, which answers first. The 2024 AI models come
+# first here: they are what that simulator draws its own traffic with,
+# they are light enough to have a dozen of on a ramp, and every one of
+# them was read off a running installation
+# (SimConnect_EnumerateSimObjectsAndLiveries). The 2020 titles follow, for
+# the simulator that has those instead. Where there is no model of the
+# type itself, the nearest one of the same size.
 _AI = "Asobo PassiveAircraft "
 
 TITLES: dict[str, tuple[str, ...]] = {
@@ -757,6 +761,11 @@ class SimTraffic:
         # The livery each request asked for, for the line that says it failed.
         self._asked_livery: dict[int, str] = {}
         self._create_ex1 = None
+        # Every aircraft model the simulator says it has, by type, once the
+        # session has listed them (meridianatc.integrations.aimodels).
+        # Until then the written-down TITLES table is the answer, as it
+        # always was.
+        self.models = None
         # How many aeroplanes have been asked for, and how many the simulator
         # has actually named. A simulator that refuses to create objects at
         # all answers the request with an exception on a channel nothing here
@@ -868,13 +877,29 @@ class SimTraffic:
         if self.liveries:
             painted = self.liveries.models(operator, type_code)
         own = titles_for(type_code, light=light)
+        # What the simulator itself says it can draw: every installed
+        # model of the type -- this airline's first, another airline's
+        # last, because a wrong paint still beats no model.
+        models = getattr(self, "models", None)
+        installed = tuple(models.titles_for(type_code, operator)) \
+            if models else ()
+        other = tuple(models.other_titles_for(type_code, operator)) \
+            if models else ()
+        if models and is_helicopter_type(type_code):
+            helis = tuple(models.heli_titles(operator))
+            if helis:
+                # The generic stand-in for a helicopter is a helicopter:
+                # whatever rotorcraft is installed, never the airliner.
+                own = helis
         if level == DETAILED:
-            found = self._override(type_code, operator, DETAILED) + TITLES.get(
-                (type_code or "").upper(), ())
+            found = self._override(type_code, operator, DETAILED) \
+                + TITLES.get((type_code or "").upper(), ()) \
+                + installed + other
         elif level == LIGHT:
-            found = self._override(type_code, operator, LIGHT) + painted + own
+            found = self._override(type_code, operator, LIGHT) + painted \
+                + installed + own + other
         else:
-            found = painted + own
+            found = painted + installed + own + other
         return tuple(dict.fromkeys(found))
 
     def _livery_for(self, title: str, operator: str, callsign: str) -> str:

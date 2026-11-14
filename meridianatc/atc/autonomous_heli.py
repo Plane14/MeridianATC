@@ -309,12 +309,17 @@ def _pedal_check(self, demand: int, hdg: float) -> None:
         return
     votes = getattr(self, "_pedal_votes", 0)
     votes += 1 if (rate > 0.0) == (prev > 0) else -1
+    adapt = getattr(self, "_adapt", None)
     if votes <= -5:
         self._pedal_flip = not getattr(self, "_pedal_flip", False)
         votes = 3
         log.warning("pedal axis answers backwards on this model; "
                     "pedal sign flipped")
+        if adapt is not None:
+            adapt.set("pedals.flip", 1.0 if self._pedal_flip else 0.0)
     self._pedal_votes = votes
+    if adapt is not None:
+        adapt.learn_votes("pedals", votes)
 
 
 def _committed_error(err: float, commit: int) -> tuple[float, int]:
@@ -396,6 +401,10 @@ class RotorcraftFlight:
         # open-loop constants above.
         self._gains = None
         self._pids: dict = {}
+        # The airframe's learned store, shared with the owner: the
+        # collective trim and pedal polarity a previous flight measured
+        # are this one's starting figures.
+        self._adapt = getattr(owner, "_adapt", None)
         self._tq_warned = False
         self._nr_warned = ""
         # The situation loop runs faster than a pilot's hand can; the
@@ -420,8 +429,14 @@ class RotorcraftFlight:
                 code = getattr(getattr(self.session, "aircraft", None),
                                "type_code", "") or ""
                 self._gains = rotor_gains(code)
-            from .control import Pid
-            pid = Pid(getattr(self._gains, channel))
+            adapt = getattr(self, "_adapt", None)
+            if adapt is not None:
+                from .adaptation import AdaptivePid
+                pid = AdaptivePid(channel, adapt,
+                                  getattr(self._gains, channel))
+            else:
+                from .control import Pid
+                pid = Pid(getattr(self._gains, channel))
             pids[channel] = pid
         return pid
 
@@ -474,6 +489,19 @@ class RotorcraftFlight:
         """A new leg (or a chained one): everything is re-planned."""
         self.session = session
         self.state = HeliState()
+        # What this airframe has taught before is the leg's starting
+        # figure: the hover collective the last flight converged to,
+        # and the pedal polarity it was measured to have.
+        self._adapt = getattr(self.owner, "_adapt", None)
+        adapt = getattr(self, "_adapt", None)
+        if adapt is not None and getattr(adapt, "enabled", False):
+            self.state.coll_trim = adapt.value(
+                "coll_trim", COLL_TRIM_PCT)
+            self._pedal_flip = adapt.value("pedals.flip", 0.0) > 0.5
+            self._pedal_votes = int(adapt.signs.get("pedals", 0))
+        else:
+            self._pedal_flip = False
+            self._pedal_votes = 0
         # The type's own envelope where the table knows it -- an R44 and
         # an S-76 do not share a transition speed or a ceiling.
         self._profile = heli_profile_for(
@@ -970,6 +998,10 @@ class RotorcraftFlight:
                 self.state.coll_trim += COLL_ADAPT * (
                     float(getattr(state, "collective_position", 0.0) or 0.0)
                     - self.state.coll_trim) * 0.1
+                adapt = getattr(self, "_adapt", None)
+                if adapt is not None:
+                    adapt.set("coll_trim",
+                              round(self.state.coll_trim, 2))
         elif alt_target is not None:
             # Cruise/climb/descent: feet to the level, rate of climb damped.
             # The caller's target vertical speed bounds the ask where it

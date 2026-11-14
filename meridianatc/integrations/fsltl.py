@@ -150,49 +150,76 @@ def packages_folders(environ=None) -> list[Path]:
     return found
 
 
-def find_rules(environ=None, override: str = "") -> Path | None:
-    """Where FSLTL's matching table is, or None if it is not installed.
+def find_rule_files(environ=None, override: str = "") -> list[Path]:
+    """Every model matching table installed: FSLTL's, AIG's, any pack's.
 
-    One folder deep in each Community folder, because FSLTL's is named
-    ``fsltl-traffic-base`` today and the name is theirs to change.
+    One folder deep in each Community folder, because a pack's folder is
+    its own to name -- ``fsltl-traffic-base`` today, ``aig-aitraffic-oci``
+    for AIG -- and every one that ships a ``.vmr`` ships the same kind of
+    table: callsign prefix, ICAO type, model. FSLTL's own is listed first,
+    as the most complete on the installations measured.
     """
     if override:
         path = Path(override)
-        return path if path.is_file() else None
+        return [path] if path.is_file() else []
+    found: list[Path] = []
     for packages in packages_folders(environ):
         for community in sorted(packages.glob("Community*")):
             direct = community / "fsltl-traffic-base" / RULES_FILE
             if direct.is_file():
-                return direct
+                found.append(direct)
             try:
-                for candidate in sorted(community.glob(f"*/{RULES_FILE}")):
-                    return candidate
+                found.extend(sorted(community.glob("*/*.vmr")))
             except OSError:
                 continue
-    return None
+    # Each table once, FSLTL's own first wherever it was found.
+    unique = list(dict.fromkeys(found))
+    unique.sort(key=lambda p: (p.name != RULES_FILE, str(p).lower()))
+    return unique
+
+
+def find_rules(environ=None, override: str = "") -> Path | None:
+    """Where a matching table is, or None if none is installed."""
+    found = find_rule_files(environ, override)
+    return found[0] if found else None
 
 
 def traffic_source(traffic, environ=None) -> str:
     """Who flies the traffic this session: ``meridianatc`` or ``fsltl``.
 
-    The pilot's choice when they made one. Left at ``auto`` it is FSLTL when
-    FSLTL is installed, because a pilot who installed it expects to see it,
-    and this program's own otherwise.
+    The pilot's choice when they made one. Left at ``auto`` it is FSLTL --
+    or whatever pack's injector installed a matching table -- because a
+    pilot who installed one expects to see it, and this program's own
+    otherwise.
     """
     chosen = str(getattr(traffic, "source", "auto") or "auto").lower()
     if chosen in ("meridianatc", "fsltl"):
         return chosen
-    found = find_rules(environ, getattr(traffic, "fsltl_rules", "") or "")
-    return "fsltl" if found is not None else "meridianatc"
+    found = find_rule_files(environ, getattr(traffic, "fsltl_rules", "") or "")
+    return "fsltl" if found else "meridianatc"
 
 
 def load_installed(environ=None, override: str = "") -> FsltlLiveries | None:
-    """FSLTL's table, if FSLTL is installed; None if it is not."""
-    path = find_rules(environ, override)
-    if path is None:
+    """Every installed matching table, merged into one.
+
+    FSLTL's own ``FSLTL_Rules.vmr``, AIG's ``AIGAIM`` tables, any pack's:
+    the rules are all the same shape and the first table that knows a
+    (callsign prefix, type) pair answers for it. ``source`` is the file
+    the answer came from where there is only one.
+    """
+    paths = find_rule_files(environ, override)
+    if not paths:
         return None
-    return FsltlLiveries.load(path)
+    merged: dict[tuple[str, str], tuple[str, ...]] = {}
+    source: Path | None = paths[0] if len(paths) == 1 else None
+    for path in paths:
+        table = FsltlLiveries.load(path)
+        if not table:
+            continue
+        for key, models in table._rules.items():
+            merged.setdefault(key, models)
+    return FsltlLiveries(merged, source) if merged else None
 
 
-__all__ = ["FsltlLiveries", "find_rules", "load_installed",
-           "packages_folders", "RULES_FILE"]
+__all__ = ["FsltlLiveries", "find_rule_files", "find_rules",
+           "load_installed", "packages_folders", "RULES_FILE"]

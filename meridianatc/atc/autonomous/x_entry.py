@@ -135,11 +135,9 @@ class _Entry:
         except Exception:
             log.debug("autonomous handoff raised", exc_info=True)
         self._last_lever = 0.0
-        self._pedal_flip = False
-        self._pedal_votes = 0
+        self._seed_control_learning()
         self._pedal_demand = 0.0
         self._demand_streak = 0
-        self._yaw_authority = 0.0
         self._steer_want = None
         self._turn_commit = 0
         self._turn_rate_dps = 0.0
@@ -151,6 +149,10 @@ class _Entry:
         self.state.ap_vs_mode = False
         self.state.ap_speed_mode = False
         self.state.ap_apr_mode = False
+        # The leg's learned trims and polarities are written down now --
+        # a handoff at an error is exactly when they must not be lost.
+        from .. import adaptation
+        adaptation.save(force=True)
 
     def status(self) -> dict:
         """What the panel shows about the FO: on or off, and if on, what
@@ -221,6 +223,26 @@ class _Entry:
         self._lever_at = 0.0
         self._ground_still_since = 0.0
         self._held_at_split = False
+        self._seed_control_learning()
+
+    def _seed_control_learning(self) -> None:
+        """The scratch state the airframe's learned store preloads.
+
+        A fresh leg starts where the last leg on this model ended: the
+        steering polarity it was measured to have, the yaw authority a
+        unit of tiller buys, and the vote tally those were decided by.
+        With no store -- a model the simulator never named, or the
+        setting off -- every seed is the untried one.
+        """
+        adapt = getattr(self, "_adapt", None)
+        if adapt is not None and getattr(adapt, "enabled", False):
+            self._pedal_flip = adapt.value("steer.flip", 0.0) > 0.5
+            self._pedal_votes = int(adapt.signs.get("steer", 0))
+            self._yaw_authority = adapt.value("steer.authority", 0.0)
+        else:
+            self._pedal_flip = False
+            self._pedal_votes = 0
+            self._yaw_authority = 0.0
 
     def begin_flight(self, session: FlightSession) -> None:
         """Start a new autonomous flight."""
@@ -234,6 +256,12 @@ class _Entry:
             self._enabled = False
             self._emit("info", autofly_limit(aircraft), "log.autofly_unavailable")
         self.state = AutonomousState()
+        # What this airframe has taught the loops before, resolved for
+        # the model actually in the sim -- before the scratch state and
+        # the rotorcraft controller are seeded from it.
+        from .. import adaptation
+        self._adapt = adaptation.for_session(
+            session, enabled=self._adaptive)
         self.state.phase, sub = self._entry_phase(session)
         self.state.phase_entered_at = time.monotonic()
         self._goto_sub(sub)

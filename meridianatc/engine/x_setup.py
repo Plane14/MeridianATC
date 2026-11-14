@@ -298,6 +298,7 @@ class _Setup:
             return
         self._ai_liveries_asked = True
         from ..integrations.ailiveries import AiLiveries
+        from ..integrations.aimodels import Catalogue
         from ..integrations.groundvehicles import enumerate_simobjects
 
         def read() -> None:
@@ -314,6 +315,13 @@ class _Setup:
                 log.info("the simulator did not list its aircraft; the "
                          "detailed models keep their default livery")
                 return
+            # The same listing answers two questions: which airlines the
+            # simulator's own AI models are painted for, and every model
+            # any pack installed -- the catalogue the traffic picks drawn
+            # models from, FSLTL's, AIG's and rotorcraft's included.
+            self.simtraffic.models = Catalogue.from_pairs(pairs)
+            log.info("AI models: %d installed titles catalogued, of %d "
+                     "listed", len(self.simtraffic.models), len(pairs))
             found = AiLiveries.from_pairs(pairs)
             self.simtraffic.ai_liveries = found
             log.info("AI liveries: %d models painted for airlines, out of "
@@ -323,9 +331,12 @@ class _Setup:
                          daemon=True).start()
 
     def use_fsltl_liveries(self) -> bool:
-        """Paint the traffic in its airlines' colours, if FSLTL is here.
+        """Paint the traffic in its airlines' colours, if a pack's
+        matching table is here.
 
-        Read once per session: the table is eleven megabytes and does not
+        FSLTL's is the usual one, but every pack that ships a ``.vmr``
+        ships the same table and all of them are read: AIG's, anybody
+        else's. Read once per session: the tables are megabytes and do not
         change while the simulator is running.
         """
         if self.simtraffic.liveries is not None:
@@ -336,18 +347,20 @@ class _Setup:
             liveries = load_installed(
                 override=self.config.traffic.fsltl_rules)
         except Exception:
-            log.info("could not read FSLTL's liveries", exc_info=True)
+            log.info("could not read the packs' model matching tables",
+                     exc_info=True)
             liveries = None
         if not liveries:
-            log.info("FSLTL is not installed; the traffic uses the "
-                     "simulator's own models")
+            log.info("no AI pack's liveries installed; the traffic uses "
+                     "the simulator's own models")
             return False
         self.simtraffic.liveries = liveries
         self.traffic.has_livery = liveries.has_livery
-        log.info("FSLTL liveries from %s (%d rules)", liveries.source,
+        log.info("AI pack liveries from %s (%d rules)", liveries.source,
                  len(liveries))
         self.emit("info",
-                  f"Using FSLTL's liveries for {liveries.airlines} airlines.",
+                  f"Using installed AI liveries for "
+                  f"{liveries.airlines} airlines.",
                   key="log.fsltl_liveries", count=str(liveries.airlines))
         return True
 
