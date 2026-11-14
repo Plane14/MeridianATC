@@ -563,10 +563,27 @@ class GroundLayout:
             nodes = self.route(start, entry, avoid)
             if len(nodes) < 2:
                 continue
+            # The route may reach its entry across the runway itself: the
+            # graph prices runway segments, it does not forbid them, and a
+            # far-side exit makes the short way the one through the strip.
+            # The hold is then before the FIRST step onto the pavement --
+            # walked back from where the route touches the runway, never
+            # from the route's end: ending the taxi past the pavement is an
+            # aeroplane on the runway without a clearance.
+            first_on = len(nodes) - 1
+            for position, node in enumerate(nodes):
+                if node in self.runway_nodes:
+                    first_on = position
+                    break
+                _, across = self.runway_frame(*self.xy[node],
+                                              threshold, heading)
+                if abs(across) < HOLD_OFF_CENTRELINE_M:
+                    first_on = position
+                    break
             # Walk back from the runway to the last node far enough off the
             # centreline to wait at. Everything after it is the line-up.
             hold_at = None
-            for position in range(len(nodes) - 2, -1, -1):
+            for position in range(first_on - 1, -1, -1):
                 _, across = self.runway_frame(*self.xy[nodes[position]],
                                               threshold, heading)
                 if abs(across) >= HOLD_OFF_CENTRELINE_M \

@@ -433,7 +433,11 @@ def test_a_refused_variable_leaves_the_batch_and_the_reply_unpacks():
     import ctypes
 
     from meridianatc.sim.source import (
-        _BatchHeader, _ExcHeader, _bytype_id, _exception_id)
+        _BatchHeader,
+        _bytype_id,
+        _exception_id,
+        _ExcHeader,
+    )
 
     source = _batched_source()
     source._missing = set()
@@ -1506,3 +1510,38 @@ def test_the_throttle_lever_falls_back_to_percent_without_units():
     assert lever
     for _name, value, _unit in lever:
         assert value == 50.0
+
+
+def test_the_taxi_leg_stops_short_of_a_route_that_crosses_the_runway():
+    """The LPPR incursion: routing stand -> E5 rode 600 m down runway 17's
+    centreline and the hold the walk-back picked sat on the FAR side
+    (>=45 m off, not a runway node -- it qualified). The issued taxi leg
+    therefore included the runway traversal and the FO followed it onto
+    the pavement with no clearance. The hold is found before the route's
+    first runway contact instead, so the taxi leg ends on the near side
+    and the runway is the line-up leg's business."""
+    from meridianatc.atc.ground import GroundLayout
+
+    layout = GroundLayout.__new__(GroundLayout)
+    nodes = ["n0", "n1", "n2", "r0", "r1", "f0", "f1"]
+    # along/across pairs: taxiway approach -> centreline ride -> far side
+    across_of = {"n0": -189.0, "n1": -90.0, "n2": -54.4,
+                 "r0": -19.8, "r1": 2.0, "f0": 27.9, "f1": 51.2}
+    layout.xy = {node: (float(i * 50), across_of[node])
+                 for i, node in enumerate(nodes)}
+    layout.runway_nodes = {"r0", "r1"}
+    layout.entries = lambda *a: [(150.0, "f1")]
+    layout.nearest_node = lambda *a: "n0"
+    layout.route = lambda start, entry, avoid=None: list(nodes)
+    layout.runway_frame = lambda x, z, threshold, heading: (x, z)
+    layout.names_along = lambda named: []
+
+    legs = layout.departure(None, (0.0, 0.0), (0.0, 0.0), 0.0, 3000.0)
+    assert legs is not None
+    taxi_out, line_up = legs
+    # The taxi leg ends at n2 -- the last node at least 45 m off the
+    # centreline BEFORE the pavement -- and contains no runway node.
+    assert taxi_out.nodes == [None, "n0", "n1", "n2"]
+    assert not set(taxi_out.nodes) & layout.runway_nodes
+    # The runway traversal belongs to the second clearance.
+    assert "r0" in line_up.nodes and "f1" in line_up.nodes
