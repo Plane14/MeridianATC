@@ -166,8 +166,10 @@ def test_hello_detach_and_compatibility(plugin, link):
     assert link.read_position("X") is None and link.height_above_ground("X") is None
     assert link.resting_pitch("X") == 0 and link.title_of("X") == link.livery_of("X") == ""
     assert link.level_of("X") == link.target_level("X") == ""
-    assert not link.swapping("X") and not link.has_detailed("A320", "DLH")
-    assert not link.livery_matches("A320", "DLH", "X")
+    assert not link.swapping("X")
+    # Unanswered match questions are not yet a mismatch.
+    assert link.has_detailed("A320", "DLH")
+    assert link.livery_matches("A320", "DLH", "X")
     assert "CSL models" in link.describe()
     link.detach()
     eventually(lambda: plugin.messages[-1]["t"] == "clear")
@@ -400,3 +402,55 @@ def test_fms_plan_stored_and_filtered(plugin, link):
     threading.Event().wait(.05)
     link.on_frame()
     assert link.fms == plan and link.fms_idents() == ("KSEA", "KENT", "PAE")
+
+
+def test_match_query_and_drawn_models(plugin, link):
+    """The plugin's own matcher answers what CSL can draw: asked once,
+    cached, and the drawn models read back through the status."""
+    # Asked, sent, still unanswered -- not yet a mismatch.
+    assert link.has_detailed("A321", "JBU")
+    assert link.livery_matches("A321", "JBU", "JBU1234")
+    eventually(lambda: len([p for p in plugin.messages if p["t"] == "match"]) == 2)
+    sent = [p for p in plugin.messages if p["t"] == "match"]
+    assert sent[0]["type"] == "A321" and sent[0]["op"] == "JBU"
+    # The question does not re-ask inside its answer's lifetime.
+    link.has_detailed("A321", "JBU")
+    threading.Event().wait(.05)
+    assert len([p for p in plugin.messages if p["t"] == "match"]) == 2
+    # Exact type + airline paint: quality 1 -- every bit clear.
+    plugin.socket.sendto(json.dumps(
+        {"v": 1, "t": "match", "q": sent[0]["q"], "quality": 1}).encode(),
+        plugin.peer)
+    # Wrong paint on the right family: airline bit set, related clear.
+    plugin.socket.sendto(json.dumps(
+        {"v": 1, "t": "match", "q": sent[1]["q"],
+         "quality": 1 + (1 << 1)}).encode(), plugin.peer)
+    # The replies land only once something drains the socket.
+    eventually(lambda: link.on_frame() or (
+        link._match.get(("A321", "JBU", "")) is not None
+        and link._match.get(("A321", "JBU", "JBU1234")) is not None))
+    assert link.has_detailed("A321", "JBU")
+    assert not link.livery_matches("A321", "JBU", "JBU1234")
+    # A GA flight with no operator asked has nothing to mismatch.
+    assert link.livery_matches("C172", "", "")
+    # No CSL for it at all: the random-model answer is not detailed.
+    link._match[("B77W", "", "")] = 1 + (1 << 3) + (1 << 6)
+    assert not link.has_detailed("B77W")
+
+    # What was actually drawn lands through the status's models map.
+    link.sync([position("JBU1234")])
+    eventually(lambda: len(snapshots(plugin)) == 1)
+    plugin.drawn = ["JBU1234"]
+    plugin.status(models={"JBU1234": {"m": "A21N JBU", "q": 1},
+                          "NOTOURS": {"m": "A320", "q": 9}})
+    eventually(lambda: link.has("JBU1234") and link._models.get("JBU1234"))
+    assert link.title_of("JBU1234") == "A21N JBU"
+    assert link.livery_of("JBU1234") == "A21N JBU"
+    assert link.level_of("JBU1234") == "detailed"
+    # Only our own flights are kept; a stranger's entry is dropped.
+    assert "NOTOURS" not in link._models
+    # A bad models block leaves the previous status standing.
+    plugin.status(models={"JBU1234": {"m": 5, "q": "x"}})
+    threading.Event().wait(.05)
+    link.on_frame()
+    assert link.title_of("JBU1234") == "A21N JBU"

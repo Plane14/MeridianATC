@@ -112,6 +112,13 @@ class XPlaneTraffic:
         self._wanted = {}
         self._drawn = set()
         self._unmatched = set()
+        # What the plugin drew each aeroplane as: id -> {"m","q"}, and the
+        # answered match questions: (type, op, cs) -> XPMP2's own score.
+        # ``_match_pending`` pairs a question's echo token with its key.
+        self._models = {}
+        self._match = {}
+        self._match_pending = {}
+        self._match_seq = 0
         self._sequence = 0
         # Commands the plugin's key bindings send back up the same
         # channel, drained by the engine each tick.
@@ -164,6 +171,17 @@ class XPlaneTraffic:
                     # real-weather mode, which metar() reports as no text.
                     self._metars[status["icao"]] = (now, status["metar"] or None)
                     continue
+                if (isinstance(status, dict) and status.get("v") == 1
+                        and status.get("t") == "match"
+                        and type(status.get("q")) is int
+                        and type(status.get("quality")) is int):
+                    # The plugin's own score for the asked-for match, or
+                    # -1 with no CSL models at all. Land it on the key the
+                    # question went out under.
+                    asked = self._match_pending.pop(status["q"], None)
+                    if asked is not None:
+                        self._match[asked] = status["quality"]
+                    continue
                 if (not isinstance(status, dict) or type(status.get("v")) is not int
                         or status["v"] != 1 or status.get("t") != "status"
                         or status.get("plugin") != "MeridianATC-XP"):
@@ -190,12 +208,25 @@ class XPlaneTraffic:
                                or type(e.get("lon")) not in (int, float)
                                for e in fms)):
                     continue
+                models = status.get("models")
+                if models is not None and (
+                        not isinstance(models, dict) or len(models) > 512
+                        or any(not isinstance(k, str) or len(k.encode()) > 64
+                               or not isinstance(v, dict)
+                               or not isinstance(v.get("m"), str)
+                               or len(v["m"].encode()) > 128
+                               or type(v.get("q")) is not int
+                               for k, v in models.items())):
+                    continue
                 self._status = status
                 self._last_status = now
                 if status.get("sysroot"):
                     self.sysroot = status["sysroot"]
                 if fms is not None:
                     self.fms = fms
+                if models is not None:
+                    self._models = {k: v for k, v in models.items()
+                                    if k in self._wanted}
                 self._drawn = set(status["drawn"]) & self._wanted.keys()
                 self._unmatched = set(status["unmatched"]) & self._wanted.keys()
             except (ValueError, TypeError, UnicodeError, RecursionError):
@@ -406,6 +437,10 @@ class XPlaneTraffic:
             self._drawn.clear()
             self._unmatched.clear()
             self._metars.clear()
+            self._models.clear()
+            self._match.clear()
+            self._match_pending.clear()
+            self._match_seq = 0
             self._sequence = 0
 
     def describe(self):
@@ -431,23 +466,86 @@ class XPlaneTraffic:
     def resting_pitch(self, callsign):
         return 0.0
 
+    def _model(self, callsign):
+        self.on_frame()
+        return self._models.get(callsign) or {}
+
     def title_of(self, callsign):
-        return ""
+        """The CSL model this aeroplane was drawn as, or ''."""
+        return self._model(callsign).get("m", "")
 
     def livery_of(self, callsign):
-        return ""
+        """The drawn model's own name -- CSL names carry their paint."""
+        return self._model(callsign).get("m", "")
+
+    # XPMP2's match quality is a bitset plus one: bit0 livery missed,
+    # bit1 airline missed, bit3 the exact type, bit6 the related group,
+    # bits 7+ the generic size class. -1 means no CSL models at all.
+    _MATCH_AIRLINE = 1 << 1
+    _MATCH_TYPE = 1 << 3
+    _MATCH_RELATED = 1 << 6
+
+    def _match_bits(self, quality):
+        return quality - 1 if quality and quality > 0 else None
+
+    def _match_quality(self, type_code, operator, callsign=""):
+        """XPMP2's score for this match, or None while the plugin has
+        not answered. Asking is fire-and-forget; the reply lands the
+        next time the socket drains."""
+        if not self.available:
+            return None
+        key = ((type_code or "").upper(), (operator or "").upper(),
+               (callsign or "").upper())
+        if key in self._match:
+            return self._match[key]
+        if not any(k == key for k in self._match_pending.values()):
+            self._match_seq = (self._match_seq + 1) & 0xFFFF
+            self._match_pending[self._match_seq] = key
+            self._send({"v": 1, "t": "match", "q": self._match_seq,
+                        "type": key[0], "op": key[1], "cs": key[2]})
+        return None
 
     def level_of(self, callsign):
-        return ""
+        """What the plugin drew: "detailed" for a type or related-group
+        match, "light" for a generic stand-in, '' when not drawn."""
+        model = self._model(callsign)
+        if not model:
+            return ""
+        bits = self._match_bits(model.get("q"))
+        if bits is None:
+            return "light"
+        return ("detailed" if not (bits & self._MATCH_TYPE
+                                   and bits & self._MATCH_RELATED)
+                else "light")
 
     def target_level(self, callsign):
-        return ""
+        # There is no model swapping: what is drawn is what it stays.
+        return self.level_of(callsign)
 
     def swapping(self, callsign):
         return False
 
     def has_detailed(self, type_code, operator=""):
-        return False
+        """Whether CSL can draw this type closely: the exact type or its
+        related group, with the operator's paint where one is asked.
+        Unanswered means not yet known -- treated as available, because
+        a wrong guess starves every type of its turn."""
+        quality = self._match_quality(type_code, operator)
+        if quality is None:
+            return True
+        bits = self._match_bits(quality)
+        if bits is None:
+            return False
+        return not (bits & self._MATCH_TYPE and bits & self._MATCH_RELATED)
 
     def livery_matches(self, type_code, operator, callsign=""):
-        return False
+        """Whether the match wears this operator's paint. Nothing to
+        match against -- a flight with no airline asked -- matches by
+        definition; an unanswered question is not yet a mismatch."""
+        if not operator and not callsign:
+            return True
+        quality = self._match_quality(type_code, operator, callsign)
+        if quality is None:
+            return True
+        bits = self._match_bits(quality)
+        return bits is not None and not (bits & self._MATCH_AIRLINE)

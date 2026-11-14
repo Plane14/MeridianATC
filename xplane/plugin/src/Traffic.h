@@ -61,6 +61,10 @@ struct Packet {
     bool routeOn = false;
     // A METAR request's station.
     std::string icao;
+    // A model-match question: what would XPMP2 draw this type/operator
+    // as, and how well? ``q`` is the echo token pairing reply to request.
+    std::string type, op, livery, cs;
+    uint64_t q = 0;
 };
 
 inline Packet Parse(const std::string& wire) {
@@ -108,6 +112,15 @@ inline Packet Parse(const std::string& wire) {
             if (!std::isalnum(c)) throw std::invalid_argument("icao");
         return p;
     }
+    if (p.kind == "match") {
+        p.type = Text(j, "type", 4, true);
+        p.op = Text(j, "op", 3); p.livery = Text(j, "livery", 128);
+        p.cs = Text(j, "cs", 16);
+        if (!j.at("q").is_number_unsigned())
+            throw std::invalid_argument("match token");
+        p.q = j.at("q").get<uint64_t>();
+        return p;
+    }
     if (p.kind != "traffic" || !j.at("seq").is_number_unsigned())
         throw std::invalid_argument("message type or sequence");
     p.seq = j.at("seq").get<uint64_t>();
@@ -136,14 +149,30 @@ inline Packet Parse(const std::string& wire) {
     return p;
 }
 
-inline AircraftState Project(AircraftState s, double seconds) {
-    double angular = s.gs * 1852.0 / 3600.0 * seconds / 6371000.0;
-    double lat = s.lat * Pi / 180, lon = s.lon * Pi / 180, hdg = s.hdg * Pi / 180;
+// Where the last report's speed and turn take the picture next:
+// groundspeed and heading rates carried forward -- braking runs to its
+// stop instead of being projected through it, and a corner keeps turning
+// instead of being straightened the moment the feed hesitates. Speed
+// below zero is a stop, not a rollback; the turn decays to straight over
+// a second, because a turn that was finishing is not one that continues.
+inline AircraftState Project(AircraftState s, double seconds,
+                             double gsRate = 0, double hdgRate = 0) {
+    double travel = s.gs * seconds, heading = s.hdg;
+    if (gsRate < 0 && s.gs + gsRate * seconds < 0) {
+        double stop = -s.gs / gsRate;
+        travel = s.gs * stop + 0.5 * gsRate * stop * stop;
+    } else {
+        travel += 0.5 * gsRate * seconds * seconds;
+    }
+    if (hdgRate != 0) heading += hdgRate * (1.0 - std::exp(-seconds));
+    double angular = travel * 1852.0 / 3600.0 / 6371000.0;
+    double lat = s.lat * Pi / 180, lon = s.lon * Pi / 180, hdg = heading * Pi / 180;
     double nextLat = std::asin(std::clamp(std::sin(lat) * std::cos(angular) +
                           std::cos(lat) * std::sin(angular) * std::cos(hdg), -1.0, 1.0));
     lon += std::atan2(std::sin(hdg) * std::sin(angular) * std::cos(lat),
                      std::cos(angular) - std::sin(lat) * std::sin(nextLat));
     s.lat = nextLat * 180 / Pi; s.lon = Delta(0, lon * 180 / Pi);
+    s.hdg = Wrap(heading);
     if (!s.ground) s.alt += s.vs * seconds / 60;
     return s;
 }
@@ -157,11 +186,29 @@ public:
         else samples.emplace_back(now, s);
         while (samples.size() > 64 || (samples.size() > 2 && now - samples[1].first > 4)) samples.pop_front();
     }
+    // The rates the last pair of reports made: knots a second and
+    // degrees a second. Single-point aircraft get no continuation, and
+    // a pair older than five seconds apart is too stale to trust.
+    std::pair<double, double> Trend() const {
+        if (samples.size() < 2) return {0, 0};
+        const auto& [t0, a] = *(samples.end() - 2);
+        const auto& [t1, b] = samples.back();
+        double dt = t1 - t0;
+        if (dt <= 0.05 || dt > 5.0) return {0, 0};
+        return {std::clamp((b.gs - a.gs) / dt, -25.0, 25.0),
+                std::clamp(Delta(a.hdg, b.hdg) / dt, -45.0, 45.0)};
+    }
     AircraftState Sample(double now) const {
         double renderAt = now - .2;
         const auto& [currentAt, current] = samples.back();
-        if (renderAt >= currentAt)
-            return Project(current, std::clamp(renderAt - currentAt, 0.0, 2.0));
+        if (renderAt >= currentAt) {
+            const auto& [gsRate, hdgRate] = Trend();
+            // On the ground the next word is due soon; in the air a
+            // gap can run longer before the picture freezes.
+            double cap = current.ground ? 1.0 : 2.0;
+            return Project(current, std::clamp(renderAt - currentAt, 0.0, cap),
+                           gsRate, hdgRate);
+        }
         if (renderAt <= samples.front().first) return samples.front().second;
         auto next = std::upper_bound(samples.begin(), samples.end(), renderAt,
             [](double t, const auto& sample) { return t < sample.first; });

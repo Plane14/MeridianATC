@@ -96,6 +96,16 @@ void RouteAndMetar() {
     Reject([] { Parse(R"({"v":1,"t":"metar","icao":"BAD ICAO"})"); });
     Reject([] { Parse(R"({"v":1,"t":"metar","icao":"TOOLONGSTATION"})"); });
 }
+void MatchPacket() {
+    auto p = Parse(R"({"v":1,"t":"match","q":7,"type":"A321","op":"JBU","cs":"JBU1234","livery":"Mint"})");
+    Check(p.kind == "match" && p.q == 7 && p.type == "A321" && p.op == "JBU"
+          && p.cs == "JBU1234" && p.livery == "Mint", "match parses");
+    auto bare = Parse(R"({"v":1,"t":"match","q":2,"type":"B738"})");
+    Check(bare.op.empty() && bare.cs.empty() && bare.livery.empty(), "optional fields");
+    Reject([] { Parse(R"({"v":1,"t":"match","type":"A321"})"); });
+    Reject([] { Parse(R"({"v":1,"t":"match","q":1,"type":"TOOLONG"})"); });
+    Reject([] { Parse(R"({"v":1,"t":"match","q":-1,"type":"A321"})"); });
+}
 void Ownership() {
     Session session;
     auto hello = Parse(R"({"v":1,"t":"hello"})");
@@ -134,6 +144,25 @@ void Movement() {
     Check(std::abs(frequent.Sample(1.1).lat - .009) < .000001, "new snapshot does not snap to previous tick");
     frequent.Update(a, 1.1);
     Check(std::isfinite(frequent.Sample(1.2).lat), "duplicate arrival timestamp");
+    // A braking aeroplane is projected to its stop, not through it:
+    // 20 kt bleeding off at 10 kt/s stops inside two seconds.
+    AircraftState taxi{}; taxi.lat = 48; taxi.lon = 11; taxi.hdg = 90;
+    taxi.gs = 20; taxi.ground = true;
+    Motion braking(taxi, 0);
+    auto slower = taxi; slower.gs = 10; slower.lat += .00002;
+    braking.Update(slower, 1);
+    auto stopped = braking.Sample(30);
+    Check(stopped.gs > 0 && std::abs(stopped.lat - 48) < .0001
+          && stopped.lon - 11 < .0004, "deceleration runs to the stop");
+    // And a corner keeps turning through the render delay instead of
+    // snapping straight, decaying toward a heading rather than past it.
+    Motion turning(taxi, 0);
+    auto bent = taxi; bent.hdg = 100; turning.Update(bent, 1);
+    auto mid = turning.Sample(1.7);
+    Check(Delta(bent.hdg, mid.hdg) > 1 && Delta(bent.hdg, mid.hdg) < 8,
+          "turn continues, damped");
+    Check(std::abs(Delta(90, Project(taxi, 1, 0, -20).hdg) + 12.642) < .5,
+          "turn rate decays exponentially");
 }
 void Socket() {
     Udp server;
@@ -169,6 +198,6 @@ void Socket() {
     server.Close(); Check(server.Open(port), "clean socket reopen");
 }
 int main() {
-    try { Protocol(); FollowMePacket(); RouteAndMetar(); Ownership(); Movement(); Socket(); std::cout << "protocol, ownership, snapshot lifecycle, motion and UDP tests passed\n"; }
+    try { Protocol(); FollowMePacket(); RouteAndMetar(); MatchPacket(); Ownership(); Movement(); Socket(); std::cout << "protocol, ownership, snapshot lifecycle, motion and UDP tests passed\n"; }
     catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

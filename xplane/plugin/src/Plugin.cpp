@@ -308,13 +308,29 @@ Json FmsPlan() {
 Json Status(double now) {
     int xp, sdk; XPLMHostApplicationID host; XPLMGetVersions(&xp, &sdk, &host);
     char system[1024]{}; XPLMGetSystemPath(system);
-    Json drawn = Json::array();
-    for (const auto& [id, ac] : aircraft) if (ac->IsVisible() && ac->IsRendered()) drawn.push_back(id);
+    Json drawn = Json::array(); Json models = Json::object();
+    for (const auto& [id, ac] : aircraft) {
+        if (ac->IsVisible() && ac->IsRendered()) drawn.push_back(id);
+        // What each one is actually drawn as, and how well it matched --
+        // the engine's model audit reads this, not a guess.
+        models[id] = {{"m", ac->GetModelName()}, {"q", ac->GetMatchQuality()}};
+    }
     return {{"v", 1}, {"t", "status"}, {"plugin", "MeridianATC-XP"}, {"version", Version},
         {"xpmp2", MERIDIAN_XPMP2_VERSION}, {"xplane", xp}, {"csl_models", XPMPGetNumberOfInstalledModels()},
         {"aircraft", session.snapshot.size()}, {"drawn", drawn}, {"unmatched", unmatched},
         {"followme", session.FollowmeActive(now)}, {"sysroot", system},
-        {"fms", FmsPlan()}};
+        {"fms", FmsPlan()}, {"models", models}};
+}
+void AnswerMatch(const Packet& packet, const sockaddr_in& to) {
+    // What this type and paint would draw as -- XPMP2's own score, which
+    // is exactly what the created model gets, without creating anything.
+    int quality = XPMPModelMatchQuality(packet.type.c_str(),
+        packet.op.empty() ? nullptr : packet.op.c_str(),
+        packet.livery.empty() ? nullptr : packet.livery.c_str(),
+        packet.cs.empty() ? nullptr : packet.cs.c_str());
+    Json reply = {{"v", 1}, {"t", "match"}, {"q", packet.q},
+                  {"quality", quality}};
+    udp.Send(reply.dump(), to);
 }
 float Poll(float, float, int, void*) {
     try {
@@ -330,6 +346,10 @@ float Poll(float, float, int, void*) {
                 }
                 if (packet.kind == "metar") {
                     AnswerMetar(packet.icao, from);
+                    continue;
+                }
+                if (packet.kind == "match") {
+                    AnswerMatch(packet, from);
                     continue;
                 }
                 auto sender = (static_cast<uint64_t>(ntohl(from.sin_addr.s_addr)) << 16) | ntohs(from.sin_port);
