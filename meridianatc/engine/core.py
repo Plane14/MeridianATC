@@ -354,6 +354,11 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         # can hear, rather than against nothing.
         if self.config.traffic.enabled:
             self.brain.traffic = self.traffic
+        # And the traffic flies the same procedures the controller and the
+        # First Officer are given: the dicts are populated asynchronously as
+        # the provider reads them, so sharing the references is the wiring.
+        self.traffic.terminal_procedures = self.brain.terminal_procedures
+        self.traffic.approach_data = self.brain.approach_data
         # The same aeroplanes, out of the window. Without a simulator this
         # stays dormant and the radio is unchanged.
         # The simulator's own frequency list, which beats the published one.
@@ -390,6 +395,9 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         self._runways_said: dict[str, str] = {}
         self._approaches_asked: set[str] = set()
         self._procedures_asked: set[str] = set()
+        # The X-Plane CIFP reader, built by _cifp_source once the
+        # install root is known. None means not tried yet.
+        self._cifp = None
         self._ground_ready: dict[str, object] = {}
         # The controller taxis the pilot on the same layouts the traffic
         # drives on, and reaches them the way it reaches the traffic: handed

@@ -53,6 +53,13 @@ class _The_other_aeroplanes:
         """
         station = self.station
         self.traffic.can_invent = self.simtraffic.drawing
+        # The plan actually loaded in the sim's FMS, when X-Plane's
+        # plugin can see it: a corroborating route for the First
+        # Officer's procedure picks, read off the status channel the
+        # plugin already reports on.
+        xp = self.simtraffic
+        self.brain.fms_idents = (xp.fms_idents()
+                                 if isinstance(xp, XPlaneTraffic) else ())
         # A declared emergency clears the frequency for the pilot: the
         # other crews hold their calls until it stands down.
         self.traffic.radio_silence = bool(
@@ -323,6 +330,52 @@ class _The_other_aeroplanes:
         decision("airport", airport=ident, runways_from=source, ends=ends,
                  **self.navdb.runway_differences(ident))
 
+    def _procedure_sources(self):
+        """The procedure and approach readers for the active simulator.
+
+        MSFS answers over SimConnect; X-Plane's equivalent is the CIFP
+        navdata on its own disk, decoded into the same model. ``(None,
+        None)`` when the source has neither, which is what a session
+        without either gets.
+        """
+        if capabilities(self.state.source).facilities:
+            return self.simprocedures, self.simapproaches
+        if self.state.source == "xplane":
+            source = self._cifp_source()
+            if source is not None:
+                return source, source
+        return None, None
+
+    def _cifp_source(self):
+        """The CIFP provider for the X-Plane install, built once its
+        root is known: the plugin reports its own system path in its
+        status, and Laminar's install list is the fallback."""
+        if self._cifp is not None:
+            return self._cifp
+        from pathlib import Path
+        roots = []
+        candidates = []
+        sysroot = getattr(getattr(self, "simtraffic", None), "sysroot", "")
+        if sysroot:
+            candidates.append(Path(sysroot))
+        try:
+            from ..xplane_plugin import install_roots
+            candidates.extend(install_roots())
+        except Exception:
+            log.debug("could not list X-Plane installs", exc_info=True)
+        for root in candidates:
+            for sub in (root / "Custom Data",
+                        root / "Resources" / "default data"):
+                if sub.is_dir() and sub not in roots:
+                    roots.append(sub)
+        if not roots:
+            return None
+        from ..integrations.cifp import CifpSource
+        self._cifp = CifpSource(roots)
+        log.info("X-Plane procedures from CIFP: %s",
+                 ", ".join(str(r) for r in roots))
+        return self._cifp
+
     def _ask_for_terminal_procedures(self, ident: str) -> None:
         """The SIDs and STARs an airport publishes, once per field.
 
@@ -333,22 +386,24 @@ class _The_other_aeroplanes:
         """
         if not ident or ident in self._procedures_asked:
             return
-        if not (capabilities(self.state.source).facilities and self.state.connected):
+        procedures_reader, _ = self._procedure_sources()
+        if procedures_reader is None or not self.state.connected:
             return
         self._procedures_asked.add(ident)
 
         def read() -> None:
             try:
-                found = self.simprocedures.procedures(ident)
+                found = procedures_reader.procedures(ident)
             except Exception:
                 log.debug("could not read %s's procedures", ident,
                           exc_info=True)
                 return
             if found is not None:
                 self.brain.terminal_procedures[ident] = found
-                log.info("%s: terminal procedures from the simulator: "
+                log.info("%s: terminal procedures from %s: "
                          "%d departures, %d arrivals",
-                         ident, len(found.departures), len(found.arrivals))
+                         ident, self.state.source,
+                         len(found.departures), len(found.arrivals))
 
         threading.Thread(target=read, name=f"MeridianATC-procedures-{ident}",
                          daemon=True).start()
@@ -360,13 +415,14 @@ class _The_other_aeroplanes:
         self._ask_for_terminal_procedures(ident)
         if not ident or ident in self._approaches_asked:
             return
-        if not (capabilities(self.state.source).facilities and self.state.connected):
+        _, approaches_reader = self._procedure_sources()
+        if approaches_reader is None or not self.state.connected:
             return
         self._approaches_asked.add(ident)
 
         def read() -> None:
             try:
-                found = self.simapproaches.approaches(ident)
+                found = approaches_reader.approaches(ident)
             except Exception:
                 log.debug("could not read %s's approaches", ident, exc_info=True)
                 return

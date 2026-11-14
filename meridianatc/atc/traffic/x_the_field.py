@@ -55,7 +55,7 @@ class _The_field:
             self._used_callsigns.clear()
             self._phraseology.clear()
             self._pilots.clear()
-            self.runway_free_at = 0.0
+            self._runway_free.clear()
             self._watched_at = 0.0
             airport = self.navdb.airport(ident)
             self.field = _Field(

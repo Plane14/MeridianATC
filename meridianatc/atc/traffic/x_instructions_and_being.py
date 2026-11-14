@@ -90,8 +90,7 @@ class _Instructions_and_being:
                 flight.assigned_heading = None
                 flight.assigned_altitude_ft = None
                 flight.assigned_speed_kt = None
-                self.runway_free_at = max(self.runway_free_at,
-                                          now + RUNWAY_ROLL_S + 30.0)
+                self._hold_runway(flight.runway, now, RUNWAY_ROLL_S + 30.0)
         elif kind == "line_up":
             if not flight.airborne_model:
                 self._start_flying(flight)
@@ -103,7 +102,7 @@ class _Instructions_and_being:
             flight.assigned_heading = None
             flight.assigned_altitude_ft = None
             flight.assigned_speed_kt = None
-            self.runway_free_at = max(self.runway_free_at, now + RUNWAY_ROLL_S)
+            self._hold_runway(flight.runway, now, RUNWAY_ROLL_S)
         elif kind == "go_around":
             # The one instruction that has to work the instant it is read
             # back: the aeroplane stops descending, climbs away on the runway

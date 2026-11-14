@@ -121,6 +121,15 @@ class XPlaneTraffic:
         # in real-weather mode" -- asked_at distinguishes them, and an
         # empty answer is not re-asked until the station's clock runs.
         self._metars = {}
+        # The X-Plane install root the plugin reports in its status, so
+        # the engine can read the sim's own navdata (CIFP, earth_fix)
+        # without guessing where the install lives.
+        self.sysroot = ""
+        # The flight plan loaded in the sim's FMS, as the plugin reads
+        # it through XPLMNavigation: leg-order entries with ident, nav
+        # type, position and constraint altitude. What is actually in
+        # the box corroborates the route the engine thinks was filed.
+        self.fms = []
 
     def _send(self, message):
         try:
@@ -164,12 +173,29 @@ class XPlaneTraffic:
                     continue
                 if any(not isinstance(status.get(k), str) for k in ("version", "xpmp2")):
                     continue
+                if "sysroot" in status and not isinstance(status["sysroot"], str):
+                    continue
                 if any(not isinstance(status.get(k), list) or len(status[k]) > 512
                        or any(not isinstance(s, str) or not s or len(s.encode()) > 64
                               for s in status[k]) for k in ("drawn", "unmatched")):
                     continue
+                fms = status.get("fms")
+                if fms is not None and (
+                        not isinstance(fms, list) or len(fms) > 512
+                        or any(not isinstance(e, dict)
+                               or type(e.get("t")) is not int
+                               or not isinstance(e.get("id"), str)
+                               or len(e["id"].encode()) > 64
+                               or type(e.get("lat")) not in (int, float)
+                               or type(e.get("lon")) not in (int, float)
+                               for e in fms)):
+                    continue
                 self._status = status
                 self._last_status = now
+                if status.get("sysroot"):
+                    self.sysroot = status["sysroot"]
+                if fms is not None:
+                    self.fms = fms
                 self._drawn = set(status["drawn"]) & self._wanted.keys()
                 self._unmatched = set(status["unmatched"]) & self._wanted.keys()
             except (ValueError, TypeError, UnicodeError, RecursionError):
@@ -191,6 +217,19 @@ class XPlaneTraffic:
         with self._lock:
             self.on_frame()
             return self._commands.popleft() if self._commands else None
+
+    # XPLM nav types that name a route waypoint -- airports, NDBs, VORs,
+    # named fixes, DME points, plain lat/lons and TACANs. ILS,
+    # localizers and markers are approach hardware, not waypoints.
+    _ROUTE_NAV_TYPES = frozenset({1, 2, 4, 512, 1024, 2048, 4096})
+
+    def fms_idents(self) -> tuple:
+        """The loaded flight plan's waypoint identifiers, in leg order."""
+        with self._lock:
+            return tuple(
+                e["id"].strip().upper() for e in self.fms
+                if isinstance(e, dict) and e.get("t") in self._ROUTE_NAV_TYPES
+                and isinstance(e.get("id"), str) and e["id"].strip())
 
     @property
     def available(self):

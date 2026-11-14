@@ -68,8 +68,13 @@ class _Flying_them:
             return
 
         if flight.arriving:
-            # On the extended centreline at the distance it is reporting, on a
+            # An IFR arrival on a STAR starts at the arrival's own entry
+            # fix and is flown down it; everything else is on the
+            # extended centreline at the distance it is reporting, on a
             # three-degree path, at the speed that distance implies.
+            if flight.procedure_pair is not None and self._begin_star(
+                    flight):
+                return
             behind = (heading + 180.0) % 360.0
             flight.latitude, flight.longitude = project(
                 lat, lon, behind, max(0.2, flight.distance_nm))
@@ -96,7 +101,51 @@ class _Flying_them:
         flight.assigned_heading = None
         flight.assigned_altitude_ft = None
         flight.assigned_speed_kt = None
+        flight.procedure_nav = None
+        flight.procedure_pair = None
         flight.target.clear()
+
+    def _begin_star(self, flight: Flight) -> bool:
+        """Put an IFR arrival at its STAR's entry fix with the legs to
+        follow, and the navigator that steers them.
+
+        False when the transition's path cannot be built at all -- the
+        caller then spawns it the generic way, exactly as a field with no
+        procedures does.
+        """
+        from ..procedure_legs import ProcedureNavigator
+
+        proc, trans = flight.procedure_pair
+        nav = ProcedureNavigator(
+            proc, trans,
+            fallback_altitude_ft=flight.altitude_ft,
+            fallback_speed_kt=flight.performance.cruise_kt)
+        if not nav.active:
+            return False
+        first = trans.first_fix
+        if first is not None and first.has_fix:
+            flight.latitude, flight.longitude = first.lat, first.lon
+        else:
+            flight.latitude, flight.longitude = nav.points[0][:2]
+        # The level it checks in at: the STAR's own constraint where the
+        # legs give one, the arrival height the spawn worked out where
+        # they do not.
+        level = next((leg.altitude_constraint or leg.fix_alt_ft
+                      for leg in trans.legs
+                      if leg.altitude_constraint or leg.fix_alt_ft), 0.0)
+        if level:
+            flight.altitude_ft = level
+        if len(nav.points) > 1:
+            flight.heading = bearing_deg(
+                flight.latitude, flight.longitude, *nav.points[1][:2])
+        flight.ground_speed_kt = flight.performance.cruise_kt
+        flight.on_ground = False
+        flight.procedure_nav = nav
+        end = self._threshold(flight.runway)
+        if end is not None:
+            flight.distance_nm = haversine_nm(
+                flight.latitude, flight.longitude, end[0], end[1])
+        return True
 
     def _aim(self, flight: Flight) -> None:
         """What this aeroplane is trying to do, right now.
@@ -189,6 +238,15 @@ class _Flying_them:
             target.hold = True
             target.intent = phase
 
+        # A SID or STAR's legs steer the phase the way a "climb via" or
+        # "descend via" does: the procedure's path is what it flies until
+        # the legs run out or the tower says something else. A hold is
+        # something else: the clearance, for as long as it lasts, is the
+        # racetrack rather than the legs -- which resume when it ends.
+        if flight.hold is not None:
+            self._steer_hold(flight, target)
+        else:
+            self._steer_procedure(flight, target)
         # And what it was told, which beats all of that.
         if flight.assigned_heading is not None:
             target.heading = flight.assigned_heading
@@ -197,6 +255,98 @@ class _Flying_them:
         if (flight.assigned_speed_kt is not None and not target.hold
                 and not flight.on_ground):
             target.speed_kt = flight.assigned_speed_kt
+
+    def _steer_procedure(self, flight: Flight, target) -> None:
+        """The SID or STAR legs as this tick's aim.
+
+        Built the first time the model asks, from wherever the aeroplane
+        then is -- for a departure that is the end of the runway, for an
+        arrival the entry fix it spawned at. The legs' own levels and
+        speed limits come with the path; when they are done the aeroplane
+        goes back to flying its phase, and anything the tower assigns
+        still outranks it afterwards.
+        """
+        if (flight.procedure_pair is None or flight.on_ground
+                or not flight.airborne_model):
+            return
+        if flight.phase not in ("takeoff", "departed", "inbound", "final"):
+            return
+        nav = flight.procedure_nav
+        if nav is None:
+            from ..procedure_legs import ProcedureNavigator
+
+            proc, trans = flight.procedure_pair
+            nav = ProcedureNavigator(
+                proc, trans, start=(flight.latitude, flight.longitude),
+                fallback_altitude_ft=target.altitude_ft
+                or self.field.elevation_ft + CLIMB_TO_FT,
+                fallback_speed_kt=target.speed_kt
+                or flight.performance.cruise_kt)
+            flight.procedure_nav = nav
+        guide = nav.guidance(flight)
+        if guide.done:
+            flight.procedure_nav = None
+            flight.procedure_pair = None
+            return
+        if guide.heading is None:
+            return
+        target.heading = guide.heading
+        if guide.altitude_ft:
+            target.altitude_ft = guide.altitude_ft
+        if guide.speed_kt:
+            target.speed_kt = min(guide.speed_kt, flight.performance.cruise_kt)
+        target.intent = (f"on the {flight.sid} departure" if flight.sid
+                         else f"on the {flight.star} arrival" if flight.star
+                         else target.intent)
+
+    # Faster than this a held aeroplane's pattern stops looking like a
+    # hold and starts looking like a tour of the county. ICAO's tables
+    # cap holding speeds far lower; this is the number that looks right
+    # on the map for anything from a turboprop up.
+    HOLD_SPEED_KT = 220.0
+    # Inside this of the fix the inbound leg is done and the turn out
+    # begins -- a little anticipation, the way a pilot leads the turn.
+    HOLD_FIX_REACH_NM = 0.4
+
+    def _steer_hold(self, flight: Flight, target) -> None:
+        """The racetrack: in to the fix, a turn out, the leg, a turn in.
+
+        Right-hand pattern, legs as long as the clearance said -- a
+        minute at or below 14,000 ft, a minute and a half above, the same
+        numbers the pilot's own holds are worked with. The inbound legs
+        are steered at the fix rather than on the course, which pulls the
+        pattern back onto the fix whatever the wind did to the turn.
+        """
+        hold = flight.hold
+        if (hold is None or flight.on_ground or not flight.airborne_model
+                or flight.phase not in ("inbound", "final")):
+            return
+        now = self._now()
+        to_fix = haversine_nm(flight.latitude, flight.longitude,
+                              hold.lat, hold.lon)
+        if flight.hold_leg == "out":
+            # Away from the fix on the reciprocal for as long as the leg
+            # runs; the turn at the end of it is the flight model's, at
+            # its own rate.
+            if now - flight.hold_leg_at >= hold.leg_minutes * 60.0:
+                flight.hold_leg = "in"
+                flight.hold_leg_at = now
+            else:
+                target.heading = (hold.inbound_true + 180.0) % 360.0
+        if flight.hold_leg != "out":
+            # Inbound: at the fix, or pointing at it from wherever the
+            # last turn left it. Over the top of it the outbound leg
+            # begins.
+            target.heading = bearing_deg(flight.latitude, flight.longitude,
+                                         hold.lat, hold.lon)
+            if to_fix < self.HOLD_FIX_REACH_NM:
+                flight.hold_leg = "out"
+                flight.hold_leg_at = now
+        target.speed_kt = min(flight.performance.cruise_kt,
+                              self.HOLD_SPEED_KT)
+        target.altitude_ft = hold.altitude_ft
+        target.intent = (f"holding at {hold.fix}" if hold.fix
+                         else "holding")
 
     def _circuit(self, flight: Flight, runway_heading: float,
                  elevation: float) -> None:

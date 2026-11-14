@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import time
+from types import SimpleNamespace
+
+from .. import holds as hold_rules
 from ._shared import (
     _CIRCUIT_PHASES,
     JOIN_REACHED_NM,
     LANDING_ROLL_S,
     Flight,
+    _runway_key,
     _said_route,
+    _strips_parallel,
 )
 
 
@@ -80,13 +86,38 @@ class _Arrivals:
             # it reads as a radio that is dropping transmissions.
             if flight.step == 0:
                 flight.step = 1
+                # On a STAR the check-in is answered with its descent;
+                # with only an approach named it is told what to expect;
+                # a field with neither answers the way it always did.
+                if flight.star:
+                    def controller(c, a, s):
+                        return c.descend_via(a, flight.star, station=s,
+                                             level_ft=flight.altitude_ft)
+                elif flight.approach:
+                    def controller(c, a, s):
+                        return c.expect_approach(a, flight.approach,
+                                                 flight.runway)
+                else:
+                    def controller(c, a, s):
+                        return c.radar_contact(a, s)
                 self._exchange(
                     flight, now, "APP",
                     pilot_first=lambda p, a, s: p.checking_in(
                         a, s, flight.altitude_ft, climbing=False),
-                    controller=lambda c, a, s: c.radar_contact(a, s),
+                    controller=controller,
                 )
-            if flight.distance_nm > self.HANDOFF_TO_TOWER_NM:
+            # The queue ahead may be longer than the runway takes. Then
+            # approach holds it, the way it holds the pilot, over the last
+            # fix of its arrival; and lets it go when the queue has shrunk
+            # to where it fits again.
+            if flight.step >= 1:
+                if flight.hold is None and self._needs_the_hold(flight):
+                    self._give_the_hold(flight, now)
+                elif flight.hold is not None and not self._needs_the_hold(
+                        flight):
+                    self._leave_the_hold(flight, now)
+            if (flight.distance_nm > self.HANDOFF_TO_TOWER_NM
+                    or flight.hold is not None):
                 flight.next_at = now + 4.0
                 return
             station, mhz = self._next_station("TWR", flight.language)
@@ -171,6 +202,100 @@ class _Arrivals:
 
     # How long an arrival stays on its stand before it is taken away.
     PARKED_S = 180.0
+
+    def _arrivals_ahead(self, flight: Flight) -> int:
+        """How many land before it on its strip.
+
+        A held aeroplane keeps the place it was holding -- its distance
+        hardly moves orbiting the fix, so whoever was behind it still is.
+        A parallel final is another runway's queue; a crossing one is
+        this one's, the strip being shared either way.
+        """
+        strip = _runway_key(flight.runway or self.field.arrival_runway)
+        count = 0
+        for other in self._approaching(ignore=flight):
+            theirs = _runway_key(other.runway or self.field.arrival_runway)
+            if theirs != strip and _strips_parallel(theirs, strip):
+                continue
+            if other.distance_nm <= flight.distance_nm:
+                count += 1
+        return count
+
+    def _needs_the_hold(self, flight: Flight) -> bool:
+        """Whether the queue is longer than the runway takes.
+
+        Holds only exist for the IFR stream, and only with a margin in
+        the middle -- issuing at the threshold it is released from again
+        would have it told to hold and told to leave in the same breath.
+        """
+        if not flight.ifr or flight.phase != "inbound":
+            return False
+        sequence = hold_rules.sequence_hold_ahead(self.field.ident)
+        ahead = self._arrivals_ahead(flight)
+        if flight.hold is not None:
+            return ahead > sequence - 2
+        return ahead >= sequence
+
+    def _hold_fix_for(self, flight: Flight):
+        """Where it is held: the last fix of its STAR in the ring the
+        books call a hold fix, else its own position -- "hold at present
+        position" is a real clearance too."""
+        legs = ()
+        if flight.procedure_pair is not None:
+            _proc, trans = flight.procedure_pair
+            legs = trans.legs
+        fixes = [SimpleNamespace(ident=leg.fix_ident, lat=leg.lat,
+                                 lon=leg.lon, is_marker=False, kind="")
+                 for leg in legs if leg.has_fix and leg.fix_ident]
+        fix = hold_rules.hold_fix(fixes, (), self.field.latitude,
+                                  self.field.longitude)
+        if fix is None:
+            fix = SimpleNamespace(ident="", lat=flight.latitude,
+                                  lon=flight.longitude)
+        return fix
+
+    def _give_the_hold(self, flight: Flight, now: float) -> None:
+        """The clearance, the racetrack the model flies, and the EFC."""
+        fix = self._hold_fix_for(flight)
+        ahead = self._arrivals_ahead(flight)
+        altitude = round(float(flight.altitude_ft or 0.0), -2)
+        inbound = hold_rules.inbound_course(fix.lat, fix.lon,
+                                            self.field.latitude,
+                                            self.field.longitude)
+        legs = hold_rules.leg_minutes(altitude)
+        hold = hold_rules.Hold(
+            fix=fix.ident, lat=fix.lat, lon=fix.lon, inbound_true=inbound,
+            side=hold_rules.side_of_fix(inbound), leg_minutes=legs,
+            altitude_ft=altitude, reason="sequence",
+            efc_hhmm=hold_rules.efc(
+                time.time(), hold_rules.sequence_delay_min(ahead)),
+            number=ahead + 1)
+        flight.hold = hold
+        flight.hold_leg = "in"
+        flight.hold_leg_at = now
+        self._exchange(
+            flight, now, "APP",
+            controller=lambda c, a, s: c.hold_clearance(
+                a, hold.fix or "your present position", hold.side,
+                int(round(inbound)) or 360, altitude, legs,
+                hold.efc_hhmm, station=s),
+            pilot_back=lambda p, a, s: p.wilco(a),
+            command=("hold", {"fix": hold.fix}))
+
+    def _leave_the_hold(self, flight: Flight, now: float) -> None:
+        """Its slot has come: out of the racetrack and on with the
+        arrival, the STAR's navigator resuming from wherever the
+        pattern left it."""
+        hold = flight.hold
+        flight.hold = None
+        flight.hold_leg = ""
+        if hold is not None:
+            self._exchange(
+                flight, now, "APP",
+                controller=lambda c, a, s: c.leave_the_hold(
+                    a, hold.fix or "the field"),
+                pilot_back=lambda p, a, s: p.wilco(a),
+                command=("leave_hold", {}))
 
     def _plan_arrival(self, flight: Flight) -> None:
         """Off the runway at the first exit and on to a free stand.
@@ -263,7 +388,7 @@ class _Arrivals:
             flight.next_at = now + 2.0
             return
 
-        self.runway_free_at = max(self.runway_free_at, now + LANDING_ROLL_S)
+        self._hold_runway(flight.runway, now, LANDING_ROLL_S)
         # Down. Everything it was given for the approach is finished with.
         flight.assigned_speed_kt = None
         flight.assigned_heading = None

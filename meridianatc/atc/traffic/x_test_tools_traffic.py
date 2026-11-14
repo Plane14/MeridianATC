@@ -235,7 +235,7 @@ class _Test_tools_traffic:
                     category: str | None = None) -> Flight | None:
         if arriving is None:
             arriving = (self.random.random() < 0.5
-                        and len(self._approaching()) < self.MAX_ON_APPROACH)
+                        and len(self._approaching()) < self._max_on_approach())
             if arriving and self._departures_kept_waiting(now):
                 # A departure has waited long enough. The stream of arrivals
                 # is broken for it, the way a tower leaves a gap; at a

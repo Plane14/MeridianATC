@@ -11,10 +11,18 @@ class _Filed_cleared_sid:
 
     def _route_idents(self) -> tuple:
         route = getattr(self.brain, "route", None)
-        if route is None:
-            return ()
-        return tuple(getattr(fix, "ident", "") or ""
-                     for fix in getattr(route, "fixes", ()) or ())
+        filed = [] if route is None else [
+            getattr(fix, "ident", "") or ""
+            for fix in getattr(route, "fixes", ()) or ()]
+        # What the sim's own FMS has loaded is read back as a second
+        # source (X-Plane's plugin reports it in its status): the filed
+        # route stays first so it wins the ties, and whatever is in the
+        # box that the briefing did not mention still corroborates.
+        seen = set(filed)
+        extra = [ident for ident in
+                 dict.fromkeys(getattr(self.brain, "fms_idents", ()) or ())
+                 if ident and ident not in seen]
+        return tuple(filed) + tuple(extra)
 
     def _airport_ident(self, airport, fallback: str = "") -> str:
         if airport is not None:

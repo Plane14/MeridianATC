@@ -113,6 +113,38 @@ AIRLINE_RANK = 3
 CIRCUIT_SHARE = 0.45
 
 
+def _reciprocal_of(runway: str) -> str:
+    """"09L" -> "27R": the other end of the same strip."""
+    runway = (runway or "").strip().upper()
+    if len(runway) < 2 or not runway[:2].isdigit():
+        return ""
+    num = int(runway[:2])
+    other = ((num + 17) % 36) + 1
+    side = runway[2:]
+    other_side = {"L": "R", "R": "L"}.get(side, side)
+    return f"{other:02d}{other_side}"
+
+
+def _runway_key(runway: str) -> str:
+    """The strip a runway end is on: "09L" and "27R" are the same pavement,
+    "09L" and "09R" are not."""
+    a = (runway or "").strip().upper()
+    b = _reciprocal_of(a)
+    return "/".join(sorted(x for x in (a, b) if x))
+
+
+def _strips_parallel(a: str, b: str) -> bool:
+    """Whether two strip keys are parallel runways: "09L/27R" and
+    "09R/27L" share a heading pair, "09L/27R" and "16L/34R" do not.
+    Crossing strips are left to the tower's spacing, which treats them
+    as the same pavement anyway."""
+    numbers = {key[:2] for key in (a, b) for key in key.split("/")}
+    # Two strips share a heading when a number appears in both; with the
+    # reciprocal pair inside each key that is "09" against "09".
+    return len(numbers) < len([key for key in (a, b)
+                               for key in key.split("/")])
+
+
 @dataclass
 class Flight:
     """One AI aeroplane, from first call to last."""
@@ -233,6 +265,29 @@ class Flight:
     lead_at: tuple | None = None   # (lat, lon) of the real one now
     live_held: str = ""          # "" | "runway" | "give way"
     cleared: bool = False        # delivery has given it its clearance
+
+    # The procedures it is flying, picked the way the controller picks
+    # them (atc.procedure_select): the names for the radio, and the
+    # (procedure, transition) pair the navigator is built from. Empty
+    # means the field had none to give, or the flight is VFR -- it is
+    # cleared and flown the generic way, which is what a field with no
+    # published procedures sounds like.
+    sid: str = ""
+    sid_transition: str = ""
+    star: str = ""
+    star_transition: str = ""
+    approach: str = ""
+    procedure_pair: tuple | None = None
+    # The navigator flying those legs (ProcedureNavigator), built when
+    # the model takes over; None again once the legs are done.
+    procedure_nav: object | None = None
+    # The hold approach gave it when the queue ahead was longer than the
+    # runway takes (atc.holds.Hold): the fix and the pattern, plus which
+    # half of the racetrack the model is on and when that half began.
+    # None while it is simply inbound, and gone again once it is let out.
+    hold: object | None = None
+    hold_leg: str = ""
+    hold_leg_at: float = 0.0
 
     # On the ground, at an airport whose taxiways the simulator has given us
     # (see meridianatc.atc.ground). ``stand`` is the one it is on or going to;

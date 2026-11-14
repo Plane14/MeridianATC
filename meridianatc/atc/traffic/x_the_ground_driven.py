@@ -335,4 +335,52 @@ class _The_ground_driven:
         else:
             flight.origin, flight.origin_icao = field_name, field_icao
             flight.destination, flight.destination_icao = far_name, far_icao
+        self._assign_procedures(flight, arriving, far_icao)
+
+    def _assign_procedures(self, flight: Flight, arriving: bool,
+                           far_icao: str) -> None:
+        """The SID or STAR this IFR flight is on, picked the way the
+        controller picks one (atc.procedure_select): the runway's own
+        transition, pointing the way the flight is going.
+
+        Nothing is assigned where the field has no decoded procedures --
+        the flight is cleared and flown generically, which is what a
+        field with no published procedures sounds like, never an invented
+        name. The same applies where the far end is not in the navdata:
+        the bearing that would have picked the transition is simply
+        unknown.
+        """
+        procedures = self.terminal_procedures.get(self.field.ident)
+        if procedures is None:
+            return
+        from ..procedure_select import pick_sid, pick_star, select_approach
+
+        far = self.navdb.airport(far_icao) if far_icao else None
+        toward = (far.lat, far.lon) if far is not None else None
+        at = (self.field.latitude, self.field.longitude)
+        if arriving:
+            chosen = pick_star(procedures, runway=flight.runway, at=at,
+                               toward=toward)
+            if chosen.ok:
+                flight.star = chosen.name
+                flight.star_transition = chosen.transition.name
+                flight.procedure_pair = (chosen.procedure,
+                                         chosen.transition)
+            known = self.approach_data.get(self.field.ident)
+            from ...navdata.db import vfr_region
+            choice = select_approach(
+                known, flight.runway, self.field.weather,
+                airliner=flight.operator is not None,
+                region=vfr_region(self.field.ident))
+            flight.approach = choice.approach.name
+        else:
+            chosen = pick_sid(procedures, runway=flight.runway, at=at,
+                              toward=toward)
+            if chosen.ok:
+                flight.sid = chosen.name
+                # The enroute transition's name is part of the clearance;
+                # a runway one is implied by the runway itself.
+                flight.sid_transition = chosen.transition.name
+                flight.procedure_pair = (chosen.procedure,
+                                         chosen.transition)
 

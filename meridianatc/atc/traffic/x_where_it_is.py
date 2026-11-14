@@ -10,6 +10,8 @@ from ._shared import (
     INITIAL_CLIMB_FT,
     RUNWAY_ROLL_S,
     Flight,
+    _runway_key,
+    _strips_parallel,
     bearing_deg,
     glide_altitude,
     log,
@@ -247,9 +249,16 @@ class _Where_it_is:
         miles is what let a departure be lined up in front of an arrival that
         then had to be sent around.
         """
-        needed = (max(0.0, self.runway_free_at - now)
+        needed = (max(0.0, self._runway_free_at(flight.runway) - now)
                   + RUNWAY_ROLL_S + self.DEPARTURE_MARGIN_S)
+        strip = _runway_key(flight.runway or self.field.departure_runway)
         for other in self._approaching(flight):
+            theirs = _runway_key(other.runway
+                                 or self.field.arrival_runway)
+            if theirs != strip and _strips_parallel(theirs, strip):
+                # A parallel final does not hold this runway's roll; a
+                # crossing one still does.
+                continue
             if self._seconds_to_threshold(other) < needed:
                 return False
         return True
@@ -339,7 +348,7 @@ class _Where_it_is:
                 announce=taking_the_runway,
                 command=("takeoff", {"runway": flight.runway}),
             )
-        self.runway_free_at = now + RUNWAY_ROLL_S
+        self._hold_runway(flight.runway, now, RUNWAY_ROLL_S)
         flight.next_at = now + RUNWAY_ROLL_S * 0.5
 
     def _after_the_go_around(self, flight: Flight, now: float) -> None:

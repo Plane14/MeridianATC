@@ -456,7 +456,7 @@ class _The_live_ones:
         if self._on_runway(one) and (
                 flight.phase in ("takeoff", "final", "landed")
                 or self._lined_up(one)):
-            self.runway_free_at = max(self.runway_free_at, now + 8.0)
+            self._hold_runway(flight.runway, now, 8.0)
 
     def _observed_phase(self, flight: Flight, one, to_run) -> str:
         """What an observed aeroplane is doing, from what it is doing.

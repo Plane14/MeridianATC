@@ -6,6 +6,7 @@
 #include "XPLMInstance.h"
 #include "XPLMMap.h"
 #include "XPLMMenus.h"
+#include "XPLMNavigation.h"
 #include "XPLMPlugin.h"
 #include "XPLMProcessing.h"
 #include "XPLMScenery.h"
@@ -30,7 +31,7 @@
 namespace {
 using namespace Meridian;
 namespace fs = std::filesystem;
-constexpr const char* Version = "0.1.0";
+constexpr const char* Version = "0.2.0";
 double Now() {
     return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
@@ -286,14 +287,34 @@ void Sync(double now) {
         } catch (const std::exception&) { aircraft.erase(id); unmatched.insert(id); }
     }
 }
+Json FmsPlan() {
+    // The user's loaded flight plan, for corroborating the route the
+    // engine thinks it is flying: what is actually in the box beats what
+    // a briefing said should be. Entries arrive in leg order; the
+    // displayed one is where the FMS is steering.
+    Json entries = Json::array();
+    const int count = XPLMCountFMSEntries();
+    const int displayed = XPLMGetDisplayedFMSEntry();
+    for (int i = 0; i < count && i < 512; ++i) {
+        XPLMNavType type = xplm_Nav_Unknown; char id[256]{};
+        int altitude = 0; float lat = 0, lon = 0;
+        XPLMGetFMSEntryInfo(i, &type, id, nullptr, &altitude, &lat, &lon);
+        entries.push_back({{"i", i}, {"t", static_cast<int>(type)},
+            {"id", id}, {"alt", altitude}, {"lat", lat}, {"lon", lon},
+            {"active", i == displayed}});
+    }
+    return entries;
+}
 Json Status(double now) {
     int xp, sdk; XPLMHostApplicationID host; XPLMGetVersions(&xp, &sdk, &host);
+    char system[1024]{}; XPLMGetSystemPath(system);
     Json drawn = Json::array();
     for (const auto& [id, ac] : aircraft) if (ac->IsVisible() && ac->IsRendered()) drawn.push_back(id);
     return {{"v", 1}, {"t", "status"}, {"plugin", "MeridianATC-XP"}, {"version", Version},
         {"xpmp2", MERIDIAN_XPMP2_VERSION}, {"xplane", xp}, {"csl_models", XPMPGetNumberOfInstalledModels()},
         {"aircraft", session.snapshot.size()}, {"drawn", drawn}, {"unmatched", unmatched},
-        {"followme", session.FollowmeActive(now)}};
+        {"followme", session.FollowmeActive(now)}, {"sysroot", system},
+        {"fms", FmsPlan()}};
 }
 float Poll(float, float, int, void*) {
     try {

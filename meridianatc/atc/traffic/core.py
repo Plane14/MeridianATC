@@ -79,7 +79,10 @@ class TrafficInjector(_The_field, _Flying_them, _What_the_pilot, _Making_aeropla
         # Numbers the exchanges, so the halves of one can be recognised as
         # halves of one after they have been queued separately.
         self._exchanges = 0
-        self.runway_free_at = 0.0
+        # When each runway's strip next goes free, by strip: a roll on 09L
+        # holds up 27R and nothing else, so parallel runways move at the
+        # same time and a busy field is not one queue for the whole of it.
+        self._runway_free: dict[str, float] = {}
         # Every callsign this field has issued, live or finished. A number is
         # never handed out twice: an aeroplane that has gone to the gate is
         # still the aeroplane the user heard, and hearing the same callsign
@@ -113,6 +116,13 @@ class TrafficInjector(_The_field, _Flying_them, _What_the_pilot, _Making_aeropla
         # The airport's taxiways, when the simulator has given them. Without
         # them the ground is placed, as it always was; with them it is driven.
         self.ground: groundwork.GroundLayout | None = None
+        # The airport's SIDs/STARs and its approaches, shared with the
+        # controller's copies (brain.terminal_procedures/approach_data)
+        # so the traffic is cleared and steered by the same procedures
+        # the user hears. Filled asynchronously as they are read, the
+        # same way they are for the First Officer.
+        self.terminal_procedures: dict = {}
+        self.approach_data: dict = {}
         # Taxiway intersections and who has them, so two aeroplanes do not
         # arrive at one from different directions at once.
         self._reserved: dict[object, str] = {}

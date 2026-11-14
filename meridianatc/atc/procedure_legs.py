@@ -198,39 +198,87 @@ def _transition_for(procedure: TerminalProcedure, kind: str,
                     runway: str = "", preferred: str = "",
                     route_fix_idents: Iterable[str] = ()) -> \
         ProcedureTransition | None:
-    """The transition to fly: the named one, the runway's, or the one the
-    route's own fixes say is next."""
+    """The transition to fly: the named one, then -- for a SID the
+    runway's own transition first and the route's fixes to break ties;
+    for a STAR the enroute entry the route flies first and the runway's
+    funnel to break ties."""
     transitions = [t for t in procedure.transitions if t.legs]
     if not transitions:
         if procedure.direct_legs:
             return ProcedureTransition(legs=procedure.direct_legs)
         return None
+    key = _runway_key(runway)
     wanted = _norm(preferred)
     if wanted:
-        for trans in transitions:
-            if _norm(trans.name) == wanted or _norm(trans.runway) == wanted:
-                return trans
-    key = _runway_key(runway)
-    if key:
-        for trans in transitions:
-            if _runway_key(trans.runway) == key:
-                return trans
+        matches = [t for t in transitions
+                   if _norm(t.name) == wanted
+                   or _norm(t.runway) == wanted]
+        if len(matches) > 1 and key:
+            same = [t for t in matches if _runway_key(t.runway) == key]
+            if same:
+                return same[0]
+        if matches:
+            return matches[0]
+    # When the procedure names its runways, another runway's legs are not
+    # this one's: an unlabeled transition is anybody's, a labeled one is
+    # not.
+    if key and any(t.runway for t in transitions):
+        eligible = [t for t in transitions
+                    if not t.runway or _runway_key(t.runway) == key]
+        if not eligible:
+            return None
+    else:
+        eligible = transitions
     # The route's fixes name the transition's fixes better than a guess:
     # the one whose fixes the route reaches first wins.
     order = [i.upper() for i in route_fix_idents if i]
     idents = set(order)
-    best, best_at = None, len(order) + 1
-    for trans in transitions:
-        names = {leg.fix_ident.upper() for leg in trans.legs
-                 if leg.fix_ident}
-        hits = names & idents
-        if hits:
-            earliest = min(idents_order(order, hits))
-            if earliest < best_at:
-                best, best_at = trans, earliest
-    if best is not None:
+
+    position = {ident: i for i, ident in enumerate(order)}
+
+    def by_route(candidates) -> ProcedureTransition | None:
+        """The candidate the route reaches first. A transition's own
+        name in the route is the strongest hint -- it is usually the
+        fix the transition is entered or left at; leg hits rank after,
+        since the trunk's fixes repeat across transitions."""
+        best, best_key = None, None
+        for trans in candidates:
+            keys = []
+            name = _norm(trans.name)
+            if name and name in position:
+                keys.append((0, position[name]))
+            hits = {leg.fix_ident.upper() for leg in trans.legs
+                    if leg.fix_ident} & idents
+            if hits:
+                keys.append((1, min(position[h] for h in hits)))
+            if keys:
+                score = min(keys)
+                if best_key is None or score < best_key:
+                    best, best_key = trans, score
         return best
-    return transitions[0] if len(transitions) == 1 else None
+
+    same_runway = [t for t in eligible
+                   if key and _runway_key(t.runway) == key]
+    if kind == "star":
+        # Where the STAR is entered is the route's business; the runway
+        # only funnels the end of it.
+        found = by_route(same_runway) or by_route(eligible)
+        if found is not None:
+            return found
+        if same_runway:
+            return same_runway[0]
+    else:
+        # A departure flies the runway it is on; within that the route
+        # picks which enroute transition the clearance meant.
+        found = by_route(same_runway)
+        if found is not None:
+            return found
+        if same_runway:
+            return same_runway[0]
+    found = by_route(eligible)
+    if found is not None:
+        return found
+    return eligible[0] if len(eligible) == 1 else None
 
 
 def idents_order(order: list[str], hits) -> list[int]:

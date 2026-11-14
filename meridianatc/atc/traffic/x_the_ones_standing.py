@@ -204,3 +204,10 @@ class _The_ones_standing:
     # aeroplane at a holding point costs nothing.
     MAX_ON_APPROACH = 4
 
+    def _max_on_approach(self) -> int:
+        """The cap, scaled by the density the field is being run at: a
+        busy field's stream is longer, and the arrivals queue by the
+        distance they spawned at rather than never existing."""
+        return max(1, int(round(self.MAX_ON_APPROACH
+                                * max(0.0, self.density))))
+

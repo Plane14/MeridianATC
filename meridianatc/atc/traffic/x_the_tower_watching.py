@@ -245,7 +245,8 @@ class _The_tower_watching:
             # whatever the timetable says, the runway is not clear.
             return True
         arrives_in = self._seconds_to_threshold(flight)
-        if self.runway_free_at > now + arrives_in:
+        runway = flight.runway or self.field.arrival_runway
+        if self._runway_free_at(runway) > now + arrives_in:
             return True
         for other in self.flights:
             if other is flight or other.done:

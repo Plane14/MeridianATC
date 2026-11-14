@@ -51,6 +51,10 @@ class ControllerBrain(_Entry_point, _Emergencies, _What_the_controller, _Readbac
         # The flight plan's fixes in order (integrations.simbrief.PlanFix):
         # what a centre grants a direct to. Empty without a plan.
         self.plan_fixes: list = []
+        # The waypoints loaded in the simulator's own FMS, in leg order
+        # (X-Plane's plugin reads them off XPLMNavigation): a second
+        # source for procedure picks, corroborating the filed route.
+        self.fms_idents: tuple = ()
         # The filed route (atc/route.py), when a plan has one: the minutes
         # to the cruise, the SID's fixes, where a departure is sent direct.
         self.route = None

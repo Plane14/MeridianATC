@@ -35,6 +35,8 @@ class _Departures:
                     a, s, flight.destination),
                 controller=lambda c, a, s: c.ifr_clearance(
                     a, s, flight.destination,
+                    departure_procedure=flight.sid,
+                    transition=flight.sid_transition,
                     initial_altitude=INITIAL_CLIMB_FT, squawk=flight.squawk,
                     departure_freq=self._freq("DEP")),
                 pilot_back=lambda p, a, s: p.clearance(

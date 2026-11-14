@@ -111,7 +111,7 @@ class _The_watchdog:
             self._release_all(flight)
             if where == "runway":
                 # Whatever it had booked the runway for is not happening.
-                self.runway_free_at = min(self.runway_free_at, now)
+                self._release_runway(flight.runway, now)
 
     def _moved(self, was: tuple, here: tuple) -> bool:
         north_m = (here[0] - was[0]) * 111_320.0

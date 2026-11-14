@@ -3,6 +3,7 @@ from __future__ import annotations
 from ._shared import (
     Call,
     Flight,
+    _runway_key,
     same_channel,
 )
 
@@ -112,7 +113,30 @@ class _What_the_pilot:
             found.sort(key=lambda f: f.sequence)
         return found
 
-    def runway_is_busy(self, now: float) -> bool:
-        """Whether somebody is on the runway right now."""
-        return now < self.runway_free_at
+    def _runway_free_at(self, runway: str) -> float:
+        """When the strip this runway is on next goes free, as the clock
+        sees it; 0 when nobody is booked on it."""
+        return self._runway_free.get(_runway_key(runway), 0.0)
+
+    def _hold_runway(self, runway: str, now: float, seconds: float) -> None:
+        """Take the runway's strip until then; whoever needs it longer
+        wins."""
+        key = _runway_key(runway)
+        self._runway_free[key] = max(self._runway_free.get(key, 0.0),
+                                     now + seconds)
+
+    def _release_runway(self, runway: str, now: float) -> None:
+        """Give a strip's booking back early: whatever it was taken for
+        is not happening."""
+        key = _runway_key(runway)
+        self._runway_free[key] = min(self._runway_free.get(key, 0.0), now)
+
+    def runway_is_busy(self, now: float, runway: str = "") -> bool:
+        """Whether somebody is on the runway right now. ``runway`` names
+        the strip; without one, the field's active runways are what is
+        asked about."""
+        keys = {_runway_key(runway)} if runway else {
+            _runway_key(r) for r in (self.field.departure_runway,
+                                     self.field.arrival_runway) if r}
+        return any(now < self._runway_free.get(key, 0.0) for key in keys)
 

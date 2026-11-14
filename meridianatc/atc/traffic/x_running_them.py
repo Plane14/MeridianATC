@@ -291,7 +291,7 @@ class _Running_them:
                 or self._nearest_arrival_s(flight) < takes
                 + self.CROSS_CLEAR_S):
             return False
-        self.runway_free_at = max(self.runway_free_at, now + takes)
+        self._hold_runway(flight.runway, now, takes)
         return True
 
     def _claim_runway_stretch(self, flight: Flight, position: int) -> None:

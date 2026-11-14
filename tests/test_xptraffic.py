@@ -378,3 +378,25 @@ def test_engine_backend_selection_and_single_notice(monkeypatch, plugin):
     assert engine.simtraffic.limit == 7
     engine.simwatch.attach.assert_called_once_with(engine.source._sim)
     assert (Config().traffic.xplane_plugin_host, Config().traffic.xplane_plugin_port) == ("127.0.0.1", 49010)
+
+
+def test_fms_plan_stored_and_filtered(plugin, link):
+    """The plugin's FMS entries land as route corroboration: waypoint
+    types only, in leg order, approach hardware left out."""
+    plan = [
+        {"i": 0, "t": 1, "id": "KSEA", "alt": 0, "lat": 47.4, "lon": -122.3},
+        {"i": 1, "t": 512, "id": "KENT", "alt": 8000, "lat": 47.2, "lon": -122.1},
+        {"i": 2, "t": 8, "id": "ISEA", "alt": 0, "lat": 47.45, "lon": -122.3},
+        {"i": 3, "t": 512, "id": "PAE", "alt": 0, "lat": 47.9, "lon": -122.28},
+    ]
+    plugin.status(fms=plan)
+    eventually(lambda: link.available and link.fms)
+    assert link.fms == plan
+    # Airport, fixes -- the ILS localizer entry (type 8) is not a waypoint.
+    assert link.fms_idents() == ("KSEA", "KENT", "PAE")
+
+    # A malformed fms block leaves the previous one standing.
+    plugin.status(fms=[{"t": "fix", "id": 5}])
+    threading.Event().wait(.05)
+    link.on_frame()
+    assert link.fms == plan and link.fms_idents() == ("KSEA", "KENT", "PAE")
