@@ -102,6 +102,9 @@ class AutonomousFlight(_Plumbing, _Entry, _The_loop, _Shared_helpers, _The_envel
         self._dialled_at = 0.0
         self._comms_settled = True
         self._call_tried_at = 0.0
+        # When the frequency was last heard busy, so a call keys a beat
+        # after it lets go rather than on the same breath.
+        self._last_busy_at = 0.0
         self._dir: FlightDirector | None = None
         self._perf: fly.Performance | None = None
         self._speeds: vspeeds.Speeds | None = None

@@ -46,6 +46,17 @@ _VOLUNTEERED = frozenset({
     "downwind", "base", "final",
 })
 
+# Seconds of quiet on the frequency before the first officer keys in. A
+# transmission that leaves on the same breath the other station lets go
+# is a machine waiting on the unkey, not a crew that was listening -- the
+# same beat the cabin's own answers leave (crew.ANSWER_DELAY_S).
+UNKEY_BEAT_S = 1.2
+
+# The calls keyed on top of that beat rather than behind it: a go-around
+# is what the tower is already listening for, and a call that urgent is
+# late exactly the length of the pause a slower one would leave.
+_CANNOT_WAIT = frozenset({"going_around"})
+
 
 class _The_radios:
     # -- the radios ---------------------------------------------------------
@@ -62,9 +73,12 @@ class _The_radios:
     def _fo_say(self, kind: str) -> bool:
         """One transmission by the first officer, through the same speech
         and the same parsing as the pilot's. False where the call was not
-        made -- nothing to say, or nobody to say it on, or a volunteered
-        call the frequency change is not ready for."""
+        made -- nothing to say, or nobody to say it on, a volunteered
+        call the frequency change is not ready for, or a frequency that
+        has not been quiet for the beat a crew leaves before keying."""
         if kind in _VOLUNTEERED and not self._comms_ready():
+            return False
+        if kind not in _CANNOT_WAIT and not self._unkeyed():
             return False
         if self.crew.radio_call is None or self.crew.transmit is None:
             return False
@@ -83,12 +97,24 @@ class _The_radios:
 
     def _radio_quiet(self) -> bool:
         try:
-            return not (self.crew.radio_busy
-                        and self.crew.radio_busy())
+            busy = bool(self.crew.radio_busy and self.crew.radio_busy())
         except Exception:
             log.debug("could not tell whether the frequency is busy",
                       exc_info=True)
             return True
+        if busy:
+            # Remembered on the way through, so the unkey beat measures
+            # the quiet from when the frequency actually let go.
+            self._last_busy_at = time.monotonic()
+        return not busy
+
+    def _unkeyed(self) -> bool:
+        """Whether the frequency has been quiet for the beat a crew
+        leaves before keying. Nobody transmits on the same breath the
+        last voice lets go on; a call that does is a machine that was
+        waiting on the edge of it, and it reads exactly that."""
+        return (time.monotonic() - getattr(self, "_last_busy_at", 0.0)
+                >= UNKEY_BEAT_S)
 
     def _manage_comms(self, state, now: float) -> None:
         """Work the radios the way the first officer flying would.
@@ -344,7 +370,7 @@ class _The_radios:
                 or leg == self.state.circuit_said:
             return
         if now - self.state.last_radio_at < 6.0 \
-                or not self._radio_quiet():
+                or not self._radio_quiet() or not self._unkeyed():
             return
         if not self._fo_say(leg):
             return
@@ -407,7 +433,8 @@ class _The_radios:
         else:
             return
         tried = getattr(self, "_call_tried_at", 0.0)
-        if now - max(self.state.last_radio_at, tried) < 25.0:
+        if now - max(self.state.last_radio_at, tried) < 25.0 \
+                or not self._unkeyed():
             return
         self._call_tried_at = now
         self._fo_say(kind)
@@ -437,11 +464,22 @@ class _The_radios:
             self.state.checked_in_with = key
 
     def _dial_radios(self, state, now: float) -> None:
-        """Squawk and altimeter as the controller gave them, dialled once."""
+        """Squawk and altimeter as the controller gave them, dialled once --
+        and only once the readback that carries them has gone out. A figure
+        the controller has not heard back is a figure the flight has not
+        agreed to: dialling it anyway is acting on a clearance nobody
+        acknowledged, which is the order a crew does not work in.
+        """
         session = self.session
+        pending = getattr(session, "pending", None)
+        owed = (getattr(pending, "values", None) or {}
+                if pending is not None
+                and getattr(pending, "readback_required", True)
+                and not getattr(pending, "read_back", False)
+                else {})
         want = "".join(c for c in str(getattr(session, "squawk", "") or "")
                        if c.isdigit())[:4]
-        if want and want != self.state.squawk_dialled:
+        if "squawk" not in owed and want and want != self.state.squawk_dialled:
             have = "".join(
                 c for c in str(getattr(state, "transponder_code", ""))
                 if c.isdigit())[:4]
@@ -451,7 +489,8 @@ class _The_radios:
                     and self.sim.set_squawk(want):
                 self._dialled_at = now
         alt = self._altimeter_hpa(getattr(session, "altimeter", 0.0))
-        if alt > 0.0 and abs(alt - self.state.altimeter_dialled) > 0.2:
+        if "altimeter" not in owed and alt > 0.0 \
+                and abs(alt - self.state.altimeter_dialled) > 0.2:
             have = float(getattr(state, "kohlsman_hpa", 0.0) or 0.0)
             if have > 0.0 and abs(have - alt) <= 0.5:
                 self.state.altimeter_dialled = alt

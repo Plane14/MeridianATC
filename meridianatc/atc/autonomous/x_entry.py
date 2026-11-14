@@ -218,6 +218,7 @@ class _Entry:
         self._dialled_at = 0.0
         self._comms_settled = True
         self._call_tried_at = 0.0
+        self._last_busy_at = 0.0
         self._last_lever = 0.0
         self._flaps_asked = 0.0
         self._lever_at = 0.0

@@ -1206,15 +1206,6 @@ class _The_phase_machine:
                 if not self.state.vacated:
                     self.state.vacated = True
                     self._run_checklist_for_phase("after_landing")
-                    # Off the runway: the tower, and after it whoever
-                    # the frequency belongs to, hears the vacated call
-                    # it expects -- once, and only when the FO can
-                    # actually transmit.
-                    if not self.state.vacated_call \
-                            and self._manage_radio \
-                            and self._radio_quiet():
-                        self._fo_say("vacated")
-                        self.state.vacated_call = True
                 self._transition(AutonomousPhase.TAXI_IN)
                 self._goto_sub("taxi")
                 return
@@ -1237,6 +1228,14 @@ class _The_phase_machine:
     def _phase_taxi_in(self, state, now: float) -> None:
         """Taxi to the stand after landing."""
         self._run_checklist_for_phase("after_landing")
+        # Off the runway: the tower, and after it whoever the frequency
+        # belongs to, hears the vacated call it expects. It is retried
+        # until it has actually gone out -- a call marked made on a
+        # frequency that never let it through was the report nobody
+        # heard.
+        if not self.state.vacated_call and self._manage_radio \
+                and self._radio_quiet():
+            self.state.vacated_call = self._fo_say("vacated")
         sub = self.state.sub or "taxi"
         if sub == "taxi":
             # The after-landing flow a pilot runs on the taxi: flaps

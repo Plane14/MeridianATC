@@ -278,6 +278,9 @@ class _Pending:
     # that keeps. Set from the clock when it is queued, so a queue wound on
     # by hand does not age it.
     stale_at: float = 0.0
+    # The instruction a "confirm" line is the other seat's hearing of, kept
+    # so the drain can drop it when the real readback has already gone out.
+    instruction: object = field(default=None, compare=False)
 
 
 @dataclass
@@ -1676,6 +1679,22 @@ class CrewDirector:
             return ""
         return cue
 
+    def _answered(self, pending: _Pending) -> bool:
+        """Whether the instruction a "confirm" was repeating has already
+        been answered: read back, or no longer the one a readback is owed
+        on because a newer instruction took its place. An advisory asks
+        for no readback, so there is nothing for it to be late for.
+        """
+        instruction = pending.instruction
+        if instruction is None \
+                or not getattr(instruction, "readback_required", False):
+            return False
+        if getattr(instruction, "read_back", False):
+            return True
+        session = getattr(self, "_session", None)
+        current = getattr(session, "pending", None)
+        return current is not None and current is not instruction
+
     def _drain(self) -> None:
         """Say whatever is due, one line at a time.
 
@@ -1729,6 +1748,12 @@ class CrewDirector:
                     # Its moment has gone: a "rotate" the radio held back
                     # is not said at an aeroplane already climbing.
                     late.append(pending)
+                elif pending.cue == "confirm" and self._answered(pending):
+                    # The numbers went out on the air before the first
+                    # officer could repeat them in here; confirming them
+                    # now is an exchange late, and it is how a clearance
+                    # gets said twice.
+                    dropped.append(pending.cue)
                 elif due is not None or pending.at > now:
                     keep.append(pending)
                 elif not self.still_true(pending.line):
@@ -2448,21 +2473,39 @@ class CrewDirector:
     # How far ahead of the line's measured end the call may go out: the
     # player's own report that it has finished is what is waited for.
     CALL_SLACK_S = 0.05
+    # And how long it may wait for the frequency once it has been heard.
+    # A call keyed over somebody else's turn is lost anyway, and one that
+    # outlives the exchange it belonged to is handed back rather than
+    # answered a conversation later.
+    CALL_WAIT_S = 45.0
 
     def _send_the_call(self) -> None:
         due = self._radio_call_at
         # Once it has been heard: the cabin player has finished with it (the
         # clock's own resolution is coarser than a short line on Windows).
-        if due is None or self.player.busy                 or time.monotonic() < due[0] - self.CALL_SLACK_S:
+        if due is None or self.player.busy \
+                or time.monotonic() < due[0] - self.CALL_SLACK_S:
+            return
+        language = self._callout_language() or self._language
+        words = FIRST_OFFICER_ANSWERS.get(language,
+                                          FIRST_OFFICER_ANSWERS["en"])
+        if self._radio_is_live():
+            # Somebody else has the frequency: the call waits its turn,
+            # the way any voice does -- but not past the moment the call
+            # would still be an answer to.
+            if time.monotonic() <= due[0] + self.CALL_WAIT_S:
+                return
+            self._radio_call_at = None
+            CREW.write("radio_call", made=False, call=due[1],
+                       why="the frequency stayed busy")
+            self._say_now(words["radio_yours"], "radio_call_refused",
+                          language)
             return
         self._radio_call_at = None
         try:
             self.transmit(due[1])
         except Exception:
             log.debug("the first officer's call failed", exc_info=True)
-        language = self._callout_language() or self._language
-        words = FIRST_OFFICER_ANSWERS.get(language,
-                                          FIRST_OFFICER_ANSWERS["en"])
         self._say_now(words["your_radio"], "your_radio", language)
 
     # ------------------------------------------------------------------
@@ -2486,6 +2529,19 @@ class CrewDirector:
             transition = float(transition_altitude(ident)) if ident else 18000.0
         except Exception:
             transition = 18000.0
+        given_at = float(getattr(session, "handoff_offered_at", 0.0) or 0.0)
+        if given_at:
+            pending = getattr(session, "pending", None)
+            if pending is not None \
+                    and getattr(pending, "readback_required", False) \
+                    and not getattr(pending, "read_back", False) \
+                    and "frequency" in (getattr(pending, "values", None)
+                                        or {}):
+                # The handoff is still being read back: the clock the "not
+                # tuned" notice runs on starts when the pilot has answered
+                # it, the way the altimeter's starts when the figure is
+                # applied -- never while the exchange itself is still open.
+                given_at = time.monotonic()
         return Watching(
             aircraft_class=(self._class.name if self._class
                             else aircraft_class.PISTON_SINGLE),
@@ -2494,8 +2550,7 @@ class CrewDirector:
             takeoff_flaps=flaps, qnh=qnh, qnh_given_at=self._qnh_at,
             transition_altitude_ft=transition,
             frequency=float(getattr(station, "mhz", 0.0) or 0.0),
-            frequency_given_at=float(getattr(session, "handoff_offered_at",
-                                             0.0) or 0.0),
+            frequency_given_at=given_at,
             reserve_gal=self.reserve_gal, reserve_lb=self.reserve_lb)
 
     def _run_notices(self, previous, state, session) -> None:
@@ -2907,7 +2962,7 @@ class CrewDirector:
             self.state.queue.append(_Pending(
                 at=time.monotonic() + 2.5,
                 line=Line(FIRST_OFFICER, text, INTERCOM),
-                cue="confirm"))
+                cue="confirm", instruction=instruction))
             self.state.queue.sort(key=lambda p: p.at)
 
     # ------------------------------------------------------------------

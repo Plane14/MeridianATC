@@ -1117,7 +1117,9 @@ def test_a_staffed_tower_hears_no_circuit_calls():
 
 
 def test_off_the_runway_the_vacated_call_goes_out():
-    """Rollout ends with the call the tower is waiting for."""
+    """Rollout ends with the call the tower is waiting for, made on the
+    taxi-in once the frequency lets it out -- a refusal is not the call
+    made, so it is tried until it goes and never again after it has."""
     from meridianatc.atc.autonomous import AutonomousPhase
     flight = _flier()
     flight.state.phase = AutonomousPhase.LANDING
@@ -1130,8 +1132,32 @@ def test_off_the_runway_the_vacated_call_goes_out():
         on_ground=True, heading_true=40.0, ground_speed_kt=10.0,
         vertical_speed_fpm=0.0, source="simconnect")
     flight._phase_landing(state, 10.0)
-    flight._fo_say.assert_called_once_with("vacated")
+    # The call belongs to the taxi-in now: the rollout itself only
+    # transitions.
+    flight._fo_say.assert_not_called()
     flight._transition.assert_called_once_with(AutonomousPhase.TAXI_IN)
+
+
+def test_the_vacated_call_is_retried_until_it_goes_out():
+    """"Vacated" refused once is owed still: the taxi-in keeps trying it
+    until the frequency takes it, then leaves it said."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _taxi_flight()
+    flight.state.phase = AutonomousPhase.TAXI_IN
+    flight._manage_radio = True
+    flight._radio_quiet = lambda: True
+    flight._fo_say = Mock(return_value=False)
+    state = SimpleNamespace(
+        on_ground=True, flaps_index=0, ground_speed_kt=10.0)
+    flight._phase_taxi_in(state, 10.0)
+    flight._phase_taxi_in(state, 11.0)
+    assert flight._fo_say.call_count == 2       # refused, still owed
+    assert not flight.state.vacated_call
+    flight._fo_say = Mock(return_value=True)
+    flight._phase_taxi_in(state, 12.0)
+    flight._phase_taxi_in(state, 13.0)
+    flight._fo_say.assert_called_once_with("vacated")
+    assert flight.state.vacated_call
 
 
 def test_the_stand_gets_its_bridge_then_its_deboarding():
@@ -1375,6 +1401,258 @@ def test_taxi_in_tunes_the_arrival_fields_ground_not_the_departures():
     flight._get_current_airport = lambda: flight.session.destination
     flight._manage_comms(state, 1000.0)
     assert dialled == [121.90]
+
+
+def test_the_squawk_is_not_dialled_before_it_is_read_back():
+    """A figure owed a readback is a figure not agreed to: the box stays
+    as it was until the controller has heard it said."""
+    flight, state, dialled, kinds = _radio_flight()
+    flight.session.squawk = "4570"
+    flight.session.pending = SimpleNamespace(
+        readback_required=True, read_back=False,
+        values={"squawk": "4570"})
+    squawked = []
+    flight.sim.set_squawk = lambda code: squawked.append(code) or True
+    flight._dial_radios(state, 1000.0)
+    assert squawked == []                    # still owed: nothing set
+    flight.session.pending.read_back = True
+    flight._dial_radios(state, 1006.0)
+    assert squawked == ["4570"]
+
+
+def test_the_altimeter_is_not_dialled_before_it_is_read_back():
+    """The same sequence for the pressure: read back first, set second."""
+    flight, state, dialled, kinds = _radio_flight()
+    flight.session.altimeter = 1013.0
+    flight.session.pending = SimpleNamespace(
+        readback_required=True, read_back=False,
+        values={"altimeter": 1013.0})
+    flight._dialled_at = -100.0
+    flight._dial_radios(state, 1000.0)
+    flight.director.kohlsman.assert_not_called()
+    flight.session.pending.read_back = True
+    flight._dial_radios(state, 1010.0)
+    flight.director.kohlsman.assert_called_once()
+
+
+def test_a_dial_the_readback_does_not_carry_goes_in_anyway():
+    """A figure nobody asked for is not held behind the readback of
+    another: the gate is on what the instruction carries, not on the
+    exchange being open at all."""
+    flight, state, dialled, kinds = _radio_flight()
+    flight.session.squawk = "7000"
+    flight.session.pending = SimpleNamespace(
+        readback_required=True, read_back=False,
+        values={"heading": 240})
+    squawked = []
+    flight.sim.set_squawk = lambda code: squawked.append(code) or True
+    flight._dial_radios(state, 1000.0)
+    assert squawked == ["7000"]
+
+
+def test_nothing_keys_on_the_same_breath_the_frequency_frees():
+    """A transmission that leaves as the other station lets go is a
+    machine on the unkey: the first officer leaves the beat a crew does.
+    """
+    import time as _time
+
+    flight, state, dialled, kinds = _radio_flight()
+    sent = []
+    flight.crew.radio_call = lambda kind: kinds.append(kind) or ("call", "")
+    flight.crew.transmit = lambda text: sent.append(text)
+    # The frequency has just let go: the beat has not.
+    flight._last_busy_at = _time.monotonic()
+    assert not flight._fo_say("check_in")
+    assert sent == []
+    # The same call a breath later is the call that goes out.
+    flight._last_busy_at = _time.monotonic() - 30.0
+    assert flight._fo_say("check_in")
+    assert sent == ["call"]
+
+
+def test_a_go_around_does_not_wait_out_the_beat():
+    """The urgent call is keyed on top of the pause: the tower is
+    already listening for it."""
+    import time as _time
+
+    flight, state, dialled, kinds = _radio_flight()
+    flight.crew.radio_call = lambda kind: kinds.append(kind) or ("call", "")
+    flight.crew.transmit = lambda text: None
+    flight._last_busy_at = _time.monotonic()
+    assert flight._fo_say("going_around")
+
+
+def test_the_ask_is_not_counted_tried_while_the_beat_runs():
+    """A call refused for the unkey beat has not had its go: the retry
+    clock waits for the attempt, not for the refusal."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight, state, dialled, kinds = _radio_flight(
+        stations=[_station("TWR", 118.10)],
+        phase="holding_short", com1=118.10, session_phase="taxi_out")
+    flight.state.phase = AutonomousPhase.HOLDING_SHORT
+    flight.session.phase = "taxi_out"
+    flight.session.taxi_path = None
+    flight._last_busy_at = 1e12             # the beat, far off
+    flight._call_tried_at = 0.0
+    flight.state.last_radio_at = -100.0
+    flight._work_the_calls(state, flight.session, 1000.0)
+    assert flight._call_tried_at == 0.0     # refused: not an attempt
+
+
+def test_the_frequency_notice_clock_starts_at_the_answer():
+    """"Not tuned" counts from the readback: a pilot still saying the
+    handoff back cannot have dialled it yet, so the first officer does
+    not start being cross about it until the answer has gone out."""
+    import time as _time
+
+    from meridianatc.atc import crew as crew_mod
+    from meridianatc.atc.session import Phase
+
+    director = crew_mod.CrewDirector.__new__(crew_mod.CrewDirector)
+    director.checklists = SimpleNamespace(book=None)
+    director._class = None
+    director._qnh_seen, director._qnh_at = 0.0, 0.0
+    director._where_in_the_circuit = lambda: None
+    director._field_ident = lambda: None
+    director.reserve_gal = director.reserve_lb = 0.0
+    director._language = "en"
+    offered = _time.monotonic() - 60.0
+    pending = SimpleNamespace(
+        readback_required=True, read_back=False,
+        values={"frequency": 119.10})
+    session = SimpleNamespace(
+        phase=Phase.PREFLIGHT, altimeter=0.0,
+        handoff_pending=SimpleNamespace(mhz=119.10),
+        handoff_offered_at=offered, pending=pending)
+    w = director._watching(SimpleNamespace(), session)
+    # Still being read back: the clock has not started.
+    assert w.frequency_given_at >= offered + 59.0
+    pending.read_back = True
+    w = director._watching(SimpleNamespace(), session)
+    # Answered: the clock runs from when it was given.
+    assert w.frequency_given_at == offered
+
+
+def test_a_confirm_that_arrives_late_is_dropped_not_said():
+    """The pilot read it back before the first officer could repeat it:
+    confirming the numbers now would be an exchange late, so the line
+    is dropped rather than spoken."""
+    import threading
+    import time as _time
+
+    from meridianatc.atc import crew as crew_mod
+    from meridianatc.atc.session import Instruction
+
+    director = crew_mod.CrewDirector.__new__(crew_mod.CrewDirector)
+    director.config = SimpleNamespace(immersion=SimpleNamespace(
+        enabled=True, copilot=True, confirmations=True))
+    director.synth = Mock()
+    director.player = SimpleNamespace(busy=False)
+    director.radio_busy = lambda: False
+    director.state = crew_mod.CrewState()
+    director._lock = threading.Lock()
+    director._blocked_since = 0.0
+    director._language = "en"
+    director.say = Mock(return_value=0.0)
+    instruction = Instruction("squawk", "LPPT:TWR", "squawk 4570",
+                              {"squawk": "4570"})
+    director._session = SimpleNamespace(pending=instruction)
+    director.confirm(instruction)
+    assert len(director.state.queue) == 1
+    # The readback goes out before the interphone line's moment.
+    instruction.read_back = True
+    director._drain()
+    assert not director.state.queue
+    director.say.assert_not_called()
+
+
+def test_a_confirm_for_a_still_owed_instruction_keeps_its_moment():
+    """The same line while the readback is still owed is the first
+    officer's job, not noise: it stays."""
+    import threading
+    import time as _time
+
+    from meridianatc.atc import crew as crew_mod
+    from meridianatc.atc.session import Instruction
+
+    director = crew_mod.CrewDirector.__new__(crew_mod.CrewDirector)
+    director.config = SimpleNamespace(immersion=SimpleNamespace(
+        enabled=True, copilot=True, confirmations=True))
+    director.synth = Mock()
+    director.player = SimpleNamespace(busy=False)
+    director.radio_busy = lambda: False
+    director.state = crew_mod.CrewState()
+    director._lock = threading.Lock()
+    director._blocked_since = 0.0
+    director._language = "en"
+    director.say = Mock(return_value=0.0)
+    director.play = Mock(return_value=0.0)
+    director._close_up = Mock()
+    instruction = Instruction("squawk", "LPPT:TWR", "squawk 4570",
+                              {"squawk": "4570"})
+    director._session = SimpleNamespace(pending=instruction)
+    director.confirm(instruction)
+    line = director.state.queue[0]
+    line.at = _time.monotonic() - 1.0       # its moment has come
+    line.voice = object()                   # already rendered
+    director._drain()
+    director.say.assert_called_once()
+    assert director._close_up.call_args[0][0].cue == "confirm"
+
+
+def test_the_handed_over_call_waits_the_frequency_out():
+    """A call the pilot handed over keys when the frequency lets it,
+    never over somebody's turn -- and not for ever."""
+    import time as _time
+
+    from meridianatc.atc import crew as crew_mod
+
+    director = crew_mod.CrewDirector.__new__(crew_mod.CrewDirector)
+    director.player = SimpleNamespace(busy=False)
+    director.radio_busy = lambda: True      # the frequency is live
+    sent = []
+    director.transmit = lambda text: sent.append(text)
+    said = []
+    director._say_now = lambda text, cue, language="": \
+        said.append((text, cue))
+    director._callout_language = lambda: "en"
+    director._language = "en"
+    director._radio_call_at = (_time.monotonic() - 1.0,
+                               "lisboa ground, test, ready to taxi")
+    director._send_the_call()
+    assert sent == []                       # held, not keyed over
+    assert director._radio_call_at is not None
+    # And past the wait the radio is handed back rather than kept.
+    director._radio_call_at = (
+        _time.monotonic() - director.CALL_WAIT_S - 5.0, "the call")
+    director._send_the_call()
+    assert sent == []
+    assert director._radio_call_at is None
+    assert said[-1][1] == "radio_call_refused"
+
+
+def test_the_handed_over_call_goes_once_the_frequency_is_quiet():
+    """The same call on a free frequency is the transmission it was."""
+    import time as _time
+
+    from meridianatc.atc import crew as crew_mod
+
+    director = crew_mod.CrewDirector.__new__(crew_mod.CrewDirector)
+    director.player = SimpleNamespace(busy=False)
+    director.radio_busy = lambda: False
+    sent = []
+    director.transmit = lambda text: sent.append(text)
+    said = []
+    director._say_now = lambda text, cue, language="": \
+        said.append((text, cue))
+    director._callout_language = lambda: "en"
+    director._language = "en"
+    director._radio_call_at = (_time.monotonic() - 1.0,
+                               "lisboa ground, test, ready to taxi")
+    director._send_the_call()
+    assert sent == ["lisboa ground, test, ready to taxi"]
+    assert director._radio_call_at is None
+    assert said[-1][1] == "your_radio"
 
 
 # ---------------------------------------------------------------------
