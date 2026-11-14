@@ -271,6 +271,26 @@ def _heading_error(want: float, have: float) -> float:
     return ((want - have + 540.0) % 360.0) - 180.0
 
 
+def _committed_error(err: float, commit: int) -> tuple[float, int]:
+    """A near-reversal committed to one side.
+
+    At ~180 degrees of heading error the shortest way round flips on a
+    degree of wobble, and a pedal loop free to re-pick yaws the machine
+    left, then right, then left again around the point instead of
+    through it -- the same pivot the fixed-wing steering showed on the
+    apron. Once the error is genuinely big the side it first showed is
+    kept until the turn is mostly made; the caller holds the commit in
+    its own state between ticks.
+    """
+    if commit and abs(err) < 60.0:
+        commit = 0
+    if not commit and abs(err) > 150.0:
+        commit = 1 if err > 0.0 else -1
+    if commit:
+        err = commit * max(60.0, abs(err))
+    return err, commit
+
+
 @dataclass
 class HeliState:
     """What the rotorcraft controller remembers between ticks."""
@@ -792,6 +812,8 @@ class RotorcraftFlight:
                 err_h = _heading_error(
                     want_hdg, float(getattr(state, "heading_true", 0.0)
                                     or 0.0))
+                err_h, self._turn_commit = _committed_error(
+                    err_h, getattr(self, "_turn_commit", 0))
                 pedal = int(_clamp(-PEDAL_DEG_PER_AXIS * err_h,
                                    -PEDAL_MAX, PEDAL_MAX))
                 if not self._send(PEDAL_SET, pedal):
@@ -957,6 +979,8 @@ class RotorcraftFlight:
         want_hdg = self._desired_track(state)
         if want_hdg:
             err = _heading_error(want_hdg, hdg)
+            err, self._turn_commit = _committed_error(
+                err, getattr(self, "_turn_commit", 0))
             if self._use_pids:
                 pedal = int(_clamp(-self._pid("pedals").update(err),
                                    -pedal_max, pedal_max))
