@@ -101,14 +101,22 @@ and the cooling watch reads `ENGN_CHT_c`/`ENGN_oil_temp_c` (converted by the
 The taxi routes the FO drives come from the airport's own `apt.dat`
 (`integrations/xpground.py`): the 1200-series node/edge graph, the named
 taxiways, the stands and the runway rectangles, read from the loaded
-scenery's files rather than invented. XPLM's navigation APIs expose
-airports, navaids and the FMS but no taxiway graph -- the file is the
-only source, on this sim as everywhere else. Where an airport carries no
-taxi network the planner falls back to its invented straight-line route,
-the same answer MSFS gives at a field without facilities. The cleared
-route also goes to the plugin, which draws it on X-Plane's own map as a
-`XPLMMap` markings layer ("MeridianATC taxi route" in the map's layer
-list), refreshed while the taxi clearance stands. Ask the plugin for a
+scenery's files rather than invented. The same file answers the engine's
+runway, threshold and comm-frequency questions -- the row-100 runway
+records (numbers, endpoints, width, surface, displaced thresholds) stand
+in for SimConnect's facility runways, and the 1050-series rows give the
+field's ATIS/CTAF/DEL/GND/TWR/APP/DEP channels. Enroute fixes in a loaded
+route resolve from the install's `earth_fix.dat`. XPLM's navigation APIs
+expose airports, navaids and the FMS but no taxiway graph -- the file is
+the only source, on this sim as everywhere else. Where an airport carries
+no taxi network the planner falls back to its invented straight-line
+route, the same answer MSFS gives at a field without facilities. The
+cleared route also goes to the plugin, which draws it on X-Plane's own
+map as a `XPLMMap` markings layer ("MeridianATC taxi route" in the map's
+layer list), refreshed while the taxi clearance stands. The layer uses
+fixed-pipeline OpenGL, so it only draws when X-Plane runs the OpenGL
+graphics driver; under Vulkan or Metal the layer registers empty and a
+note is logged once. Ask the plugin for a
 METAR and it answers `XPLMGetMETARForAirport` -- the report the simulator
 itself downloaded, which the ATIS prefers over a network fetch; where the
 sim is not in real-weather mode the answer is empty and the fetch stands.
@@ -122,16 +130,22 @@ recovery -- autopilot off, full power, push, wings level -- and the
 instruments agreeing the wing is flying again hands them back, on either
 simulator.
 
-Load a route into X-Plane's FMS yourself before using GPS/NAV; this does not
-import a MeridianATC plan into the simulator. Custom aircraft may intercept or
-ignore the standard AP commands. UDP sends are not execution acknowledgements;
-monitor the aircraft's instruments and be ready to take control. These mappings
-have fake-peer protocol tests; the axes, brakes, steering and engine levers
-were additionally verified against a live X-Plane 12 session.
+A route loaded in X-Plane's FMS is adopted as the flight's plan: the
+plugin forwards the entry list on the status channel and the engine
+rebuilds it as origin, enroute fixes and destination, re-adopting it
+whenever the FMS's own list changes. This does not write a MeridianATC
+plan *into* the simulator -- load the FMS from SimBrief or by hand first.
+Custom aircraft may intercept or ignore the standard AP commands. COM
+and NAV frequency and squawk writes are confirmed by subscribed RREF
+read-back before they report success; other UDP sends are not execution
+acknowledgements, so monitor the aircraft's instruments and be ready to
+take control. These mappings have fake-peer protocol tests; the axes,
+brakes, steering and engine levers were additionally verified against a
+live X-Plane 12 session.
 
-FO radio and checklist conversation remain available. GSX/LVAR integrations,
-MSFS facility queries, native TCAS-contact import and simulator flight-plan
-import are not supported; use published data and manually loaded plans/SimBrief.
+FO radio and checklist conversation remain available. GSX/LVAR
+integrations, native TCAS-contact import and writing a flight plan into
+the simulator are not supported.
 
 Connection attempts run on a worker, with adoption/session changes on the
 situation thread. A slow MSFS timeout or X-Plane discovery/RREF timeout cannot
@@ -227,6 +241,15 @@ Hiding traffic keeps snapshots but removes aircraft from rendering/TCAS. TCAS
 control is requested via XPMPMultiplayerEnable and may be refused when another
 plugin owns AI targets; see Log.txt. Drawing doesn't require TCAS control.
 
+Six commands are published for X-Plane's own keyboard/joystick bindings
+(Settings > Keyboard or Joystick & Equipment, search "MeridianATC"):
+`meridianatc/transmit_com1` and `meridianatc/transmit_com2` select the
+transmit radio, `meridianatc/talk` and `meridianatc/talk_copilot` speak to
+the controller as pilot and FO, `meridianatc/mic_push_to_talk` keys the
+microphone, and `meridianatc/copy_error` copies the last refused-command
+reason. They reach the engine over the status channel, so they do nothing
+until the app has said hello.
+
 Read-only integer datarefs:
 
 * `meridianatc/xp/connected`: 1 while accepted owner traffic/clear was seen within
@@ -278,9 +301,13 @@ All aircraft are deleted **10 seconds after the last accepted traffic snapshot**
 tracking so a restarted sender can begin at zero. If restarting earlier, send
 clear from the same socket or wait 10 seconds. Only one source address/port owns
 the session; a new source can take over after 10 seconds without accepted owner
-traffic/clear. **Hello never claims, changes or refreshes ownership**, even on
-an idle plugin. Any sender's hello receives status without changing aircraft,
-sequence tracking, the connected dataref or the periodic-status destination.
+traffic/clear. **A hello claims the session once the current owner has gone
+quiet** (no accepted owner packet for half a second) -- a restarted engine's
+sequence numbers start from zero, so its first hello hands it the session
+instead of its traffic being muted until the old owner expired. While the
+owner is still being accepted, any sender's hello receives status without
+changing aircraft, sequence tracking, the connected dataref or ownership;
+the periodic status goes to whoever last said hello.
 
 ```json
 {"v":1,"t":"clear"}
@@ -292,7 +319,8 @@ Immediately removes all aircraft and resets sequence tracking.
 {"v":1,"t":"hello"}
 ```
 
-Requests immediate status only. Send traffic periodically to maintain connected
+Requests immediate status, and -- once the current owner has gone quiet --
+claims the session (see above). Send traffic periodically to maintain connected
 status. No sender timestamp field is required: monotonic local arrival times
 drive a 200 ms interpolation buffer. Heading/longitude interpolate on the short
 arc (including north/dateline wrap). Beyond the newest snapshot, GS/heading/VS

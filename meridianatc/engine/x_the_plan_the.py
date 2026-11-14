@@ -50,7 +50,77 @@ class _The_plan_the:
         if self._sim_plan_seen and getattr(self.state, "on_ground", True):
             self._use_sim_plan(self._sim_plan_seen)
 
-    def _use_sim_plan(self, path: str) -> None:
+    def _use_sim_plan(self, plan) -> None:
+        """What the simulator is flying, as the flight's route.
+
+        MSFS answers with the .pln path on disk; X-Plane's plugin reads
+        the FMS itself and answers with the entry list.
+        """
+        if isinstance(plan, (list, tuple)):
+            self._use_fms_plan(plan)
+            return
+        self._use_pln_plan(plan)
+
+    # The nav types an FMS entry can be and still be a route point --
+    # approach elements (ILS, localizer, glideslope, markers) are skipped.
+    _FMS_ROUTE_TYPES = {1: "apt", 2: "ndb", 4: "vor", 512: "wpt",
+                        1024: "wpt", 2048: "wpt", 4096: "vor"}
+
+    def _use_fms_plan(self, entries) -> None:
+        """The plugin's FMS entry list as the flight's route.
+
+        Every entry carries its own position, so nothing needs resolving;
+        the fingerprint keeps the same plan from being rebuilt every
+        pass of the poll.
+        """
+        fingerprint = tuple(
+            (str(e.get("id", "")), round(float(e.get("lat", 0) or 0), 5),
+             round(float(e.get("lon", 0) or 0), 5), int(e.get("alt", 0) or 0))
+            for e in entries if isinstance(e, dict))
+        if fingerprint == getattr(self, "_sim_plan_fp", None):
+            return
+        route = self._route_from_fms(entries)
+        if route is None:
+            return
+        self._sim_plan_fp = fingerprint
+        self.use_route(route)
+        if self.session is not None:
+            self.begin_session()
+        self.emit("info", f"Flight plan from the simulator: {route.described()}",
+                  key="log.simplan")
+
+    def _route_from_fms(self, entries):
+        """FMS entry dicts (id/t/alt/lat/lon/active) as a Route."""
+        from ..atc.route import Route, RouteFix
+
+        fixes = []
+        for e in entries[:512]:
+            if not isinstance(e, dict):
+                continue
+            try:
+                kind = self._FMS_ROUTE_TYPES.get(int(e.get("t", 0) or 0))
+                lat, lon = float(e.get("lat", 0) or 0), \
+                    float(e.get("lon", 0) or 0)
+                alt = int(e.get("alt", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if kind is None \
+                    or not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                continue
+            ident = str(e.get("id") or "").strip().upper() \
+                or f"{lat:+.4f}{lon:+.4f}"
+            fixes.append(RouteFix(ident=ident, lat=lat, lon=lon,
+                                  alt_ft=alt,
+                                  kind=kind))
+        if len(fixes) < 2:
+            return None
+        airports = [f.ident for f in fixes if f.kind == "apt"]
+        return Route(fixes=tuple(fixes),
+                     origin=airports[0] if airports else "",
+                     destination=airports[-1] if airports else "",
+                     source="sim")
+
+    def _use_pln_plan(self, path: str) -> None:
         """The simulator's active .pln as the flight's route.
 
         Loaded once per file: the same path at the same modified time is

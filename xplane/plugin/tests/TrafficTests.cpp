@@ -123,6 +123,33 @@ void Ownership() {
     Check(session.Apply(clear, 22, 2), "clear can take over after inactivity");
     Check(!session.Connected(32), "ownership expires after clear");
 }
+void Claiming() {
+    Session session;
+    auto traffic5 = Parse(Json{{"v", 1}, {"t", "traffic"}, {"seq", 5},
+                               {"ac", Json::array({Aircraft()})}}.dump());
+    auto traffic0 = traffic5; traffic0.seq = 0;
+    Check(session.Apply(traffic5, 0, 1), "first engine claims");
+    // A restarted engine announces itself with hello from a new port; the
+    // claim hands it the session at once -- its seq restarts from zero
+    // and the old owner's packets stop landing.
+    session.Claim(2, 1);
+    Check(session.Connected(1), "claim connects the new owner");
+    Check(session.Apply(traffic0, 1, 2) && session.snapshot.size() == 1,
+          "restarted sequence accepted after claim");
+    Check(!session.Apply(traffic5, 1, 1), "old owner rejected after claim");
+    // The owner's own hello is a no-op: it must not clear its snapshot.
+    session.Claim(2, 2);
+    Check(session.snapshot.size() == 1, "owner claim is a no-op");
+    // A status probe's hello while the owner is still sending is not a
+    // takeover: the snapshot and the ownership both stay.
+    auto traffic6 = traffic5; traffic6.seq = 6;
+    auto traffic7 = traffic5; traffic7.seq = 7;
+    Check(session.Apply(traffic6, 2.0, 2), "owner's traffic still lands");
+    session.Claim(3, 2.1);
+    Check(session.Apply(traffic7, 2.2, 2) && session.snapshot.size() == 1,
+          "live owner survives a probe's claim");
+    Check(!session.Apply(traffic7, 2.3, 3), "probe's traffic still refused");
+}
 void Movement() {
     auto a = Parse(Json{{"v", 1}, {"t", "traffic"}, {"seq", 1}, {"ac", Json::array({Aircraft()})}}.dump()).aircraft.begin()->second;
     a.hdg = 359; Motion motion(a, 10);
@@ -198,6 +225,6 @@ void Socket() {
     server.Close(); Check(server.Open(port), "clean socket reopen");
 }
 int main() {
-    try { Protocol(); FollowMePacket(); RouteAndMetar(); MatchPacket(); Ownership(); Movement(); Socket(); std::cout << "protocol, ownership, snapshot lifecycle, motion and UDP tests passed\n"; }
+    try { Protocol(); FollowMePacket(); RouteAndMetar(); MatchPacket(); Ownership(); Claiming(); Movement(); Socket(); std::cout << "protocol, ownership, snapshot lifecycle, motion and UDP tests passed\n"; }
     catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

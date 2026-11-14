@@ -21,6 +21,7 @@ data/navdata/nav.sqlite
 data/voices/
 data/models/
 data/metar_cache.json
+cache/
 
 # Local corrections are yours to keep, so these are tracked:
 !data/navdata/overrides.csv

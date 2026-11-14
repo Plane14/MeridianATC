@@ -1348,6 +1348,9 @@ class SimConnectSource:
             state.track_true = state.heading_true
         if state.altitude_agl_ft <= 0 and state.on_ground:
             state.altitude_agl_ft = 0.0
+        # X-Plane's transponder has a "mode" alongside its state; here the
+        # two are the same dial.
+        state.transponder_mode = state.transponder_state
 
     # ------------------------------------------------------------------
     # writing back: the panel is a radio too
@@ -1446,10 +1449,18 @@ class SimConnectSource:
         if not hz_event:
             return False
 
+        # The BCD events name a channel only to the 25 kHz grid; an 8.33
+        # channel they cannot say would land on the nearest one it can.
+        # Refusing is the honest answer -- a wrong frequency tuned "to be
+        # helpful" is a clearance heard on the wrong radio.
+        bcdable = round(value * 1000) % 25 == 0
+
         known = self._freq_event_style.get(key)
         if known == "hz":
             return self._send(hz_event, encode_hz(value))
         if known == "bcd":
+            if not bcdable:
+                return False
             packed = encode_bcd16(value)
             return bool(packed) and self._send(bcd_event, packed)
 
@@ -1468,10 +1479,12 @@ class SimConnectSource:
         if self._send(hz_event, encode_hz(value)) and self._took(key, value):
             self._freq_event_style[key] = "hz"
             return True
-        packed = encode_bcd16(value)
-        if packed and self._send(bcd_event, packed) and self._took(key, value):
-            self._freq_event_style[key] = "bcd"
-            return True
+        if bcdable:
+            packed = encode_bcd16(value)
+            if packed and self._send(bcd_event, packed) \
+                    and self._took(key, value):
+                self._freq_event_style[key] = "bcd"
+                return True
         return False
 
     def _reads(self, key: tuple[int, bool], wanted: float) -> bool:

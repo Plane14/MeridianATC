@@ -141,6 +141,9 @@ EXTRA = {
     "hsi_source": RADIOS + "HSI_source_select_pilot",
     "nav_type": "sim/cockpit2/radios/indicators/nav1_type",
     "rain": "sim/weather/aircraft/precipitation_on_aircraft_ratio",
+    # Snow's share of what is falling (XP12.1+ region weather); absent on
+    # older builds, which simply keep reporting rain-or-nothing.
+    "snow": "sim/weather/region/snow_percent",
     # The nosewheel's own authority in degrees -- what a -1..1 steering
     # write scales by; 0 or absent leaves the controls' default.
     "steer_deg": "sim/aircraft/gear/acf_nw_steerdeg1",
@@ -183,6 +186,8 @@ for _engine in range(8):
     EXTRA[f"cowl{_engine}"] = f"sim/cockpit2/engine/actuators/cowl_flap_ratio[{_engine}]"
 for _step in range(6):
     EXTRA[f"bank_angle{_step}"] = f"sim/cockpit2/autopilot/bank_angles_values[{_step}]"
+# ...and which of those steps the selector currently stands on.
+EXTRA["bank_mode"] = "sim/cockpit2/autopilot/bank_angle_mode"
 for _engine in range(16):
     EXTRA[f"running{_engine}"] = f"sim/flightmodel/engine/ENGN_running[{_engine}]"
     EXTRA[f"flow{_engine}"] = f"sim/flightmodel/engine/ENGN_FF_[{_engine}]"
@@ -237,6 +242,19 @@ class XPlaneSource:
         self._answered = threading.Event()
         self._lock = threading.Lock()
         self._values = {}
+        # The endpoint that answers the subscriptions: the first packet
+        # pins it, and only it is heard afterwards. The simulator's own
+        # send port is not the one the requests went to, so it is learned
+        # rather than assumed.
+        self._sender = None
+        # Set by the engine once the traffic plugin is up: a callable
+        # returning the FMS entries the plugin reads, for the flight
+        # plan the simulator itself is flying.
+        self.fms_reader = None
+        # Teleport/slew detection: the position a read ago and until when
+        # a jump it could not have flown marks the state relocated.
+        self._last_geo = None
+        self._relocated_until = 0.0
         self._controls = XPlaneControls(self)
         self._last_packet = 0.0
         self._subscriptions = [(key, path) for key, (path, _) in DATAREFS.items()]
@@ -293,6 +311,8 @@ class XPlaneSource:
                 with self._lock:
                     self._values.clear()
                     self._last_packet = 0.0
+                    self._sender = None
+                    self._last_geo = None
                 self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 self._socket.bind(("", 0))
                 # The answers leave from the simulator's send port (49001 by
@@ -335,11 +355,14 @@ class XPlaneSource:
                 continue
             valid = False
             with self._lock:
+                if self._sender is not None and sender != self._sender:
+                    continue
                 for index, value in struct.iter_unpack("<if", packet[5:]):
                     if 0 <= index < len(self._subscriptions) and math.isfinite(value):
                         self._values[self._subscriptions[index][0]] = value
                         valid = True
                 if valid:
+                    self._sender = self._sender or sender
                     self._last_packet = time.monotonic()
                     self._answered.set()
 
@@ -361,7 +384,8 @@ class XPlaneSource:
         for i in range(1, 4):
             if f"running{i}" in values and state.engine_count > i:
                 setattr(state, f"eng{i + 1}_combustion", bool(values[f"running{i}"]))
-        state.engine_type = {0: 0, 1: 0, 3: 4, 5: 1, 6: 4, 7: 1, 9: 5, 10: 5}.get(
+        state.engine_type = {0: 0, 1: 0, 2: 5, 3: 4, 4: 1, 5: 1, 6: 4,
+                             7: 1, 8: 5, 9: 5, 10: 5}.get(
             int(values.get("xp_engine_type", -1)), -1)
         state.category = "Helicopter" if values.get("helicopter") else "Airplane"
         if state.category == "Helicopter":
@@ -372,7 +396,9 @@ class XPlaneSource:
         state.transponder_mode = 5 if values.get("ident") else (
             1 if state.transponder_state == 2 else state.transponder_state)
         state.transponder_code = f"{int(values.get('squawk', 1200)):04d}"
-        state.com1_transmit = values.get("transmit", 6) == 6
+        # audio_com_selection is the mic selector: 0 COM1, 1 COM2. Absent
+        # means "assume the radio the pilot was last on" -- COM1.
+        state.com1_transmit = values.get("transmit", 0) == 0
         # servos_on is a boolean, not the autopilot_mode enum of
         # sim/cockpit/autopilot: the AP is engaged where it reads non-zero.
         state.autopilot = bool(values.get("control:ap_on",
@@ -383,7 +409,16 @@ class XPlaneSource:
             int(values.get("fuel_selector", -1)), -1)
         state.gps_drives_nav1 = values.get("hsi_source", 0) in (2, 3)
         state.nav1_has_localizer = bool(int(values.get("nav_type", 0)) & (8 | 16))
-        state.ambient_precip_state = 4 if values.get("rain", 0) > 0 else 0
+        state.ambient_precip_state = (4 if values.get("rain", 0) > 0
+                                      else 2 if values.get("snow", 0) > 0
+                                      else 0)
+        # The bank selector's active step, from the index into the six
+        # preset angles -- the number AP_MAX_BANK writes pick from.
+        bank_mode = int(values.get("bank_mode", -1))
+        state.ap_max_bank_deg = (
+            values[f"bank_angle{bank_mode}"]
+            if 0 <= bank_mode <= 5 and f"bank_angle{bank_mode}" in values
+            else 0.0)
         state.spoilers_armed = values.get("speedbrake", 0) < 0
         # X-Plane reports fuel mass, not volume; use the same nominal 6 lb/gal
         # as ManualSource where the model does not declare a fuel density.
@@ -477,7 +512,28 @@ class XPlaneSource:
                 known.add(derived)
         if values.get("trq_nm") is not None and values.get("trq_red_hi_ftpds", 0.0) > 0.0:
             known.add("eng_torque_pct")
+        if state.ap_max_bank_deg:
+            known.add("ap_max_bank_deg")
+        known.add("relocated")
         state.unavailable = tuple(f.name for f in fields(state) if f.name not in known)
+        # A menu move or a slew is a position the aeroplane could not have
+        # flown to -- further than its groundspeed could carry it since
+        # the last read. Marked for a couple of seconds so the change-
+        # watchers hold rather than fire on the delta.
+        now = time.monotonic()
+        if self.connected and state.has_position:
+            if self._last_geo is not None:
+                lat0, lon0, t0 = self._last_geo
+                dt = max(0.05, now - t0)
+                dlat = (state.latitude - lat0) * 60.0
+                dlon = ((state.longitude - lon0)
+                        * math.cos(math.radians((state.latitude + lat0) / 2))
+                        * 60.0)
+                reach_nm = (state.ground_speed_kt or 0.0) / 3600.0 * dt * 2.5 + 0.25
+                if math.hypot(dlat, dlon) > reach_nm:
+                    self._relocated_until = now + 2.0
+            self._last_geo = (state.latitude, state.longitude, now)
+        state.relocated = now < self._relocated_until
         return state
 
     def read_now(self, attribute):
@@ -507,13 +563,45 @@ class XPlaneSource:
         except OSError:
             return False
 
+    # How long a write is given to show in the subscribed readback before
+    # it is called a refusal -- the same pattern SimConnect's set_com uses.
+    CONFIRM_S = 0.8
+    CONFIRM_STEP_S = 0.05
+
+    def _await(self, key, predicate):
+        """Wait for the subscribed ``key`` to satisfy ``predicate``.
+
+        DREF and CMND writes are fire-and-forget datagrams: this is the
+        read-back half SimConnect's set_com already does. True when the
+        key confirmed; False when it read back something else. A key the
+        subscription never answers returns None -- the write went out and
+        cannot be verified, which is an honest "sent", not a failure.
+        """
+        deadline = time.monotonic() + self.CONFIRM_S
+        seen = False
+        while time.monotonic() < deadline:
+            with self._lock:
+                found = self._values.get(key)
+            if found is not None:
+                seen = True
+                if predicate(found):
+                    return True
+            time.sleep(self.CONFIRM_STEP_S)
+        return False if seen else None
+
     def set_com(self, mhz, radio=1, standby=False):
         try:
             value = float(mhz)
             if radio not in (1, 2) or not 118 <= value <= 136.999:
                 return False
             path = f"com{radio}_" + ("standby_" if standby else "") + "frequency_hz_833"
-            return self._dref(RADIOS + path, round(value * 1000))
+            if not self._dref(RADIOS + path, round(value * 1000)):
+                return False
+            # kHz channels: the subscribed key is the same dataref just
+            # written, so the readback is the honest answer.
+            key = f"com{radio}_{'standby' if standby else 'active'}"
+            confirmed = self._await(key, lambda khz: abs(khz - value * 1000) < 2.0)
+            return confirmed is not False
         except (ValueError, TypeError):
             return False
 
@@ -522,15 +610,25 @@ class XPlaneSource:
 
     def set_nav(self, mhz, radio=1):
         try:
-            return (radio in (1, 2) and 108 <= float(mhz) <= 117.95
-                    and self._dref(RADIOS + f"nav{radio}_frequency_hz", round(float(mhz) * 100)))
+            value = float(mhz)
+            if radio not in (1, 2) or not 108 <= value <= 117.95:
+                return False
+            if not self._dref(RADIOS + f"nav{radio}_frequency_hz", round(value * 100)):
+                return False
+            confirmed = self._await(f"nav{radio}_freq",
+                                    lambda khz: abs(khz - value * 100) < 2.0)
+            return confirmed is not False
         except (ValueError, TypeError):
             return False
 
     def set_squawk(self, code):
         code = str(code)
-        return (len(code) == 4 and all(c in "01234567" for c in code)
-                and self._dref(RADIOS + "transponder_code", int(code)))
+        if not (len(code) == 4 and all(c in "01234567" for c in code)):
+            return False
+        if not self._dref(RADIOS + "transponder_code", int(code)):
+            return False
+        confirmed = self._await("squawk", lambda seen: int(seen) == int(code))
+        return confirmed is not False
 
     def pushback(self):
         return self._command("sim/ground_ops/pushback_straight")
@@ -564,13 +662,26 @@ class XPlaneSource:
         return self._controls.send(name, value)
 
     def loaded_flight_plan(self):
+        # There is no plan file on this link; the engine's _poll_sim_plan
+        # drives request_flight_plan/flight_plan_reply instead, which the
+        # plugin's FMS readback answers.
         return None
 
     def request_flight_plan(self):
-        return False
+        """Whether the FMS entries can be asked for right now."""
+        try:
+            return bool(self.fms_reader and self.fms_reader())
+        except Exception:
+            return False
 
     def flight_plan_reply(self):
-        return None
+        """The plan in the FMS, as the plugin last read it -- a list of
+        entry dicts, not a path; the engine turns it into a route."""
+        try:
+            entries = self.fms_reader() if self.fms_reader else None
+        except Exception:
+            return None
+        return list(entries) if entries else None
 
     def fuel_tanks(self):
         if not self.connected:
@@ -584,14 +695,34 @@ class XPlaneSource:
                 for i in range(9) if values.get(f"tank_ratio{i}", 0) > 0]
 
     def set_fuel(self, gallons):
+        """Fill every tank to the same fraction of its capacity.
+
+        A tank that refuses the write does not void the others: fuel is
+        set when at least one took it, which is what the caller's
+        "did the fuel go in" is asking. A model that does not publish its
+        total capacity is filled by even share of the tanks it does show.
+        """
         try:
             gallons = float(gallons)
+            if not math.isfinite(gallons) or gallons < 0:
+                return False
             tanks = self.fuel_tanks()
             capacity = sum(cap for _, cap, _ in tanks)
-            if not math.isfinite(gallons) or gallons < 0 or capacity <= 0:
-                return False
-            fraction = min(1, gallons / capacity)
-            return all(self._dref(path, cap * fraction * 6 / LB) for path, cap, _ in tanks)
+            if capacity > 0:
+                fraction = min(1, gallons / capacity)
+                wanted = [(path, cap * fraction) for path, cap, _ in tanks]
+            else:
+                with self._lock:
+                    values = self._values.copy()
+                present = [f"sim/flightmodel/weight/m_fuel[{i}]"
+                           for i in range(9)
+                           if values.get(f"tank{i}", 0) > 0
+                           or values.get(f"tank_ratio{i}", 0) > 0]
+                if not present:
+                    return False
+                wanted = [(path, gallons / len(present)) for path in present]
+            writes = [self._dref(path, gal * 6 / LB) for path, gal in wanted]
+            return any(writes)
         except (ValueError, TypeError):
             return False
 
@@ -606,5 +737,6 @@ class XPlaneSource:
             self._socket.close()
             self._socket = None
         self._peer = None
+        self._sender = None
         self._answered.clear()
         self._controls.clear()

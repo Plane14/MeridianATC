@@ -92,6 +92,14 @@ toolbar:
 Change the port there and change `PORT` at the top of `WilcoATC.js` to match.
 Loopback only, like the rest of the application.
 
+One radio note: MSFS 2024 has no event that writes an 8.33 kHz channel
+into a COM standby (`COM_STBY_RADIO_SET_HZ` does not exist, and the BCD
+standby events name only the 25 kHz grid). A standby tune the simulator
+cannot say exactly is refused rather than rounded onto the nearest
+channel -- a wrong frequency tuned "to be helpful" is a clearance heard
+on the wrong radio. Active-frequency tunes and 25 kHz standby channels
+write and read back as before.
+
 ## What is in here
 
 ```

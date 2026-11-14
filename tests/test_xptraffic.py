@@ -298,6 +298,7 @@ def test_metar_request_and_answer(plugin, link):
 def test_taxi_route_overlay_and_plugin_metar(plugin, link):
     pytest.importorskip("scipy")
     from types import SimpleNamespace
+
     from meridianatc import engine as module
     from meridianatc.atc.session import Phase
 
@@ -364,9 +365,10 @@ def test_engine_backend_selection_and_single_notice(monkeypatch, plugin):
     xp.timeout_s = .01
     assert not engine.attach_simulator_traffic()
     assert not engine.attach_simulator_traffic()
-    engine.emit.assert_called_once()
-    assert engine.emit.call_args.kwargs["key"] == "log.xplane_traffic_unavailable"
-    assert "xplane/README.md" in engine.emit.call_args.args[1]
+    unavailable = [call for call in engine.emit.call_args_list
+                   if call.kwargs.get("key") == "log.xplane_traffic_unavailable"]
+    assert len(unavailable) == 1
+    assert "xplane/README.md" in unavailable[0].args[1]
     engine.state = AircraftState(source="simconnect", connected=True)
     engine.source = Mock(_sim=object())
     for name in ("simvehicles", "simdoors", "simsystems", "servicepoints"):

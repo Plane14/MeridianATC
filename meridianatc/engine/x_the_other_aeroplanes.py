@@ -438,19 +438,39 @@ class _The_other_aeroplanes:
                     self._atis_stale.add(ident)
             # The runways themselves, and from the same answer each one's
             # pattern altitude: the scenery's are the ones the aeroplane
-            # rolls on, so from here they are the field's.
+            # rolls on, so from here they are the field's. SimConnect asks
+            # the facilities API; X-Plane's equivalent is the apt.dat the
+            # scenery packs carry.
+            runways_reader = self.simrunways \
+                if capabilities(self.state.source).facilities \
+                else self.xpground
             try:
-                runways = self.simrunways.for_airport(ident)
-                patterns = self.simrunways.patterns(ident)
+                runways = runways_reader.for_airport(ident)
+                patterns = runways_reader.patterns(ident)
             except Exception:
                 log.debug("could not read %s's runways", ident, exc_info=True)
                 return
             if runways:
-                from ..integrations.runways import with_ils_kinds
+                from ..integrations.runways import LOCALIZER_KINDS, with_ils_kinds
 
-                # Which end's navaid is a localizer and which a VOR, from
-                # the approaches read just above.
-                runways = with_ils_kinds(runways, found)
+                if capabilities(self.state.source).facilities:
+                    # Which end's navaid is a localizer and which a VOR, from
+                    # the approaches read just above.
+                    runways = with_ils_kinds(runways, found)
+                else:
+                    # The apt.dat ends have no navaid idents, so only the
+                    # approaches can say an end has a localizer at all.
+                    from dataclasses import replace
+                    kinds = getattr(found, "by_runway", {}) or {}
+                    runways = tuple(
+                        replace(rw,
+                                le_ils_kind="ILS" if kinds.get(
+                                    normalize_runway(rw.le_ident), set())
+                                & LOCALIZER_KINDS else "",
+                                he_ils_kind="ILS" if kinds.get(
+                                    normalize_runway(rw.he_ident), set())
+                                & LOCALIZER_KINDS else "")
+                        for rw in runways)
                 self.navdb.set_sim_runways(ident, runways)
                 cache = getattr(self, "runway_cache", None)
                 if cache is not None:

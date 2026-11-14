@@ -288,3 +288,61 @@ def test_api_snapshot_and_settings_validation(monkeypatch):
     assert result["connected"] and not result["autonomous"]["available"]
     with pytest.raises(server.SettingsRefused):
         server._check_all({"sim.simulator": "bad", "traffic.xplane_plugin_port": 49010})
+
+
+def test_msfs_refuses_standby_channel_bcd_cannot_say(monkeypatch):
+    # 118.005 MHz is a legal 8.33 kHz channel that no 25 kHz BCD event
+    # can name; accepting it tunes the radio to a frequency ATC never
+    # gave.
+    source = sources.SimConnectSource()
+    source._connected = True
+    sent = []
+    monkeypatch.setattr(source, "_send",
+                        lambda event, value: sent.append(event) or True)
+    monkeypatch.setattr(source, "_reads", lambda key, wanted: False)
+    monkeypatch.setattr(source, "_took", lambda key, wanted: False)
+    hz_event, bcd_event = sources.SimConnectSource._COM_EVENTS[(1, True)]
+    assert not source.set_com(118.005, 1, standby=True)
+    assert sent == [hz_event]      # the BCD fallback was never sent
+    # A 25 kHz channel still gets the BCD probe when Hz did not take.
+    assert not source.set_com(118.025, 1, standby=True)
+    assert sent[-1] == bcd_event
+    sent.clear()
+    # And once "bcd" is learned, an 8.33 channel is refused outright.
+    source._freq_event_style[(1, True)] = "bcd"
+    assert not source.set_com(118.005, 1, standby=True)
+    assert sent == []
+
+
+def test_route_from_fms_entries():
+    pytest.importorskip("scipy")
+    from meridianatc.engine.x_the_plan_the import _The_plan_the
+
+    planner = _The_plan_the()
+    route = planner._route_from_fms([
+        {"i": 0, "t": 1, "id": "EDDM", "alt": 0,
+         "lat": 48.35, "lon": 11.79, "active": False},
+        {"i": 1, "t": 4, "id": "MIQ", "alt": 5000,
+         "lat": 48.80, "lon": 11.40, "active": True},
+        {"i": 2, "t": 512, "id": "BAXRI", "alt": 8000,
+         "lat": 50.2, "lon": 8.4, "active": False},
+        {"i": 3, "t": 256, "id": "OM", "alt": 0,
+         "lat": 51.0, "lon": 0.1, "active": False},   # a marker: skipped
+        {"i": 4, "t": 2048, "id": "", "alt": 4000,
+         "lat": 51.1, "lon": -0.2, "active": False},
+        {"i": 5, "t": 1, "id": "EGLL", "alt": 0,
+         "lat": 51.47, "lon": -0.45, "active": False},
+    ])
+    assert route is not None
+    assert route.origin == "EDDM" and route.destination == "EGLL"
+    assert route.source == "sim"
+    kinds = [fix.kind for fix in route.fixes]
+    assert kinds == ["apt", "vor", "wpt", "wpt", "apt"]
+    assert route.fixes[1].alt_ft == 5000
+    # The unnamed lat/lon entry gets a coordinate for a callsign.
+    assert route.fixes[3].ident == "+51.1000-0.2000"
+    # An approach-free one-way plan, and fewer than two points, decline.
+    assert planner._route_from_fms([{"i": 0, "t": 1, "id": "EDDM", "alt": 0,
+                                     "lat": 48.35, "lon": 11.79,
+                                     "active": False}]) is None
+    assert planner._route_from_fms([]) is None

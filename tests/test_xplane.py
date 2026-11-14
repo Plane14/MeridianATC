@@ -40,6 +40,9 @@ class FakeXPlane:
         # Paths X-Plane does not know answer nothing, so a read that falls
         # back on a second dataref can be exercised by listing it here.
         self.missing = set()
+        # Writes to these paths are received but never applied -- a radio
+        # that ignores the write, so its readback stays different.
+        self.rejected = set()
         self.respond = True
         self.stop = threading.Event()
         self.client = None
@@ -65,7 +68,12 @@ class FakeXPlane:
                         self.unsubscribed.add(path)
                 elif packet[:5] == b"DREF\0":
                     value, raw = struct.unpack("<f500s", packet[5:])
-                    self.writes.append((raw.split(b"\0", 1)[0].decode(), value))
+                    path = raw.split(b"\0", 1)[0].decode()
+                    self.writes.append((path, value))
+                    # X-Plane applies the write and the next RREF tick
+                    # answers it -- the readback the setters confirm on.
+                    if path not in self.rejected:
+                        self.values[path] = value
                 elif packet[:5] == b"CMND\0":
                     self.commands.append(packet[5:].rstrip(b"\0").decode())
             except TimeoutError:
@@ -165,9 +173,10 @@ def test_transponder_modes(xp, xp_mode, expected):
     eventually(lambda: link.read().transponder_mode == 5)
 
 
-@pytest.mark.parametrize("engine,helo,expected", [(0, 0, 0), (1, 0, 0), (3, 0, 4),
-                                                 (5, 0, 1), (7, 0, 1), (9, 1, 3),
-                                                 (10, 0, 5), (99, 0, -1)])
+@pytest.mark.parametrize("engine,helo,expected", [(0, 0, 0), (1, 0, 0), (2, 0, 5),
+                                                 (3, 0, 4), (4, 0, 1), (5, 0, 1),
+                                                 (6, 0, 4), (7, 0, 1), (8, 0, 5),
+                                                 (9, 1, 3), (10, 0, 5), (99, 0, -1)])
 def test_engine_types(xp, engine, helo, expected):
     server, link = xp
     server.values.update({EXTRA["xp_engine_type"]: engine, EXTRA["helicopter"]: helo})
@@ -278,6 +287,117 @@ def test_fuel_distribution(xp):
     assert server.writes[0] == ("sim/flightmodel/weight/m_fuel[0]", pytest.approx(20))
     assert server.writes[1] == ("sim/flightmodel/weight/m_fuel[1]", pytest.approx(30))
     assert not link.set_fuel(float("nan")) and not link.set_fuel(-1)
+
+
+def test_writes_are_confirmed_by_readback(xp):
+    # The setters wait for the subscribed value to answer their write.
+    server, link = xp
+    assert link.connect()
+    eventually(lambda: link.connected)
+    assert link.set_com(121.725, 1, standby=True)
+    assert link.set_nav(109.5, 1) and link.set_squawk("4567")
+    # A radio that ignores the write: refused, not silently accepted.
+    server.rejected.add(RADIOS + "com1_frequency_hz_833")
+    assert not link.set_com(118.6, 1)
+    # A dataref the sim never answers cannot be verified; the packet
+    # went out, so True stands (older installs keep working).
+    server.missing.add(RADIOS + "com2_standby_frequency_hz_833")
+    link._values.pop("com2_standby", None)
+    assert link.set_com(127.4, 2, standby=True)
+
+
+def test_fuel_writes_tolerate_a_refused_tank_and_missing_capacity(xp):
+    server, link = xp
+    server.values.update({EXTRA["tank0"]: 20, EXTRA["tank1"]: 30,
+                          EXTRA["tank2"]: 10})
+    assert link.connect()
+    eventually(lambda: link._values.get("tank2") == 10)
+    # No acf_m_fuel_tot: the fallback splits the request across the
+    # tanks the model does describe.
+    assert link.set_fuel(30 * LB / 6)
+    eventually(lambda: len(server.writes) == 3)
+    # One tank refusing the write does not void the rest.
+    real = link._dref
+    link._dref = lambda path, v: (not path.endswith("[0]")) and real(path, v)
+    server.writes.clear()
+    assert link.set_fuel(30 * LB / 6)
+    eventually(lambda: len(server.writes) == 2)
+    # Nothing writable at all: refused.
+    link._dref = lambda path, v: False
+    assert not link.set_fuel(30 * LB / 6)
+
+
+@pytest.mark.parametrize("selection,expected", [(0, True), (1, False)])
+def test_com1_transmit_enum(xp, selection, expected):
+    # audio_com_selection is 0 for COM1, 1 for COM2 -- never the 6 the
+    # old comparison assumed.
+    server, link = xp
+    server.values[EXTRA["transmit"]] = selection
+    assert link.connect()
+    eventually(lambda: "transmit" in link._values)
+    assert link.read().com1_transmit == expected
+
+
+def test_ap_max_bank_deg_from_mode(xp):
+    server, link = xp
+    server.values.update({EXTRA["bank_mode"]: 2, EXTRA["bank_angle2"]: 25})
+    assert link.connect()
+    eventually(lambda: "bank_mode" in link._values)
+    assert link.read().ap_max_bank_deg == 25
+    # Out-of-range mode leaves the field at the unknown default.
+    server.values[EXTRA["bank_mode"]] = 9
+    eventually(lambda: link.read().ap_max_bank_deg == 0.0)
+
+
+def test_snow_reports_precipitation(xp):
+    server, link = xp
+    server.values[EXTRA["snow"]] = .7
+    assert link.connect()
+    eventually(lambda: link.read().ambient_precip_state == 2)
+    server.values[EXTRA["rain"]] = .5
+    eventually(lambda: link.read().ambient_precip_state == 4)
+
+
+def test_position_jump_marks_relocated(xp):
+    server, link = xp
+    server.values.update({DATAREFS["latitude"][0]: 48.0,
+                          DATAREFS["longitude"][0]: 11.0})
+    assert link.connect()
+    eventually(lambda: "latitude" in link._values)
+    link.read()
+    server.values[DATAREFS["latitude"][0]] = 50.0
+    eventually(lambda: link.read().relocated)
+    link._relocated_until = 0
+    assert not link.read().relocated
+
+
+def test_fms_reader_hooks(xp):
+    server, link = xp
+    assert link.connect()
+    assert not link.request_flight_plan() and link.flight_plan_reply() is None
+    entries = [{"i": 0, "t": 1, "id": "EDDM", "alt": 0,
+                "lat": 48.35, "lon": 11.79, "active": False}]
+    link.fms_reader = lambda: list(entries)
+    assert link.request_flight_plan()
+    assert link.flight_plan_reply() == entries
+
+
+def test_foreign_senders_values_are_ignored(xp):
+    server, link = xp
+    server.values[DATAREFS["latitude"][0]] = 48.0
+    assert link.connect()
+    eventually(lambda: link._values.get("latitude") == 48.0)
+    assert link._sender == ("127.0.0.1", server.port)
+    # A packet that arrives from another port is not ours to trust.
+    index = [i for i, (k, _) in enumerate(link._subscriptions)
+             if k == "latitude"][0]
+    rogue = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        rogue.sendto(b"RREF," + struct.pack("<if", index, 99.0), server.client)
+    finally:
+        rogue.close()
+    time.sleep(.3)
+    assert link._values.get("latitude") == 48.0
 
 
 def test_disconnect_and_unsubscribe(xp):

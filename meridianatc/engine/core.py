@@ -609,8 +609,11 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         self._shutdown_lock = threading.Lock()
         self._shutdown_done = False
         # Whether the last tick found the simulator paused, so it is said
-        # once rather than four times a second.
+        # once rather than four times a second. The second flag records
+        # whether the pause line itself was said -- a relocation hold
+        # skips the message, so it gets no "back" either.
         self._was_paused = False
+        self._paused_said = False
         # The language each frequency is being worked in (_frequency_language).
         self._languages_by_frequency: dict[str, str] = {}
         # When a controller last spoke, so a bare "say again" after them is
@@ -637,6 +640,9 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         self._sim_plan_seen = ""
         self._sim_plan_path = ""
         self._sim_plan_mtime = 0.0
+        # The X-Plane equivalent of path+mtime: the FMS entries' own
+        # fingerprint, so an unchanged plan is never rebuilt.
+        self._sim_plan_fp = None
         # The language of the last exchange, so an ATIS or a volunteered
         # handoff continues in whatever the pilot has been speaking.
         self.last_language = self.languages[0]

@@ -338,9 +338,16 @@ class _Session:
 
         sim = None
         if self.config.sim.enabled:
-            from ..integrations.fixes import SimFixes
+            from ..sim.capabilities import capabilities
+            if capabilities(self.state.source).facilities:
+                from ..integrations.fixes import SimFixes
 
-            sim = SimFixes(self.config.sim.simconnect_dll)
+                sim = SimFixes(self.config.sim.simconnect_dll)
+            elif self.state.source == "xplane":
+                from ..integrations.xpground import XPlaneFixes
+
+                sim = XPlaneFixes(
+                    sysroot=getattr(self.simtraffic, "sysroot", ""))
         departure = self.navdb.airport(self.config.flight.departure or "")
         near = (departure.lat, departure.lon) if departure else None
         try:

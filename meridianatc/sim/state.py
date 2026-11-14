@@ -267,6 +267,9 @@ class AircraftState:
     # Nothing that watches for a change should believe one while this is set:
     # the aircraft did not take off, it was moved by a menu.
     paused: bool = False
+    # Set briefly after a menu/map teleport or slew: the position jumped
+    # rather than was flown to, so change-watchers hold for the window.
+    relocated: bool = False
     unavailable: tuple[str, ...] = ()
 
     # ------------------------------------------------------------------

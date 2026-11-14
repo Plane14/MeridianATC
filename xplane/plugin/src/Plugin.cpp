@@ -24,8 +24,12 @@
 #endif
 #if defined(__APPLE__)
 #include <OpenGL/gl.h>
+#include <OpenGL/OpenGL.h>
+#elif defined(_WIN32)
+#include <GL/gl.h>
 #else
 #include <GL/gl.h>
+#include <GL/glx.h>
 #endif
 
 namespace {
@@ -61,9 +65,30 @@ std::map<std::string, XPLMCommandRef> commands;
 // as the follow-me car; the layer projects it each redraw.
 std::set<XPLMMapLayerID> mapLayers;
 
+// The draw callback gets an OpenGL context only while X-Plane itself runs
+// the GL driver -- under Vulkan or Metal there is none, and raw GL calls
+// are silently lost. Asked once per redraw, logged once ever.
+bool ContextCurrent() {
+#if defined(_WIN32)
+    return wglGetCurrentContext() != nullptr;
+#elif defined(__APPLE__)
+    return CGLGetCurrentContext() != nullptr;
+#else
+    return glXGetCurrentContext() != nullptr;
+#endif
+}
+bool warnedNoGL = false;
+
 void DrawRouteLayer(XPLMMapLayerID, const float*, float, float,
                     XPLMMapStyle, XPLMMapProjectionID projection, void*) {
     if (!session.RouteActive(Now()) || session.route.size() < 2) return;
+    if (!ContextCurrent()) {
+        if (!warnedNoGL) {
+            warnedNoGL = true;
+            Log("Taxi-route map layer needs the OpenGL graphics driver");
+        }
+        return;
+    }
     XPLMSetGraphicsState(0, 0, 0, 0, 0, 1, 0);
     glColor4f(0.1f, 0.8f, 0.9f, 0.9f);
     glLineWidth(4.0f);
@@ -341,6 +366,10 @@ float Poll(float, float, int, void*) {
             try {
                 auto packet = Parse(wire);
                 if (packet.kind == "hello") {
+                    auto sender = (static_cast<uint64_t>(ntohl(from.sin_addr.s_addr)) << 16) |
+                        ntohs(from.sin_port);
+                    session.Claim(sender, now);
+                    peer = from;
                     udp.Send(Status(now).dump(), from);
                     continue;
                 }
@@ -416,7 +445,7 @@ PLUGIN_API int XPluginStart(char* name, char* signature, char* description) {
              "meridianatc/copy_error"}) {
         descriptions.push_back(std::string("MeridianATC: ") + (cname + 13));
         commands[cname] = XPLMCreateCommand(cname, descriptions.back().c_str());
-        XPLMRegisterCommandHandler(commands[name], OnCommand, 1, nullptr);
+        XPLMRegisterCommandHandler(commands[cname], OnCommand, 1, nullptr);
     }
     connectedRef = XPLMRegisterDataAccessor("meridianatc/xp/connected", xplmType_Int, 0, Connected, nullptr,
         nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);

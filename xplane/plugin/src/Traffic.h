@@ -240,6 +240,18 @@ public:
     FollowMe followme;
     std::vector<std::pair<double, double>> route;
     bool Connected(double now) const { return ownerKnown && now - ownerAt < 10; }
+    // A restarted engine announcing itself takes the session over once
+    // the old owner has gone quiet -- its sequence numbers start from
+    // zero again, and without this the stale-seq guard would mute it
+    // until the owner timed out. An owner still accepted within the
+    // last half second is alive and keeps the session, so a status
+    // probe's hello cannot wipe drawn traffic or mute real packets.
+    void Claim(uint64_t sender, double now) {
+        if (sender == owner && ownerKnown) return;
+        if (Connected(now) && now - ownerAt < .5) return;
+        Clear();
+        owner = sender; ownerKnown = true; ownerAt = now;
+    }
     // A silent engine leaves the car where it last stood for a few seconds,
     // then pulls it -- a parked car on the taxiway is worse than none.
     bool FollowmeActive(double now) const { return followme.on && now - followmeAt < 15; }

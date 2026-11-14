@@ -35,11 +35,11 @@ from pathlib import Path
 
 from ..atc.ground import (
     EARTH_M,
-    GroundLayout,
     PATH_PARKING,
     PATH_ROAD,
     PATH_RUNWAY,
     PATH_TAXI,
+    GroundLayout,
 )
 from ..paths import data_root
 from ..xplane_plugin import install_roots
@@ -70,6 +70,17 @@ _TYPE_RADIUS = {"gate": 16.0, "hangar": 12.0, "tie_down": 8.0, "misc": 10.0}
 # A stand's number is what the controller says ("stand 8"); it is taken
 # from the name only when the name is a stand designator, not a sentence.
 _DESIGNATOR = re.compile(r"^[A-Za-z]{0,3}\s?(\d{1,4})[A-Za-z]?$")
+
+# The apt.dat comm rows and the radio position each names.
+_FREQ_POSITIONS = {1050: "ATIS", 1051: "CTAF", 1052: "DEL", 1053: "GND",
+                   1054: "TWR", 1055: "APP", 1056: "DEP"}
+_FREQ_ROWS = frozenset(_FREQ_POSITIONS)
+
+# apt.dat row-100 surface codes to the database's surface names.
+_RWY_SURFACES = {1: "ASP", 2: "CON", 3: "TURF", 4: "DIRT", 5: "GRAVEL",
+                 12: "DIRT", 13: "WATER", 14: "SNOW", 15: "CON"}
+
+_FT_PER_M = 3.280839895
 
 
 def _index_path(path: Path) -> Path:
@@ -140,6 +151,7 @@ class _AirportBlock:
 
     def __init__(self):
         self.datum: tuple[float, float] | None = None
+        self.elevation_ft: float | None = None
         # id -> (lat, lon); edges -> (a_id, b_id, taxiway-name-or-"runway")
         self.nodes: dict[int, tuple[float, float]] = {}
         self.edges: list[tuple[int, int, bool, str]] = []
@@ -148,6 +160,11 @@ class _AirportBlock:
         self.stands: list[tuple[float, float, float, str, str, str]] = []
         # (lat, lon, lat, lon, width m) of each paved runway
         self.runways: list[tuple[float, float, float, float, float]] = []
+        # (code, mhz, name) of each comm-frequency row (1050-1056)
+        self.frequencies: list[tuple[int, float, str]] = []
+        # (num1, lat1, lon1, disp1 m, num2, lat2, lon2, disp2 m,
+        #  width m, surface code, edge lights on) per row-100 runway
+        self.runway_records: list[tuple] = []
 
 
 def _parse_block(text: str) -> _AirportBlock:
@@ -166,7 +183,12 @@ def _parse_block(text: str) -> _AirportBlock:
             continue
         code = fields[0]
         try:
-            if code == "1302" and len(fields) >= 3:
+            if code == "1" and block.elevation_ft is None \
+                    and len(fields) >= 2 and not block.nodes:
+                # The airport's header row, feet MSL -- each runway's ends
+                # inherit it, apt.dat carrying no threshold heights.
+                block.elevation_ft = float(fields[1])
+            elif code == "1302" and len(fields) >= 3:
                 if fields[1] in ("datum_lat", "datum_lon"):
                     datum[fields[1][6:]] = float(fields[2])
                 if "lat" in datum and "lon" in datum:
@@ -197,6 +219,23 @@ def _parse_block(text: str) -> _AirportBlock:
                     float(fields[9]), float(fields[10]),
                     float(fields[18]), float(fields[19]),
                     float(fields[1])))
+                if len(fields) >= 26:
+                    # Both ends named: <num> <lat> <lon> <displaced m>
+                    # <blast m> <markings> <approach lights> <tdz> <reil>.
+                    # int(float()) because some exporters write "1.0".
+                    block.runway_records.append((
+                        fields[8], float(fields[9]), float(fields[10]),
+                        float(fields[11]), fields[17],
+                        float(fields[18]), float(fields[19]),
+                        float(fields[20]), float(fields[1]),
+                        int(float(fields[2])), float(fields[6]) != 0))
+            elif code.isdigit() and int(code) in _FREQ_ROWS \
+                    and len(fields) >= 2:
+                # ATC comm rows: <code> <frequency x100> <name>.
+                mhz = float(fields[1]) / 100.0
+                if 30.0 <= mhz <= 400.0:
+                    block.frequencies.append(
+                        (int(code), mhz, " ".join(fields[2:])))
             elif code == "1300" and len(fields) >= 6:
                 block.stands.append((
                     float(fields[1]), float(fields[2]),
@@ -221,6 +260,7 @@ class XPlaneGround:
             log.debug("no X-Plane install found", exc_info=True)
             self._roots = []
         self._cache: dict[str, GroundLayout | None] = {}
+        self._blocks: dict[str, _AirportBlock | None] = {}
         self._packs: list[Path] | None = None
         self._indices: dict[Path, dict[str, tuple[int, int]]] = {}
 
@@ -325,7 +365,19 @@ class XPlaneGround:
                      ident, len(found.stands), len(found.xy))
         return found
 
-    def _find(self, ident: str) -> GroundLayout | None:
+    @property
+    def available(self) -> bool:
+        """Whether any apt.dat was found to read at all."""
+        return bool(self._files())
+
+    def _block_for(self, ident: str) -> _AirportBlock | None:
+        """The airport's parsed rows, from the first pack that has it."""
+        ident = (ident or "").strip().upper()
+        if not ident:
+            return None
+        if ident in self._blocks:
+            return self._blocks[ident]
+        block = None
         for path in self._files():
             index = self._index_for(path)
             span = index.get(ident)
@@ -338,8 +390,13 @@ class XPlaneGround:
             except OSError:
                 continue
             block = _parse_block(raw.decode("utf-8", "replace"))
-            return self._build(ident, block)
-        return None
+            break
+        self._blocks[ident] = block
+        return block
+
+    def _find(self, ident: str) -> GroundLayout | None:
+        block = self._block_for(ident)
+        return None if block is None else self._build(ident, block)
 
     @staticmethod
     def _build(ident: str, block: _AirportBlock) -> GroundLayout | None:
@@ -441,5 +498,112 @@ class XPlaneGround:
                     for ax, az, bx, bz, half in strips)}
         return layout
 
+    # -- the field's own runway and frequency rows ----------------------
+    # The same methods SimRunways and SimFacilities answer over
+    # SimConnect, read off the scenery files X-Plane itself loads.
 
-__all__ = ["XPlaneGround"]
+    def frequencies(self, ident: str):
+        """The airport's ATC comm rows as the facility reader's shape."""
+        block = self._block_for(ident)
+        if block is None or not block.frequencies:
+            return []
+        from .facilities import Frequency
+
+        return [Frequency(position=_FREQ_POSITIONS[code], mhz=mhz,
+                          name=name, kind=code)
+                for code, mhz, name in block.frequencies
+                if code in _FREQ_POSITIONS]
+
+    def for_airport(self, ident: str):
+        """The airport's runways as the database's Runway rows ("sim")."""
+        block = self._block_for(ident)
+        if block is None or not block.runway_records:
+            return ()
+        from ..navdata.build import bearing_deg, haversine_nm
+        from ..navdata.db import Runway
+
+        out = []
+        for (num1, lat1, lon1, disp1, num2, lat2, lon2, disp2,
+             width_m, surface, lit) in block.runway_records:
+            length_m = haversine_nm(lat1, lon1, lat2, lon2) * 1852.0
+            if length_m <= 0:
+                continue
+            heading = bearing_deg(lat1, lon1, lat2, lon2)
+            out.append(Runway(
+                ident=ident, le_ident=num1, he_ident=num2,
+                length_ft=length_m * _FT_PER_M,
+                width_ft=width_m * _FT_PER_M,
+                surface=_RWY_SURFACES.get(surface, ""),
+                lighted=bool(lit), closed=False,
+                le_lat=lat1, le_lon=lon1, le_heading=heading,
+                he_lat=lat2, he_lon=lon2, he_heading=(heading + 180) % 360,
+                le_elev_ft=block.elevation_ft, he_elev_ft=block.elevation_ft,
+                source="sim",
+                le_displaced_ft=disp1 * _FT_PER_M,
+                he_displaced_ft=disp2 * _FT_PER_M))
+        return tuple(out)
+
+    def patterns(self, ident: str) -> dict[str, int] | None:
+        """apt.dat carries no circuit heights; the published ones stay."""
+        return None
+
+
+class XPlaneFixes:
+    """Enroute fixes by ident, from the simulator's own ``earth_fix.dat``.
+
+    The same answer SimFixes asks SimConnect for when a .pln names a fix
+    by ident alone: X-Plane's navdata files are the equivalent source.
+    """
+
+    def __init__(self, roots=None, sysroot: str = ""):
+        candidates = []
+        if sysroot:
+            candidates.append(Path(sysroot))
+        try:
+            candidates.extend(install_roots() if roots is None
+                              else [Path(r) for r in roots])
+        except Exception:
+            log.debug("could not list X-Plane installs", exc_info=True)
+        self._roots = candidates
+        self._fixes: dict[str, tuple[float, float]] | None = None
+
+    def _load(self) -> None:
+        if self._fixes is not None:
+            return
+        found: dict[str, tuple[float, float]] = {}
+        for root in self._roots:
+            for path in (root / "Custom Data" / "earth_fix.dat",
+                         root / "Resources" / "default data"
+                         / "earth_fix.dat"):
+                try:
+                    text = path.read_text(encoding="utf-8",
+                                          errors="replace")
+                except OSError:
+                    continue
+                for line in text.splitlines():
+                    fields = line.split()
+                    if len(fields) != 3:
+                        continue
+                    try:
+                        lat, lon = float(fields[0]), float(fields[1])
+                    except ValueError:
+                        continue
+                    if -90 <= lat <= 90 and -180 <= lon <= 180:
+                        found[fields[2].upper()] = (lat, lon)
+        self._fixes = found
+
+    def __call__(self, ident: str, region: str = "", kind: str = ""):
+        """The fix's position, or None where the sim's files do not name it.
+
+        Answers only for waypoints: the resolver asks the simulator first,
+        and a fix that shares an ident with a VOR or an airport must not
+        be the one it finds.
+        """
+        ident = (ident or "").strip().upper()
+        if not ident or kind not in ("", "wpt"):
+            return None
+        self._load()
+        return self._fixes.get(ident)
+
+
+__all__ = ["XPlaneGround", "XPlaneFixes"]

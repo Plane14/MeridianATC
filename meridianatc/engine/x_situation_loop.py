@@ -79,17 +79,21 @@ class _Situation_loop:
         # where the aeroplane is, and it keeps being written to ``self.state``
         # -- which is what makes the first tick after the menu compare two
         # readings from after the jump rather than straddling it.
-        if state.paused:
+        if state.paused or getattr(state, "relocated", False):
             if not self._was_paused:
                 self._was_paused = True
                 self.crew.hold()
-                self.emit("info", "The simulator is paused.",
-                          key="log.sim_paused")
+                self._paused_said = bool(state.paused)
+                if state.paused:
+                    self.emit("info", "The simulator is paused.",
+                              key="log.sim_paused")
             return
         if self._was_paused:
             self._was_paused = False
-            self.emit("info", "Back in the aeroplane.",
-                      key="log.sim_unpaused")
+            if getattr(self, "_paused_said", True):
+                self.emit("info", "Back in the aeroplane.",
+                          key="log.sim_unpaused")
+            self._paused_said = False
 
         # The pilot changed frequency: work out who is now listening.
         retuned = bool(state.com1_active) \

@@ -243,9 +243,16 @@ class _Setup:
             self._ai_liveries_asked = False
         if xplane:
             self.traffic.await_observed = False
+            # The plugin's FMS readback is this link's flight-plan source:
+            # the plan the simulator is actually flying, answered the way
+            # RequestSystemState("FlightPlan") answers it on MSFS.
+            if hasattr(self.source, "fms_reader"):
+                self.source.fms_reader = \
+                    lambda: list(self.simtraffic.fms)
             drawing = self.simtraffic.attach()
             if not drawing and self.simtraffic.enabled:
                 self._warn_xplane_traffic()
+            self._warn_xplane_only_msfs()
             return drawing
         simconnect = getattr(self.source, "_sim", None)
         if simconnect is None:
@@ -281,6 +288,21 @@ class _Setup:
                   "X-Plane traffic is not available. Install or enable MeridianATC-XP "
                   "and its CSL models; see xplane/README.md. Traffic stays radio-only.",
                   key="log.xplane_traffic_unavailable")
+
+    def _warn_xplane_only_msfs(self) -> None:
+        """Say once which configured features X-Plane does not have."""
+        if getattr(self, "_xp_msfs_notice", False):
+            return
+        self._xp_msfs_notice = True
+        skipped = [name for name, on in (
+            ("GSX", self.config.gsx.enabled),
+            ("traffic LOD models", self.config.traffic.lod.enabled),
+        ) if on]
+        if skipped:
+            self.emit("info",
+                      f"{', '.join(skipped)} are MSFS-only and are skipped "
+                      "on X-Plane.",
+                      key="log.xplane_msfs_only")
 
     # How long the simulator is given to list its aircraft and liveries.
     # A running 2024 lists six thousand in a second or two.
@@ -377,7 +399,17 @@ class _Setup:
 
     def follow_facilities(self, state: AircraftState) -> None:
         """Read the airport under the aeroplane, once, in the background."""
-        if not capabilities(state.source).facilities or not self.facilities.available or not state.has_position:
+        if not self.config.sim.frequencies_from_sim or not state.has_position:
+            return
+        # MSFS answers over the facilities API; X-Plane's frequencies are
+        # the scenery's apt.dat rows instead.
+        if capabilities(state.source).facilities:
+            reader = self.facilities if self.facilities.available else None
+        elif state.source == "xplane" and self.xpground is not None:
+            reader = self.xpground if self.xpground.available else None
+        else:
+            reader = None
+        if reader is None:
             return
         airport = self.navdb.home_airport(state.latitude, state.longitude)
         if airport is None:
@@ -387,15 +419,15 @@ class _Setup:
             return
         self._facilities_done.add(airport.ident)
         threading.Thread(
-            target=self._read_facilities, args=(airport.ident,),
+            target=self._read_facilities, args=(airport.ident, reader),
             name=f"MeridianATC-freq-{airport.ident}", daemon=True).start()
 
-    def _read_facilities(self, ident: str) -> None:
+    def _read_facilities(self, ident: str, reader=None) -> None:
         """Replace one airport's published frequencies with the simulator's."""
         from ..navdata.localdata import replace_airport
 
         try:
-            found = self.facilities.frequencies(ident)
+            found = (reader or self.facilities).frequencies(ident)
             if not found:
                 return
             added, gone = replace_airport(ident, found)

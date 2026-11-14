@@ -698,6 +698,9 @@ class GsxConfig:
     The controller uses it for two things: not clearing an aeroplane to taxi
     while it is still attached to a tug, a jetway or a fuel truck, and calling
     the tug itself once the push has been approved.
+
+    MSFS only: X-Plane has no GSX or LVAR bridge -- a session that connects
+    to X-Plane warns once and skips this.
     """
 
     enabled: bool = True
@@ -880,6 +883,10 @@ class LodConfig:
     it has loaded, doors carried across. Nothing moving is ever swapped.
     The aeroplane is the same aeroplane throughout; only the drawing
     changes.
+
+    MSFS only: X-Plane traffic is drawn by the plugin's own CSL models and
+    is never swapped -- a session that connects to X-Plane warns once and
+    skips this.
     """
 
     # Off, every aeroplane is drawn the way it always was: FSLTL's painted
