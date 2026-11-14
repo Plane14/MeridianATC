@@ -177,6 +177,7 @@ class XPlaneSource:
         self.discovery_s = discovery_s
         self.frequency = max(1, round(1 / max(.05, poll_interval)))
         self._socket = None
+        self._peer = None
         self._thread = None
         self._stop = threading.Event()
         self._answered = threading.Event()
@@ -239,7 +240,11 @@ class XPlaneSource:
                     self._values.clear()
                     self._last_packet = 0.0
                 self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                self._socket.connect(endpoint)
+                self._socket.bind(("", 0))
+                # The answers leave from the simulator's send port (49001 by
+                # default), not the port the requests went to: a connected
+                # socket would silently drop every one of them.
+                self._peer = (socket.gethostbyname(endpoint[0]), endpoint[1])
                 self._socket.settimeout(.1)
                 self._stop.clear()
                 self._answered.clear()
@@ -255,17 +260,23 @@ class XPlaneSource:
             self.close()
         return False
 
+    def _packet(self, payload):
+        if self._peer is not None:
+            self._socket.sendto(payload, self._peer)
+
     def _subscribe(self, index, path, frequency):
-        self._socket.send(b"RREF\0" + struct.pack("<ii400s", frequency, index, path.encode("ascii")))
+        self._packet(b"RREF\0" + struct.pack("<ii400s", frequency, index, path.encode("ascii")))
 
     def _receive(self):
         while not self._stop.is_set():
             try:
-                packet = self._socket.recv(65535)
+                packet, sender = self._socket.recvfrom(65535)
             except TimeoutError:
                 continue
             except OSError:
                 return
+            if self._peer is None or sender[0] != self._peer[0]:
+                continue
             if len(packet) < 13 or packet[:4] != b"RREF" or (len(packet) - 5) % 8:
                 continue
             valid = False
@@ -344,7 +355,7 @@ class XPlaneSource:
         try:
             if not self.connected or not math.isfinite(float(value)):
                 return False
-            self._socket.send(b"DREF\0" + struct.pack("<f500s", float(value), path.encode("ascii")))
+            self._packet(b"DREF\0" + struct.pack("<f500s", float(value), path.encode("ascii")))
             return True
         except (OSError, ValueError, TypeError, OverflowError):
             return False
@@ -353,7 +364,7 @@ class XPlaneSource:
         if not self.connected:
             return False
         try:
-            self._socket.send(b"CMND\0" + command.encode("ascii") + b"\0")
+            self._packet(b"CMND\0" + command.encode("ascii") + b"\0")
             return True
         except OSError:
             return False
@@ -456,5 +467,6 @@ class XPlaneSource:
                 self._thread.join(timeout=.5)
             self._socket.close()
             self._socket = None
+        self._peer = None
         self._answered.clear()
         self._controls.clear()
