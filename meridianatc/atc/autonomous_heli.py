@@ -284,12 +284,18 @@ def _pedal_check(self, demand: int, hdg: float) -> None:
     where every correction enlarges its error -- the hover version of
     the apron pivot. The yaw rate answers the demand already on the
     wire, so the vote is whether the achieved yaw agrees with the
-    *law's* demand from last call, not the signed output.
+    *law's* demand from last call, not the signed output. A vote only
+    counts when the demand has held its side across calls and the yaw
+    rate is one the pedals can plausibly make -- a spin already
+    underway answers an older command, not this one.
     """
     prev = getattr(self, "_pedal_demand", None)
     prev_hdg = getattr(self, "_pedal_hdg", None)
     prev_at = getattr(self, "_pedal_at", 0.0)
     now = time.monotonic()
+    streak = getattr(self, "_demand_streak", 0)
+    streak = streak + 1 if prev and (demand > 0) == (prev > 0) else 0
+    self._demand_streak = streak
     self._pedal_demand = demand
     self._pedal_hdg = hdg
     self._pedal_at = now
@@ -299,11 +305,12 @@ def _pedal_check(self, demand: int, hdg: float) -> None:
     if dt <= 0.5:
         return
     rate = _heading_error(hdg, prev_hdg) / dt
-    if abs(prev) < PEDAL_MAX * 0.3 or abs(rate) < 5.0:
+    if abs(prev) < PEDAL_MAX * 0.3 or abs(rate) < 5.0 \
+            or abs(rate) > 30.0 or streak < 2:
         return
     votes = getattr(self, "_pedal_votes", 0)
     votes += 1 if (rate > 0.0) == (prev > 0) else -1
-    if votes <= -3:
+    if votes <= -5:
         self._pedal_flip = not getattr(self, "_pedal_flip", False)
         votes = 3
         log.warning("pedal axis answers backwards on this model; "

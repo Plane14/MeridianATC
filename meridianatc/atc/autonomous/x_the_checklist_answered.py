@@ -261,18 +261,28 @@ class _The_checklist_answered:
         this tick's write has not landed yet -- so the vote is whether
         the achieved yaw agrees with the *law's* demand from last call,
         not the signed output: after a flip a demanded right turn is
-        sent left and a rightward answer is agreement. Three disagreed
-        answers flip the output sign; the count is re-seeded positive
-        after a flip so a correctly-wired model never chatters between
-        the two.
+        sent left and a rightward answer is agreement.
+
+        A vote only means something when the evidence is the wheel's
+        own: the demand must have held its side across calls (a demand
+        that just flipped inherits the old turn's yaw), and the yaw
+        rate must be one steering can plausibly make -- a spin already
+        underway answers an older command, not this one. Five disagreed
+        answers flip the sign; the count is re-seeded positive after a
+        flip so a correctly-wired model never chatters between the two.
         """
         prev = getattr(self, "_pedal_demand", 0.0)
         self._pedal_demand = demand
-        if abs(prev) < 0.3 or abs(rate) < 3.0 or gs < 1.0:
+        streak = getattr(self, "_demand_streak", 0)
+        streak = streak + 1 if prev and (demand > 0.0) == (prev > 0.0) \
+            else 0
+        self._demand_streak = streak
+        if abs(prev) < 0.3 or abs(rate) < 3.0 or abs(rate) > 20.0 \
+                or gs < 1.0 or streak < 2:
             return
         votes = getattr(self, "_pedal_votes", 0)
         votes += 1 if (rate > 0.0) == (prev > 0.0) else -1
-        if votes <= -3:
+        if votes <= -5:
             self._pedal_flip = not getattr(self, "_pedal_flip", False)
             votes = 3
             log.warning("steering axis answers backwards on this "
@@ -376,6 +386,17 @@ class _The_checklist_answered:
         d = self.director
         d.parking_brake(False)
         hdg = state.heading_true or 0.0
+        # The pursuit point can teleport between legs of the route --
+        # where two taxiway edges sit close, the nearest-point pick
+        # ping-pongs and the demanded heading jumps tens of degrees a
+        # tick, which no loop can converge on. The demand is eased
+        # toward each new answer along the arc, so a leg change reads
+        # as a brisk turn order rather than a teleport.
+        prev_want = getattr(self, "_steer_want", None)
+        if prev_want is not None:
+            jump = (desired_hdg - prev_want + 540.0) % 360.0 - 180.0
+            desired_hdg = (prev_want + 0.45 * jump) % 360.0
+        self._steer_want = desired_hdg
         err = ((desired_hdg - hdg + 540.0) % 360.0 - 180.0)
         # A near-reversal is the shortest-path law's singular case: at
         # ~180 degrees out a degree of wobble flips which way is
