@@ -19,6 +19,7 @@ them, because an aeroplane on frequency mostly listens.
 
 from __future__ import annotations
 
+import contextlib
 import re
 from dataclasses import dataclass
 
@@ -659,10 +660,8 @@ class PilotSpeech:
         ceiling and the point are what a pilot says along with them."""
         parts = []
         if exit_point:
-            try:
+            with contextlib.suppress(Exception):
                 exit_point = self.p.vrp(exit_point)
-            except Exception:
-                pass
             parts.append(self.book.vfr_release_via.format(point=exit_point))
         if ceiling_ft:
             parts.append(self.book.vfr_release_ceiling.format(

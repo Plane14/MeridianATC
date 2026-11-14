@@ -911,7 +911,7 @@ def _addressed(folded: str, language: str, names,
     # And the first officer's.
     for name in first_officer or ():
         cleaned = fold(name)
-        if cleaned and re.search(rf"{re.escape(cleaned)}", head):
+        if cleaned and re.search(rf"\b{re.escape(cleaned)}\b", head):
             return FIRST_OFFICER, cleaned
 
     tables = [_ADDRESS.get(language, {})] + [

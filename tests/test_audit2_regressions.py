@@ -122,3 +122,19 @@ def test_a_held_live_aeroplane_is_let_go_when_its_strip_goes():
     injector.hold_live.reset_mock()
     injector._release_held(SimpleNamespace(live_held="", hex="def456"))
     injector.hold_live.assert_not_called()
+
+
+def test_the_first_officer_answers_to_his_first_name():
+    """A backspace byte in the pattern where a word boundary was meant
+    made the name branch match nothing -- the first officer only ever
+    answered to "first officer"."""
+    from meridianatc.atc.interphone import FIRST_OFFICER, _addressed, fold
+
+    who, words = _addressed(fold("marie can you check the cabin"), "en",
+                            names=["julia"], first_officer=["marie"])
+    assert who == FIRST_OFFICER
+    assert words == "marie"
+    # And a name is a whole word, not the start of a longer one.
+    who, _ = _addressed(fold("marie can you check the cabin"), "en",
+                        names=[], first_officer=["mar"])
+    assert who != FIRST_OFFICER
