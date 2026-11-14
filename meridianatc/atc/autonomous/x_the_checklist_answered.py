@@ -206,31 +206,45 @@ class _The_checklist_answered:
         self._last_lever = lever
         return lever
 
-    def _slew_rudder(self, want: float, per_s: float = 0.2) -> float:
-        """The nosewheel walked through a change of side, not thrown.
+    def _turn_rate(self, hdg: float) -> float:
+        """How fast the nose is coming around, in degrees a second.
 
-        The answer the steering law computes describes an error a tick
-        or two old, and a wheel free to swing stop to stop in one write
-        is the weave the apron keeps showing: full left while the
-        measured error was left, full right once it has gone past. A
-        demand that keeps its side is followed at once -- tracking it
-        is what steering is; one that crosses centre is the weave's
-        other half, and the wheel walks through at a hand's rate so
-        the alternating asks average out before either stop is met.
+        Positive is turning right. The state the laws steer from is a
+        tick or two old, so the raw delta between reads is already an
+        average over the gap; a light smoothing on top keeps one odd
+        sample from being answered as a spin. The measured gap itself
+        is kept on ``_steer_dt`` -- the horizon a steering write needs
+        to lead by is the loop's own period, not a guess at it.
         """
         now = time.monotonic()
-        last_at = getattr(self, "_rudder_at", 0.0)
-        dt = max(0.0, min(now - last_at, 1.0)) if last_at else 0.0
-        self._rudder_at = now
-        want = max(-1.0, min(1.0, want))
-        was = float(getattr(self, "_last_rudder", 0.0) or 0.0)
-        if was * want >= 0.0:
-            self._last_rudder = want
-            return want
-        step = per_s * dt
-        rudder = max(was - step, min(was + step, want))
-        self._last_rudder = rudder
-        return rudder
+        last_at = getattr(self, "_hdg_at", 0.0)
+        prev = getattr(self, "_last_hdg", None)
+        self._hdg_at = now
+        self._last_hdg = hdg
+        if prev is None or not last_at:
+            return 0.0
+        dt = now - last_at
+        if dt <= 0.0:
+            return 0.0
+        self._steer_dt = dt
+        raw = ((hdg - prev + 540.0) % 360.0 - 180.0) / dt
+        raw = max(-90.0, min(90.0, raw))
+        rate = 0.5 * getattr(self, "_turn_rate_dps", 0.0) + 0.5 * raw
+        self._turn_rate_dps = rate
+        return rate
+
+    def _steer_lead(self, err: float, rate: float) -> float:
+        """The error a steering write will still be answering to when it
+        lands, not the one a stale read reports: while the nose is
+        already coming around the lead shrinks the ask, so the wheel is
+        centred as it arrives rather than thrown over after it has
+        passed. The horizon is the loop's own measured period -- a
+        five-second tick needs the braking started five seconds out.
+        Without the rate term a saturated law under lag bang-bangs --
+        or with the correction arriving late enough, orbits the apron.
+        """
+        horizon = max(2.0, 1.5 * getattr(self, "_steer_dt", 2.0))
+        return err - rate * horizon
 
     def _breakaway_lever(self) -> float:
         """The momentary lever that starts the aeroplane rolling.
@@ -328,10 +342,12 @@ class _The_checklist_answered:
         """
         d = self.director
         d.parking_brake(False)
-        err = ((desired_hdg - (state.heading_true or 0.0) + 540.0)
-               % 360.0 - 180.0)
+        hdg = state.heading_true or 0.0
+        err = ((desired_hdg - hdg + 540.0) % 360.0 - 180.0)
+        rate = self._turn_rate(hdg)
+        lead = self._steer_lead(err, rate)
         if self._use_pids:
-            rudder = self._pid("steer").update(err)
+            rudder = self._pid("steer").update(lead, measurement=hdg)
         else:
             # The gain is the class's: a heavy needs more nosewheel for
             # the same error than a light single, and the performance
@@ -341,10 +357,14 @@ class _The_checklist_answered:
             # or two of lag, and the apron shows the weave that makes.
             divisor = 36.0 if self.performance.turn_rate < fly.RATE_LIGHT \
                 else 60.0
-            rudder = max(-0.5, min(0.5, err / divisor))
-        rudder = max(-self._ground_steer_limit(state),
-                     min(self._ground_steer_limit(state), rudder))
-        rudder = self._slew_rudder(rudder)
+            rudder = max(-0.5, min(0.5, lead / divisor))
+        limit = self._ground_steer_limit(state)
+        rudder = max(-limit, min(limit, rudder))
+        log.info(
+            "steer: hdg %.0f want %.0f err %+.0f rate %+.1f "
+            "pedal %+.2f gs %.1f->%.1f kt",
+            hdg, desired_hdg, err, rate, rudder,
+            state.ground_speed_kt or 0.0, target_kt)
         d.rudder(rudder)
         # The nosewheel follows the same demand where the model steers it
         # separately: a taildragger on rudder alone and a tricycle gear on
@@ -419,7 +439,6 @@ class _The_checklist_answered:
         # The next pull-away starts the slew from idle, not from
         # wherever the lever happened to be left.
         self._last_lever = 0.0
-        self._last_rudder = 0.0
         gs = state.ground_speed_kt or 0.0
         if gs <= 1.0:
             d.brakes(0.0)

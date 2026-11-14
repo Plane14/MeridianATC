@@ -135,7 +135,6 @@ class _Entry:
         except Exception:
             log.debug("autonomous handoff raised", exc_info=True)
         self._last_lever = 0.0
-        self._last_rudder = 0.0
         self.state.ap_master = False
         self.state.ap_hdg_mode = False
         self.state.ap_nav_mode = False

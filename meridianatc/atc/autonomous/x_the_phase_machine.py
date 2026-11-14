@@ -526,12 +526,16 @@ class _The_phase_machine:
             # the swerve a takeoff roll is lost to, not saved by. The
             # band stays proportional out to a real excursion -- a law
             # saturated inside a few degrees under a tick or two of lag
-            # is the same weave the apron showed, at eighty knots.
-            err = ((self.state.runway_heading - (state.heading_true or 0.0)
-                    + 540.0) % 360.0 - 180.0)
-            keep = self._slew_rudder(
-                0.0 if abs(err) < 2.0
-                else max(-0.4, min(0.4, err / 36.0)))
+            # is the same weave the apron showed, at eighty knots. The
+            # rate term takes the pedal off as the nose comes around:
+            # an answer for where the heading will be, not for where a
+            # stale read says it is.
+            hdg = state.heading_true or 0.0
+            err = ((self.state.runway_heading - hdg + 540.0)
+                   % 360.0 - 180.0)
+            lead = self._steer_lead(err, self._turn_rate(hdg))
+            keep = (0.0 if abs(lead) < 2.0
+                    else max(-0.4, min(0.4, lead / 36.0)))
             d.rudder(keep)
             d.steering(keep if (state.indicated_airspeed_kt or 0.0) < 35.0
                        else 0.0)
@@ -996,12 +1000,12 @@ class _The_phase_machine:
                 # (the wind component's sign is the sim's, UNVERIFIED --
                 # a wrong one shows as a slow bank, not a departure).
                 if self.state.runway_heading > 0:
-                    err = ((self.state.runway_heading
-                            - (state.heading_true or 0.0) + 540.0)
+                    hdg = state.heading_true or 0.0
+                    err = ((self.state.runway_heading - hdg + 540.0)
                            % 360.0 - 180.0)
-                    d.rudder(self._slew_rudder(
-                        0.0 if abs(err) < 2.0
-                        else max(-0.4, min(0.4, err / 36.0))))
+                    lead = self._steer_lead(err, self._turn_rate(hdg))
+                    d.rudder(0.0 if abs(lead) < 2.0
+                             else max(-0.4, min(0.4, lead / 36.0)))
                 xwind = float(getattr(state, "aircraft_wind_x_kt", 0.0)
                               or 0.0)
                 d.aileron(max(-0.15, min(0.15, xwind * 0.02)))
@@ -1103,12 +1107,12 @@ class _The_phase_machine:
             # at rollout speed is the swerve a landing is lost to, not
             # saved by.
             if self.state.runway_heading > 0:
-                err = ((self.state.runway_heading
-                        - (state.heading_true or 0.0) + 540.0)
+                hdg = state.heading_true or 0.0
+                err = ((self.state.runway_heading - hdg + 540.0)
                        % 360.0 - 180.0)
-                rudder = self._slew_rudder(
-                    0.0 if abs(err) < 2.0
-                    else max(-0.4, min(0.4, err / 36.0)))
+                lead = self._steer_lead(err, self._turn_rate(hdg))
+                rudder = (0.0 if abs(lead) < 2.0
+                          else max(-0.4, min(0.4, lead / 36.0)))
                 d.rudder(rudder)
                 d.steering(rudder if gs < 35.0 else 0.0)
             return

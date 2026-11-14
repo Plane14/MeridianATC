@@ -98,6 +98,11 @@ class _Taxi:
             target_kt = min(target_kt, 5.0)
         if remaining < 60.0 or turn > 60.0:
             target_kt = max(4.0, target_kt * 0.5)
+        if turn > 90.0:
+            # Nearly reversed: the turn itself is the job, at walking
+            # pace. Driven faster the rotation outruns the stale ticks
+            # and the aeroplane orbits the point instead of lining up.
+            target_kt = min(target_kt, 2.5)
         if turn > 20.0:
             target_kt = min(target_kt, max(
                 4.0, target_kt * (1.0 - (turn - 20.0) / 80.0)))
