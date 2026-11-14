@@ -365,6 +365,11 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         from ..integrations.taxiways import SimGround
 
         self.simground = SimGround(self.config.sim.simconnect_dll)
+        # The same answer read out of X-Plane's apt.dat when the session
+        # is with that simulator instead.
+        from ..integrations.xpground import XPlaneGround
+
+        self.xpground = XPlaneGround()
         self._ground_asked: set[str] = set()
         # And the approaches each airport publishes, so the ILS is only
         # promised where there is one. Asked once per airport, on a worker,

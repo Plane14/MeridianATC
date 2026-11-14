@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from ..powerplant import limits_for
+from ._shared import AutonomousPhase
+from ..powerplant import cooling_for, limits_for
 
 
 class _The_engines:
@@ -12,11 +13,12 @@ class _The_engines:
     ``TURB ENG N1`` or ``TURB ENG ITT`` simply has no limit checked, the
     same way the envelope watch stands down on a missing G read.
 
-    Two jobs: ``_watch_engines`` says a limit once when the instruments
+    Three jobs: ``_watch_engines`` says a limit once when the instruments
     cross it (whether or not the FO holds the levers), and
     ``_engine_limit_cap`` gives the throttle code a ceiling it can pull
     back to -- the reflex a pilot's hand has the moment the needle
-    touches the red line.
+    touches the red line. ``_manage_cooling`` works the type's cowl
+    flaps the way the POH does, for the types that have them.
     """
 
     # How far over a limit the reading has to be before it counts: a
@@ -25,6 +27,13 @@ class _The_engines:
     _MARGIN_ITT = 8.0       # degrees C
     _MARGIN_RPM = 30.0      # crankshaft RPM
     _MARGIN_TQ = 1.0        # per cent torque
+    _MARGIN_CHT = 5.0       # degrees C of CHT
+
+    # The CHT the flaps open at: this far under the red line. Closing
+    # again is allowed a further 20C of hysteresis so a wandering needle
+    # does not pump the levers.
+    _CHT_OPEN_MARGIN = 15.0
+    _CHT_HYSTERESIS = 20.0
 
     def _engine_limits(self):
         """The type's published figures, resolved once per session."""
@@ -35,6 +44,16 @@ class _The_engines:
             self._eng_limit_key = key
             self._eng_limits = limits_for(*key)
         return self._eng_limits
+
+    def _cooling(self):
+        """The type's cooling kit, resolved once per session like the limits."""
+        key = (getattr(getattr(self.session, "aircraft", None),
+                       "type_code", "") or "",
+               getattr(self, "_aircraft_class", "") or "")
+        if getattr(self, "_cooling_key", None) != key:
+            self._cooling_key = key
+            self._cooling_cached = cooling_for(*key)
+        return self._cooling_cached
 
     def _engines_over_limit(self, state, *, takeoff: bool = False) -> list[str]:
         """Which published ceilings the model's own gauges are past.
@@ -62,7 +81,19 @@ class _The_engines:
                       else lim.tq_cont_pct or lim.tq_takeoff_pct)
         if tq_ceiling and tq > tq_ceiling + self._MARGIN_TQ:
             over.append("tq")
+        # Cylinder-head temperature: the model's own red line where the
+        # sim publishes one, the type's or the class's where it does not.
+        # A piston's CHT is a limit like the turbine's ITT.
+        cht = float(getattr(state, "eng_cht_c", 0.0) or 0.0)
+        ceiling = self._cht_limit(state)
+        if ceiling and cht > ceiling + self._MARGIN_CHT:
+            over.append("cht")
         return over
+
+    def _cht_limit(self, state) -> float:
+        """The CHT ceiling this engine's heads are worked against, C."""
+        published = float(getattr(state, "eng_cht_limit_c", 0.0) or 0.0)
+        return published or self._cooling().cht_max_c
 
     def _engine_limit_cap(self, state, *, takeoff: bool = False) -> float:
         """The highest lever the engines may take right now, 0..1.
@@ -149,3 +180,62 @@ class _The_engines:
         else:
             low_power = self._lever_position(state) < 0.35
         return in_window or low_power
+
+    # -- engine cooling: cowl flaps --------------------------------------
+
+    def _cowl_flap_wanted(self, state) -> float:
+        """Where the cowl flaps belong right now, 0 closed .. 1 open.
+
+        The schedule every cowl-flap POH publishes: open where power is
+        high and speed is low -- the ground, the takeoff, the climb and
+        the go-around -- closed in cruise, descent and approach. On top
+        of the schedule sits the gauge: a CHT running toward its red
+        line opens them wherever the flight is, and the hysteresis keeps
+        a needle hovering near the mark from pumping the levers.
+        """
+        open_now = bool(state.on_ground) or self.state.sub == "go_around" \
+            or self.state.phase in (AutonomousPhase.TAKEOFF,
+                                    AutonomousPhase.CLIMB)
+        cht = float(getattr(state, "eng_cht_c", 0.0) or 0.0)
+        limit = self._cht_limit(state)
+        hot = cht > 0.0 and limit > 0.0 \
+            and cht > limit - self._CHT_OPEN_MARGIN
+        if hot:
+            if not self.state.cht_warned:
+                self.state.cht_warned = True
+                self._emit("info",
+                           f"Cylinder head temperature {cht:.0f} C "
+                           "nearing limit: cowl flaps open",
+                           "autonomous.engines.cht")
+            # Sticky: once the gauge opened them they stay open until
+            # the heads are comfortably cool again -- the hysteresis is
+            # on the flap position, not only the call.
+            self.state.cht_flaps = True
+        elif cht <= 0.0 or limit <= 0.0 \
+                or cht < limit - self._CHT_OPEN_MARGIN - self._CHT_HYSTERESIS:
+            self.state.cht_flaps = False
+            self.state.cht_warned = False
+        if self.state.cht_flaps:
+            return 1.0
+        return 1.0 if open_now else 0.0
+
+    def _manage_cooling(self, state) -> None:
+        """Work the cowl flaps on the types that carry them.
+
+        ``cooling_for`` is the gate: a type whose entry does not say it
+        has cowl flaps -- a 172's fixed cowl, a turbine's self-managed
+        cooling -- never gets a lever written. Where the sim cannot
+        answer whether the levers exist at all (X-Plane's handle ratio
+        reads on every model), the type table is what keeps a Cessna
+        172's nonexistent flaps untouched. ``cowl_set`` tracks only what
+        the FO itself wrote, so a lever the pilot moved stays his.
+        """
+        if not getattr(state, "engines_running", False):
+            return
+        if not self._cooling().cowl_flaps:
+            return
+        want = self._cowl_flap_wanted(state)
+        if want == self.state.cowl_set:
+            return
+        if self.director.cowl_flaps(want):
+            self.state.cowl_set = want

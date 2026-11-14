@@ -270,13 +270,23 @@ class _The_other_aeroplanes:
     def _ask_for_ground(self, ident: str) -> None:
         if not ident or ident in self._ground_asked:
             return
-        if not (capabilities(self.state.source).facilities and self.state.connected):
+        if not self.state.connected:
+            return
+        # Whichever simulator is asked, it is asked its own way: the
+        # facility API on SimConnect, the apt.dat scenery is loaded from
+        # on X-Plane.
+        source = capabilities(self.state.source)
+        if source.facilities:
+            reader = self.simground
+        elif self.state.source == "xplane":
+            reader = self.xpground
+        else:
             return
         self._ground_asked.add(ident)
 
         def read() -> None:
             try:
-                found = self.simground.layout(ident)
+                found = reader.layout(ident)
             except Exception:
                 log.debug("could not read %s's taxiways", ident, exc_info=True)
                 return
@@ -413,6 +423,7 @@ class _The_other_aeroplanes:
         with timed("tick.traffic.sync", warn_over_ms=500):
             self.simtraffic.sync(positions, now)
         self._follow_me_car()
+        self._taxi_route_overlay()
         confirmed, dropped = self.traffic.confirm(
             self.simtraffic.has, self.simtraffic.failed, now)
         with timed("tick.traffic.handling", warn_over_ms=500):
@@ -484,6 +495,38 @@ class _The_other_aeroplanes:
             if isinstance(xp, XPlaneTraffic):
                 xp.followme(False)
             self._followme_on = False
+
+    # A standing route is re-sent on this clock; the plugin lets one that
+    # stops arriving fade, so a silent engine leaves no stale line.
+    ROUTE_RESEND_S = 10.0
+
+    def _taxi_route_overlay(self) -> None:
+        """The cleared taxi route on X-Plane's own map, X-Plane only.
+
+        While a taxi route stands the plugin draws it as a markings layer,
+        from the same ``session.taxi_path`` the follow-me car drives. A
+        changed route goes at once; a standing one is re-sent on the
+        keep-alive clock the plugin expires it by.
+        """
+        xp = self.simtraffic
+        session = self.session
+        path = (list(session.taxi_path)
+                if session is not None
+                and session.phase in (Phase.TAXI_OUT, Phase.TAXI_IN)
+                else [])
+        sent = getattr(self, "_route_sent", None)
+        if isinstance(xp, XPlaneTraffic) and xp.available:
+            now = time.monotonic()
+            if path and (path != sent
+                         or now - getattr(self, "_route_sent_at", 0.0)
+                         > self.ROUTE_RESEND_S):
+                if xp.route(path):
+                    self._route_sent = path
+                    self._route_sent_at = now
+            elif not path and sent is not None and xp.route([], on=False):
+                self._route_sent = None
+        elif sent is not None:
+            self._route_sent = None
 
     def _choose_models(self, positions: list[dict], now: float) -> None:
         """Mark each invented aeroplane with the level of detail it should

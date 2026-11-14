@@ -56,6 +56,11 @@ struct Packet {
     uint64_t seq = 0;
     std::map<std::string, AircraftState> aircraft;
     FollowMe followme;
+    // The pilot's cleared taxi route for the map overlay, lat/lon pairs.
+    std::vector<std::pair<double, double>> route;
+    bool routeOn = false;
+    // A METAR request's station.
+    std::string icao;
 };
 
 inline Packet Parse(const std::string& wire) {
@@ -78,6 +83,29 @@ inline Packet Parse(const std::string& wire) {
         p.followme.lat = Number(j, "lat", -90, 90);
         p.followme.lon = Number(j, "lon", -180, 180);
         p.followme.hdg = Wrap(Number(j, "hdg", -360, 360));
+        return p;
+    }
+    if (p.kind == "route") {
+        p.routeOn = Light(j, "on");
+        const auto& pts = j.at("pts");
+        if (!pts.is_array() || pts.size() > 512)
+            throw std::invalid_argument("route points");
+        for (const auto& pt : pts) {
+            if (!pt.is_array() || pt.size() != 2 ||
+                !pt[0].is_number() || !pt[1].is_number())
+                throw std::invalid_argument("route point");
+            double lat = pt[0].get<double>(), lon = pt[1].get<double>();
+            if (!std::isfinite(lat) || !std::isfinite(lon) ||
+                lat < -90 || lat > 90 || lon < -180 || lon > 180)
+                throw std::invalid_argument("route point");
+            p.route.emplace_back(lat, lon);
+        }
+        return p;
+    }
+    if (p.kind == "metar") {
+        p.icao = Text(j, "icao", 8, true);
+        for (const unsigned char c : p.icao)
+            if (!std::isalnum(c)) throw std::invalid_argument("icao");
         return p;
     }
     if (p.kind != "traffic" || !j.at("seq").is_number_unsigned())
@@ -156,16 +184,21 @@ class Session {
     uint64_t sequence = 0;
     double trafficAt = -1e9;
     double followmeAt = -1e9;
+    double routeAt = -1e9;
     bool ownerKnown = false;
     uint64_t owner = 0;
     double ownerAt = -1e9;
 public:
     std::map<std::string, AircraftState> snapshot;
     FollowMe followme;
+    std::vector<std::pair<double, double>> route;
     bool Connected(double now) const { return ownerKnown && now - ownerAt < 10; }
     // A silent engine leaves the car where it last stood for a few seconds,
     // then pulls it -- a parked car on the taxiway is worse than none.
     bool FollowmeActive(double now) const { return followme.on && now - followmeAt < 15; }
+    // The route outlives the car -- a drawn line on the map costs nothing
+    // and losing it mid-taxi is worse than a stale one for a few seconds.
+    bool RouteActive(double now) const { return !route.empty() && now - routeAt < 20; }
     bool Apply(const Packet& packet, double now, uint64_t sender = 0) {
         if (packet.kind == "hello") return true;
         if (Connected(now) && sender != owner) return false;
@@ -174,6 +207,10 @@ public:
         if (packet.kind == "clear") Clear();
         else if (packet.kind == "followme") {
             followme = packet.followme; followmeAt = now;
+        } else if (packet.kind == "route") {
+            if (packet.routeOn) route = packet.route;
+            else route.clear();
+            routeAt = now;
         } else {
             snapshot = packet.aircraft;
             trafficAt = now; sequence = packet.seq; hasSequence = true;
@@ -188,6 +225,7 @@ public:
     void Clear() {
         snapshot.clear(); hasSequence = false; trafficAt = -1e9;
         followme.on = false; followmeAt = -1e9;
+        route.clear(); routeAt = -1e9;
     }
 };
 }

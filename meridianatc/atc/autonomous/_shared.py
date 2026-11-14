@@ -117,12 +117,16 @@ class AutonomousState:
     # The sub-step inside a phase, and when it began.
     sub: str = ""
     sub_entered_at: float = 0.0
-    # Pushback tracking: the simulator gives no "tug attached" variable, so
-    # the phase watches the groundspeed instead -- moving means the push is
-    # under way, stationary again for a while means it is done.
+    # Pushback tracking: where the simulator says nothing about the tug
+    # the phase watches the groundspeed instead -- moving means the push
+    # is under way, stationary again for a while means it is done.
     push_requested: bool = False
     moved_since_push: bool = False
     still_since: float = 0.0
+    # When the push first moved the aeroplane -- the clock an open-ended
+    # tug (X-Plane's) is let go on -- and whether that let-go was sent.
+    push_moved_at: float = 0.0
+    push_stop_sent: bool = False
     # Engines: when the start was asked for, so a model that never runs
     # them is an error rather than an endless wait.
     engines_started_at: float = 0.0
@@ -285,6 +289,12 @@ class AutonomousState:
     # put on itself -- the flag that lets it come off when the sky dries.
     eng_warned: bool = False
     carb_set: bool = False
+    # The cooling watch: where the FO last put the cowl flaps (-1 =
+    # never), whether the CHT opened them itself, and whether the
+    # "nearing limit" call was already made.
+    cowl_set: float = -1.0
+    cht_flaps: bool = False
+    cht_warned: bool = False
     # The load-factor watch (x_the_load): whether a limit is being
     # approached or has been exceeded, when the exceedance started for
     # the clear-down hysteresis, whether the warning was emitted, and
@@ -295,6 +305,14 @@ class AutonomousState:
     g_warned: bool = False
     touchdown_g: float = 0.0
     demeanor: str = "smooth"
+    # The stall watch (x_the_stall): when the trigger first held, how
+    # long the instruments have agreed the wing is flying again, whether
+    # the recovery currently owns the axes, and the calls already made.
+    stall_since: float = 0.0
+    stall_clear_since: float = 0.0
+    stall_recovering: bool = False
+    stall_warned: bool = False
+    stall_count: int = 0
     # The VS bug as last commanded, and when, for the slew-limited
     # descent entries of _apply_flight_director; and the AP bank cap
     # last asked for, so it is not re-sent every pass.

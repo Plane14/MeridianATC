@@ -208,6 +208,16 @@ class _The_phase_machine:
                 self._goto_sub("wait")
 
         elif sub == "wait":
+            # An open-ended tug (X-Plane's ground-ops commands push until
+            # told to let go, where SimConnect's completes itself) is let
+            # go on a clock: half a minute at walking pace is clear of any
+            # stand, and the aeroplane coming to rest is what the normal
+            # completion below then reads.
+            if self.state.moved_since_push and not self.state.push_stop_sent \
+                    and capabilities(state.source).pushback_open_ended \
+                    and now - self.state.push_moved_at > 30.0:
+                self.state.push_stop_sent = True
+                self.director.pushback_stop()
             # The aeroplane moved under the tug, then stopped: the push is
             # done. The parking brake goes on before anything moves under
             # its own power -- but not while the tug or the stand is still

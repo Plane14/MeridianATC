@@ -33,11 +33,12 @@ from .x_the_load import _The_load
 from .x_the_loop import _The_loop
 from .x_the_phase_machine import _The_phase_machine
 from .x_the_radios import _The_radios
+from .x_the_stall import _The_stall
 from .x_the_turnaround_between import _The_turnaround_between
 from .x_weather import _Weather
 
 
-class AutonomousFlight(_Plumbing, _Entry, _The_loop, _Shared_helpers, _The_envelope, _The_load, _The_engines, _The_radios, _The_checklist_answered, _The_phase_machine, _The_turnaround_between, _Taxi, _Filed_cleared_sid, _The_approach_s, _The_cleared_approach, _Circling, _Emergencies, _Fuel_planning, _Weather, _Chain_flights_unchanged, _Helpers_kept_from):
+class AutonomousFlight(_Plumbing, _Entry, _The_loop, _Shared_helpers, _The_envelope, _The_load, _The_stall, _The_engines, _The_radios, _The_checklist_answered, _The_phase_machine, _The_turnaround_between, _Taxi, _Filed_cleared_sid, _The_approach_s, _The_cleared_approach, _Circling, _Emergencies, _Fuel_planning, _Weather, _Chain_flights_unchanged, _Helpers_kept_from):
     """Manages autonomous flight from startup to shutdown."""
 
     def __init__(

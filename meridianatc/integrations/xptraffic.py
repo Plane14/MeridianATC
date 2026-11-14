@@ -116,6 +116,11 @@ class XPlaneTraffic:
         # Commands the plugin's key bindings send back up the same
         # channel, drained by the engine each tick.
         self._commands = deque(maxlen=64)
+        # METARs the plugin answers for: station -> (asked_at, text or
+        # None). A None text can mean "not asked yet" or "the sim is not
+        # in real-weather mode" -- asked_at distinguishes them, and an
+        # empty answer is not re-asked until the station's clock runs.
+        self._metars = {}
 
     def _send(self, message):
         try:
@@ -139,6 +144,16 @@ class XPlaneTraffic:
                         and status.get("t") == "command"
                         and isinstance(status.get("cmd"), str)):
                     self._commands.append(status)
+                    continue
+                if (isinstance(status, dict) and status.get("v") == 1
+                        and status.get("t") == "metar"
+                        and isinstance(status.get("icao"), str)
+                        and len(status["icao"]) <= 8
+                        and isinstance(status.get("metar"), str)
+                        and len(status["metar"]) <= 512):
+                    # An empty report is a real answer: the sim is not in
+                    # real-weather mode, which metar() reports as no text.
+                    self._metars[status["icao"]] = (now, status["metar"] or None)
                     continue
                 if (not isinstance(status, dict) or type(status.get("v")) is not int
                         or status["v"] != 1 or status.get("t") != "status"
@@ -254,6 +269,49 @@ class XPlaneTraffic:
             except (ValueError, TypeError, OverflowError):
                 return False
 
+    def route(self, points, on=True):
+        """The cleared taxi route for the plugin's map layer.
+
+        ``points`` is a list of (lat, lon) along the taxi path; an empty
+        list or ``on`` False withdraws the line. Like the follow-me car,
+        the latest send wins and the plugin drops a route that stops
+        arriving.
+        """
+        with self._lock:
+            if self._socket is None:
+                return False
+            try:
+                pts = [[_number(lat, -90, 90), _number(lon, -180, 180)]
+                       for lat, lon in points][:512]
+                return self._send({"v": 1, "t": "route", "on": int(bool(on)),
+                                   "pts": pts})
+            except (ValueError, TypeError, OverflowError):
+                return False
+
+    def metar(self, station, ask_older_s=300.0):
+        """The METAR the sim itself downloaded for ``station``, or None.
+
+        Asks the plugin once per ``ask_older_s`` per station; the reply
+        arrives on the same channel. An empty answer -- the sim is not
+        in real-weather mode -- reads as None until the clock re-asks.
+        """
+        station = str(station or "")[:8]
+        if not station:
+            return None
+        with self._lock:
+            self.on_frame()
+            if self._socket is None:
+                return None
+            now = time.monotonic()
+            asked, text = self._metars.get(station, (float("-inf"), None))
+            if now - asked >= ask_older_s:
+                try:
+                    self._send({"v": 1, "t": "metar", "icao": station})
+                except (ValueError, TypeError, OverflowError):
+                    pass
+                self._metars[station] = (now, text)
+            return text
+
     def sync(self, positions, now=None):
         with self._lock:
             self.on_frame()
@@ -308,6 +366,7 @@ class XPlaneTraffic:
             self._wanted.clear()
             self._drawn.clear()
             self._unmatched.clear()
+            self._metars.clear()
             self._sequence = 0
 
     def describe(self):

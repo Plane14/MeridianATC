@@ -55,6 +55,9 @@ class _The_loop:
         # the type's published red line is said once, and the lever cap
         # the throttle code reads is what keeps it off the line.
         self._watch_engines(state, now)
+        # The cowl flaps ride the same watch: a lever change belongs to
+        # the phase, a CHT running hot cannot wait for the next one.
+        self._manage_cooling(state)
         if not self._enabled:
             return
         # Emergencies outrank the phase: a MAYDAY changes what the flight
@@ -67,6 +70,14 @@ class _The_loop:
         # one-second mode selections, and its touchdown report edges off
         # the air->ground change wherever it happens.
         self._monitor_load(state, now)
+        # The stall watch runs on the same cadence: a trigger held past
+        # a gust hands the axes to the recovery, which flies them every
+        # tick until the wing is flying again -- no mode selection waits
+        # on the one-second interval for that.
+        self._monitor_stall(state, now)
+        if self.state.stall_recovering:
+            self._fly_stall_recovery(state, now)
+            return
         if self._heli is not None:
             self._heli.tick(state)
             return
@@ -95,6 +106,8 @@ class _The_loop:
         # knots is faster than the push ever gets.
         if self.state.phase == AutonomousPhase.PUSHBACK:
             if (state.ground_speed_kt or 0.0) > 0.8:
+                if not self.state.moved_since_push:
+                    self.state.push_moved_at = now
                 self.state.moved_since_push = True
                 self.state.still_since = now
             elif self.state.moved_since_push and self.state.still_since == 0.0:
@@ -114,9 +127,8 @@ class _The_loop:
     def _manual_control_required(self) -> None:
         self._enabled = False
         self._handoff()
-        self._emit("info", "Take manual control: X-Plane supports airborne fixed-wing "
-                   "autopilot assistance only, not taxi, takeoff, landing, go-around "
-                   "or rotorcraft controls.", "log.autofly_manual")
+        self._emit("info", "Take manual control: this simulator cannot hand "
+                   "over these flight phases.", "log.autofly_manual")
 
     def _execute_phase(self, state, now: float) -> None:
         """Execute logic for the current autonomous phase."""

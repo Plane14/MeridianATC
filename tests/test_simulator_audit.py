@@ -89,31 +89,46 @@ def test_capabilities_and_honest_autofly_refusal():
     engine.state = AircraftState(source="xplane", connected=True)
     engine.autonomous_flight = Mock()
     engine.emit = Mock()
-    ok, message = engine.engage_autonomous()
-    assert not ok and "not available" in message
-    assert not engine.autonomous_status()["available"]
-    engine.autonomous_flight.engage.assert_not_called()
-    engine.state.on_ground = False
+    # X-Plane now answers the full axis set, so the engage is not refused
+    # for the simulator -- on the ground or airborne, the FO takes it.
     engine.session = None
     engine.autonomous_flight.engage.return_value = True
     assert engine.engage_autonomous()[0]
     engine.autonomous_flight.engage.assert_called_once_with(None)
+    # Only a source that cannot fly at all still refuses.
+    engine.state = AircraftState(source="manual", connected=True)
+    engine.autonomous_flight.reset_mock()
+    ok, message = engine.engage_autonomous()
+    assert not ok and "not available" in message
+    assert not engine.autonomous_status()["available"]
+    engine.autonomous_flight.engage.assert_not_called()
 
 
-def test_configured_autofly_does_not_send_xplane_controls():
+def test_configured_autofly_runs_xplane_controls():
     pytest.importorskip("scipy")
-    from meridianatc.atc.autonomous import AutonomousFlight
+    from meridianatc.atc.autonomous import (
+        AutonomousFlight,
+        AutonomousPhase,
+        AutonomousState,
+    )
 
     fo = AutonomousFlight.__new__(AutonomousFlight)
     fo._enabled = True
+    fo.state = AutonomousState(phase=AutonomousPhase.CRUISE)
     fo.get_state = lambda: AircraftState(source="xplane", connected=True)
     fo._emit = Mock()
     fo._handoff = Mock()
-    fo._manage_comms = Mock()
+    for name in ("_manage_comms", "_drive_checklist", "_monitor_weather",
+                 "_watch_engines", "_manage_cooling", "_monitor_emergency",
+                 "_monitor_load", "_execute_phase"):
+        setattr(fo, name, Mock())
+    fo._heli = None
+    fo._is_helicopter = False
+    fo.ACTION_INTERVAL = 0
     fo.tick()
-    assert not fo.enabled
-    fo._manage_comms.assert_not_called()
-    fo._emit.assert_called_once()
+    assert fo.enabled
+    fo._manage_comms.assert_called_once()
+    fo._execute_phase.assert_called_once()
 
 
 def test_exception_in_msfs_attempt_still_falls_back(monkeypatch):

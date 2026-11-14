@@ -48,6 +48,13 @@ DATAREFS = {
     # field in state.unavailable and the protections quietly stand down.
     "g_force": ("sim/flightmodel2/misc/gforce_normal", 1),
     "pitch_deg": ("sim/flightmodel/position/theta", 1),
+    # The stall watch's (atc/autonomous/x_the_stall): the horn itself,
+    # the angle of attack, and the model's own warning angle -- a model
+    # that does not wire them lands in state.unavailable, which the
+    # watch reads as unpublished rather than never stalling.
+    "stall_warning": ("sim/flightmodel/failures/stallwarning", 1),
+    "aoa_deg": ("sim/flightmodel/position/alpha", 1),
+    "stall_aoa_deg": ("sim/aircraft/overflow/acf_stall_warn_alpha", 1),
     "parking_brake": ("sim/cockpit2/controls/parking_brake_ratio", 1),
     "gear_down": ("sim/cockpit2/controls/gear_handle_down", 1),
     "seatbelt_sign": ("sim/cockpit2/switches/fasten_seat_belts", 1),
@@ -87,11 +94,17 @@ DATAREFS = {
     "design_vs1_kt": ("sim/aircraft/view/acf_Vs", 1),
     "design_vc_kt": ("sim/aircraft/view/acf_Vno", 1),
     "barber_pole_kt": ("sim/aircraft/view/acf_Vne", 1),
+    "mach_max_operate": ("sim/aircraft/view/acf_Mmo", 1),
     "nav1_cdi": ("sim/cockpit2/radios/indicators/nav1_hdef_dots_pilot", 127 / 2.5),
     "nav1_gsi": ("sim/cockpit2/radios/indicators/nav1_vdef_dots_pilot", 119 / 2.5),
     "nav1_has_glideslope": ("sim/cockpit2/radios/indicators/nav1_display_vertical", 1),
     "rotor_brake_active": ("sim/cockpit2/switches/rotor_brake", 1),
     "rotor_clutch_active": ("sim/cockpit2/switches/clutch_engage", 1),
+    # The tug's own readback: on the nosewheel while the push runs, off
+    # when it has let go -- what an open-ended pushback command knows it
+    # is finished by. XP's ground services publish nothing for "a tug is
+    # on its way", so pushback_wait is never set here.
+    "pushback_attached": ("sim/aircraft/overflow/pushback_attached", 1),
     "collective_position": ("sim/cockpit2/engine/actuators/prop_ratio[0]", 100),
     "fuel_selector": ("sim/cockpit2/fuel/fuel_tank_selector", 1),
     # The engine watch's instruments (atc.powerplant): gas-producer/fan
@@ -128,7 +141,48 @@ EXTRA = {
     "hsi_source": RADIOS + "HSI_source_select_pilot",
     "nav_type": "sim/cockpit2/radios/indicators/nav1_type",
     "rain": "sim/weather/aircraft/precipitation_on_aircraft_ratio",
+    # The nosewheel's own authority in degrees -- what a -1..1 steering
+    # write scales by; 0 or absent leaves the controls' default.
+    "steer_deg": "sim/aircraft/gear/acf_nw_steerdeg1",
+    # The AP bank selector's six steps in degrees, for
+    # AP_MAX_BANK_ANGLE_SET picking the nearest one.
+    "cht_is_c": "sim/aircraft/engine/acf_CHT_is_C",
+    "oil_is_c": "sim/aircraft/engine/acf_oilT_is_C",
+    # The model's own CHT red line where it publishes one -- the ceiling
+    # the cooling watch works against before the class figure is used.
+    "cht_red_hi": "sim/aircraft/limits/red_hi_CHT",
+    # The same story for the torque the rotorcraft collective limit
+    # watches: shaft torque in N-m against the book's red line in ft-lbs.
+    "trq_nm": "sim/flightmodel/engine/ENGN_TRQ[0]",
+    "trq_red_hi_ftpds": "sim/aircraft/limits/red_hi_TRQ",
+    # COM1's power switch, the honest half of the COM STATUS enum; and
+    # the two tank gauges, kilograms like X-Plane's other fuel figures.
+    "com1_powered": "sim/cockpit2/radios/actuators/com1_power",
+    "fuel_left_kg": "sim/cockpit2/fuel/fuel_level_indicated_left",
+    "fuel_right_kg": "sim/cockpit2/fuel/fuel_level_indicated_right",
+    # The wind vector at the aeroplane, metres a second in the world
+    # axes -- read() turns it into the body-axes knots the weather watch
+    # reads.
+    "wind_x_ms": "sim/weather/aircraft/wind_now_x_msc",
+    "wind_y_ms": "sim/weather/aircraft/wind_now_y_msc",
+    "wind_z_ms": "sim/weather/aircraft/wind_now_z_msc",
 }
+for _layer in range(3):
+    # The cloud layers the aeroplane's own weather knows: base and tops
+    # in metres MSL and the coverage, so read() can say "in cloud" the
+    # way SimConnect's AMBIENT IN CLOUD does.
+    EXTRA[f"cloud_base_m{_layer}"] = (
+        f"sim/weather/aircraft/cloud_base_msl_m[{_layer}]")
+    EXTRA[f"cloud_top_m{_layer}"] = (
+        f"sim/weather/aircraft/cloud_tops_msl_m[{_layer}]")
+    EXTRA[f"cloud_cov{_layer}"] = (
+        f"sim/weather/aircraft/cloud_coverage_percent[{_layer}]")
+for _engine in range(8):
+    EXTRA[f"cht{_engine}"] = f"sim/flightmodel/engine/ENGN_CHT_c[{_engine}]"
+    EXTRA[f"oil{_engine}"] = f"sim/flightmodel/engine/ENGN_oil_temp_c[{_engine}]"
+    EXTRA[f"cowl{_engine}"] = f"sim/cockpit2/engine/actuators/cowl_flap_ratio[{_engine}]"
+for _step in range(6):
+    EXTRA[f"bank_angle{_step}"] = f"sim/cockpit2/autopilot/bank_angles_values[{_step}]"
 for _engine in range(16):
     EXTRA[f"running{_engine}"] = f"sim/flightmodel/engine/ENGN_running[{_engine}]"
     EXTRA[f"flow{_engine}"] = f"sim/flightmodel/engine/ENGN_FF_[{_engine}]"
@@ -336,9 +390,93 @@ class XPlaneSource:
         state.fuel_total_gal = state.fuel_total_lb / 6
         state.fuel_capacity_gal = values.get("fuel_capacity_kg", 0) * LB / 6
         state.est_fuel_flow_pph = sum(values.get(f"flow{i}", 0) for i in range(16)) * LB * 3600
+        if "fuel_left_kg" in values:
+            state.fuel_left_gal = values["fuel_left_kg"] * LB / 6
+        if "fuel_right_kg" in values:
+            state.fuel_right_gal = values["fuel_right_kg"] * LB / 6
+        # The SimConnect COM STATUS's two honest answers onto the power
+        # switch X-Plane publishes: on means working, off means no
+        # electricity. Not fitted and failed it cannot say.
+        if "com1_powered" in values:
+            state.com1_status = 0 if values["com1_powered"] else 2
+        # The published Mmo is also the barber pole's Mach where a red
+        # line of its own is not separately published.
+        if "mach_max_operate" in values and "barber_pole_mach" not in values:
+            state.barber_pole_mach = state.mach_max_operate
+        trq, trq_red = values.get("trq_nm"), values.get("trq_red_hi_ftpds", 0.0)
+        if trq is not None and trq_red > 0.0:
+            # N-m against the book's ft-lbs red line, the per cent of
+            # rated the collective limit reads.
+            state.eng_torque_pct = trq / (trq_red * 1.35582) * 100.0
+        # The world-axes wind onto the body axes the weather watch
+        # reads: along the nose and across the wing, knots.
+        if "wind_x_ms" in values or "wind_z_ms" in values:
+            psi = math.radians(float(state.heading_true or 0.0))
+            wx, wz = values.get("wind_x_ms", 0.0), values.get("wind_z_ms", 0.0)
+            state.aircraft_wind_x_kt = (wx * math.cos(psi)
+                                        + wz * math.sin(psi)) * KT
+            state.aircraft_wind_z_kt = (wx * math.sin(psi)
+                                        - wz * math.cos(psi)) * KT
+        if "wind_y_ms" in values:
+            state.aircraft_wind_y_kt = values["wind_y_ms"] * KT
+        # The FAA heavy line on the model's own maximum weight.
+        if state.max_gross_weight_lb > 0:
+            state.atc_heavy = state.max_gross_weight_lb >= 255000.0
+        # Inside a broken-or-thicker layer's base and tops is what "in
+        # cloud" means; scattered wisps below that coverage are not.
+        altitude_m = float(state.altitude_ft or 0.0) / FT
+        state.ambient_in_cloud = any(
+            values.get(f"cloud_cov{i}", 0.0) >= 0.5
+            and values.get(f"cloud_base_m{i}", -1.0)
+            <= altitude_m <= values.get(f"cloud_top_m{i}", -1.0)
+            for i in range(3))
+        # The cooling watch's instruments (atc.powerplant.cooling_for):
+        # the hottest cylinder-head and oil temperatures the engines
+        # report -- degc_or_f datarefs, converted by their acf flags --
+        # the model's own CHT red line, and where the cowl-flap levers
+        # sit. Missing engines contribute nothing to the max, so a
+        # single reads engine one's gauges and a twin the hotter of two.
+        count = max(1, min(8, int(state.engine_count or 0)))
+        if not bool(values.get("cht_is_c", 1)):
+            _to_c = lambda t: (t - 32.0) * 5.0 / 9.0
+        else:
+            _to_c = lambda t: t
+        if "cht0" in values:
+            state.eng_cht_c = max(_to_c(values.get(f"cht{i}", 0.0))
+                                  for i in range(count))
+        red = values.get("cht_red_hi", 0.0)
+        if red > 0.0:
+            state.eng_cht_limit_c = _to_c(red)
+        if not bool(values.get("oil_is_c", 1)):
+            _to_c = lambda t: (t - 32.0) * 5.0 / 9.0
+        else:
+            _to_c = lambda t: t
+        if "oil0" in values:
+            state.eng_oil_temp_c = max(_to_c(values.get(f"oil{i}", 0.0))
+                                     for i in range(count))
+        if "cowl0" in values:
+            state.eng_cowl_pct = max(values.get(f"cowl{i}", 0.0)
+                                     for i in range(count)) * 100.0
         known = set(DATAREFS).intersection(values)
         known.update(key for key, dependencies in DERIVED.items()
                      if all(dependency in values for dependency in dependencies))
+        for derived, source_key in (("eng_cht_c", "cht0"),
+                                    ("eng_oil_temp_c", "oil0"),
+                                    ("eng_cowl_pct", "cowl0"),
+                                    ("eng_cht_limit_c", "cht_red_hi"),
+                                    ("fuel_left_gal", "fuel_left_kg"),
+                                    ("fuel_right_gal", "fuel_right_kg"),
+                                    ("com1_status", "com1_powered"),
+                                    ("barber_pole_mach", "mach_max_operate"),
+                                    ("aircraft_wind_x_kt", "wind_x_ms"),
+                                    ("aircraft_wind_y_kt", "wind_y_ms"),
+                                    ("aircraft_wind_z_kt", "wind_z_ms"),
+                                    ("atc_heavy", "max_gross_weight_lb"),
+                                    ("ambient_in_cloud", "cloud_cov0")):
+            if source_key in values:
+                known.add(derived)
+        if values.get("trq_nm") is not None and values.get("trq_red_hi_ftpds", 0.0) > 0.0:
+            known.add("eng_torque_pct")
         state.unavailable = tuple(f.name for f in fields(state) if f.name not in known)
         return state
 

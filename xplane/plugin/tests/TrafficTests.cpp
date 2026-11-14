@@ -71,6 +71,31 @@ void FollowMePacket() {
     Check(other.Apply(p, 1, 2), "followme claims the slot");
     Check(!other.Apply(off, 2, 3), "foreign followme rejected");
 }
+void RouteAndMetar() {
+    auto p = Parse(R"({"v":1,"t":"route","on":1,"pts":[[48.1,11.2],[48.2,11.3]]})");
+    Check(p.kind == "route" && p.routeOn && p.route.size() == 2, "route parses");
+    Check(std::abs(p.route[0].first - 48.1) < .001 && std::abs(p.route[1].second - 11.3) < .001,
+          "route coordinates");
+    Session session;
+    Check(session.Apply(p, 10) && session.RouteActive(10), "route active");
+    Check(!session.RouteActive(30.1), "route expires when updates stop");
+    auto off = Parse(R"({"v":1,"t":"route","on":0,"pts":[]})");
+    Check(session.Apply(off, 12) && !session.RouteActive(12), "route cleared");
+    Session cleared;
+    cleared.Apply(p, 10);
+    cleared.Apply(Parse(R"({"v":1,"t":"clear"})"), 11);
+    Check(!cleared.RouteActive(11), "clear withdraws the route too");
+    auto m = Parse(R"({"v":1,"t":"metar","icao":"LPPR"})");
+    Check(m.kind == "metar" && m.icao == "LPPR", "metar request parses");
+    Reject([] { Parse(R"({"v":1,"t":"route","on":1,"pts":[[91,0]]})"); });
+    Reject([] { Parse(R"({"v":1,"t":"route","on":1,"pts":[["a",0]]})"); });
+    Reject([] { Parse(R"({"v":1,"t":"route","on":1,"pts":[[0,0],[1]]})"); });
+    std::string wide = R"({"v":1,"t":"route","on":1,"pts":[)";
+    for (int i = 0; i < 600; ++i) wide += (i ? ",[0,0]" : "[0,0]");
+    Reject([&] { Parse(wide + "]}"); });
+    Reject([] { Parse(R"({"v":1,"t":"metar","icao":"BAD ICAO"})"); });
+    Reject([] { Parse(R"({"v":1,"t":"metar","icao":"TOOLONGSTATION"})"); });
+}
 void Ownership() {
     Session session;
     auto hello = Parse(R"({"v":1,"t":"hello"})");
@@ -144,6 +169,6 @@ void Socket() {
     server.Close(); Check(server.Open(port), "clean socket reopen");
 }
 int main() {
-    try { Protocol(); FollowMePacket(); Ownership(); Movement(); Socket(); std::cout << "protocol, ownership, snapshot lifecycle, motion and UDP tests passed\n"; }
+    try { Protocol(); FollowMePacket(); RouteAndMetar(); Ownership(); Movement(); Socket(); std::cout << "protocol, ownership, snapshot lifecycle, motion and UDP tests passed\n"; }
     catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

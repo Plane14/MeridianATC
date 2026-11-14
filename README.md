@@ -63,8 +63,12 @@ The plugin goes into `Resources/plugins/MeridianATC`. Updates preserve your
 also keeps those user files. Restart X-Plane after install/update/uninstall.
 The plugin listens only on **127.0.0.1:49010** by default; its INI port must
 match `traffic.xplane_plugin_port`. Without a responding plugin and usable
-CSL models, invented traffic stays radio-only. MSFS-only integrations such
-as GSX and simulator facility queries are skipped on X-Plane.
+CSL models, invented traffic stays radio-only. The plugin also draws the
+follow-me car and the cleared taxi route on X-Plane's own map, and answers
+ATIS weather queries with the METAR the simulator itself downloaded. Taxi
+routes are planned on the airport's real `apt.dat` layout wherever its
+scenery carries a taxi network. MSFS-only integrations such as GSX and
+simulator facility queries are skipped on X-Plane.
 
 Native payloads are optional in app builds: a checkout needs a CMake plugin
 build first; a release without a native payload gives a clear install error.
@@ -1371,6 +1375,15 @@ model's own instruments (`TURB ENG N1`, `TURB ENG ITT`, `GENERAL ENG RPM`),
 a needle past the red line is called once, and the lever itself is capped
 back under the line where the FO holds it — the takeoff roll judged on
 the takeoff rating. A gauge the model never publishes is never a limit.
+Cylinder-head temperature is a limit too where the model reports one:
+on the types `powerplant.py`'s cooling table says carry cowl flaps —
+the Bonanzas, Barons and bigger Cessna/Piper/Mooney/Cirrus pistons — the
+FO works the levers to the POH schedule (open on the ground, for
+takeoff, in the climb and on the go-around, closed in cruise and
+descent) and opens them whenever the CHT needle nears the red line,
+with hysteresis so a wandering gauge does not pump the levers. A type
+whose table does not say it has cowl flaps — a 172's fixed cowl, every
+turbine — never gets a lever written.
 Ice protection answers to the type's kit rather than every switch the sim
 has: a carburetted piston gets its induction heat on the carb-ice
 envelope (−4…30 °C with moisture, low power, or the ground run-up —

@@ -463,4 +463,123 @@ def ice_kit_for(type_code: str, aircraft_class: str = "") -> IceKit:
     return _CLASS_KITS.get(aircraft_class or "", _CLASS_KITS[""])
 
 
-__all__ = ["EngineLimits", "IceKit", "limits_for", "ice_kit_for"]
+# ---------------------------------------------------------------------------
+# The cooling kits: which types put cowl flaps in the pilot's hands, and
+# the cylinder-head red line the flap logic works against. Cowl flaps are
+# cooling, not anti-ice -- they feed ram air across the cylinders and are
+# an air-cooled piston's fixture: turboprops and jets cool themselves.
+# The rules the autonomous watch applies are the POH ones: flaps open on
+# the ground, for takeoff, in the climb and on the go-around (high power
+# at low speed), closed in cruise and descent, and opened again whenever
+# the CHT gauge runs toward its ceiling.
+#
+# ``cht_max_c`` is the published CHT red line in Celsius -- 460 F for the
+# Continental big-bores, 500 F for the Lycomings -- and a type not listed
+# resolves by class: pistons get the conservative 238 C, and
+# ``cowl_flaps`` False, because the commonest trainers (C172, PA28, DA40)
+# have fixed cowls and writing a lever the aeroplane does not have is the
+# failure the tables exist to prevent.
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class CoolingKit:
+    """The engine cooling a type carries. ``cht_max_c`` 0.0 = unpublished."""
+
+    cowl_flaps: bool = False
+    cht_max_c: float = 0.0
+    source: str = ""
+
+
+_FW_COOLING: dict[str, CoolingKit] = {
+    # Beech Bonanzas and Barons (Continental IO-520/IO-550): red line
+    # 460 F = 238 C; POH wants flaps open for ground ops, takeoff and
+    # climb, closed in cruise and descent, "as required" for CHT.
+    "BE35": CoolingKit(cowl_flaps=True, cht_max_c=238.0,
+                       source="Bonanza V35 POH (IO-520)"),
+    "BE36": CoolingKit(cowl_flaps=True, cht_max_c=238.0,
+                       source="A36 Bonanza POH (IO-550)"),
+    "BE55": CoolingKit(cowl_flaps=True, cht_max_c=238.0,
+                       source="Baron 55 POH (IO-470)"),
+    "BE58": CoolingKit(cowl_flaps=True, cht_max_c=238.0,
+                       source="Baron 58 POH (IO-550)"),
+    # Cessna singles and twins. The 172's fixed cowl is the exception
+    # that proves the rule: from the Cardinal up the cowl flaps are
+    # pilot-operated.
+    "C177": CoolingKit(cowl_flaps=True, cht_max_c=260.0,
+                       source="C177 Cardinal POH (IO-360)"),
+    "C182": CoolingKit(cowl_flaps=True, cht_max_c=238.0,
+                       source="C182 Skylane POH (O-470/TIO-540)"),
+    "C206": CoolingKit(cowl_flaps=True, cht_max_c=238.0,
+                       source="C206 Stationair POH (IO-540)"),
+    "C210": CoolingKit(cowl_flaps=True, cht_max_c=238.0,
+                       source="C210 Centurion POH (IO-550)"),
+    "C310": CoolingKit(cowl_flaps=True, cht_max_c=238.0,
+                       source="C310 POH (IO-470)"),
+    "C340": CoolingKit(cowl_flaps=True, cht_max_c=238.0,
+                       source="C340 POH (TSIO-520)"),
+    "C414": CoolingKit(cowl_flaps=True, cht_max_c=238.0,
+                       source="C414 POH (TSIO-520)"),
+    "C421": CoolingKit(cowl_flaps=True, cht_max_c=238.0,
+                       source="C421 POH (GTSIO-520)"),
+    # Piper's bigger pistons: the Comanche, Seneca and Malibu lines.
+    # The PA-28's fixed cowl and the PA-44 Seminole's fixed scoops do
+    # not appear -- they have nothing to write.
+    "PA24": CoolingKit(cowl_flaps=True, cht_max_c=260.0,
+                       source="PA-24 Comanche POH (IO-540)"),
+    "P28R": CoolingKit(cowl_flaps=True, cht_max_c=260.0,
+                       source="PA-28R Arrow POH (IO-360)"),
+    "PA34": CoolingKit(cowl_flaps=True, cht_max_c=260.0,
+                       source="PA-34 Seneca POH (IO-360)"),
+    "PA46": CoolingKit(cowl_flaps=True, cht_max_c=238.0,
+                       source="PA-46 Malibu/Matrix POH (TIO-540)"),
+    # Mooneys and Cirruses both carry the levers.
+    "M20P": CoolingKit(cowl_flaps=True, cht_max_c=260.0,
+                       source="M20J POH (IO-360)"),
+    "M20T": CoolingKit(cowl_flaps=True, cht_max_c=260.0,
+                       source="M20M Bravo POH (TIO-540)"),
+    "SR20": CoolingKit(cowl_flaps=True, cht_max_c=260.0,
+                       source="SR20 POH (IO-360)"),
+    "SR22": CoolingKit(cowl_flaps=True, cht_max_c=238.0,
+                       source="SR22 POH (IO-550)"),
+    # Socata's TIO-540 singles.
+    "TB20": CoolingKit(cowl_flaps=True, cht_max_c=260.0,
+                       source="TB-20 Trinidad POH (TIO-540)"),
+    "TB30": CoolingKit(cowl_flaps=True, cht_max_c=260.0,
+                       source="TB-30 Epsilon POH (TIO-540)"),
+}
+
+# Helicopter cowl flaps: the Robinsons' cooling is fan-driven and the
+# turbines cool through oil, so no rotorcraft entry opens flaps. The
+# piston helis' CHT ceilings are still worth the warning.
+_HELI_COOLING: dict[str, CoolingKit] = {
+    "R44": CoolingKit(cht_max_c=260.0, source="R44 POH (O-540): "
+                      "500 F CHT red line"),
+    "CBRI": CoolingKit(cht_max_c=260.0, source="Cabri G2 FM: "
+                       "CHT 260 C"),
+}
+
+_CLASS_COOLING: dict[str, CoolingKit] = {
+    # The conservative Continental figure stands in for the class: a
+    # model publishing CHT gets the warning; flaps stay unwritten where
+    # the type's own entry does not say it has them.
+    "piston_single": CoolingKit(cht_max_c=238.0,
+                                source="class pattern (Continental red line)"),
+    "piston_twin": CoolingKit(cht_max_c=238.0,
+                              source="class pattern (Continental red line)"),
+    "helicopter": CoolingKit(cht_max_c=238.0,
+                             source="class pattern (piston rotorcraft)"),
+    "": CoolingKit(),
+}
+
+
+def cooling_for(type_code: str, aircraft_class: str = "") -> CoolingKit:
+    """The cooling this type carries, or the class's figures."""
+    code = (type_code or "").strip().upper()
+    found = _HELI_COOLING.get(code) or _FW_COOLING.get(code)
+    if found is not None:
+        return found
+    return _CLASS_COOLING.get(aircraft_class or "", _CLASS_COOLING[""])
+
+
+__all__ = ["EngineLimits", "IceKit", "CoolingKit", "limits_for",
+           "ice_kit_for", "cooling_for"]

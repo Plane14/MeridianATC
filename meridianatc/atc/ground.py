@@ -113,6 +113,12 @@ RUNWAY_COST = 6.0
 # runway and a little more.
 RUNWAY_HALF_M = 30.0
 
+# How far off the centreline the junction between the taxiways and the
+# runway environment may sit and still be a runway entry. SimConnect joins
+# them on the pavement itself; X-Plane's apt.dat joins them at the holding
+# bars, a couple of hundred metres out.
+ENTRY_ACROSS_M = 250.0
+
 
 def _to_segment(x: float, z: float, ax: float, az: float, bx: float,
                 bz: float) -> float:
@@ -521,15 +527,24 @@ class GroundLayout:
         """Where taxiways meet this runway, as (metres from the threshold,
         node), nearest the threshold first."""
         found = []
-        for node in self.runway_nodes:
-            # ``get``: a point on the runway surface is a runway node whether
-            # or not any path reaches it, and Kennedy has one that none does.
+        # Two junction shapes: a node on the runway surface that a taxiway
+        # also touches (the SimConnect shape -- ``runway_nodes`` holds it
+        # whether or not any path reaches it, and Kennedy has one that none
+        # does), and a node where a taxiway segment meets a runway segment
+        # anywhere, which is apt.dat's shape -- the link from the holding
+        # bars in is the runway segment, so the meeting point is out at the
+        # bars, not on the pavement.
+        junctions = {node for node, near in self.edges.items()
+                     if node[0] == "p" and
+                     {runway for _, _, runway, _ in near} == {True, False}}
+        for node in self.runway_nodes | junctions:
             if not any(not runway
                        for _, _, runway, _ in self.edges.get(node, ())):
                 continue
             along, across = self.runway_frame(*self.xy[node], threshold,
                                               heading)
-            if abs(across) > 40.0 or not -150.0 <= along <= length_m + 150.0:
+            if abs(across) > ENTRY_ACROSS_M \
+                    or not -150.0 <= along <= length_m + 150.0:
                 continue
             found.append((along, node))
         # The node breaks a tie. ``runway_nodes`` is a set of tuples holding

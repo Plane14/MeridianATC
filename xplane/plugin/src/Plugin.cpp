@@ -4,11 +4,13 @@
 #include "XPLMDataAccess.h"
 #include "XPLMGraphics.h"
 #include "XPLMInstance.h"
+#include "XPLMMap.h"
 #include "XPLMMenus.h"
 #include "XPLMPlugin.h"
 #include "XPLMProcessing.h"
 #include "XPLMScenery.h"
 #include "XPLMUtilities.h"
+#include "XPLMWeather.h"
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -16,6 +18,14 @@
 #include <memory>
 #include <set>
 #include <vector>
+#if defined(_WIN32)
+#include <Windows.h>
+#endif
+#if defined(__APPLE__)
+#include <OpenGL/gl.h>
+#else
+#include <GL/gl.h>
+#endif
 
 namespace {
 using namespace Meridian;
@@ -44,6 +54,57 @@ XPLMMenuID menu = nullptr;
 int menuIndex = -1;
 XPLMDataRef connectedRef = nullptr, aircraftRef = nullptr;
 std::map<std::string, XPLMCommandRef> commands;
+
+// The cleared taxi route, drawn on X-Plane's own map as a markings layer.
+// The engine streams the lat/lon polyline over the same datagram channel
+// as the follow-me car; the layer projects it each redraw.
+std::set<XPLMMapLayerID> mapLayers;
+
+void DrawRouteLayer(XPLMMapLayerID, const float*, float, float,
+                    XPLMMapStyle, XPLMMapProjectionID projection, void*) {
+    if (!session.RouteActive(Now()) || session.route.size() < 2) return;
+    XPLMSetGraphicsState(0, 0, 0, 0, 0, 1, 0);
+    glColor4f(0.1f, 0.8f, 0.9f, 0.9f);
+    glLineWidth(4.0f);
+    glBegin(GL_LINE_STRIP);
+    for (const auto& [lat, lon] : session.route) {
+        float x = 0.0f, y = 0.0f;
+        XPLMMapProject(projection, lat, lon, &x, &y);
+        glVertex2f(x, y);
+    }
+    glEnd();
+}
+
+void LayerDeleted(XPLMMapLayerID layer, void*) { mapLayers.erase(layer); }
+
+void MapOpened(const char* identifier, void*) {
+    // The hook stays registered while disabled -- there is no unregister --
+    // so a map opening between Disable and Enable must not revive the layer.
+    if (!initialized || std::string(identifier) != XPLM_MAP_USER_INTERFACE)
+        return;
+    XPLMCreateMapLayer_t params{};
+    params.structSize = sizeof(params);
+    params.mapToCreateLayerIn = identifier;
+    params.layerType = xplm_MapLayer_Markings;
+    params.willBeDeletedCallback = LayerDeleted;
+    params.drawCallback = DrawRouteLayer;
+    params.showUiToggle = 1;
+    params.layerName = "MeridianATC taxi route";
+    if (XPLMMapLayerID layer = XPLMCreateMapLayer(&params))
+        mapLayers.insert(layer);
+}
+
+void AnswerMetar(const std::string& icao, const sockaddr_in& to) {
+    // The report the simulator itself downloaded -- its own weather's
+    // truth for the ATIS. Empty when the sim is not in real-weather
+    // mode; the caller falls back to its other sources.
+    XPLMFixedString150_t metar{};
+    XPLMGetMETARForAirport(icao.c_str(), &metar);
+    metar.buffer[sizeof(metar.buffer) - 1] = '\0';
+    Json reply = {{"v", 1}, {"t", "metar"}, {"icao", icao},
+                  {"metar", std::string(metar.buffer)}};
+    udp.Send(reply.dump(), to);
+}
 
 void SendCommand(const std::string& cmd, bool down = true) {
     if (!session.Connected(Now())) return;
@@ -246,6 +307,10 @@ float Poll(float, float, int, void*) {
                     udp.Send(Status(now).dump(), from);
                     continue;
                 }
+                if (packet.kind == "metar") {
+                    AnswerMetar(packet.icao, from);
+                    continue;
+                }
                 auto sender = (static_cast<uint64_t>(ntohl(from.sin_addr.s_addr)) << 16) | ntohs(from.sin_port);
                 if (!session.Apply(packet, now, sender)) continue;
                 peer = from;
@@ -283,6 +348,8 @@ int Connected(void*) { return initialized && session.Connected(Now()) ? 1 : 0; }
 int AircraftCount(void*) { return static_cast<int>(session.snapshot.size()); }
 void Shutdown() {
     if (loop) { XPLMDestroyFlightLoop(loop); loop = nullptr; }
+    for (auto layer : mapLayers) XPLMDestroyMapLayer(layer);
+    mapLayers.clear();
     if (followmeInstance) { XPLMDestroyInstance(followmeInstance); followmeInstance = nullptr; }
     if (terrainProbe) { XPLMDestroyProbe(terrainProbe); terrainProbe = nullptr; }
     if (followmeObject) { XPLMUnloadObject(followmeObject); followmeObject = nullptr; }
@@ -326,6 +393,9 @@ PLUGIN_API int XPluginEnable() {
         initialized = true;
         LoadCSL(); Labels(); TCAS(); Checks(); LoadFollowMe();
         if (!udp.Open(config.port)) throw std::runtime_error("Cannot bind localhost UDP port " + std::to_string(config.port));
+        XPLMRegisterMapCreationHook(MapOpened, nullptr);
+        if (XPLMMapExists(XPLM_MAP_USER_INTERFACE))
+            MapOpened(XPLM_MAP_USER_INTERFACE, nullptr);
         XPLMCreateFlightLoop_t params{}; params.structSize = sizeof(params);
         params.phase = xplm_FlightLoop_Phase_AfterFlightModel; params.callbackFunc = Poll;
         loop = XPLMCreateFlightLoop(&params);

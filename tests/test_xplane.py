@@ -418,6 +418,57 @@ def test_failed_engine_attachment_keeps_previous_source(monkeypatch):
     previous.close.assert_not_called()
 
 
+def test_parity_derived_instruments(xp):
+    """The reads MSFS has and X-Plane now derives: Mmo and its barber
+    pole, COM1 status, the side tanks, torque per cent, the body-axes
+    wind, and the FAA heavy line."""
+    server, link = xp
+    server.values.update({EXTRA[key]: value for key, value in {
+        "com1_powered": 1, "fuel_left_kg": 90.0, "fuel_right_kg": 60.0,
+        "trq_nm": 2000.0, "trq_red_hi_ftpds": 2000.0,
+        "wind_x_ms": 10.0, "wind_y_ms": 5.0, "wind_z_ms": 0.0,
+    }.items()})
+    server.values[DATAREFS["mach_max_operate"][0]] = 0.82
+    server.values[DATAREFS["heading_true"][0]] = 0.0
+    # acf_m_max is kilograms; 300,000 lb puts it over the FAA line.
+    server.values[DATAREFS["max_gross_weight_lb"][0]] = 300000.0 / LB
+    assert link.connect()
+    eventually(lambda: "wind_x_ms" in link._values)
+    state = link.read()
+    assert state.mach_max_operate == pytest.approx(0.82)
+    assert state.barber_pole_mach == pytest.approx(0.82)
+    assert state.com1_status == 0
+    assert state.fuel_left_gal == pytest.approx(90.0 * LB / 6)
+    assert state.fuel_right_gal == pytest.approx(60.0 * LB / 6)
+    # 2,000 N-m against a 2,000 ft-lb red line: 1,475.6 ft-lbs, ~74%.
+    assert state.eng_torque_pct == pytest.approx(
+        2000.0 / (2000.0 * 1.35582) * 100.0)
+    # Facing north with the wind blowing east: all across, none along.
+    assert state.aircraft_wind_x_kt == pytest.approx(10.0 * KT, rel=1e-3)
+    assert state.aircraft_wind_z_kt == pytest.approx(0.0, abs=1e-6)
+    assert state.aircraft_wind_y_kt == pytest.approx(5.0 * KT, rel=1e-3)
+    assert state.atc_heavy
+    assert "mach_max_operate" not in state.unavailable
+    assert "aircraft_wind_x_kt" not in state.unavailable
+    assert "eng_torque_pct" not in state.unavailable
+
+
+def test_parity_instruments_absent_when_the_model_is_silent(xp):
+    """No torque red line: the per cent cannot be computed, so it joins
+    unavailable rather than being invented. The figures that always
+    answer -- acf_Mmo, the wind -- read 0 on a silent model, which the
+    consumers' ">0" gates read as unpublished."""
+    server, link = xp
+    server.values[EXTRA["trq_nm"]] = 2000.0          # no red line
+    assert link.connect()
+    eventually(lambda: "trq_nm" in link._values)
+    state = link.read()
+    assert state.eng_torque_pct == 0.0
+    assert "eng_torque_pct" in state.unavailable
+    assert state.mach_max_operate == 0.0
+    assert state.barber_pole_mach == 0.0
+
+
 def test_xplane_radio_power():
     from meridianatc.atc.radio_power import decide
 

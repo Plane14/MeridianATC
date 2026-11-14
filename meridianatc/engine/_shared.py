@@ -120,10 +120,12 @@ from ..sim.source import ManualSource, StateSource, open_source
 from ..sim.state import AircraftState
 from ..weather.metar import (
     WeatherProvider,
+    WeatherSample,
     at_the_surface,
     in_the_circuit,
     merge_weather,
     near_the_field,
+    parse_metar,
     weather_from_sim,
 )
 
@@ -355,9 +357,11 @@ __all__ = [
     "open_source",
     "AircraftState",
     "WeatherProvider",
+    "WeatherSample",
     "at_the_surface",
     "in_the_circuit",
     "merge_weather",
     "near_the_field",
+    "parse_metar",
     "weather_from_sim",
 ]

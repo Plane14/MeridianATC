@@ -137,6 +137,17 @@ class AircraftState:
     eng_n2_pct: float = 0.0
     eng_itt_c: float = 0.0
     eng_rpm: float = 0.0
+    # The cooling watch's instruments: the hottest cylinder-head
+    # temperature the engines report (Celsius -- the SimConnect gauge
+    # reads engine one's; X-Plane's is the max over the running set),
+    # the model's own CHT red line where the sim publishes one, the
+    # hottest oil temperature, and how far open the cowl-flap levers
+    # are, per cent. Zero where the model reports none of them; a
+    # missing read is never a limit.
+    eng_cht_c: float = 0.0
+    eng_cht_limit_c: float = 0.0
+    eng_oil_temp_c: float = 0.0
+    eng_cowl_pct: float = 0.0
     # What the first officer's callouts watch (meridianatc.atc.callouts): the
     # bank, signed degrees, right positive; NAV1's localizer and glideslope
     # and how far off them the needles are (+/-127 and +/-119, full scale);
@@ -151,6 +162,13 @@ class AircraftState:
     g_force: float = 1.0
     pitch_deg: float = 0.0
     ap_max_bank_deg: float = 0.0
+    # The stall watch's (atc/autonomous/x_the_stall): the horn or shaker
+    # where the model wires one, the angle of attack, and the angle the
+    # model says the warning sounds at -- 0 where it does not publish,
+    # which the watch treats as unpublished, not as never stalling.
+    stall_warning: bool = False
+    aoa_deg: float = 0.0
+    stall_aoa_deg: float = 0.0
     nav1_has_localizer: bool = False
     nav1_cdi: float = 127.0
     nav1_has_glideslope: bool = False
@@ -203,6 +221,15 @@ class AircraftState:
     rotor_brake_available: bool = False
     rotor_clutch_active: bool = False
     rotor_gov_target_pct: float = 0.0
+    # The pushback service's own words for what it is doing: whether the
+    # stand can have a tug at all, whether one has been asked for and is
+    # still coming, and whether it is on the nosewheel now. ``available``
+    # is three-state -- None where the simulator never says, which is not
+    # a refusal; X-Plane publishes only the attachment, so the other two
+    # stay at their defaults there.
+    pushback_available: bool | None = None
+    pushback_wait: bool = False
+    pushback_attached: bool = False
 
     # --- ambient conditions the sim is actually rendering ---
     ambient_wind_direction: float = 0.0

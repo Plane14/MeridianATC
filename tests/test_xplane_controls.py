@@ -137,12 +137,23 @@ def test_switches_arm_mach_throttle_and_unknown_inputs(xp):
     for i in range(8):
         assert (f"sim/cockpit2/electrical/battery_on[{i}]", 1) in peer.writes
     before = len(peer.writes), len(peer.commands)
-    for name in (b"ELEVATOR_SET", b"AILERON_SET", b"AXIS_RUDDER_SET", b"STEERING_SET",
-                 b"HELICOPTER_COLLECTIVE_SET", b"", b"\xff", b"UNKNOWN"):
+    for name in (b"", b"\xff", b"UNKNOWN"):
         assert not source._send(name, 100)
+    # The hand-flown channels now write datarefs rather than refuse:
+    # the yoke ratios, the steer command and the brake ratios.
+    for name, path in ((b"ELEVATOR_SET", "yoke_pitch_ratio"),
+                       (b"AILERON_SET", "yoke_roll_ratio"),
+                       (b"AXIS_RUDDER_SET", "yoke_heading_ratio"),
+                       (b"STEERING_SET", "tire_steer_command_deg[0]"),
+                       (b"AXIS_LEFT_BRAKE_SET", "left_brake_ratio"),
+                       (b"AXIS_COLLECTIVE_SET", "prop_ratio_all")):
+        assert source._send(name, 100)
+        eventually(lambda p=path: any(p in w for w, _v in peer.writes))
+    before = len(peer.writes), len(peer.commands)
     assert not source._send("FLAPS_SET", -1)
     assert not source._send("AP_NAV_SELECT_SET", 3)
     assert not source._send("AP_ALT_VAR_SET_ENGLISH", float("inf"))
+    assert not source._send("STEERING_SET", -16385)
     assert not source.set_variable("AUTOPILOT ALTITUDE LOCK VAR", None)
     assert not source.set_variable("GENERAL ENG THROTTLE LEVER POSITION:17", 10)
     assert not source.set_variable("AUTOPILOT ALTITUDE LOCK VAR", 5000, unit="radians")
@@ -179,18 +190,19 @@ def test_flap_index_and_ap_state_require_real_values(xp):
     eventually(lambda: source.read().autopilot)
 
 
-def test_capabilities_are_ap_only_not_axis_control():
+def test_capabilities_cover_full_gate_to_gate_control():
     state = AircraftState(source="xplane", connected=True, on_ground=False)
-    assert capabilities("xplane").autofly and not capabilities("xplane").flight_axes
+    assert capabilities("xplane").autofly and capabilities("xplane").flight_axes
     assert not autofly_limit(state)
     state.category = "Helicopter"
-    assert "rotorcraft" in autofly_limit(state)
+    assert not autofly_limit(state)
     assert capabilities("simconnect").flight_axes
+    assert autofly_limit(AircraftState(source="manual", connected=True))
 
 
 @pytest.mark.parametrize("phase,sub", [("taxi_out", "taxi"), ("takeoff", "roll"),
                                       ("landing", "flare"), ("approach", "go_around")])
-def test_raw_axis_phases_hand_back_before_executing(phase, sub):
+def test_no_axis_sources_hand_back_before_executing(phase, sub):
     pytest.importorskip("scipy")
     from meridianatc.atc.autonomous import (
         AutonomousFlight,
@@ -204,14 +216,141 @@ def test_raw_axis_phases_hand_back_before_executing(phase, sub):
     fo._enabled = True
     fo._handoff = Mock()
     fo._emit = Mock()
-    aircraft = AircraftState(source="xplane", connected=True, on_ground=False)
+    aircraft = AircraftState(source="manual", connected=True, on_ground=False)
     fo._execute_phase(aircraft, 0)
     assert not fo.enabled
     fo._handoff.assert_called_once()
     assert fo._emit.call_args.args[-1] == "log.autofly_manual"
 
 
-def test_airborne_fo_tick_engages_ap_and_go_around_refuses_axes(xp):
+@pytest.mark.parametrize("event,value,axis,override", [
+    ("AILERON_SET", 8191, "yoke_roll_ratio", "override_joystick_roll"),
+    ("AILERON_SET", -16383, "yoke_roll_ratio", "override_joystick_roll"),
+    ("ELEVATOR_SET", 16384, "yoke_pitch_ratio", "override_joystick_pitch"),
+    ("AXIS_RUDDER_SET", -8192, "yoke_heading_ratio", "override_joystick_heading"),
+    ("AXIS_CYCLIC_LATERAL_SET", 4096, "yoke_roll_ratio", "override_joystick_roll"),
+    ("AXIS_CYCLIC_LONGITUDINAL_SET", -4096, "yoke_pitch_ratio", "override_joystick_pitch"),
+    ("ROTOR_AXIS_TAIL_ROTOR_SET", 2048, "yoke_heading_ratio", "override_joystick_heading"),
+])
+def test_flight_axes_drive_yoke_ratios_and_overrides(xp, event, value, axis, override):
+    peer, source = xp
+    assert source._send(event.encode(), value)
+    expected = max(-1.0, min(1.0, value / 16383.0))
+    eventually(lambda: (f"sim/joystick/{axis}", pytest.approx(expected)) in peer.writes)
+    assert (f"sim/operation/override/{override}", 1) in peer.writes
+
+
+def test_center_controls_releases_every_override(xp):
+    peer, source = xp
+    for event in ("AILERON_SET", "ELEVATOR_SET", "AXIS_RUDDER_SET",
+                  "STEERING_SET", "AXIS_LEFT_BRAKE_SET"):
+        assert source._send(event.encode(), 100)
+    assert source._send(b"CENTER_AILER_RUDDER", 0)
+
+    def released(flag):
+        prefix = "override_joystick_" if flag in ("pitch", "roll", "heading") else "override_"
+        return (f"sim/operation/override/{prefix}{flag}", 0) in peer.writes
+
+    for flag in ("pitch", "roll", "heading", "wheel_steer", "toe_brakes"):
+        eventually(lambda f=flag: released(f))
+
+
+def test_steering_scales_by_nosewheel_authority(xp):
+    peer, source = xp
+    peer.values["sim/aircraft/gear/acf_nw_steerdeg1"] = 40.0
+    eventually(lambda: source._values.get("steer_deg") == 40.0)
+    assert source._send(b"STEERING_SET", 16383)
+    eventually(lambda: any(p.endswith("tire_steer_command_deg[0]")
+                           and v == pytest.approx(40.0) for p, v in peer.writes))
+    assert ("sim/operation/override/override_wheel_steer", 1) in peer.writes
+    assert not source._send(b"STEERING_SET", -16384 - 1)
+
+
+def test_toe_brakes_and_pushback_and_reverser(xp):
+    peer, source = xp
+    assert source._send(b"AXIS_LEFT_BRAKE_SET", 16383)
+    assert source._send(b"AXIS_RIGHT_BRAKE_SET", -16383)
+    assert source._send(b"BRAKES", 0)
+    assert source._send(b"THROTTLE_REVERSE_THRUST_TOGGLE", 0)
+    assert source._send(b"TOGGLE_PUSHBACK", 0)
+    assert source._send(b"PUSHBACK_STOP", 0)
+    assert source._send(b"CABIN_SEATBELTS_ALERT_SWITCH_TOGGLE", 0)
+    eventually(lambda: "sim/engines/thrust_reverse_toggle" in peer.commands
+               and "sim/ground_ops/pushback_straight" in peer.commands
+               and "sim/ground_ops/pushback_stop" in peer.commands
+               and "sim/systems/seatbelt_sign_toggle" in peer.commands)
+    writes = dict()
+    for path, value in peer.writes:
+        writes[path] = value
+    assert writes["sim/cockpit2/controls/left_brake_ratio"] == pytest.approx(1.0)
+    assert writes["sim/cockpit2/controls/right_brake_ratio"] == pytest.approx(1.0)
+    assert writes["sim/operation/override/override_toe_brakes"] == 1
+
+
+def test_starters_and_bank_mode_and_rotor_channels(xp):
+    peer, source = xp
+    assert source._send(b"STARTER_SET", 1)
+    assert source._send(b"STARTER2_SET", 1)
+    assert source._send(b"STARTER_SET", 0)
+    assert source._send(b"AP_MAX_BANK_ANGLE_SET", 20)
+    assert source._send(b"AXIS_COLLECTIVE_SET", 16384)
+    assert source._send(b"AXIS_HELICOPTER_THROTTLE_SET", 0)
+    assert source._send(b"HELICOPTER_THROTTLE_SET", 8192)
+    assert source._send(b"HELICOPTER_THROTTLE_FULL", 0)
+    assert source._send(b"ROTOR_GOV_SWITCH_SET", 1)
+    assert source._send(b"ROTOR_BRAKE_ON", 0)
+    eventually(lambda: "sim/engines/engage_starters" in peer.commands
+               and "sim/starters/engage_starter_2" in peer.commands
+               and any(path == "sim/cockpit2/switches/rotor_brake"
+                       for path, _ in peer.writes))
+    act = "sim/cockpit2/engine/actuators/"
+    assert (act + "ignition_key[1]", 4) in peer.writes
+    assert (act + "ignition_key[7]", 4) in peer.writes
+    writes = dict()
+    for path, value in peer.writes:
+        writes[path] = value
+    assert writes[act + "ignition_key[0]"] == 3
+    assert writes[act + "ignition_key[1]"] == 3
+    assert writes["sim/cockpit2/autopilot/bank_angle_mode"] == 4  # 20 deg step
+    assert writes[act + "prop_ratio_all"] == pytest.approx(1.0)
+    assert writes[act + "throttle_ratio_all"] == pytest.approx(1.0)
+    assert writes[act + "governor_on[0]"] == 1
+    assert writes["sim/cockpit2/switches/rotor_brake"] == 1
+
+
+def test_engine_and_ice_variables(xp):
+    peer, source = xp
+    assert source.set_variable("GENERAL ENG MIXTURE LEVER POSITION:1", 90)
+    assert source.set_variable("GENERAL ENG PROPELLER LEVER POSITION:2", 80)
+    assert source.set_variable("RECIP ENG COWL FLAP POSITION:1", 50)
+    assert source.set_variable("GENERAL ENG ANTI ICE POSITION:1", 1.0)
+    assert source.set_variable("PROP DEICE SWITCH:1", 1.0)
+    assert source.set_variable("STRUCTURAL DEICE SWITCH", 1.0)
+    assert source.set_variable("WINDSHIELD DEICE SWITCH:1", 1.0)
+    assert source.set_variable("TRANSPONDER STATE:1", 4.0)
+    eventually(lambda: any(
+        path == "sim/cockpit2/radios/actuators/transponder_mode"
+        for path, _ in peer.writes))
+    writes = dict()
+    for path, value in peer.writes:
+        writes[path] = value
+    act = "sim/cockpit2/engine/actuators/"
+    ice = "sim/cockpit2/ice/"
+    assert writes[act + "mixture_ratio[0]"] == pytest.approx(0.9)
+    assert writes[act + "prop_ratio[1]"] == pytest.approx(0.8)
+    assert writes[act + "cowl_flap_ratio[0]"] == pytest.approx(0.5)
+    assert writes[act + "carb_heat_ratio[0]"] == pytest.approx(1.0)
+    assert writes[ice + "ice_inlet_heat_on_per_engine[0]"] == 1
+    assert writes[ice + "cowling_thermal_anti_ice_per_engine[0]"] == 1
+    assert writes[ice + "ice_prop_heat_on_per_engine[0]"] == 1
+    assert writes[ice + "ice_prop_heat_on"] == 1
+    assert writes[ice + "ice_surface_boot_on"] == 1
+    assert writes[ice + "ice_surface_tks_on"] == 1
+    assert writes[ice + "ice_window_heat_on"] == 1
+    assert writes["sim/cockpit2/radios/actuators/transponder_mode"] == 3
+
+
+def test_airborne_fo_tick_runs_phase_logic_with_axes(xp):
     pytest.importorskip("scipy")
     from meridianatc.atc.autonomous import (
         AutonomousFlight,
@@ -235,8 +374,4 @@ def test_airborne_fo_tick_engages_ap_and_go_around_refuses_axes(xp):
         setattr(fo, name, Mock())
     fo.tick()
     fo._execute_phase.assert_called_once()
-    eventually(lambda: "sim/autopilot/servos_on" in peer.commands)
-    assert fo.enabled and fo.state.ap_master
-    fo._start_go_around(aircraft)
-    assert not fo.enabled
-    fo._handoff.assert_called_once()
+    assert fo.enabled

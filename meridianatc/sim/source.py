@@ -545,6 +545,14 @@ class SimConnectSource:
         ("TURB_ENG_N2:1", "eng_n2_pct", "raw", "slow"),
         ("TURB_ENG_ITT:1", "eng_itt_c", "raw", "slow"),
         ("GENERAL_ENG_RPM:1", "eng_rpm", "raw", "slow"),
+        # The cooling watch's instruments: engine one's cylinder-head
+        # and oil temperatures, and where its cowl flap is, per cent
+        # open. A model without cowl flaps never reports the last one;
+        # the field joins state.unavailable and the watch stands down.
+        ("RECIP_ENG_CYLINDER_HEAD_TEMPERATURE:1", "eng_cht_c", "raw",
+         "slow"),
+        ("RECIP_ENG_OIL_TEMPERATURE:1", "eng_oil_temp_c", "raw", "slow"),
+        ("RECIP_ENG_COWL_FLAP_POSITION:1", "eng_cowl_pct", "pct", "slow"),
         ("ROTOR_LATERAL_TRIM_PCT", "rotor_lateral_trim_pct", "pct",
          "slow"),
         # The callouts. The bank every read, because "bank" is about a
@@ -560,6 +568,13 @@ class SimConnectSource:
         ("G_FORCE", "g_force", "raw", "fast"),
         ("PLANE_PITCH_DEGREES", "pitch_deg", "signed_rad", "fast"),
         ("AUTOPILOT_MAX_BANK", "ap_max_bank_deg", "signed_rad", "slow"),
+        # The stall watch's (atc/autonomous/x_the_stall): the horn where
+        # the model wires one, and the angle of attack against the angle
+        # the book says the warning sounds at. Signed like the pitch --
+        # a negative alpha is a reading, not a wrap.
+        ("STALL WARNING", "stall_warning", "bool", "fast"),
+        ("INCIDENCE ALPHA", "aoa_deg", "signed_rad", "fast"),
+        ("STALL ALPHA", "stall_aoa_deg", "signed_rad", "slow"),
         ("NAV_HAS_LOCALIZER:1", "nav1_has_localizer", "bool", "slow"),
         ("NAV_CDI:1", "nav1_cdi", "raw", "slow"),
         ("NAV_HAS_GLIDE_SLOPE:1", "nav1_has_glideslope", "bool", "slow"),

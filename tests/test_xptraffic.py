@@ -251,6 +251,90 @@ def test_invalid_positions(extra, plugin, link):
     assert snapshots(plugin)[0]["ac"] == []
 
 
+def test_route_overlay(plugin, link):
+    assert link.route([(48.1, 11.2), (48.2, 11.3)])
+    eventually(lambda: any(p["t"] == "route" for p in plugin.messages))
+    packet = [p for p in plugin.messages if p["t"] == "route"][-1]
+    assert packet == {"v": 1, "t": "route", "on": 1,
+                      "pts": [[48.1, 11.2], [48.2, 11.3]]}
+    assert link.route([], on=False)
+    eventually(lambda: any(p["t"] == "route" and not p["on"]
+                           for p in plugin.messages))
+    # Invalid coordinates are refused, never sent.
+    assert not link.route([(91.0, 0.0)])
+    assert not link.route([(48.0, float("nan"))])
+
+
+def test_metar_request_and_answer(plugin, link):
+    assert link.metar("LPPR") is None        # asked, no answer yet
+    eventually(lambda: any(p["t"] == "metar" and p["icao"] == "LPPR"
+                           for p in plugin.messages))
+    plugin.socket.sendto(json.dumps(
+        {"v": 1, "t": "metar", "icao": "LPPR",
+         "metar": "LPPR 010000Z 00000KT CAVOK 18/12 Q1020"}).encode(),
+        plugin.peer)
+    eventually(lambda: link.metar("LPPR") is not None)
+    assert link.metar("LPPR") == "LPPR 010000Z 00000KT CAVOK 18/12 Q1020"
+    # An empty answer -- the sim not in real-weather mode -- is a real
+    # answer too, read as no text and not re-asked inside the clock.
+    plugin.socket.sendto(json.dumps(
+        {"v": 1, "t": "metar", "icao": "EGLL", "metar": ""}).encode(),
+        plugin.peer)
+    # The reply is only recorded once a call drains the socket.
+    eventually(lambda: link.metar("EGLL") is None and "EGLL" in link._metars)
+    # Malformed replies are ignored.
+    plugin.socket.sendto(json.dumps(
+        {"v": 1, "t": "metar", "icao": 5, "metar": "x"}).encode(),
+        plugin.peer)
+    plugin.socket.sendto(b"not json", plugin.peer)
+    threading.Event().wait(.05)
+    link.on_frame()
+    assert link.metar("LPPR") == "LPPR 010000Z 00000KT CAVOK 18/12 Q1020"
+    assert link.metar("") is None
+
+
+def test_taxi_route_overlay_and_plugin_metar(plugin, link):
+    pytest.importorskip("scipy")
+    from types import SimpleNamespace
+    from meridianatc import engine as module
+    from meridianatc.atc.session import Phase
+
+    engine = module.Engine.__new__(module.Engine)
+    engine.simtraffic = link
+    engine.session = SimpleNamespace(
+        phase=Phase.TAXI_OUT, taxi_path=[(48.0, 11.0), (48.1, 11.1)])
+    engine._taxi_route_overlay()
+    eventually(lambda: any(p["t"] == "route" for p in plugin.messages))
+    # The same route is not re-sent inside the keep-alive clock.
+    engine._taxi_route_overlay()
+    assert len([p for p in plugin.messages if p["t"] == "route"]) == 1
+    # A changed route goes at once; out of taxi it is withdrawn.
+    engine.session.taxi_path = [(48.0, 11.0), (48.2, 11.2)]
+    engine._taxi_route_overlay()
+    eventually(lambda: len([p for p in plugin.messages
+                            if p["t"] == "route"]) == 2)
+    engine.session.phase = Phase.ENROUTE
+    engine._taxi_route_overlay()
+    eventually(lambda: any(p["t"] == "route" and not p["on"]
+                           for p in plugin.messages))
+
+    # The plugin's own METAR, for the ATIS: asked, then answered.
+    assert engine._plugin_metar("LPPR") is None
+    eventually(lambda: any(p["t"] == "metar" and p["icao"] == "LPPR"
+                           for p in plugin.messages))
+    plugin.socket.sendto(json.dumps(
+        {"v": 1, "t": "metar", "icao": "LPPR",
+         "metar": "LPPR 010000Z 00000KT CAVOK 18/12 Q1020"}).encode(),
+        plugin.peer)
+    eventually(lambda: link.metar("LPPR") is not None)
+    sample = engine._plugin_metar("LPPR")
+    assert sample.source == "metar" and sample.station == "LPPR"
+    assert sample.weather.qnh_hpa == 1020
+    # Not an X-Plane backend: nothing is even asked.
+    engine.simtraffic = Mock()
+    assert engine._plugin_metar("LPPR") is None
+
+
 def test_engine_backend_selection_and_single_notice(monkeypatch, plugin):
     pytest.importorskip("scipy")
     from meridianatc import engine as module

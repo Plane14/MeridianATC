@@ -7,12 +7,15 @@ from ._shared import (
     FlightProfile,
     Phase,
     Weather,
+    WeatherSample,
+    XPlaneTraffic,
     at_the_surface,
     decision,
     in_the_circuit,
     log,
     merge_weather,
     near_the_field,
+    parse_metar,
     replace,
     reply_language,
     time,
@@ -58,6 +61,9 @@ class _State_and_weather:
             airport.icao if airport and airport.icao else airport_ident
         )
         sample = self.weather_provider.metar(station, wait=False)
+        own = self._plugin_metar(station)
+        if own is not None:
+            sample = own
         if sample.source == "default" and airport is not None:
             sample = self.weather_provider.nearest_metar(
                 airport.lat, airport.lon, self.navdb, wait=False)
@@ -118,6 +124,22 @@ class _State_and_weather:
         self._weather_checked[airport_ident] = (
             now if sample.source != "default" else now - 50.0)
         return weather
+
+    def _plugin_metar(self, station: str) -> WeatherSample | None:
+        """The METAR the simulator itself downloaded, through the plugin.
+
+        X-Plane's downloaded report is the weather it is actually drawing,
+        so for the ATIS it outranks a network fetch of the same station.
+        None where the plugin is not connected or the sim is not in
+        real-weather mode -- ``XPLMGetMETARForAirport`` answers empty then.
+        """
+        xp = getattr(self, "simtraffic", None)
+        if not isinstance(xp, XPlaneTraffic):
+            return None
+        raw = xp.metar(station)
+        if not raw:
+            return None
+        return WeatherSample(parse_metar(raw), "metar", station)
 
     def atis_for(self, airport_ident: str,
                  language: str | None = None) -> AtisReport | None:

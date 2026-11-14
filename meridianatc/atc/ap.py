@@ -407,6 +407,35 @@ class FlightDirector:
         position = max(0.0, min(1.0, position))
         return self.send(b"SPOILERS_SET", int(round(position * 16383.0)))
 
+    def cowl_flaps(self, position: float, engine: int | None = None) -> bool:
+        """The cowl-flap levers, 0 closed .. 1 full open.
+
+        Per-engine ``RECIP ENG COWL FLAP POSITION:n`` percent first --
+        the variable exists only on air-cooled piston models that carry
+        the levers, which is exactly the set the caller wants to reach --
+        then the ``COWLFLAPn_SET`` axis events (0..16383) for a model
+        that maps only those. ``engine=None`` writes all four lever
+        slots; a model with fewer engines ignores the rest.
+        """
+        position = max(0.0, min(1.0, position))
+        ok = False
+        engines = range(engine, engine + 1) if engine is not None \
+            else range(1, 5)
+        for index in engines:
+            name = f"RECIP ENG COWL FLAP POSITION:{index}"
+            if self.write(name, position, unit="Percent over 100") \
+                    or self.write(name, position * 100.0):
+                ok = True
+        if ok:
+            return True
+        value = int(round(position * 16383.0))
+        engines = range(engine, engine + 1) if engine is not None \
+            else range(1, 5)
+        for index in engines:
+            if self.send(f"COWLFLAP{index}_SET".encode(), value):
+                ok = True
+        return ok
+
     def spoilers_arm(self, on: bool = True) -> bool:
         return self.send(b"SPOILERS_ARM_ON" if on else b"SPOILERS_ARM_OFF", 0)
 
@@ -438,6 +467,12 @@ class FlightDirector:
 
     def pushback(self) -> bool:
         return self.send(b"TOGGLE_PUSHBACK", 0)
+
+    def pushback_stop(self) -> bool:
+        """Let the tug go. Only a source whose push is open-ended (the
+        X-Plane ground-ops commands) maps the event; a push that lets go
+        on its own answers False and needs no telling."""
+        return self.send(b"PUSHBACK_STOP", 0)
 
     # -- electrics and switches ------------------------------------------------
 

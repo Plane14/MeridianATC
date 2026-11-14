@@ -10,6 +10,11 @@ is not confirmed into the controller's picture. Existing radio-only/refusal
 behavior is retained. The Python sender reports drawing only after status lists
 the callsign in `drawn`; it does not expose MSFS object IDs, doors or LOD swaps.
 
+Over the same channel the plugin also places the follow-me car, draws the
+cleared taxi route on X-Plane's own map (`XPLMMap` markings layer), and
+answers METAR requests with `XPLMGetMETARForAirport` -- the report the
+simulator itself downloaded, for the ATIS.
+
 ## Build
 
 Clone with `git clone --recurse-submodules`, or run `git submodule update --init
@@ -75,19 +80,54 @@ pending-command window, so repeated ON/OFF requests do not blindly toggle.
 No combined autopilot bitmasks, override datarefs or direct heading/altitude
 mode writes are used. An unanswered mode read returns False.
 
-**X-Plane FO flight control is airborne fixed-wing autopilot assistance**, not
-full gate-to-gate autonomous flight. Engage on the ground or in a helicopter
-is refused. Climb/cruise/descent/approach use the existing director, but taxi,
-rotation, flare/landing and go-around require manual control: the FO hands
-back its AP modes and announces this before issuing any raw-axis commands.
-Elevator/aileron/rudder/steering and rotorcraft axes are deliberately unmapped.
-The native TO/GA button translation is available to the director, but the FO's
-go-around routine also needs pitch-axis control and is therefore refused.
+**X-Plane FO flight control is full gate-to-gate autonomous flight**, as on
+MSFS. Hand-flown channels write the same joystick datarefs a hardware yoke
+moves (`sim/joystick/yoke_*_ratio`) behind their `sim/operation/override/*`
+flags, so the FO can taxi, steer, brake, rotate, flare and go around; the
+overrides are released on handoff so a returned yoke is live, not dead.
+Nosewheel steering writes `tire_steer_command_deg` scaled by the model's own
+`acf_nw_steerdeg1` authority, toe brakes write the left/right ratios behind
+`override_toe_brakes`, and the rotorcraft cyclic/pedal channels share the
+three yoke axes with collective and throttle on the engine-actuator ratios.
+Starters write the per-engine `ignition_key` (spring-loaded at *starting*)
+plus the matching `engage_starter_n` command; reversers toggle
+`thrust_reverse_toggle`; the open-ended ground-ops pushback is let go with
+`pushback_stop` on a motion clock. AP bank-limit writes pick the nearest of
+the model's six `bank_angles_values` steps. Mixture, propeller, cowl-flap,
+carb-heat and anti-ice levers write their `sim/cockpit2` actuator ratios,
+and the cooling watch reads `ENGN_CHT_c`/`ENGN_oil_temp_c` (converted by the
+`acf_*_is_C` flags) against `red_hi_CHT` or the type's published figure.
+
+The taxi routes the FO drives come from the airport's own `apt.dat`
+(`integrations/xpground.py`): the 1200-series node/edge graph, the named
+taxiways, the stands and the runway rectangles, read from the loaded
+scenery's files rather than invented. XPLM's navigation APIs expose
+airports, navaids and the FMS but no taxiway graph -- the file is the
+only source, on this sim as everywhere else. Where an airport carries no
+taxi network the planner falls back to its invented straight-line route,
+the same answer MSFS gives at a field without facilities. The cleared
+route also goes to the plugin, which draws it on X-Plane's own map as a
+`XPLMMap` markings layer ("MeridianATC taxi route" in the map's layer
+list), refreshed while the taxi clearance stands. Ask the plugin for a
+METAR and it answers `XPLMGetMETARForAirport` -- the report the simulator
+itself downloaded, which the ATIS prefers over a network fetch; where the
+sim is not in real-weather mode the answer is empty and the fetch stands.
+
+The stall watch reads the horn (`sim/flightmodel/failures/stallwarning`),
+the angle of attack against the model's `acf_stall_warn_alpha`, and the
+indicated speed against the book's stall figure; MSFS answers the same
+watch with `STALL WARNING`, `INCIDENCE ALPHA` and `STALL ALPHA`. A
+trigger held past a gust above the flare's height hands the axes to the
+recovery -- autopilot off, full power, push, wings level -- and the
+instruments agreeing the wing is flying again hands them back, on either
+simulator.
+
 Load a route into X-Plane's FMS yourself before using GPS/NAV; this does not
 import a MeridianATC plan into the simulator. Custom aircraft may intercept or
 ignore the standard AP commands. UDP sends are not execution acknowledgements;
 monitor the aircraft's instruments and be ready to take control. These mappings
-have fake-peer protocol tests, not live-aircraft validation.
+have fake-peer protocol tests; the axes, brakes, steering and engine levers
+were additionally verified against a live X-Plane 12 session.
 
 FO radio and checklist conversation remain available. GSX/LVAR integrations,
 MSFS facility queries, native TCAS-contact import and simulator flight-plan
