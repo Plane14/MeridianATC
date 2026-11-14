@@ -135,6 +135,12 @@ class _Entry:
         except Exception:
             log.debug("autonomous handoff raised", exc_info=True)
         self._last_lever = 0.0
+        self._pedal_flip = False
+        self._pedal_votes = 0
+        self._pedal_demand = 0.0
+        self._turn_commit = 0
+        self._turn_rate_dps = 0.0
+        self._last_hdg = None
         self.state.ap_master = False
         self.state.ap_hdg_mode = False
         self.state.ap_nav_mode = False

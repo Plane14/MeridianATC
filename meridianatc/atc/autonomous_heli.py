@@ -271,6 +271,46 @@ def _heading_error(want: float, have: float) -> float:
     return ((want - have + 540.0) % 360.0) - 180.0
 
 
+def _pedal_dir(self) -> int:
+    """The sign this model's pedal axis actually answers in."""
+    return -1 if getattr(self, "_pedal_flip", False) else 1
+
+
+def _pedal_check(self, demand: int, hdg: float) -> None:
+    """Flip the pedal sign when the axis answers backwards.
+
+    The same check the fixed-wing steering runs: a pedal axis on which
+    the answer and the demand disagree is the inverted-axis model,
+    where every correction enlarges its error -- the hover version of
+    the apron pivot. The yaw rate answers the demand already on the
+    wire, so the vote is whether the achieved yaw agrees with the
+    *law's* demand from last call, not the signed output.
+    """
+    prev = getattr(self, "_pedal_demand", None)
+    prev_hdg = getattr(self, "_pedal_hdg", None)
+    prev_at = getattr(self, "_pedal_at", 0.0)
+    now = time.monotonic()
+    self._pedal_demand = demand
+    self._pedal_hdg = hdg
+    self._pedal_at = now
+    if prev is None or prev_hdg is None or not prev_at:
+        return
+    dt = now - prev_at
+    if dt <= 0.5:
+        return
+    rate = _heading_error(hdg, prev_hdg) / dt
+    if abs(prev) < PEDAL_MAX * 0.3 or abs(rate) < 5.0:
+        return
+    votes = getattr(self, "_pedal_votes", 0)
+    votes += 1 if (rate > 0.0) == (prev > 0) else -1
+    if votes <= -3:
+        self._pedal_flip = not getattr(self, "_pedal_flip", False)
+        votes = 3
+        log.warning("pedal axis answers backwards on this model; "
+                    "pedal sign flipped")
+    self._pedal_votes = votes
+
+
 def _committed_error(err: float, commit: int) -> tuple[float, int]:
     """A near-reversal committed to one side.
 
@@ -814,8 +854,11 @@ class RotorcraftFlight:
                                     or 0.0))
                 err_h, self._turn_commit = _committed_error(
                     err_h, getattr(self, "_turn_commit", 0))
-                pedal = int(_clamp(-PEDAL_DEG_PER_AXIS * err_h,
-                                   -PEDAL_MAX, PEDAL_MAX))
+                demand = int(_clamp(-PEDAL_DEG_PER_AXIS * err_h,
+                                    -PEDAL_MAX, PEDAL_MAX))
+                _pedal_check(self, demand, float(
+                    getattr(state, "heading_true", 0.0) or 0.0))
+                pedal = demand * _pedal_dir(self)
                 if not self._send(PEDAL_SET, pedal):
                     self._send(TAIL_ROTOR_SET, pedal)
         elif agl > 10.0:
@@ -982,11 +1025,13 @@ class RotorcraftFlight:
             err, self._turn_commit = _committed_error(
                 err, getattr(self, "_turn_commit", 0))
             if self._use_pids:
-                pedal = int(_clamp(-self._pid("pedals").update(err),
-                                   -pedal_max, pedal_max))
+                demand = int(_clamp(-self._pid("pedals").update(err),
+                                    -pedal_max, pedal_max))
             else:
-                pedal = int(_clamp(-PEDAL_DEG_PER_AXIS * err, -pedal_max,
-                                   pedal_max))
+                demand = int(_clamp(-PEDAL_DEG_PER_AXIS * err, -pedal_max,
+                                    pedal_max))
+            _pedal_check(self, demand, hdg)
+            pedal = demand * _pedal_dir(self)
             if not self._send(PEDAL_SET, pedal):
                 self._send(TAIL_ROTOR_SET, pedal)
             self._send(STEERING_SET, pedal)

@@ -534,8 +534,9 @@ class _The_phase_machine:
             err = ((self.state.runway_heading - hdg + 540.0)
                    % 360.0 - 180.0)
             lead = self._steer_lead(err, self._turn_rate(hdg))
-            keep = (0.0 if abs(lead) < 2.0
-                    else max(-0.4, min(0.4, lead / 36.0)))
+            keep = ((0.0 if abs(lead) < 2.0
+                     else max(-0.4, min(0.4, lead / 36.0)))
+                    * self._pedal_dir())
             d.rudder(keep)
             d.steering(keep if (state.indicated_airspeed_kt or 0.0) < 35.0
                        else 0.0)
@@ -1004,8 +1005,9 @@ class _The_phase_machine:
                     err = ((self.state.runway_heading - hdg + 540.0)
                            % 360.0 - 180.0)
                     lead = self._steer_lead(err, self._turn_rate(hdg))
-                    d.rudder(0.0 if abs(lead) < 2.0
-                             else max(-0.4, min(0.4, lead / 36.0)))
+                    d.rudder((0.0 if abs(lead) < 2.0
+                              else max(-0.4, min(0.4, lead / 36.0)))
+                             * self._pedal_dir())
                 xwind = float(getattr(state, "aircraft_wind_x_kt", 0.0)
                               or 0.0)
                 d.aileron(max(-0.15, min(0.15, xwind * 0.02)))
@@ -1111,8 +1113,9 @@ class _The_phase_machine:
                 err = ((self.state.runway_heading - hdg + 540.0)
                        % 360.0 - 180.0)
                 lead = self._steer_lead(err, self._turn_rate(hdg))
-                rudder = (0.0 if abs(lead) < 2.0
-                          else max(-0.4, min(0.4, lead / 36.0)))
+                rudder = ((0.0 if abs(lead) < 2.0
+                           else max(-0.4, min(0.4, lead / 36.0)))
+                          * self._pedal_dir())
                 d.rudder(rudder)
                 d.steering(rudder if gs < 35.0 else 0.0)
             return

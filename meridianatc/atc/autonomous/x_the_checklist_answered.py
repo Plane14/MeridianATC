@@ -246,6 +246,39 @@ class _The_checklist_answered:
         horizon = max(2.0, 1.5 * getattr(self, "_steer_dt", 2.0))
         return err - rate * horizon
 
+    def _pedal_dir(self) -> float:
+        """The sign this model's steering axis actually answers in."""
+        return -1.0 if getattr(self, "_pedal_flip", False) else 1.0
+
+    def _pedal_check(self, demand: float, rate: float,
+                     gs: float) -> None:
+        """Flip the pedal sign when the axis answers backwards.
+
+        A wheel asked right while the nose measures left is an inverted
+        axis on the model: every correction enlarges the error it was
+        answering, and the aeroplane circles whatever it was told to
+        follow. ``rate`` answers the demand already down the wire --
+        this tick's write has not landed yet -- so the vote is whether
+        the achieved yaw agrees with the *law's* demand from last call,
+        not the signed output: after a flip a demanded right turn is
+        sent left and a rightward answer is agreement. Three disagreed
+        answers flip the output sign; the count is re-seeded positive
+        after a flip so a correctly-wired model never chatters between
+        the two.
+        """
+        prev = getattr(self, "_pedal_demand", 0.0)
+        self._pedal_demand = demand
+        if abs(prev) < 0.3 or abs(rate) < 3.0 or gs < 1.0:
+            return
+        votes = getattr(self, "_pedal_votes", 0)
+        votes += 1 if (rate > 0.0) == (prev > 0.0) else -1
+        if votes <= -3:
+            self._pedal_flip = not getattr(self, "_pedal_flip", False)
+            votes = 3
+            log.warning("steering axis answers backwards on this "
+                        "model; pedal sign flipped")
+        self._pedal_votes = votes
+
     def _breakaway_lever(self) -> float:
         """The momentary lever that starts the aeroplane rolling.
 
@@ -375,23 +408,24 @@ class _The_checklist_answered:
             rudder = max(-0.5, min(0.5, lead / divisor))
         limit = self._ground_steer_limit(state)
         rudder = max(-limit, min(limit, rudder))
+        gs = state.ground_speed_kt or 0.0
+        sent = rudder * self._pedal_dir()
         log.info(
             "steer: hdg %.0f want %.0f err %+.0f rate %+.1f "
             "pedal %+.2f gs %.1f->%.1f kt",
-            hdg, desired_hdg, err, rate, rudder,
-            state.ground_speed_kt or 0.0, target_kt)
-        d.rudder(rudder)
+            hdg, desired_hdg, err, rate, sent, gs, target_kt)
+        now = time.monotonic()
+        self._pedal_check(rudder, rate, gs)
+        d.rudder(sent)
         # The nosewheel follows the same demand where the model steers it
         # separately: a taildragger on rudder alone and a tricycle gear on
         # STEERING_SET both get their turn.
-        d.steering(rudder)
+        d.steering(sent)
         # Taxi and rollout speeds are throttle jobs, not AP jobs -- and
         # progressive ones: the further below target, the more asked for,
         # and the lever is walked to the answer at a hand's rate rather
         # than put there. A lever write that jumps the travel is the
         # full-throttle departure from the stand this exists to prevent.
-        gs = state.ground_speed_kt or 0.0
-        now = time.monotonic()
         still = self._ground_still(state, now)
         probe = 0 if still else self._stuck_probe(state, now)
         if still:
