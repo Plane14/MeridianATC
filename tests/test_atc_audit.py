@@ -216,7 +216,10 @@ def test_fo_fuel_selector_item_writes_on_not_off():
 def test_autonomous_preserves_north_vector_and_arrival_runway():
     pytest.importorskip("scipy")
     from meridianatc.atc.autonomous import (
-        AutonomousFlight, AutonomousPhase, AutonomousState)
+        AutonomousFlight,
+        AutonomousPhase,
+        AutonomousState,
+    )
     fo = AutonomousFlight.__new__(AutonomousFlight)
     fo.state = AutonomousState()
     fo.state.phase = AutonomousPhase.APPROACH

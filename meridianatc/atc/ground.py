@@ -445,9 +445,17 @@ class GroundLayout:
                 best, best_distance = stand, distance
         return best
 
-    def stands_for(self, airliner: bool) -> list[Stand]:
-        """Every stand this size of aeroplane fits on and can taxi from."""
-        wanted = AIRLINER_RADIUS_M if airliner else LIGHT_RADIUS_M
+    def stands_for(self, airliner: bool,
+                   min_radius_m: float = 0.0) -> list[Stand]:
+        """Every stand this size of aeroplane fits on and can taxi from.
+
+        ``min_radius_m`` is the aircraft class's own figure
+        (:func:`meridianatc.atc.aircraft_class.stand_radius_m`) when it is
+        finer than the airliner/light divide -- a business jet wants more
+        room than a piston single, and less than a 737.
+        """
+        wanted = max(AIRLINER_RADIUS_M if airliner else LIGHT_RADIUS_M,
+                     min_radius_m)
         return [stand for stand in self.stands
                 if ("k", stand.index) in self.edges
                 and (stand.kind in _GATES or stand.kind in _RAMPS)
@@ -455,7 +463,8 @@ class GroundLayout:
 
     def free_stand(self, airliner: bool,
                    occupied: list[tuple[float, float, float]],
-                   taken: set[int], choose=None) -> Stand | None:
+                   taken: set[int], choose=None,
+                   min_radius_m: float = 0.0) -> Stand | None:
         """A stand this aeroplane fits on that nobody is on or near.
 
         ``occupied`` is (x, z, radius) for everything already on the ground --
@@ -463,14 +472,16 @@ class GroundLayout:
         out. ``choose`` picks among the candidates; the first is taken without
         one.
         """
-        candidates = self.free_stands(airliner, occupied, taken)
+        candidates = self.free_stands(airliner, occupied, taken,
+                                      min_radius_m=min_radius_m)
         if not candidates:
             return None
         return choose(candidates) if choose else candidates[0]
 
     def free_stands(self, airliner: bool,
                     occupied: list[tuple[float, float, float]],
-                    taken: set[int]) -> list[Stand]:
+                    taken: set[int],
+                    min_radius_m: float = 0.0) -> list[Stand]:
         """Every stand :meth:`free_stand` would choose from, in layout order.
 
         Public because the pilot's own stand is chosen from the same list
@@ -478,7 +489,7 @@ class GroundLayout:
         cannot be reached.
         """
         candidates = []
-        for stand in self.stands_for(airliner):
+        for stand in self.stands_for(airliner, min_radius_m):
             if stand.index in taken:
                 continue
             if any(math.hypot(stand.x - x, stand.z - z)

@@ -109,6 +109,68 @@ class _Transmission:
                 log.debug("could not abandon the recognition stream",
                           exc_info=True)
 
+    def _drain_plugin_commands(self) -> None:
+        """The X-Plane plugin's key bindings, sent up its UDP channel.
+
+        The traffic renderer answers datagrams on the same socket the
+        snapshots go out on, so a command is a JSON packet arriving there:
+        transmit_com1/2 pick the radio the pilot is working, the talk and
+        push-to-talk bindings drive the microphone path directly, and
+        copy_error puts the last error where it can be pasted.
+        """
+        traffic = getattr(self, "simtraffic", None)
+        if traffic is None or not getattr(traffic, "enabled", False):
+            return
+        try:
+            getter = getattr(traffic, "command", None)
+            while getter is not None:
+                command = getter()
+                if command is None:
+                    break
+                self._plugin_command(command)
+        except Exception:
+            log.debug("plugin command handling raised", exc_info=True)
+
+    def _plugin_command(self, command: dict) -> None:
+        cmd = str(command.get("cmd") or "")
+        if cmd in ("transmit_com1", "transmit_com2"):
+            self._radio_talk = 1 if cmd.endswith("1") else 2
+            self.emit("info", f"Transmitting on COM{self._radio_talk}.",
+                      key=f"log.com{self._radio_talk}_tx")
+            return
+        if cmd in ("mic_push_to_talk", "talk", "talk_copilot"):
+            if command.get("down", True):
+                self._talk_speaker = ("first_officer"
+                                      if cmd == "talk_copilot" else "")
+                self.begin_transmission()
+            else:
+                self.end_transmission()
+            return
+        if cmd == "copy_error":
+            self._copy_last_error()
+            return
+        log.debug("unknown plugin command %r", cmd)
+
+    def _copy_last_error(self) -> None:
+        text = self._last_error or "No error has been reported."
+        copied = False
+        try:
+            import tkinter
+            root = tkinter.Tk()
+            root.withdraw()
+            root.clipboard_clear()
+            root.clipboard_append(text)
+            root.update()
+            root.destroy()
+            copied = True
+        except Exception:
+            log.debug("clipboard copy failed", exc_info=True)
+        self.emit(
+            "info",
+            ("Last error copied to clipboard: " if copied
+             else "The last error was: ") + text,
+            key="log.copy_error")
+
     def end_transmission(self) -> None:
         if not self.microphone.recording:
             return
@@ -156,7 +218,8 @@ class _Transmission:
 
             # "spoken": the panel empties its box, so a draft left in it is
             # not sent again on the end of the next typed call.
-            self.emit("pilot", transcript.text, action="spoken")
+            self.emit("pilot", transcript.text, action="spoken",
+                      radio=f"com{self._radio_talk}")
             if transcript.confidence < self.config.speech.min_confidence:
                 log.info("low confidence %.2f: %s", transcript.confidence,
                          transcript.text,
@@ -164,7 +227,9 @@ class _Transmission:
                                 "heard": transcript.text})
 
             self.handle_text(transcript.text, transcript.language,
+                             speaker=self._talk_speaker,
                              confidence=transcript.confidence)
+            self._talk_speaker = ""
         except SpeechModelMissing:
             self.emit("error", "The speech recognition has not been downloaded "
                       "yet. Open Settings, then Components, and press Download.",
@@ -207,6 +272,18 @@ class _Transmission:
         except Exception:
             log.debug("could not give the recogniser its context",
                       exc_info=True)
+
+    def _answer_from_traffic(self, session, station, parsed) -> bool:
+        """Let a called crew answer the pilot. False if nobody was called."""
+        if self.traffic is None:
+            return False
+        try:
+            return self.traffic.answer_the_user(
+                session, parsed, station.position,
+                humor=self.config.traffic.humor)
+        except Exception:
+            log.debug("a crew answering the user failed", exc_info=True)
+            return False
 
     def handle_text(self, text: str, language: str | None = None,
                     speaker: str = "", confidence: float = 1.0) -> Reply | None:
@@ -254,7 +331,12 @@ class _Transmission:
                       key="log.radio_no_power")
             return None
 
-        station = self.station or self._current_station()
+        # The radio the pilot is keyed on decides who hears it: COM1 the
+        # tuned station, COM2 its own. Falling back keeps a dead COM2 from
+        # silencing a call.
+        station = ((self.station2 or self.station)
+                   if self._radio_talk == 2 else self.station) \
+            or self._current_station()
         if station is None:
             self.emit("info", "No station is listening on this frequency.",
                       key="log.nobody_listening")
@@ -315,6 +397,12 @@ class _Transmission:
                       key="log.human_online",
                       mhz=f"{station.mhz:.3f}", station=self.human.callsign,
                       network=self.human.network.upper())
+            return None
+
+        # Addressed to another aeroplane on the frequency, the answer is that
+        # aeroplane's: "Delta four five, say your position" is not the
+        # controller's to take.
+        if self._answer_from_traffic(session, station, parsed):
             return None
 
         # Somebody else's exchange is half way through on this frequency:

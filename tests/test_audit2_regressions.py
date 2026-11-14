@@ -8,8 +8,7 @@ import pytest
 
 
 def _flight():
-    from meridianatc.atc.autonomous import (
-        AutonomousFlight, AutonomousState)
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
     flight = AutonomousFlight.__new__(AutonomousFlight)
     flight.state = AutonomousState()
     return flight

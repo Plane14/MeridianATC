@@ -337,6 +337,7 @@ __all__ = [
     "StrEnum",
     "Config",
     "haversine_nm",
+    "project",
     "Airport",
     "NavDB",
     "autofly_limit",

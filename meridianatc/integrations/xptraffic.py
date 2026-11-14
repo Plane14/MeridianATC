@@ -13,6 +13,7 @@ import select
 import socket
 import threading
 import time
+from collections import deque
 
 log = logging.getLogger(__name__)
 
@@ -112,6 +113,9 @@ class XPlaneTraffic:
         self._drawn = set()
         self._unmatched = set()
         self._sequence = 0
+        # Commands the plugin's key bindings send back up the same
+        # channel, drained by the engine each tick.
+        self._commands = deque(maxlen=64)
 
     def _send(self, message):
         try:
@@ -131,6 +135,11 @@ class XPlaneTraffic:
                 continue
             try:
                 status = json.loads(wire)
+                if (isinstance(status, dict) and status.get("v") == 1
+                        and status.get("t") == "command"
+                        and isinstance(status.get("cmd"), str)):
+                    self._commands.append(status)
+                    continue
                 if (not isinstance(status, dict) or type(status.get("v")) is not int
                         or status["v"] != 1 or status.get("t") != "status"
                         or status.get("plugin") != "MeridianATC-XP"):
@@ -161,6 +170,12 @@ class XPlaneTraffic:
             if now - self._last_hello >= self.HELLO_EVERY_S:
                 self._send({"v": 1, "t": "hello"})
                 self._last_hello = now
+
+    def command(self):
+        """The next command the plugin sent, or None when there is none."""
+        with self._lock:
+            self.on_frame()
+            return self._commands.popleft() if self._commands else None
 
     @property
     def available(self):

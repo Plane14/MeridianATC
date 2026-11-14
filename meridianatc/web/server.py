@@ -1108,7 +1108,7 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         if not text:
             return {"ok": False}
         language = payload.get("language") or None
-        engine.emit("pilot", text)
+        engine.emit("pilot", text, radio=f"com{engine._radio_talk}")
         await asyncio.to_thread(engine.handle_text, text, language)
         return {"ok": True}
 
@@ -1139,6 +1139,15 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
             station = engine.tune(mhz)
             return {"ok": True, "station": station.callsign if station else "",
                     "in_simulator": in_sim}
+        if radio == 2 and not standby:
+            # The listen-only radio resolves its station the same way, so the
+            # panel can show who is on COM2 without asking.
+            engine.station2 = engine._resolve_com2(engine.state)
+            engine._last_com2 = engine.state.com2_active or 0.0
+            return {"ok": True,
+                    "station": (engine.station2.callsign
+                                if engine.station2 else ""),
+                    "in_simulator": in_sim}
         return {"ok": True, "station": "", "in_simulator": in_sim}
 
     @app.post("/api/swap")
@@ -1151,7 +1160,24 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         if radio == 1:
             station = engine.tune(engine.state.com1_active)
             return {"ok": True, "station": station.callsign if station else ""}
+        if radio == 2:
+            engine.station2 = engine._resolve_com2(engine.state)
+            engine._last_com2 = engine.state.com2_active or 0.0
+            return {"ok": True,
+                    "station": (engine.station2.callsign
+                                if engine.station2 else "")}
         return {"ok": True, "station": ""}
+
+    @app.post("/api/talk_radio")
+    async def talk_radio(payload: dict) -> dict:
+        """The radio the next transmission goes out on: COM1 or COM2."""
+        radio = int((payload or {}).get("radio") or 1)
+        if radio not in (1, 2):
+            return {"ok": False, "error": "radio must be 1 or 2"}
+        engine._radio_talk = radio
+        engine.emit("info", f"Transmitting on COM{radio}.",
+                    key=f"log.com{radio}_tx")
+        return {"ok": True, "radio": radio}
 
     @app.post("/api/squawk")
     async def squawk(payload: dict) -> dict:
@@ -2063,6 +2089,10 @@ def _ownship(engine: Engine) -> dict[str, Any] | None:
         "type": state.type_code or engine.config.flight.aircraft_type,
         "squawk": state.transponder_code,
         "com1": round(state.com1_active, 3),
+        "com2": round(getattr(state, "com2_active", 0.0), 3),
+        "com2_station": (engine.station2.callsign
+                         if getattr(engine, "station2", None) else ""),
+        "talk_radio": f"com{getattr(engine, '_radio_talk', 1)}",
         # Where you are going, as a straight line: the map draws it the way
         # it draws everybody else's, and a flight plan's airways are not
         # something this knows.
@@ -2277,6 +2307,11 @@ def snapshot(engine: Engine) -> dict[str, Any]:
         "radio": {
             "com1": round(state.com1_active, 3),
             "com1_standby": round(state.com1_standby, 3),
+            "com2": round(getattr(state, "com2_active", 0.0), 3),
+            "com2_standby": round(getattr(state, "com2_standby", 0.0), 3),
+            "talk": getattr(engine, "_radio_talk", 1),
+            "com2_station": (engine.station2.callsign
+                             if getattr(engine, "station2", None) else ""),
             # False in a cold and dark aeroplane: nothing heard, nothing sent.
             "powered": engine.radio_powered,
             "standby_station": _standby_station(engine),

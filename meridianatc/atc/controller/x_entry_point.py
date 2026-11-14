@@ -293,6 +293,29 @@ class _Entry_point:
                 and station.position in ("DEL", "GND", "TWR")):
             handler = self._special_vfr
 
+        # "Affirm"/"negative" answers an open offer of assistance on any
+        # frequency but ground's, where the taxi offer is answered with the
+        # new route itself.
+        if session.assistance_offered("flight"):
+            if parsed.intent is Intent.AFFIRMATIVE:
+                session.answer_assistance()
+                return Reply(p.roger(session.aircraft), station)
+            if parsed.intent is Intent.NEGATIVE:
+                session.answer_assistance()
+                return Reply(p.roger(session.aircraft), station)
+
+        # The pressure setting can be asked of whoever is on the
+        # frequency: it is not an instruction, and the answer is the
+        # weather, not the position.
+        if parsed.intent is Intent.REQUEST_ALTIMETER:
+            value = (weather.altimeter_inhg if p.dialect == "faa"
+                     else weather.qnh_hpa)
+            session.establish(station)
+            decision("request", asked="altimeter", value=value,
+                     station=station.callsign)
+            return Reply(p.altimeter_setting(session.aircraft, value),
+                         station)
+
         # Two-way contact is only established *after* this transmission has
         # been handled: the reply to a first call uses the full callsign and,
         # for a radar position, opens with "radar contact".

@@ -198,6 +198,14 @@ def _point_to_segment(p, a, b) -> float:
     return math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dz))
 
 
+def distance_to_line(layout: GroundLayout, line: RunwayLine,
+                     latitude: float, longitude: float) -> float:
+    """Metres from a position to a runway's centreline, in the layout's
+    plane: how far short of the strip the aeroplane is holding, or how far
+    onto it."""
+    return _point_to_segment(layout.to_xy(latitude, longitude), line.a, line.b)
+
+
 def _cross(o, a, b) -> float:
     return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
 
@@ -494,7 +502,8 @@ def plan_arrival(layout: GroundLayout, latitude: float, longitude: float,
                  lines: list[RunwayLine], *, airliner: bool, key: str,
                  occupied: list[tuple[float, float, float]] = (),
                  taken: set[int] = frozenset(),
-                 runway: str = "") -> tuple[TaxiPlan | None, str]:
+                 runway: str = "",
+                 min_radius_m: float = 0.0) -> tuple[TaxiPlan | None, str]:
     """From where the aeroplane has stopped to a free stand.
 
     ``occupied`` and ``taken`` are what :meth:`GroundLayout.free_stands`
@@ -508,7 +517,8 @@ def plan_arrival(layout: GroundLayout, latitude: float, longitude: float,
     x, z = layout.to_xy(latitude, longitude)
     if not _on_layout(layout, x, z):
         return None, "the aeroplane is not on the simulator's taxiways"
-    candidates = layout.free_stands(airliner, list(occupied), set(taken))
+    candidates = layout.free_stands(airliner, list(occupied), set(taken),
+                                    min_radius_m=min_radius_m)
     if not candidates:
         return None, "no free stand for this aeroplane"
     first = _stable(layout.ident, key) % len(candidates)
@@ -527,4 +537,4 @@ def plan_arrival(layout: GroundLayout, latitude: float, longitude: float,
 
 __all__ = ["TaxiPlan", "RunwayLine", "runway_lines", "crossings",
            "spoken_legs", "stand_under", "avoid_near", "plan_departure",
-           "plan_arrival", "designator", "MAX_TAXIWAYS"]
+           "plan_arrival", "designator", "distance_to_line", "MAX_TAXIWAYS"]

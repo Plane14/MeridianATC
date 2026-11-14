@@ -13,7 +13,9 @@ from ._shared import (
     Config,
     ControllerBrain,
     CrewDirector,
+    CrossingWatch,
     DepartureWatch,
+    DeviationAssistWatch,
     DoorTable,
     EventSink,
     FlightSession,
@@ -47,7 +49,9 @@ from ._shared import (
     Station,
     SurfaceWatch,
     Synthesizer,
+    TaxiWatch,
     TrafficInjector,
+    TransponderWatch,
     Understanding,
     Weather,
     WeatherProvider,
@@ -284,6 +288,11 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         # the aeroplane is doing on the ground, and what it is doing on the
         # way in. Both speak first; nothing in either waits to be asked.
         self.watch = SurfaceWatch(self.navdb, self.brain)
+        self.crossing_watch = CrossingWatch(self.navdb, self.brain)
+        # And the code the box shows against the one the flight was given.
+        self.transponder_watch = TransponderWatch(self.navdb, self.brain)
+        self.taxi_watch = TaxiWatch(self.navdb, self.brain)
+        self.deviation_watch = DeviationAssistWatch(self.navdb, self.brain)
         self.airspace_watch = AirspaceWatch(self.navdb, self.brain)
         self.point_watch = ReportingPointWatch(self.navdb, self.brain)
         # And the radar half of it for a VFR flight: where its service ends,
@@ -551,6 +560,20 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
             config.network.refresh_s)
         self.human: Any = None
         self._last_com1 = 0.0
+        # COM2, the radio that listens: the station it is resolved to, and
+        # the frequency last resolved, kept apart from ``self.station`` so a
+        # listen-only box never moves the talk side.
+        self.station2 = None
+        self._last_com2 = 0.0
+        # Which radio the pilot is talking on (the plugin's transmit_com1/2
+        # commands move it), who the next transmission is from when the
+        # plugin keys the copilot's mic, and the last error for copy_error.
+        self._radio_talk = 1
+        self._talk_speaker = ""
+        self._last_error = ""
+        # The ATIS COM2 last played, as "ident:letter", so it is not
+        # re-read every tick.
+        self._atis2_played = ""
         self._reported_empty = 0.0
         # (frequency, since when) of an empty COM1 not yet explained.
         self._empty_pending: tuple[float, float] | None = None

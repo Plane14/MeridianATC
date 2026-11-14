@@ -116,6 +116,9 @@ def readback(instruction: Instruction, aircraft: Aircraft,
             return speech.taxi(aircraft, str(values.get("runway", "")),
                                _spoken_route(values.get("route"), language),
                                str(values.get("hold_short", "")))
+        if kind == "cross_runway":
+            return speech.cross_runway(aircraft,
+                                       str(values.get("runway", "")))
         if kind == "line_up_and_wait":
             return speech.line_up(aircraft, str(values.get("runway", "")))
         if kind == "takeoff_clearance":

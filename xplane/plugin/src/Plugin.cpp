@@ -42,6 +42,29 @@ XPLMFlightLoopID loop = nullptr;
 XPLMMenuID menu = nullptr;
 int menuIndex = -1;
 XPLMDataRef connectedRef = nullptr, aircraftRef = nullptr;
+std::map<std::string, XPLMCommandRef> commands;
+
+void SendCommand(const std::string& cmd, bool down = true) {
+    if (!session.Connected(Now())) return;
+    std::string wire = std::string("{\"v\":1,\"t\":\"command\",\"cmd\":\"") + cmd +
+        "\",\"down\":" + (down ? "true" : "false") + "}";
+    udp.Send(wire, peer);
+}
+int OnCommand(XPLMCommandRef ref, XPLMCommandPhase phase, void*) {
+    if (!initialized) return 1;
+    try {
+        for (const auto& [name, candidate] : commands) {
+            if (candidate != ref) continue;
+            const bool ptt = name.find("push_to_talk") != std::string::npos ||
+                name.find("/talk") != std::string::npos;
+            if (ptt && phase == xplm_CommandContinue) break;
+            SendCommand(name.substr(name.find_last_of('/') + 1),
+                        ptt ? phase == xplm_CommandBegin : true);
+            break;
+        }
+    } catch (const std::exception& e) { Log(e.what()); }
+    return 1;
+}
 
 class TrafficAircraft : public XPMP2::Aircraft {
     Motion motion;
@@ -228,6 +251,14 @@ PLUGIN_API int XPluginStart(char* name, char* signature, char* description) {
     menu = XPLMCreateMenu("MeridianATC", XPLMFindPluginsMenu(), menuIndex, Menu, nullptr);
     const char* items[] = {"Show traffic", "Labels", "TCAS control", "Reload CSL", "Log status"};
     for (intptr_t i = 0; i < 5; ++i) XPLMAppendMenuItem(menu, items[i], reinterpret_cast<void*>(i), 0);
+    static std::vector<std::string> descriptions;
+    for (const char* cname : {"meridianatc/transmit_com1", "meridianatc/transmit_com2",
+             "meridianatc/talk", "meridianatc/talk_copilot", "meridianatc/mic_push_to_talk",
+             "meridianatc/copy_error"}) {
+        descriptions.push_back(std::string("MeridianATC: ") + (cname + 13));
+        commands[cname] = XPLMCreateCommand(cname, descriptions.back().c_str());
+        XPLMRegisterCommandHandler(commands[name], OnCommand, 1, nullptr);
+    }
     connectedRef = XPLMRegisterDataAccessor("meridianatc/xp/connected", xplmType_Int, 0, Connected, nullptr,
         nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
     aircraftRef = XPLMRegisterDataAccessor("meridianatc/xp/aircraft", xplmType_Int, 0, AircraftCount, nullptr,
@@ -255,6 +286,8 @@ PLUGIN_API int XPluginEnable() {
 }
 PLUGIN_API void XPluginDisable() { Shutdown(); }
 PLUGIN_API void XPluginStop() {
+    for (auto& [name, ref] : commands) if (ref) XPLMUnregisterCommandHandler(ref, OnCommand, 1, nullptr);
+    commands.clear();
     Shutdown();
     if (connectedRef) XPLMUnregisterDataAccessor(connectedRef);
     if (aircraftRef) XPLMUnregisterDataAccessor(aircraftRef);

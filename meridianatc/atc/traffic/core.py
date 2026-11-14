@@ -26,6 +26,7 @@ from .x_departures import _Departures
 from .x_flying_them import _Flying_them
 from .x_instructions_and_being import _Instructions_and_being
 from .x_making_aeroplanes import _Making_aeroplanes
+from .x_pilots_talking import PilotsTalking
 from .x_putting_words_together import _Putting_words_together
 from .x_running_them import _Running_them
 from .x_small_facts_about import _Small_facts_about
@@ -41,7 +42,7 @@ from .x_what_the_pilot import _What_the_pilot
 from .x_where_it_is import _Where_it_is
 
 
-class TrafficInjector(_The_field, _Flying_them, _What_the_pilot, _Making_aeroplanes, _The_ones_standing, _An_aeroplane_asked, _Test_tools_traffic, _The_ground_driven, _Running_them, _The_watchdog, _Instructions_and_being, _The_aeroplane_the, _Aeroplanes_somebody_else, _The_live_ones, _The_tower_watching, _Departures, _Where_it_is, _Arrivals, _Putting_words_together, _Small_facts_about):
+class TrafficInjector(_The_field, _Flying_them, _What_the_pilot, _Making_aeroplanes, _The_ones_standing, _An_aeroplane_asked, _Test_tools_traffic, _The_ground_driven, _Running_them, _The_watchdog, _Instructions_and_being, _The_aeroplane_the, _Aeroplanes_somebody_else, _The_live_ones, _The_tower_watching, _Departures, _Where_it_is, _Arrivals, PilotsTalking, _Putting_words_together, _Small_facts_about):
     """Runs the other aeroplanes on the frequency.
 
     The engine calls :meth:`poll` on the situation loop and speaks whatever

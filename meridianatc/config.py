@@ -1139,6 +1139,14 @@ class TrafficConfig:
     # integrator it replaced. On by default; off for a comparison or a
     # misbehaving model.
     energy_model: bool = True
+    # Whether other crews can call the pilot directly: on an uncontrolled
+    # frequency a crew that has not heard the pilot before asks their
+    # position and intentions, as one does.
+    pilots_talk: bool = True
+    # Whether a crew may answer a call to them with something beyond the
+    # operational minimum -- a dry one-liner, never a safety word. Off,
+    # every answer is the operational one.
+    humor: bool = False
     # Whether the hour of day sets the rhythm: the morning and evening
     # banks busy, the small hours nearly quiet, as a real field is.
     # Off, the density alone decides, as it always did.
@@ -1259,6 +1267,11 @@ describe(
     fsltl_rules=Setting("traffic", "traffic", kind="path", restart=True,
                         advanced=True),
     handling_observed=Setting("traffic", "handling", advanced=True),
+    pilots_talk=Setting("traffic", "traffic",
+                        label="set.traffic_pilots_talk",
+                        help="set.traffic_pilots_talk_why"),
+    humor=Setting("traffic", "traffic", label="set.traffic_humor",
+                  help="set.traffic_humor_why"),
     handling_doors=Setting("traffic", "handling", restart=True,
                            advanced=True),
     engines_and_lights=Setting("traffic", "handling", restart=True,

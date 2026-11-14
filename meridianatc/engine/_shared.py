@@ -60,11 +60,15 @@ from ..atc.systems import wanted as systems_wanted
 from ..atc.traffic import TrafficInjector, UserAircraft
 from ..atc.watch import (
     AirspaceWatch,
+    CrossingWatch,
+    DeviationAssistWatch,
     RadarServiceWatch,
     ReportingPointWatch,
     RestrictionWatch,
     RunwayWatch,
     SurfaceWatch,
+    TaxiWatch,
+    TransponderWatch,
 )
 from ..atc.written import as_written
 from ..audio.announcements import FOLDER as ANNOUNCEMENTS
@@ -284,11 +288,15 @@ __all__ = [
     "TrafficInjector",
     "UserAircraft",
     "AirspaceWatch",
+    "CrossingWatch",
+    "DeviationAssistWatch",
     "RadarServiceWatch",
     "ReportingPointWatch",
     "RestrictionWatch",
     "RunwayWatch",
     "SurfaceWatch",
+    "TaxiWatch",
+    "TransponderWatch",
     "as_written",
     "ANNOUNCEMENTS",
     "AnnouncementLibrary",

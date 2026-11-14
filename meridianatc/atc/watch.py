@@ -24,27 +24,30 @@ of taste:
 Each is said once. A controller does not repeat an advisory four times a second
 because the simulator is being polled that often.
 
-What is deliberately *not* called is crossing a runway on the way to another
-one. Real ATC issues a crossing clearance for that and this project does not
-yet: a route read off the simulator's taxiways (:mod:`meridianatc.atc.taxi`)
-names the first runway to hold short of, but nothing clears the aircraft
-across it, and without the simulator the route is invented and the aircraft
-is bound to cross runways it never mentioned. Calling those would mean crying
-wolf on every taxi at a large field. The discriminator is
-alignment: an aircraft lined up on a runway is pointing along it, and an
-aircraft crossing one is pointing across it.
+What is deliberately *not* called is crossing a runway the route never
+mentioned. Real ATC issues a crossing clearance for each runway a taxi
+route meets, and with the simulator's taxiways this project does too:
+:class:`CrossingWatch` grants the crossing as the aircraft reaches the
+hold, repeats the hold-short while the runway cannot be crossed, and calls
+an entry nobody cleared. Without the simulator the route is invented and
+the aircraft is bound to cross runways it never mentioned, so invented
+routes still run the old way -- saying nothing about crossings at all. The
+discriminator for those is alignment: an aircraft lined up on a runway is
+pointing along it, and an aircraft crossing one is pointing across it.
 """
 
 from __future__ import annotations
 
 import logging
+import math
+import time
 
 from ..logs import decision
 from ..navdata.build import bearing_deg, project
 from ..navdata.db import NavDB, Station
 from .controller import ControllerBrain, Reply
 from .phraseology import language_of
-from .session import FlightSession
+from .session import FlightSession, Phase
 
 log = logging.getLogger(__name__)
 
@@ -237,6 +240,335 @@ class SurfaceWatch:
         return tower.callsign_in(language_of(p))
 
 
+# A hold-short refused for traffic is not said again for this long: the
+# runway is the picture to watch, and the aeroplane is stopped at it.
+CROSSING_HOLD_S = 60.0
+
+
+class CrossingWatch:
+    """The runways a real taxi route holds the aircraft short of.
+
+    Every runway the simulator's own taxiways take the aircraft across is a
+    clearance of its own (:meth:`FlightSession.pending_crossing`): the taxi
+    clearance names the first, and each is then granted or refused as the
+    aeroplane gets to it, the way a ground controller works them. Granted,
+    the runway becomes the one the aircraft may be on until it is off the
+    far side; refused -- somebody on the strip, an arrival inside the
+    window -- the hold-short is repeated, at most once a minute. Entered
+    without the clearance it is an incursion like any other, called once.
+    """
+
+    def __init__(self, navdb: NavDB, brain: ControllerBrain):
+        self.navdb = navdb
+        self.brain = brain
+        # When a hold was last said for a crossing, by runway strip.
+        self._held: dict[str, float] = {}
+
+    def look(self, session: FlightSession, station: Station | None, state,
+             previous, language: str = "en") -> Reply | None:
+        if station is None or not self.brain.issues_clearances(station):
+            return None
+        if station.position not in ("GND", "DEL", "TWR"):
+            return None
+        if state is None or previous is None or not state.has_position:
+            return None
+        if not session.taxi_crossings:
+            return None
+        airport = self.navdb.airport(station.ident)
+        if airport is None or not state.on_ground:
+            return None
+        if state.distance_to(airport.lat, airport.lon) > FIELD_RADIUS_NM:
+            return None
+
+        ident = airport.ident
+        pending = session.pending_crossing()
+        if not pending:
+            return None
+        strip = self.navdb.runway_strip(ident, pending)
+        before = self._runway_under(ident, previous)
+        under = session.occupying_runway or self._runway_under(ident, state)
+        on_pending = bool(under) and \
+            self.navdb.runway_strip(ident, under) == strip
+        was_pending = bool(before) and \
+            self.navdb.runway_strip(ident, before) == strip
+
+        p = self.brain.for_station(station, language)
+        session.aircraft.language = language_of(p)
+
+        # Off the far side, or back to the hold side: the crossing is done
+        # either way and the next runway on the route is the new limit.
+        if was_pending and not on_pending:
+            crossed = session.spend_crossing()
+            decision("runway_crossing", airport=ident, event="vacated",
+                     runway=crossed)
+            pending = session.pending_crossing()
+            if not pending:
+                return None
+            strip = self.navdb.runway_strip(ident, pending)
+            on_pending = bool(under) and \
+                self.navdb.runway_strip(ident, under) == strip
+
+        # On the runway without a crossing clearance, granted or spent --
+        # the same call the surface watch makes for a line-up, with the
+        # alignment test it cannot make for a crossing.
+        if on_pending and not session.crossing_granted:
+            key = f"incursion:cross:{strip}"
+            if session.advise_once(key):
+                decision("runway_crossing", airport=ident,
+                         event="incursion", runway=under)
+                return Reply(
+                    p.hold_position_incursion(session.aircraft,
+                                              under or pending),
+                    station)
+            return None
+
+        if on_pending:
+            # On the strip with the clearance: nothing to decide.
+            return None
+
+        # Held short of it, or still on the way: the grant -- or the
+        # hold-short again, no oftener than once a minute.
+        last = self._held.get(strip, 0.0)
+        remind = time.monotonic() - last >= CROSSING_HOLD_S
+        reply = self.brain.crossing_clearance(
+            session, station, p, state, remind=remind)
+        if reply is not None and not session.crossing_granted:
+            self._held[strip] = time.monotonic()
+        return reply
+
+    def _runway_under(self, ident: str, state) -> str:
+        heading = getattr(state, "heading_true", None)
+        try:
+            return self.navdb.runway_at(
+                ident, state.latitude, state.longitude, heading
+            )
+        except Exception:
+            log.debug("runway lookup failed at %s", ident, exc_info=True)
+            return ""
+
+
+class TransponderWatch:
+    """The code the transponder shows against the one the flight was given.
+
+    A squawk that is never set is a target the radar room does not have.
+    The watch gives the pilot thirty seconds from the assigned code's being
+    issued to set it, then asks once a minute while it stays wrong. Codes
+    nobody can set -- emergency squawks, which are the pilot's to choose --
+    and observations that are not four digits are left alone.
+    """
+
+    # From the clearance to the box: how long setting a code takes before
+    # it is worth asking about.
+    SETTLE_S = 30.0
+    # And how often it is worth asking again.
+    REMIND_S = 60.0
+    EMERGENCY = {"7500", "7600", "7700"}
+
+    def __init__(self, navdb: NavDB, brain: ControllerBrain):
+        self.navdb = navdb
+        self.brain = brain
+        # The assigned code as last seen, so the settle clock starts when
+        # the code changes, not when the watch starts.
+        self._expected = ""
+        self._since = 0.0
+        self._reminded = 0.0
+
+    def look(self, session: FlightSession, station: Station | None, state,
+             language: str = "en") -> Reply | None:
+        if station is None or not self.brain.issues_clearances(station):
+            return None
+        if state is None or not session.established_with(station):
+            return None
+        if not session.squawk_assigned:
+            return None
+        expected = (session.squawk or "").strip()
+        observed = (getattr(state, "transponder_code", "") or "").strip()
+        now = time.monotonic()
+        if expected != self._expected:
+            self._expected, self._since = expected, now
+            self._reminded = 0.0
+        if not expected or not observed:
+            return None
+        if observed in self.EMERGENCY or expected in self.EMERGENCY:
+            return None
+        if not (observed.isdigit() and len(observed) == 4):
+            return None
+        if observed == expected:
+            return None
+        if now - self._since < self.SETTLE_S \
+                or now - self._reminded < self.REMIND_S:
+            return None
+        self._reminded = now
+        p = self.brain.for_station(station, language)
+        session.aircraft.language = language_of(p)
+        decision("squawk_mismatch", station=station.callsign,
+                 expected=expected, observed=observed)
+        return Reply(
+            p.verify_squawk(session.aircraft, expected, observed), station)
+
+
+class TaxiWatch:
+    """Whether the taxiing aeroplane is still on the route it was given.
+
+    A route drawn from the simulator's own taxiways
+    (``FlightSession.taxi_path``) is checkable: the aeroplane's distance
+    from the line is knowable, and when it has sat off it, moving, for a
+    while the ground controller's real next call is to ask whether the
+    crew wants help. Answered yes, the route is planned again from where
+    the aeroplane actually is (:meth:`FlightSession.offer_assistance`).
+    """
+
+    # Far enough from the cleared line that no taxiway width explains it:
+    # a wide apron connector is some 60-70 m, so 90 is "off the route".
+    OFF_ROUTE_NM = 90.0 / 1852.0
+    # Off the line, moving, this long before it is said -- turns and
+    # stopped traffic are not a deviation.
+    SETTLE_S = 20.0
+    MOVING_KT = 6.0
+
+    def __init__(self, navdb: NavDB, brain: ControllerBrain):
+        self.navdb = navdb
+        self.brain = brain
+        self._off_since: float | None = None
+
+    def look(self, session: FlightSession, station: Station | None, state,
+             language: str = "en") -> Reply | None:
+        if station is None or station.position != "GND":
+            return None
+        if session.phase not in (Phase.TAXI_OUT, Phase.TAXI_IN):
+            self._off_since = None
+            return None
+        path = session.taxi_path
+        if len(path) < 2 or state is None or not state.has_position \
+                or not state.on_ground:
+            return None
+        if (getattr(state, "ground_speed_kt", 0.0) or 0.0) < self.MOVING_KT:
+            return None
+        if self._off_route_nm(state, path) <= self.OFF_ROUTE_NM:
+            self._off_since = None
+            return None
+        now = time.monotonic()
+        if self._off_since is None:
+            self._off_since = now
+            return None
+        if now - self._off_since < self.SETTLE_S:
+            return None
+        self._off_since = None
+        p = self.brain.for_station(station, language)
+        session.aircraft.language = language_of(p)
+        if session.offer_assistance("taxi", now):
+            decision("taxi_off_route", station=station.callsign,
+                     distance_nm=round(self._off_route_nm(state, path), 3))
+            return Reply(p.taxi_off_route(session.aircraft), station)
+        return None
+
+    @staticmethod
+    def _off_route_nm(state, path) -> float:
+        """Distance to the cleared line, in nm -- equirectangular about the
+        aircraft, close enough at taxi distances."""
+        kx = 60.0 * math.cos(math.radians(state.latitude))
+        xy = [((lon - state.longitude) * kx,
+               (lat - state.latitude) * 60.0) for lat, lon in path]
+        best = math.inf
+        for (ax, ay), (bx, by) in zip(xy, xy[1:], strict=False):
+            dx, dy = bx - ax, by - ay
+            if dx or dy:
+                t = max(0.0, min(1.0,
+                                 -(ax * dx + ay * dy) / (dx * dx + dy * dy)))
+                ax, ay = ax + t * dx, ay + t * dy
+            best = min(best, math.hypot(ax, ay))
+        return best
+
+
+class DeviationAssistWatch:
+    """One deviation call too many, when it becomes an offer of help.
+
+    A crew that is off its assigned altitude, heading or speed once is
+    told so; told a third time, the real call is not the same call again
+    but "say your intentions" -- the controller works out whether the
+    aeroplane can fly what it was cleared for. Each kind of check gets
+    its own count; the offer is made once through
+    :meth:`FlightSession.offer_assistance`, and whatever the pilot then
+    asks for is answered as a fresh clearance.
+    """
+
+    ALT_FT = 200.0
+    HDG_DEG = 20.0
+    SPD_KT = 15.0
+    # Off this long before it counts: a turn through the assigned heading
+    # or a slow climb through the level is not a deviation.
+    SETTLE_S = 15.0
+    # A reminder per kind, until the third becomes the offer.
+    REMIND_S = 60.0
+    OFFER_AFTER = 2
+
+    def __init__(self, navdb: NavDB, brain: ControllerBrain):
+        self.navdb = navdb
+        self.brain = brain
+        # kind -> (since, last said, said so far)
+        self._seen: dict[str, list] = {}
+
+    def look(self, session: FlightSession, station: Station | None, state,
+             language: str = "en") -> Reply | None:
+        if station is None or not self.brain.issues_clearances(station):
+            return None
+        if station.position == "GND" or state is None or state.on_ground:
+            self._seen.clear()
+            return None
+        now = time.monotonic()
+        off = self._off_now(session, state)
+        p = self.brain.for_station(station, language)
+        session.aircraft.language = language_of(p)
+        for kind in off:
+            since, last, said = self._seen.get(kind, [now, 0.0, 0])
+            if now - last < self.REMIND_S:
+                self._seen[kind] = [since, last, said]
+                continue
+            if said < self.OFFER_AFTER:
+                self._seen[kind] = [since, now, said + 1]
+                decision("deviation", check=kind,
+                         station=station.callsign, count=said + 1)
+                return Reply(
+                    self._verify(kind, p, session, state), station)
+            if session.offer_assistance("flight", now):
+                self._seen.clear()
+                decision("assist", check=kind,
+                         station=station.callsign)
+                return Reply(p.offer_assistance(session.aircraft), station)
+            return None
+        self._seen = {k: v for k, v in self._seen.items() if k in off}
+        return None
+
+    def _off_now(self, session: FlightSession, state) -> list[str]:
+        out = []
+        if session.assigned_altitude_ft \
+                and abs((getattr(state, "altitude_ft", 0.0) or 0.0)
+                        - session.assigned_altitude_ft) > self.ALT_FT:
+            out.append("altitude")
+        if session.assigned_heading \
+                and _heading_off(getattr(state, "heading_true", 0.0) or 0.0,
+                                 session.assigned_heading) > self.HDG_DEG:
+            out.append("heading")
+        if session.assigned_speed_kt \
+                and abs((getattr(state, "indicated_airspeed_kt", 0.0)
+                         or getattr(state, "true_airspeed_kt", 0.0) or 0.0)
+                        - session.assigned_speed_kt) > self.SPD_KT:
+            out.append("speed")
+        return out
+
+    @staticmethod
+    def _verify(kind: str, p, session: FlightSession, state) -> str:
+        aircraft = session.aircraft
+        if kind == "altitude":
+            return p.verify(aircraft, "altitude")
+        if kind == "heading":
+            return p.verify(aircraft, "heading")
+        return p.verify(aircraft, "speed")
+
+
+def _heading_off(a: float, b: float) -> float:
+    """Degrees the actual heading is off the assigned, 0-180."""
+    return abs((a - b + 180.0) % 360.0 - 180.0)
 
 
 # ----------------------------------------------------------------------

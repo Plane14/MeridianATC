@@ -274,6 +274,32 @@ class _Test_tools_traffic:
         self.station = station
         self._last_com1 = mhz
 
+    def _resolve_com2(self, state) -> Station | None:
+        """Who is on COM2's frequency.
+
+        The same resolver COM1 goes through, without the session
+        side-effects tuning carries -- the second radio listens, and
+        listening does not establish anything.
+        """
+        mhz = state.com2_active or 0.0
+        if not mhz:
+            return None
+        lat, lon = ((state.latitude, state.longitude)
+                    if state.has_position else (0.0, 0.0))
+        try:
+            station = self.navdb.resolve_station(
+                mhz, lat, lon, state.altitude_ft)
+            station = self._room_on_the_channel(station, mhz)
+        except Exception:
+            log.debug("could not resolve COM2 %.3f", mhz, exc_info=True)
+            return self.station2
+        previous = self.station2
+        if station_key(station) != station_key(previous):
+            log.info("COM2 %.3f at %.2f, %.2f: %s -> %s", mhz, lat, lon,
+                     previous.callsign if previous else "nobody",
+                     station.callsign if station else "nobody listening")
+        return station
+
         if station is None and self.config.atc.answer_unpublished:
             station = self._unpublished_station(mhz, lat, lon)
             if station is not None:

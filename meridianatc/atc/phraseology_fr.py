@@ -368,6 +368,20 @@ class FrenchPhraseology:
             parts.append(then)
         return _join(*parts) + "."
 
+    def taxi_off_route(self, aircraft: Aircraft) -> str:
+        return _join(aircraft.spoken(True),
+                     "vous semblez vous être écarté de l'itinéraire de "
+                     "roulage, avez-vous besoin d'assistance") + "."
+
+    def offer_assistance(self, aircraft: Aircraft) -> str:
+        return _join(aircraft.spoken(True),
+                     "confirmez vos intentions, avez-vous besoin "
+                     "d'assistance") + "."
+
+    def report_vacated(self) -> str:
+        """Ce que le contrôleur demande à la fin d'une traversée."""
+        return "signalez piste dégagée"
+
     def hold_short_instruction(self, aircraft: Aircraft, runway: str) -> str:
         return _join(aircraft.spoken(True),
                      f"maintenez avant la piste {self.rwy(runway)}") + "."
@@ -1487,6 +1501,12 @@ class FrenchPhraseology:
 
     def verify(self, aircraft: Aircraft, item: str) -> str:
         return _join(aircraft.spoken(True), f"confirmez {item}") + "."
+
+    def verify_squawk(self, aircraft: Aircraft, expected: str,
+                      observed: str = "") -> str:
+        """Le transpondeur n'affiche pas le code assigné."""
+        return self.verify(
+            aircraft, f"transpondeur {fr.squawk(expected)}")
 
     def radio_check(self, aircraft: Aircraft, readability: int = 5) -> str:
         return _join(aircraft.spoken(True),

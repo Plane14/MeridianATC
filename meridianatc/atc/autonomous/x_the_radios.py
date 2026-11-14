@@ -8,7 +8,6 @@ from ._shared import (
     time,
 )
 
-
 # The positions a handoff may move COM1 to while the aeroplane is on the
 # ground: the surface progression, and nothing else. "Contact departure"
 # is flown before it is dialled -- a radar handoff that arrives on the

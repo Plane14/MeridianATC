@@ -266,3 +266,417 @@ def test_north_heading_extraction():
     assert intents.extract_heading("heading zero zero zero") == 360
     assert intents.extract_heading("heading three six zero") == 360
     assert intents.extract_heading("heading 361") is None
+
+
+# ------------------------------------------------------------------
+# the transponder watch
+# ------------------------------------------------------------------
+
+
+def _transponder_fixture(*, expected="4621", observed="1200",
+                         assigned=True, established=True):
+    from unittest.mock import Mock
+
+    from meridianatc.atc.controller import ControllerBrain
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.atc.watch import TransponderWatch
+    from meridianatc.navdata.db import Station
+    from meridianatc.sim.state import AircraftState
+
+    brain = ControllerBrain(Mock(), Phraseology())
+    brain.staffed = lambda station: True
+    watch = TransponderWatch(Mock(), brain)
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    session.squawk = expected
+    session.squawk_assigned = assigned
+    station = Station("TEST", "APP", 124.5, "Approach")
+    if established:
+        session.establish(station)
+    state = AircraftState(transponder_code=observed)
+    return watch, session, station, state
+
+
+def test_transponder_watch_asks_about_a_wrong_code():
+    watch, session, station, state = _transponder_fixture()
+    assert watch.look(session, station, state) is None  # settling
+    watch._since -= watch.SETTLE_S
+    reply = watch.look(session, station, state)
+    assert reply is not None
+    assert "squawk" in reply.text.lower()
+    assert "4621" in reply.text.replace(" ", "") or \
+        "four six two one" in reply.text.lower()
+
+
+def test_transponder_watch_leaves_matching_emergency_and_unset_codes():
+    watch, session, station, state = _transponder_fixture(observed="4621")
+    assert watch.look(session, station, state) is None
+    for code in ("7500", "7600", "7700"):
+        w, s, st, _ = _transponder_fixture(observed=code)
+        state = type("S", (), {"transponder_code": code})()
+        w.look(s, st, state)
+        w._since -= w.SETTLE_S
+        assert w.look(s, st, state) is None
+    w, s, st, state = _transponder_fixture(assigned=False)
+    assert w.look(s, st, state) is None
+
+
+def test_transponder_watch_waits_for_the_pilot_to_set_it():
+    watch, session, station, state = _transponder_fixture()
+    # Just issued: within the settle window, nothing is said.
+    assert watch.look(session, station, state) is None
+    # Past it, asked; right after, not asked again.
+    watch._since -= watch.SETTLE_S + 1.0
+    assert watch.look(session, station, state) is not None
+    assert watch.look(session, station, state) is None
+
+
+def test_transponder_watch_ignores_non_code_observations():
+    for observed in ("", "12", "12000", "ABCD"):
+        w, s, st, state = _transponder_fixture(observed=observed)
+        w.look(s, st, state)
+        w._since -= w.SETTLE_S
+        assert w.look(s, st, state) is None
+
+
+# ------------------------------------------------------------------
+# asking for the pressure setting
+# ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("text", [
+    "N123 request altimeter",
+    "N123 what is the QNH",
+    "N123 say the altimeter",
+    "N123 requesting the QNH",
+])
+def test_altimeter_request_parses(text):
+    parsed = intents.IntentParser(["N123"]).parse(text, "en")
+    assert parsed.intent is intents.Intent.REQUEST_ALTIMETER
+
+
+@pytest.mark.parametrize("language,text", [
+    ("fr", "N123 demande le qnh"),
+    ("es", "N123 solicito el qnh"),
+    ("de", "N123 erbitte das qnh"),
+    ("it", "N123 chiedo il qnh"),
+    ("pt", "N123 peco o qnh"),
+])
+def test_altimeter_request_parses_local(language, text):
+    parsed = intents.IntentParser(["N123"]).parse(text, language)
+    assert parsed.intent is intents.Intent.REQUEST_ALTIMETER
+
+
+def test_altimeter_request_is_answered_by_any_station():
+    from unittest.mock import Mock
+
+    from meridianatc.atc.controller import ControllerBrain
+    from meridianatc.atc.phraseology import Aircraft, Phraseology, Weather
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.db import Station
+    from meridianatc.sim.state import AircraftState
+
+    brain = ControllerBrain(Mock(), Phraseology())
+    brain.staffed = lambda station: True
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    weather = Weather(qnh_hpa=1020.0)
+    parsed = intents.IntentParser(["N123"]).parse(
+        "N123 request altimeter", "en")
+    for position in ("DEL", "GND", "TWR", "APP", "DEP", "CTR", "INFO"):
+        station = Station("TEST", position, 120.0, position)
+        reply = brain.respond(parsed, session, station, weather,
+                              AircraftState())
+        assert reply.speak, position
+        assert "one zero two zero" in reply.text, position
+
+
+# ------------------------------------------------------------------
+# stands by aircraft size class
+# ------------------------------------------------------------------
+
+
+def _layout_with_stands():
+    """A ground layout with a light stand and an airliner stand."""
+    from meridianatc.atc.ground import GroundLayout, Stand
+
+    layout = GroundLayout.__new__(GroundLayout)
+    layout.stands = [
+        Stand(index=1, x=0.0, z=0.0, heading=0.0, radius=6.0, kind=8,
+              number=1),
+        Stand(index=2, x=100.0, z=0.0, heading=0.0, radius=20.0, kind=8,
+              number=2),
+    ]
+    # ``stands_for`` wants the stand nodes on the taxi graph.
+    layout.edges = {("k", 1): [], ("k", 2): []}
+    return layout
+
+
+def test_stand_size_class_filters_small_stands():
+    layout = _layout_with_stands()
+    # A business jet (9.0 m) cannot take the 6 m stand.
+    big = [s.index for s in layout.stands_for(
+        airliner=False, min_radius_m=9.0)]
+    assert big == [2]
+    # Without the class figure the old behaviour is unchanged.
+    light = [s.index for s in layout.stands_for(airliner=False)]
+    assert light == [1, 2]
+
+
+def test_stand_radius_per_class():
+    from meridianatc.atc import aircraft_class
+
+    assert aircraft_class.stand_radius_m(aircraft_class.PISTON_SINGLE) < \
+        aircraft_class.stand_radius_m(aircraft_class.BUSINESS_JET) < \
+        aircraft_class.stand_radius_m(aircraft_class.AIRLINER)
+    # Unknown classes get the light figure, not silence.
+    assert aircraft_class.stand_radius_m("spaceship") == \
+        aircraft_class.stand_radius_m(aircraft_class.PISTON_SINGLE)
+
+
+def test_free_stands_honours_class_radius():
+    layout = _layout_with_stands()
+    free = [s.index for s in layout.free_stands(
+        airliner=False, occupied=[], taken=set(), min_radius_m=9.0)]
+    assert free == [2]
+
+
+# ------------------------------------------------------------------
+# off the taxi route, and one deviation too many
+# ------------------------------------------------------------------
+
+
+def _taxi_watch_fixture(path=None):
+    from unittest.mock import Mock
+
+    from meridianatc.atc.controller import ControllerBrain
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import FlightSession, Phase
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.atc.watch import TaxiWatch
+    from meridianatc.navdata.db import Station
+    from meridianatc.sim.state import AircraftState
+
+    brain = ControllerBrain(Mock(), Phraseology())
+    brain.staffed = lambda station: True
+    watch = TaxiWatch(Mock(), brain)
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    session.phase = Phase.TAXI_OUT
+    session.taxi_path = path or [(40.0, -75.0), (40.01, -75.0)]
+    session.establish(Station("TEST", "GND", 121.7, "Ground"))
+    station = Station("TEST", "GND", 121.7, "Ground")
+    return watch, session, station, AircraftState
+
+
+def test_taxi_watch_says_nothing_on_the_route():
+    watch, session, station, state_cls = _taxi_watch_fixture()
+    state = state_cls(latitude=40.005, longitude=-75.0,
+                      ground_speed_kt=15.0, on_ground=True)
+    watch._off_since = None
+    assert watch.look(session, station, state) is None
+
+
+def test_taxi_watch_offers_help_off_the_route():
+    watch, session, station, state_cls = _taxi_watch_fixture()
+    # 2 nm north of the line, still moving: well off it.
+    state = state_cls(latitude=40.04, longitude=-75.0,
+                      ground_speed_kt=15.0, on_ground=True)
+    assert watch.look(session, station, state) is None  # settle
+    watch._off_since -= watch.SETTLE_S + 1.0
+    reply = watch.look(session, station, state)
+    assert reply is not None
+    assert "assistance" in reply.text.lower()
+    assert session.assist_offered == "taxi"
+    # Offered once: no nagging while the crew thinks.
+    watch._off_since = -watch.SETTLE_S
+    assert watch.look(session, station, state) is None
+
+
+def test_taxi_watch_ignores_a_stopped_aeroplane():
+    watch, session, station, state_cls = _taxi_watch_fixture()
+    state = state_cls(latitude=40.04, longitude=-75.0,
+                      ground_speed_kt=0.0, on_ground=True)
+    watch._off_since = -watch.SETTLE_S
+    assert watch.look(session, station, state) is None
+
+
+def test_deviation_watch_escalates_to_an_offer():
+    from unittest.mock import Mock
+
+    from meridianatc.atc.controller import ControllerBrain
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.atc.watch import DeviationAssistWatch
+    from meridianatc.navdata.db import Station
+    from meridianatc.sim.state import AircraftState
+
+    brain = ControllerBrain(Mock(), Phraseology())
+    brain.staffed = lambda station: True
+    watch = DeviationAssistWatch(Mock(), brain)
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    session.assigned_altitude_ft = 5000.0
+    station = Station("TEST", "APP", 124.5, "Approach")
+    session.establish(station)
+    # 1000 ft low, airborne.
+    state = AircraftState(altitude_ft=4000.0, on_ground=False,
+                          latitude=40.0, longitude=-75.0)
+
+    first = watch.look(session, station, state)
+    assert first is not None and "verify" in first.text.lower()
+    assert not session.assistance_offered()
+    # The same call a minute later, then the offer.
+    watch._seen["altitude"][1] -= watch.REMIND_S + 1.0
+    second = watch.look(session, station, state)
+    assert second is not None and "verify" in second.text.lower()
+    watch._seen["altitude"][1] -= watch.REMIND_S + 1.0
+    third = watch.look(session, station, state)
+    assert third is not None
+    assert "intentions" in third.text.lower()
+    assert session.assist_offered == "flight"
+
+
+def test_deviation_watch_clears_on_the_ground():
+    from unittest.mock import Mock
+
+    from meridianatc.atc.controller import ControllerBrain
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.atc.watch import DeviationAssistWatch
+    from meridianatc.navdata.db import Station
+    from meridianatc.sim.state import AircraftState
+
+    brain = ControllerBrain(Mock(), Phraseology())
+    brain.staffed = lambda station: True
+    watch = DeviationAssistWatch(Mock(), brain)
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    session.assigned_altitude_ft = 5000.0
+    session.establish(Station("TEST", "TWR", 118.1, "Tower"))
+    state = AircraftState(altitude_ft=100.0, on_ground=True)
+    assert watch.look(session, Station("TEST", "TWR", 118.1, "Tower"),
+                      state) is None
+
+
+def test_assistance_offer_lifecycle():
+    import time
+
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    now = time.monotonic()
+    assert session.offer_assistance("taxi", now)
+    assert not session.offer_assistance("taxi", now + 10)
+    assert session.assistance_offered("taxi")
+    assert not session.assistance_offered("flight")
+    assert session.answer_assistance() == "taxi"
+    assert not session.assistance_offered()
+
+
+class TestTrafficChatter:
+    """Crews answer calls addressed to them, and call the pilot on CTAF."""
+
+    def _injector(self):
+        from meridianatc.atc.traffic.x_pilots_talking import PilotsTalking
+        return PilotsTalking()
+
+    def _flight(self, spoken="delta four five", **kw):
+        from unittest.mock import MagicMock
+        f = MagicMock()
+        f.done = False
+        f.phase = kw.pop("phase", "final")
+        f.runway = kw.pop("runway", "24")
+        f.arriving = kw.pop("arriving", True)
+        f.destination = kw.pop("destination", "Frankfurt")
+        f.language = "en"
+        f.written = "DAL45"
+        f.distance_nm = 6.0
+        ac = MagicMock()
+        cs = MagicMock()
+        cs.spoken_full = spoken
+        cs.spoken_short = spoken
+        ac.for_language.return_value = cs
+        f.aircraft = ac
+        return f
+
+    def _session(self):
+        from unittest.mock import MagicMock
+        s = MagicMock()
+        s.aircraft.for_language.return_value.spoken_short = \
+            "november one two three"
+        return s
+
+    def _parsed(self, text, matched=False):
+        from unittest.mock import MagicMock
+        from meridianatc.atc.intents import normalize
+        return MagicMock(text=text, normalized=normalize(text),
+                         callsign_matched=matched)
+
+    def test_flight_called_matches_spoken_callsign(self):
+        inj = self._injector()
+        f = self._flight()
+        inj.flights = [f]
+        assert inj.flight_called("delta four five say position") is f
+
+    def test_flight_called_ignores_partial_and_done(self):
+        inj = self._injector()
+        f = self._flight()
+        inj.flights = [f]
+        assert inj.flight_called("delta tower hello") is None
+        f.done = True
+        assert inj.flight_called("delta four five say position") is None
+
+    def test_answer_position_report(self):
+        from unittest.mock import MagicMock
+        inj = self._injector()
+        f = self._flight()
+        inj.flights = [f]
+        inj._say = MagicMock()
+        inj.field = MagicMock()
+        ok = inj.answer_the_user(
+            self._session(),
+            self._parsed("delta four five say your position"), "CTAF")
+        assert ok
+        make = inj._say.call_args.kwargs["make"]
+        assert "on final runway 24" in make(None, None, None)
+
+    def test_answer_weather(self):
+        from unittest.mock import MagicMock
+        inj = self._injector()
+        f = self._flight()
+        inj.flights = [f]
+        inj._say = MagicMock()
+        inj.field = MagicMock()
+        inj.field.weather.wind_dir = 240
+        inj.field.weather.wind_kt = 12
+        ok = inj.answer_the_user(
+            self._session(),
+            self._parsed("delta four five how is the wind"), "CTAF")
+        assert ok
+        make = inj._say.call_args.kwargs["make"]
+        assert "wind 240" in make(None, None, None)
+
+    def test_own_callsign_goes_to_atc(self):
+        inj = self._injector()
+        f = self._flight()
+        inj.flights = [f]
+        assert not inj.answer_the_user(
+            self._session(),
+            self._parsed("delta four five climb", matched=True), "CTAF")
+
+    def test_mayday_only_on_ctaf(self):
+        from unittest.mock import MagicMock
+        inj = self._injector()
+        f = self._flight(phase="takeoff")
+        inj.flights = [f]
+        inj._say = MagicMock()
+        inj._user_called_at = 0.0
+        assert not inj.maybe_call_the_user(self._session(), "TWR", 9999.0)
+        assert inj.maybe_call_the_user(self._session(), "CTAF", 9999.0)
+        assert "intentions" in inj._say.call_args.kwargs["make"](
+            None, None, None)
+        # throttled: no second call inside the window
+        assert not inj.maybe_call_the_user(self._session(), "CTAF", 9999.5)

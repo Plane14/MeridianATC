@@ -43,8 +43,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from . import perftable
 from ..navdata.db import NavDB
+from . import perftable
 
 FT_PER_M = 3.28084
 

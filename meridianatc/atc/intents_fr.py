@@ -426,6 +426,9 @@ RULES_FR: list[tuple[str, str]] = [
                   r"vous etes inaudible|repetition)\b"),
     ("radio_check", r"\b(essai radio|comment (me|nous|vous) recevez|controle radio|test radio)\b"),
     # Les services d'information.
+    ("request_altimeter", r"\b(demande (le )?qnh|quel est le qnh|"
+                          r"qnh (s il vous plait|s v p)|"
+                          r"demande (le |l )?altimetre)\b"),
     ("request_qdm", r"\b(demande (un |le )?qdm|qdm)\b"),
     ("request_qdr", r"\b(demande (un |le )?qdr|qdr)\b"),
     ("request_position", r"\b(demande (ma |notre |une )?position|"
@@ -469,6 +472,13 @@ RULES_FR: list[tuple[str, str]] = [
                                 r"demande le parking|vers (mon|le) poste)\b"),
     ("request_taxi", r"\b(demande (le |du )?roulage|pret? (au|pour le) roulage|"
                      r"demande (a )?rouler)\b"),
+    # La traversée d'une piste, demandée : "demande à traverser la piste".
+    # "Demande la traversée" tout court reste le transit d'une zone
+    # (request_transition), plus bas dans la table.
+    ("request_cross_runway", r"\b(traversee (de )?(la )?piste|"
+                             r"traverser (la )?piste|"
+                             r"demande a traverser (la )?piste|"
+                             r"autorisation (a |de )?traverser)\b"),
     # Le tour de piste avant le decollage et l\'atterrissage : "pret pour
     # l\'option" demande les deux a la fois.
     ("request_pattern_work",

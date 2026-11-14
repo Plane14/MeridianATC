@@ -57,10 +57,14 @@ class _Setup:
             # through. The window has a live connection and does not need it;
             # the panel inside the simulator polls, and a poll that arrives
             # between two transmissions would otherwise never see them.
-            self.transcript.append({
+            entry = {
                 "at": time.time(), "kind": kind,
                 "speaker": speaker, "text": text,
-            })
+            }
+            if params.get("radio"):
+                # "com1"/"com2", so a panel can give each radio its own page.
+                entry["radio"] = params["radio"]
+            self.transcript.append(entry)
             if self.history is not None:
                 # The durable copy: who, what, and on which station, into the
                 # session the flight opened. Nothing here reaches back into
@@ -75,6 +79,9 @@ class _Setup:
                         meta=dict(params))
                 except Exception:
                     log.debug("history write failed", exc_info=True)
+        if kind == "error":
+            # The plugin's copy_error binding asks for this one.
+            self._last_error = text
         try:
             self.on_event(Event(kind, text, speaker, key=key, action=action,
                                 params={k: str(v) for k, v in params.items()}))

@@ -99,6 +99,9 @@ class PilotBook:
     # A long taxi cut in two, read back: the taxiway held short of.
     # UNVERIFIED in every language but English.
     hold_short_taxiway: str = "hold short {taxiway}"
+    # A runway crossing clearance, read back. UNVERIFIED in every language
+    # but English.
+    cross_runway: str = "cross runway {runway}"
 
 
 ENGLISH = PilotBook(
@@ -155,6 +158,7 @@ FRENCH = PilotBook(
     taxi="roulage par {route} piste {runway}",
     hold_short="point d'attente piste {runway}",
     hold_short_taxiway="maintiens avant {taxiway}",
+    cross_runway="traversée piste {runway}",
     line_up="alignement piste {runway}",
     takeoff="autorisé décollage piste {runway}",
     land="autorisé atterrissage piste {runway}",
@@ -203,6 +207,7 @@ SPANISH = PilotBook(
     taxi="rodaje por {route} pista {runway}",
     hold_short="punto de espera pista {runway}",
     hold_short_taxiway="mantengo antes de {taxiway}",
+    cross_runway="autorizado a cruzar pista {runway}",
     line_up="alineados y esperando pista {runway}",
     takeoff="autorizado a despegar pista {runway}",
     land="autorizado a aterrizar pista {runway}",
@@ -250,6 +255,7 @@ GERMAN = PilotBook(
     taxi="rollen über {route} Piste {runway}",
     hold_short="Rollhalt Piste {runway}",
     hold_short_taxiway="halte vor {taxiway}",
+    cross_runway="Bahnquerung Piste {runway}",
     line_up="einreihen und warten Piste {runway}",
     takeoff="Start frei Piste {runway}",
     land="Landung frei Piste {runway}",
@@ -297,6 +303,7 @@ ITALIAN = PilotBook(
     taxi="rulliamo via {route} pista {runway}",
     hold_short="punto attesa pista {runway}",
     hold_short_taxiway="mantengo prima di {taxiway}",
+    cross_runway="autorizzati all'attraversamento pista {runway}",
     line_up="allineati e in attesa pista {runway}",
     takeoff="autorizzati al decollo pista {runway}",
     land="autorizzati all'atterraggio pista {runway}",
@@ -344,6 +351,7 @@ PORTUGUESE = PilotBook(
     taxi="taxiamos por {route} pista {runway}",
     hold_short="ponto de espera pista {runway}",
     hold_short_taxiway="mantenho antes de {taxiway}",
+    cross_runway="autorizados a atravessar pista {runway}",
     line_up="alinhados e a aguardar pista {runway}",
     takeoff="autorizados a descolar pista {runway}",
     land="autorizados a aterrar pista {runway}",
@@ -591,6 +599,10 @@ class PilotSpeech:
             parts.append(self.book.hold_short.format(
                 runway=self.p.rwy(hold_short)))
         return self.report(aircraft, _join(*parts))
+
+    def cross_runway(self, aircraft: Aircraft, runway: str) -> str:
+        return self.report(
+            aircraft, self.book.cross_runway.format(runway=self.p.rwy(runway)))
 
     def line_up(self, aircraft: Aircraft, runway: str) -> str:
         return self.report(

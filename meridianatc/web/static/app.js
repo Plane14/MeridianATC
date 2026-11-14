@@ -488,6 +488,9 @@ function paintComms() {
   });
 
   text($("standby-mhz"), mhz(radio.com1_standby));
+  text($("com2-mhz"), mhz(radio.com2));
+  text($("com2-who"), radio.com2_station ? `· ${radio.com2_station}` : "");
+  text($("talk-radio-label"), radio.talk === 2 ? "COM2" : "COM1");
   text($("tile-heard"), String((state.stats && state.stats.total) || 0));
 
   text($("strip-callsign"), (state.aircraft || {}).callsign || "—");
@@ -2685,6 +2688,12 @@ function wire() {
   on($("swap"), "click", async () => {
     const result = await post("/api/swap", { radio: 1 });
     if (!result.ok) toast(result.error || t("comms.no_swap", "could not swap"));
+  });
+  // COM2 is the listen radio; the button picks which one the mic keys.
+  on($("talk-radio"), "click", async () => {
+    const talk = ((app.state || {}).radio || {}).talk === 2 ? 1 : 2;
+    const result = await post("/api/talk_radio", { radio: talk });
+    if (!result.ok) toast(result.error || "could not switch the radio");
   });
 
   // The First Officer, engaged and let go from the header on every

@@ -13,6 +13,7 @@ from ._shared import (
     say_words,
     station_key,
     taxi_route,
+    time,
 )
 
 
@@ -33,6 +34,7 @@ class _Ground:
         Intent.REQUEST_PUSHBACK, Intent.REQUEST_TAXI,
         Intent.REQUEST_TAXI_TO_PARKING, Intent.REQUEST_CLEARANCE,
         Intent.CHECK_IN, Intent.REQUEST_PATTERN_WORK,
+        Intent.REQUEST_CROSS_RUNWAY,
     )
 
     def _ground(self, parsed, session, station, weather, p, state) -> Reply:
@@ -99,6 +101,17 @@ class _Ground:
             session.pattern_work = True
             return self._issue_taxi(session, station, weather, p, state)
 
+        if parsed.intent is Intent.REQUEST_CROSS_RUNWAY:
+            reply = self.crossing_clearance(session, station, p, state,
+                                            asked=True)
+            if reply is not None:
+                return reply
+            # Nothing left to cross: the pilot is on the rest of the taxi.
+            if not session.pending_crossing():
+                return Reply(p.continue_taxi(aircraft), station)
+            return Reply(p.hold_short_instruction(
+                aircraft, session.pending_crossing()), station)
+
         if parsed.intent is Intent.REQUEST_TAKEOFF:
             tower = self.controller_at(station.ident, "TWR",
                                        runway=session.departure_runway)
@@ -113,7 +126,20 @@ class _Ground:
             return Reply(p.radio_check(aircraft), station)
 
         if parsed.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE):
+            # An affirmative to the off-route offer is the ask for the new
+            # route, which is planned again from where the aeroplane is.
+            if parsed.intent is Intent.AFFIRMATIVE \
+                    and session.assistance_offered("taxi"):
+                session.answer_assistance()
+                decision("assist", taken="taxi", station=station.callsign)
+                if session.phase is Phase.TAXI_IN:
+                    return self._issue_taxi_in(session, station, p, state)
+                return self._issue_taxi(session, station, weather, p, state)
             return Reply("", station, silent=True)
+
+        if parsed.intent is Intent.NEGATIVE and session.assistance_offered():
+            session.answer_assistance()
+            return Reply(p.roger(aircraft), station)
 
         return self._not_understood(session, station, p, state)
 
@@ -146,6 +172,7 @@ class _Ground:
     def _plan_taxi(self, session, station, state, *, inbound: bool):
         """The taxi on the simulator's own taxiways, or None and the reason
         it is the invented one instead (see :mod:`meridianatc.atc.taxi`)."""
+        from .. import aircraft_class
         from .. import taxi as taxiplan
 
         layout = self._layout_for(station.ident)
@@ -157,13 +184,18 @@ class _Ground:
         occupied, taken = self._ground_traffic(layout)
         if inbound:
             aircraft = session.aircraft
-            # An airline stand for an airline flight, as the pilot said.
+            # An airline stand for an airline flight, as the pilot said,
+            # and inside that divide, one the aeroplane's class fits on.
             airliner = session.profile.airliner
+            min_radius = aircraft_class.stand_radius_m(
+                aircraft_class.of_state(state).name) \
+                if getattr(state, "type_code", "") else 0.0
             return taxiplan.plan_arrival(
                 layout, state.latitude, state.longitude, lines,
                 airliner=airliner, key=aircraft.callsign.written,
                 occupied=occupied, taken=taken,
-                runway=session.arrival_runway or session.touchdown_runway)
+                runway=session.arrival_runway or session.touchdown_runway,
+                min_radius_m=min_radius)
         return taxiplan.plan_departure(
             layout, state.latitude, state.longitude, session.departure_runway,
             lines, avoid=taxiplan.avoid_near(layout, occupied))
@@ -235,6 +267,10 @@ class _Ground:
         session.taxi_crossings = list(plan.crossings) if plan else []
         session.taxi_stand = (plan.stand.number
                               if plan and plan.stand is not None else None)
+        # A new route's crossings are all still to be made, whatever the old
+        # one had cleared.
+        session.crossing_index = 0
+        session.crossing_granted = ""
 
     def _issue_taxi(self, session, station, weather, p, state=None) -> Reply:
         airport = self.navdb.airport(station.ident)
@@ -368,4 +404,117 @@ class _Ground:
             if abs(((number - target_number) * 10 + 540) % 360 - 180) > 30:
                 return candidate
         return ""
+
+    # How far short of the runway the crossing question is decided. Holding
+    # points sit seventy to a hundred metres off the centreline; inside this
+    # the next thing the aeroplane does is be on it.
+    AT_CROSSING_M = 150.0
+    # How long before anybody lands the runway must still be free for a
+    # crossing to be granted -- the margin the AI traffic leaves for its own
+    # runway crossings (traffic.x_running_them).
+    CROSS_CLEAR_S = 90.0
+    # Roughly what getting across the strip costs, for the arrival margin.
+    CROSSING_TAKES_S = 45.0
+
+    def _crossing_line(self, layout, ident: str, runway: str):
+        """The published centreline of the runway held short of, or None."""
+        from .. import taxi as taxiplan
+
+        wanted = normalize_runway(runway)
+        for line in taxiplan.runway_lines(layout, self.navdb.runways(ident)):
+            if wanted in line.ends:
+                return line
+        return None
+
+    def _crossing_blocked(self, session, layout, line, runway: str,
+                          now: float) -> str:
+        """Why the crossing cannot be granted: somebody on the strip, or an
+        arrival inside the margin. "" when the runway is clear."""
+        from .. import taxi as taxiplan
+
+        traffic = self.traffic
+        if traffic is None:
+            # The runway's use is unknown, which is not a clearance to cross
+            # it: a controller who cannot see the strip does not clear
+            # anybody across it.
+            return "runway traffic unknown"
+        active = normalize_runway(session.departure_runway
+                                  or session.arrival_runway or "")
+        if normalize_runway(runway) == active:
+            try:
+                if traffic.runway_occupied(now):
+                    return "runway occupied"
+                if traffic._nearest_arrival_s(None) \
+                        < self.CROSSING_TAKES_S + self.CROSS_CLEAR_S:
+                    return "arrival inside the window"
+            except Exception:
+                log.debug("the runway picture raised", exc_info=True)
+            return ""
+        # Any other runway: nobody lands on it, but somebody can be on it.
+        try:
+            occupied, _ = traffic.ground_occupancy(layout)
+        except Exception:
+            log.debug("could not ask the traffic where it is", exc_info=True)
+            return ""
+        for x, z, radius in occupied:
+            if taxiplan._point_to_segment((x, z), line.a, line.b) \
+                    <= line.half_width_m + radius:
+                return "runway occupied"
+        return ""
+
+    def crossing_clearance(self, session, station, p, state, *,
+                           asked: bool = False, remind: bool = True
+                           ) -> Reply | None:
+        """The crossing the aeroplane is held short of: a clearance across
+        it when the runway is clear, the hold-short repeated when it is not.
+
+        ``asked`` is the pilot on the frequency -- "request cross runway" --
+        which decides the question now wherever the aeroplane is on the way
+        to the hold; ``remind`` is the crossing watch asking whether a
+        refusal should be heard this look or wait for the next interval.
+        """
+        runway = session.pending_crossing()
+        if not runway:
+            return None
+        if session.crossing_granted:
+            # Already cleared across this one. Asked again, the clearance is
+            # the answer again; asked by the watch, nothing more to say.
+            if asked:
+                return Reply(
+                    p.cross_runway(session.aircraft, runway,
+                                   then=p.report_vacated()), station)
+            return None
+        if state is None or not state.on_ground \
+                or not getattr(state, "has_position", False):
+            return None
+        layout = self._layout_for(station.ident)
+        if layout is None:
+            return None
+        line = self._crossing_line(layout, station.ident, runway)
+        if line is None:
+            return None
+        from .. import taxi as taxiplan
+
+        apart = taxiplan.distance_to_line(
+            layout, line, state.latitude, state.longitude)
+        if not asked and apart > self.AT_CROSSING_M:
+            return None
+        why = self._crossing_blocked(session, layout, line, runway,
+                                     time.monotonic())
+        aircraft = session.aircraft
+        if why:
+            decision("runway_crossing", airport=station.ident,
+                     event="refused", runway=runway, why=why,
+                     asked=asked, distance_m=round(apart))
+            if not asked and not remind:
+                return None
+            return Reply(p.hold_short_instruction(aircraft, runway), station)
+        session.grant_crossing(runway)
+        decision("runway_crossing", airport=station.ident,
+                 event="granted", runway=runway, asked=asked,
+                 distance_m=round(apart))
+        text = p.cross_runway(aircraft, runway, then=p.report_vacated())
+        instruction = session.remember(Instruction(
+            "cross_runway", station_key(station), text, {"runway": runway}))
+        return Reply(text, station, instruction=instruction)
 

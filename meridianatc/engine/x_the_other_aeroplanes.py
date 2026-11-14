@@ -132,6 +132,14 @@ class _The_other_aeroplanes:
         with timed("tick.traffic.poll", warn_over_ms=500):
             self._traffic_queue.extend(
                 self.traffic.poll(now, station.position, station.mhz))
+        # On a frequency without a controller, crews coordinate among
+        # themselves -- which includes asking who the new voice is.
+        if self.config.traffic.pilots_talk and self.session is not None:
+            try:
+                self.traffic.maybe_call_the_user(
+                    self.session, station.position, now)
+            except Exception:
+                log.debug("a crew calling the user failed", exc_info=True)
         with timed("tick.traffic.speak", warn_over_ms=500):
             self._speak_from_the_queue(station, now)
 
@@ -1117,6 +1125,30 @@ class _The_other_aeroplanes:
         self._radio_unprompted(reply.text, station, "surface", spoken,
                                reply.instruction)
 
+    def _watch_crossings(self, previous: AircraftState, state: AircraftState,
+                         session: FlightSession) -> None:
+        """The runway crossings the real taxi route holds the aeroplane
+        short of: granted or refused as it reaches each one
+        (:class:`~meridianatc.atc.watch.CrossingWatch`)."""
+        station = self.station
+        if station is None or self.stand_down:
+            return
+        spoken = self._language_for(station.ident, self.last_language)
+        try:
+            reply = self.crossing_watch.look(
+                session, station, state, previous, language=spoken
+            )
+        except Exception:
+            log.debug("the crossing watch raised", exc_info=True)
+            return
+        if reply is None or not reply.speak:
+            return
+        self.emit("atc", reply.text, station.callsign)
+        session.note("atc", as_written(reply.text))
+        self.speak(reply.text, station, language=spoken)
+        self._radio_unprompted(reply.text, station, "crossing", spoken,
+                               reply.instruction)
+
     def _work_the_departure(self, state: AircraftState,
                             session: FlightSession) -> None:
         """Clear a departure the tower has already put on the runway.
@@ -1329,6 +1361,54 @@ class _The_other_aeroplanes:
         self.speak(reply.text, station, language=spoken)
         self._radio_unprompted(reply.text, station, why, spoken,
                                reply.instruction)
+
+    def _watch_transponder(self, state: AircraftState,
+                           session: FlightSession) -> None:
+        """The squawk the transponder shows against the assigned one
+        (:class:`~meridianatc.atc.watch.TransponderWatch`)."""
+        self._say_watched(state, session, "squawk",
+                          lambda station, spoken: self.transponder_watch.look(
+                              session, station, state, language=spoken))
+
+    def _watch_taxi(self, state: AircraftState,
+                    session: FlightSession) -> None:
+        """The aeroplane off its cleared taxi route
+        (:class:`~meridianatc.atc.watch.TaxiWatch`)."""
+        self._say_watched(state, session, "taxi",
+                          lambda station, spoken: self.taxi_watch.look(
+                              session, station, state, language=spoken))
+
+    def _watch_com2(self, state: AircraftState,
+                    session: FlightSession) -> None:
+        """The second radio's broadcast: tuned to an ATIS, with its audio
+        switch on, it says the ATIS -- once when it is tuned, and again
+        when the letter changes underneath it."""
+        station2 = self.station2
+        if station2 is None or station2.position != "ATIS" \
+                or not getattr(state, "com2_receive", False):
+            self._atis2_played = ""
+            return
+        try:
+            report = self.atis_for(
+                station2.ident,
+                self._language_for(station2.ident, self.last_language))
+        except Exception:
+            log.debug("could not read the ATIS for %s", station2.ident,
+                      exc_info=True)
+            return
+        key = f"{station2.ident}:{report.letter if report else ''}"
+        if key == self._atis2_played:
+            return
+        if self.play_atis(station2.ident) is not None:
+            self._atis2_played = key
+
+    def _watch_deviation(self, state: AircraftState,
+                         session: FlightSession) -> None:
+        """One deviation call too many
+        (:class:`~meridianatc.atc.watch.DeviationAssistWatch`)."""
+        self._say_watched(state, session, "deviation",
+                          lambda station, spoken: self.deviation_watch.look(
+                              session, station, state, language=spoken))
 
     def _work_the_arrival(self, previous: AircraftState, state: AircraftState,
                           session: FlightSession) -> None:

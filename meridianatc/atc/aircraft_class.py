@@ -198,6 +198,27 @@ def of_state(state) -> AircraftClass:
                     airline=bool(getattr(state, "airline", "")))
 
 
+# The parking-space radius each class needs, in metres -- about half the
+# wingspan of the bigger types in it. A stand's ``radius`` is the same
+# measure (``meridianatc.atc.ground``); these feed the stand picker's
+# minimum, so a mid-size aeroplane fits a mid-size stand without being
+# parked under an airliner's wing.
+STAND_RADIUS_M: dict[str, float] = {
+    PISTON_SINGLE: 5.0,
+    PISTON_TWIN: 6.5,
+    TURBOPROP_SINGLE: 5.0,
+    TURBOPROP_TWIN: 12.0,
+    BUSINESS_JET: 9.0,
+    AIRLINER: 15.0,
+    HELICOPTER: 5.0,
+}
+
+
+def stand_radius_m(class_name: str) -> float:
+    """The stand radius the class needs, or the light figure if unknown."""
+    return STAND_RADIUS_M.get(class_name, STAND_RADIUS_M[PISTON_SINGLE])
+
+
 def min_runway_ft(type_code: str) -> int:
     """Feet of runway the type is planned to want.
 
@@ -274,15 +295,15 @@ def airport_usable(airport, runways, type_code: str = "",
     usable = [rw for rw in runways if runway_usable(rw, type_code)]
     if not usable:
         return False
-    if (type_code or "").strip().upper() in (
-            "A388", "B744", "B748", "B77W", "B77L", "B77X", "A35K"):
-        if len(usable) < 2 and not any(
-                (rw.length_ft or 0.0) >= 10000 for rw in usable):
-            return False
-    return True
+    heavies = ("A388", "B744", "B748", "B77W", "B77L", "B77X", "A35K")
+    return not ((type_code or "").strip().upper() in heavies
+                and len(usable) < 2
+                and not any((rw.length_ft or 0.0) >= 10000
+                            for rw in usable))
 
 
 __all__ = ["AIRLINER", "AircraftClass", "BUSINESS_JET", "CLASSES", "DOC_8643",
-           "HELICOPTER", "PISTON_SINGLE", "PISTON_TWIN", "TURBOPROP_SINGLE",
-           "TURBOPROP_TWIN", "airport_usable", "amphibious", "classify",
-           "min_runway_ft", "of_state", "runway_usable"]
+           "HELICOPTER", "PISTON_SINGLE", "PISTON_TWIN", "STAND_RADIUS_M",
+           "TURBOPROP_SINGLE", "TURBOPROP_TWIN", "airport_usable",
+           "amphibious", "classify", "min_runway_ft", "of_state",
+           "runway_usable", "stand_radius_m"]

@@ -823,5 +823,9 @@
   "perf.high_why": "The closest to the words, but on a processor alone a clearance takes about twice as long to arrive.",
   "perf.recommended": "Recommended",
   "perf.downloading": "Downloading this profile's voice model…",
-  "log.speech_missing": "The speech recognition has not been downloaded yet. Open Settings, then Components, and press Download."
+  "log.speech_missing": "The speech recognition has not been downloaded yet. Open Settings, then Components, and press Download.",
+  "set.traffic_pilots_talk": "Pilots can call you",
+  "set.traffic_pilots_talk_why": "On an uncontrolled frequency, a crew that has not heard you before asks your position and intentions, as one does.",
+  "set.traffic_humor": "The occasional dry answer",
+  "set.traffic_humor_why": "A crew answering a call to them may add a line beyond the operational minimum. Never a safety word."
 }

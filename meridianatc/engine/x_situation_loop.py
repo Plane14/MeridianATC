@@ -47,6 +47,9 @@ class _Situation_loop:
         # And is the microphone still a microphone? First, because a transmit
         # state that is stuck silences everything below this line.
         self._watch_transmission()
+        # And what the X-Plane plugin's bound keys asked for since last
+        # tick: another radio's talk button, the copilot's mic, copy_error.
+        self._drain_plugin_commands()
 
         previous = self.state
         with timed("tick.read", warn_over_ms=500):
@@ -93,6 +96,16 @@ class _Situation_loop:
             and abs(state.com1_active - self._last_com1) > 0.004
         if retuned:
             self.tune(state.com1_active)
+        # And COM2, which hears rather than speaks: its station is kept for
+        # the panel's second radio and for ATIS, and it never decides who
+        # the pilot is talking to.
+        if abs((state.com2_active or 0.0) - self._last_com2) > 0.004:
+            self._last_com2 = state.com2_active or 0.0
+            if self._last_com2:
+                self.station2 = self._resolve_com2(state)
+            else:
+                self.station2 = None
+        self._watch_com2(state, session)
         self._settle_oceanic(session)
         self._explain_empty()
         if not retuned and self.station is None:
@@ -129,6 +142,10 @@ class _Situation_loop:
             # updating first would clear the very flags that say whether
             # either was cleared.
             self._watch_surface(previous, state, session)
+            # And the runway crossings on a real taxi route, worked the same
+            # way: granted or held as the aeroplane reaches each one.
+            self._watch_crossings(previous, state, session)
+            self._watch_taxi(state, session)
 
             # Track the phase from what the aircraft is actually doing, so
             # the controller stays in step even if the pilot skips a call.
@@ -171,6 +188,8 @@ class _Situation_loop:
             self._watch_airspace(state, session)
             self._watch_restriction(state, session)
             self._watch_radar_service(state, session)
+            self._watch_transponder(state, session)
+            self._watch_deviation(state, session)
             self._watch_traffic(state, session)
             self._watch_runway(state, session)
             self._watch_points(state, session)

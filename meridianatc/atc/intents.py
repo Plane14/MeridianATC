@@ -44,6 +44,9 @@ class Intent(StrEnum):
     REQUEST_PATTERN_WORK = "request_pattern_work"
     REQUEST_PUSHBACK = "request_pushback"
     REQUEST_TAXI = "request_taxi"
+    # "Request cross runway two seven" -- each runway the taxi route meets
+    # is a clearance of its own.
+    REQUEST_CROSS_RUNWAY = "request_cross_runway"
     REQUEST_TAKEOFF = "request_takeoff"           # "ready for departure"
     REPORT_RUNWAY_VACATED = "report_runway_vacated"  # "runway vacated"
 
@@ -92,6 +95,8 @@ class Intent(StrEnum):
     CANCEL_IFR = "cancel_ifr"
 
     # --- the information services ---
+    # The altimeter setting, asked of whoever is on the frequency.
+    REQUEST_ALTIMETER = "request_altimeter"
     # A bearing to steer to the field (QDM) or from it (QDR), and "where am
     # I", which is what a lost pilot asks an information service.
     REQUEST_QDM = "request_qdm"
@@ -736,6 +741,11 @@ _RULES: list[tuple[Intent, str]] = [
 
     # The information services. Ahead of the requests below, because "open
     # my VFR flight plan" has a "VFR" in it and "request position" a request.
+    (Intent.REQUEST_ALTIMETER,
+     r"\b(request(ing)? (a |the )?(qnh|altimeter( setting)?)|"
+     r"what('| i)s the (qnh|altimeter)|"
+     r"say (the )?(qnh|altimeter)|"
+     r"(qnh|altimeter) (please|check|setting))\b"),
     (Intent.REQUEST_QDM, r"\b(request(ing)? (a |the )?qdm|qdm)\b"),
     (Intent.REQUEST_QDR, r"\b(request(ing)? (a |the )?qdr|qdr)\b"),
     (Intent.REQUEST_POSITION,
@@ -789,6 +799,12 @@ _RULES: list[tuple[Intent, str]] = [
     (Intent.REQUEST_TAXI, r"\b(request taxi|ready (to|for) taxi|"
                           r"taxi for (departure|takeoff)|"
                           r"taxi to (the )?(active|runway))\b"),
+    # "Cross" on its own is a readback word as often as a request, so the
+    # request form names what is being crossed or asks outright.
+    (Intent.REQUEST_CROSS_RUNWAY,
+     r"\b(request(ing)? (to |permission to )?cross(ing)?( the)? runway|"
+     r"cross(ing)? (the )?runway|"
+     r"permission to cross|may (i|we) cross)\b"),
     # Circuit work has to be read before the takeoff and landing requests: a
     # pilot who says "ready for the option" is asking for both at once, and
     # "stop and go" is not the "full stop" that means a landing.

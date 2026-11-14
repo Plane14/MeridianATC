@@ -117,7 +117,8 @@ PHRASE_KEYS: tuple[str, ...] = (
     # ground
     "taxi_via", "taxi_to_the_runway", "holding_point", "hold_short",
     "hold_short_taxiway",
-    "taxi_to_parking_via", "taxi_to_parking", "cross_runway", "hold_position",
+    "taxi_to_parking_via", "taxi_to_parking", "cross_runway", "report_vacated",
+    "hold_position",
     "continue_via", "continue_taxi", "give_way", "then_continue",
     "pushback_approved", "report_ready_to_taxi",
     # tower
@@ -535,6 +536,16 @@ class LocalisedPhraseology:
         if then:
             parts.append(then)
         return _join(*parts) + "."
+
+    def taxi_off_route(self, aircraft: Aircraft) -> str:
+        return _join(aircraft.spoken(True), self._("taxi_off_route")) + "."
+
+    def offer_assistance(self, aircraft: Aircraft) -> str:
+        return _join(aircraft.spoken(True),
+                     self._("offer_assistance")) + "."
+
+    def report_vacated(self) -> str:
+        return self._("report_vacated")
 
     def hold_short_instruction(self, aircraft: Aircraft, runway: str) -> str:
         return _join(aircraft.spoken(True),
@@ -1654,6 +1665,16 @@ class LocalisedPhraseology:
     def verify(self, aircraft: Aircraft, item: str) -> str:
         return _join(aircraft.spoken(True),
                      self._("verify").format(item=item)) + "."
+
+    def verify_squawk(self, aircraft: Aircraft, expected: str,
+                      observed: str = "") -> str:
+        """The transponder shows something other than the assigned code."""
+        try:
+            code = self.d(f"{int(expected):04d}")
+        except (TypeError, ValueError):
+            code = self.d(str(expected))
+        return self.verify(
+            aircraft, self._("squawk").format(code=code))
 
     def radio_check(self, aircraft: Aircraft, readability: int = 5) -> str:
         return _join(aircraft.spoken(True), self._("read_you").format(

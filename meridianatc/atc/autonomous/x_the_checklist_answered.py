@@ -54,10 +54,10 @@ class _The_checklist_answered:
         # event is not asked forever: a few seconds in, the item is
         # answered as it stands and the runner's own objection machinery
         # says what disagrees, rather than stalling the checklist on it.
-        if self._perform_check_item(state, item):
-            if now - self._checklist_perform_since < 4.0:
-                self._checklist_item_since = now
-                return
+        if self._perform_check_item(state, item) \
+                and now - self._checklist_perform_since < 4.0:
+            self._checklist_item_since = now
+            return
         if now - self._checklist_item_since >= 2.0:
             runner.fo_answer()
             # The next pass sees the advance -- or the objection, which a

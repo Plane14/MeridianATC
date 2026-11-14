@@ -341,6 +341,10 @@ class FlightSession:
     assigned_heading: float | None = None
     assigned_speed_kt: float | None = None
     squawk: str = "1200"
+    # Whether a controller has actually given this flight a code: the
+    # transponder watch only asks about a code somebody assigned, never
+    # about the 1200 a session happens to start with.
+    squawk_assigned: bool = False
     # The last altimeter setting a controller gave, as given (hectopascals,
     # or inches of mercury); 0 for none. The first officer checks the
     # altimeter against it.
@@ -459,6 +463,13 @@ class FlightSession:
     taxi_nodes: list = field(default_factory=list)
     taxi_path: list[tuple[float, float]] = field(default_factory=list)
     taxi_crossings: list[str] = field(default_factory=list)
+    # Each runway the route crosses is a clearance of its own, taken one at
+    # a time in the order they are met: ``crossing_index`` is how far down
+    # the list the aircraft has got, and ``crossing_granted`` the one it is
+    # cleared across right now. A granted crossing makes that runway the
+    # allowed one (``cleared_runway``) until the aircraft is off it again.
+    crossing_index: int = 0
+    crossing_granted: str = ""
     # A long taxi cut in two (atc.taxi.split_route): the taxiways still to
     # be given, where (lat, lon) the aeroplane was told to hold short for
     # them, and whether it is a taxi in.
@@ -466,6 +477,12 @@ class FlightSession:
     taxi_split_at: tuple | None = None
     taxi_rest_inbound: bool = False
     taxi_stand: int | None = None
+    # What the controller last offered to help with -- "taxi" when the
+    # aeroplane was seen off its cleared route, "flight" after one deviation
+    # call too many -- and when. An affirmative inside the window that
+    # follows answers the offer; silence or "negative" lets it lapse.
+    assist_offered: str = ""
+    assist_offered_at: float = 0.0
     cleared_takeoff: bool = False
     cleared_landing: bool = False
     # Sent round, and not yet back on the final. No landing clearance is
@@ -620,6 +637,7 @@ class FlightSession:
             self.assigned_speed_kt = float(values["speed_kt"])
         if "squawk" in values:
             self.squawk = str(values["squawk"])
+            self.squawk_assigned = True
         if values.get("altimeter"):
             self.altimeter = float(values["altimeter"])
         if "runway" in values:
@@ -637,12 +655,68 @@ class FlightSession:
         """
         self.cleared_runway = str(runway or "")
 
+    def pending_crossing(self) -> str:
+        """The runway whose crossing the aircraft has reached or is still
+        to reach first, or "" when every crossing on the route is done."""
+        if 0 <= self.crossing_index < len(self.taxi_crossings):
+            return self.taxi_crossings[self.crossing_index]
+        return ""
+
+    def grant_crossing(self, runway: str) -> None:
+        """Record a crossing clearance: that runway is the allowed one
+        until the aircraft is off it again."""
+        self.crossing_granted = str(runway or "")
+        self.allow_runway(runway)
+
+    def spend_crossing(self) -> str:
+        """The pending crossing now behind the aircraft, granted or not.
+
+        The limit moves to the next runway on the route -- which is what the
+        pilot must hold short of now -- and nothing is allowed on any runway
+        until the next crossing, the line-up or the takeoff says otherwise.
+        """
+        crossed = self.pending_crossing()
+        self.crossing_index += 1
+        self.crossing_granted = ""
+        self.allow_runway("")
+        self.hold_short_of = self.pending_crossing()
+        return crossed
+
     def advise_once(self, key: str) -> bool:
         """True the first time an advisory is due, False every time after."""
         if key in self.advisories:
             return False
         self.advisories.add(key)
         return True
+
+    def offer_assistance(self, what: str, at: float) -> bool:
+        """Offer help with ``what`` once, an hour apart at most.
+
+        The offer the taxi and deviation watches share: it is made once
+        per thing offered -- a new taxi route is a new offer -- and it
+        lapses with :meth:`answer_assistance`.
+        """
+        import time as _time
+        if self.assist_offered == what \
+                and at - self.assist_offered_at < 3600.0:
+            return False
+        self.assist_offered, self.assist_offered_at = what, at or \
+            _time.monotonic()
+        return True
+
+    def assistance_offered(self, what: str = "", within_s: float = 180.0) -> bool:
+        """An offer still open: ``what`` (or any) was made recently."""
+        import time as _time
+        if not self.assist_offered:
+            return False
+        if what and self.assist_offered != what:
+            return False
+        return _time.monotonic() - self.assist_offered_at < within_s
+
+    def answer_assistance(self) -> str:
+        """The open offer, taken or declined -- which closes it either way."""
+        offered, self.assist_offered = self.assist_offered, ""
+        return offered
 
 
 def station_key(station: Station | None) -> str:

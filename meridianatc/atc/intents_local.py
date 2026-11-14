@@ -496,6 +496,9 @@ SPANISH = Grammar(
 
         ("say_again", r"\b(repita|no (le )?(copie|copio|entendi)|"
                       r"no he entendido|repita por favor)\b"),
+        ("request_altimeter", r"\b(solicito (el )?(qnh|altimetro)|"
+                             r"(qnh|altimetro) por favor|"
+                             r"cual es (el )?(qnh|altimetro))\b"),
         ("request_qdm", r"\bqdm\b"),
         ("request_qdr", r"\bqdr\b"),
         ("radio_check", r"\b(prueba de radio|como me (copia|recibe)|"
@@ -515,6 +518,9 @@ SPANISH = Grammar(
                                     r"al estacionamiento|solicito parking)\b"),
         ("request_taxi", r"\b(solicito (el )?rodaje|listo para rodar|"
                          r"para (el )?rodaje)\b"),
+        ("request_cross_runway",
+         r"\b(solicito cruzar (la )?pista|cruzar (la )?pista|"
+         r"autorizacion para cruzar (la )?pista)\b"),
         ("request_pattern_work",
          r"\b(circuito de trafico|circuitos|toco y despego|"
          r"toque y despegue|la opcion|permanecer en (el )?circuito|"
@@ -616,6 +622,8 @@ GERMAN = Grammar(
 
         ("say_again", r"\b(wiederholen sie|nicht verstanden|"
                       r"sagen sie (es )?noch einmal|unverstandlich)\b"),
+        ("request_altimeter", r"\b(erbitte (das )?qnh|qnh bitte|"
+                             r"wie ist (das )?qnh|erbitte (die )?hoehe)\b"),
         ("request_qdm", r"\bqdm\b"),
         ("request_qdr", r"\bqdr\b"),
         # "Wie hören Sie" with or without the "mich", and the "Radiocheck"
@@ -635,6 +643,9 @@ GERMAN = Grammar(
         ("request_taxi_to_parking", r"\b(zum vorfeld|zur parkposition|"
                                     r"zum standplatz|zur abstellposition)\b"),
         ("request_taxi", r"\b(erbitte (das )?rollen|rollbereit|zum rollen)\b"),
+        ("request_cross_runway",
+         r"\b(erbitte (die )?bahnquerung|piste uberqueren|"
+         r"erbitte querung (der )?piste)\b"),
         ("request_pattern_work",
          r"\b(platzrunde|platzrunden|touch and go|die option|"
          r"in der platzrunde bleiben|tiefanflug)\b"),
@@ -733,6 +744,8 @@ ITALIAN = Grammar(
 
         ("say_again", r"\b(ripeta|non ho capito|non copiato|ripetere|"
                       r"non ho ricevuto)\b"),
+        ("request_altimeter", r"\b(chiedo (il )?qnh|qnh per favore|"
+                             r"qual e (il )?qnh|qual e l altimetro)\b"),
         ("request_qdm", r"\bqdm\b"),
         ("request_qdr", r"\bqdr\b"),
         ("radio_check", r"\b(prova radio|come mi ricev\w+|controllo radio)\b"),
@@ -750,6 +763,9 @@ ITALIAN = Grammar(
                                     r"alla piazzola)\b"),
         ("request_taxi", r"\b(chiedo (il )?rullaggio|pronto al rullaggio|"
                          r"per il rullaggio)\b"),
+        ("request_cross_runway",
+         r"\b(chiedo di attraversare (la )?pista|"
+         r"attraversare (la )?pista|attraversamento pista)\b"),
         ("request_pattern_work",
          r"\b(circuito|circuiti|tocca e riparti|opzione|"
          r"rimanere in circuito|passaggio basso)\b"),
@@ -845,6 +861,8 @@ PORTUGUESE = Grammar(
 
         ("say_again", r"\b(repita|nao percebi|nao copiei|repetir|"
                       r"nao entendi)\b"),
+        ("request_altimeter", r"\b(peco (o )?qnh|qnh por favor|"
+                             r"qual (e )?o qnh|peco (o )?altimetro)\b"),
         ("request_qdm", r"\bqdm\b"),
         ("request_qdr", r"\bqdr\b"),
         ("radio_check", r"\b(teste de radio|como me recebe|controlo de radio)\b"),
@@ -861,6 +879,9 @@ PORTUGUESE = Grammar(
                                     r"para o parque|para a plataforma)\b"),
         ("request_taxi", r"\b(peco (o )?taxi|pronto para taxiar|"
                          r"para (a )?rolagem|peco rolagem)\b"),
+        ("request_cross_runway",
+         r"\b(peco para atravessar (a )?pista|"
+         r"atravessar (a )?pista|travessia (da )?pista)\b"),
         ("request_pattern_work",
          r"\b(circuito|circuitos|toca e arranca|a opcao|"
          r"permanecer no circuito|passagem baixa)\b"),

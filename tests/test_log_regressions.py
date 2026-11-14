@@ -712,7 +712,6 @@ def test_a_published_but_unworked_ground_announces_and_goes():
 
 def test_a_split_taxi_waits_for_the_rest_not_the_runway():
     """Held at the split taxiway: resume on the rest, never HOLDING_SHORT."""
-    import time as _time
 
     from meridianatc.atc.autonomous import AutonomousPhase
     flight = _taxi_flight(stations=[_gnd()], phase="taxi_out")
@@ -1122,7 +1121,10 @@ def _radio_flight(stations=(), staffed=None, phase="request_clearance",
                   current_station=None, session_phase="preflight"):
     """A flight with only what the comms management touches."""
     from meridianatc.atc.autonomous import (
-        AutonomousFlight, AutonomousPhase, AutonomousState)
+        AutonomousFlight,
+        AutonomousPhase,
+        AutonomousState,
+    )
     flight = AutonomousFlight.__new__(AutonomousFlight)
     flight.state = AutonomousState()
     flight.state.phase = AutonomousPhase(phase)

@@ -587,6 +587,20 @@ class Phraseology:
             parts.append(then)
         return _join(*parts) + "."
 
+    def taxi_off_route(self, aircraft: Aircraft) -> str:
+        return _join(aircraft.spoken(True),
+                     "you appear to be off the cleared taxi route, "
+                     "do you require assistance") + "."
+
+    def offer_assistance(self, aircraft: Aircraft) -> str:
+        return _join(aircraft.spoken(True),
+                     "say your intentions, do you require assistance") + "."
+
+    def report_vacated(self) -> str:
+        """The request attached to a crossing clearance: FAA JO 7110.65
+        3-7-2 has "REPORT VACATED"; ICAO Doc 4444 12.3.4 the same words."""
+        return "report vacated"
+
     def hold_short_instruction(self, aircraft: Aircraft, runway: str) -> str:
         return _join(aircraft.spoken(True),
                      f"hold short of runway {self.rwy(runway)}") + "."
@@ -2119,6 +2133,13 @@ class Phraseology:
 
     def verify(self, aircraft: Aircraft, item: str) -> str:
         return _join(aircraft.spoken(True), f"verify {item}") + "."
+
+    def verify_squawk(self, aircraft: Aircraft, expected: str,
+                      observed: str = "") -> str:
+        """The transponder shows something other than the assigned code:
+        FAA JO 7110.65 5-2-5, "VERIFY SQUAWK (code)"."""
+        return self.verify(
+            aircraft, f"squawk {sp.squawk(expected, self.digit_dialect)}")
 
     def radio_check(self, aircraft: Aircraft, readability: int = 5) -> str:
         return _join(aircraft.spoken(True),
