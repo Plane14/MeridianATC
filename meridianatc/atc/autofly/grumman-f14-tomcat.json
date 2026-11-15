@@ -1,6 +1,7 @@
 {
   "name": "Grumman F-14 Tomcat",
   "titleMatches": [ "f14", "f-14", "tomcat" ],
+  "icao": [ "F14" ],
   "flightTested": false,
   "borrowedProfile": false,
   "canAutofly": true,

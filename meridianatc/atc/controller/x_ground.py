@@ -197,6 +197,8 @@ class _Ground:
             return None, "no aircraft position"
         lines = taxiplan.runway_lines(layout, self.navdb.runways(station.ident))
         occupied, taken = self._ground_traffic(layout)
+        busy = {r for r in (session.departure_runway, session.arrival_runway,
+                            session.touchdown_runway) if r}
         if inbound:
             aircraft = session.aircraft
             # An airline stand for an airline flight, as the pilot said,
@@ -210,10 +212,10 @@ class _Ground:
                 airliner=airliner, key=aircraft.callsign.written,
                 occupied=occupied, taken=taken,
                 runway=session.arrival_runway or session.touchdown_runway,
-                min_radius_m=min_radius)
+                busy=busy, min_radius_m=min_radius)
         return taxiplan.plan_departure(
             layout, state.latitude, state.longitude, session.departure_runway,
-            lines, avoid=taxiplan.avoid_near(layout, occupied))
+            lines, avoid=taxiplan.avoid_near(layout, occupied), busy=busy)
 
     def _safely_plan(self, session, station, state, *, inbound: bool):
         # Scenery is data somebody else wrote, and a layout nobody tested

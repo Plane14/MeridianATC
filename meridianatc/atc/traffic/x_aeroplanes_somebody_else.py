@@ -69,9 +69,15 @@ class _Aeroplanes_somebody_else:
         # A copy of ours just given back to the feed is no longer ours.
         ours -= {f.written.upper() for f in self.flights
                  if f.done and not f.observed}
+        # The pilot's own real aeroplane is dropped before the pose is
+        # fixed up: snapped to a stand it could sit far enough from the
+        # pilot's true position that ``_is_user`` stopped recognising it,
+        # and the frequency gained a ghost of the person flying.
         seen = [self._live_pose(one, now)
                 if getattr(one, "source", "") == "live" else one
-                for one in seen]
+                for one in seen
+                if getattr(one, "source", "") != "live"
+                or not self._is_user(one)]
         # The live ones the feed hears now: a parked one is kept on its stand
         # only while it does not (_note_parked).
         self._live_heard = {one.object_id for one in seen

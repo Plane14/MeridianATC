@@ -1,6 +1,7 @@
 {
   "name": "Van's RV-10",
   "titleMatches": [ "rv10", "rv-10", "rv 10", "van's rv", "vans rv" ],
+  "icao": [ "RV10", "RV14", "RV7", "RV9" ],
   "flightTested": false,
   "borrowedProfile": false,
   "canAutofly": true,

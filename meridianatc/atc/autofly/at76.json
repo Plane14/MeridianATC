@@ -1,6 +1,7 @@
 {
   "name": "ATR 72-600",
   "titleMatches": [ "at76", "atr 72", "atr72", "atr 72-600", "at75" ],
+  "icao": [ "AT76", "AT75", "AT73", "AT72" ],
   "flightTested": false,
   "borrowedProfile": true,
   "canAutofly": true,

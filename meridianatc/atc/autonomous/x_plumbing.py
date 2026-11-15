@@ -35,8 +35,35 @@ class _Plumbing:
             base = fly.performance_for(code, light=light)
             title = getattr(getattr(session, "aircraft", None),
                             "title", "") or ""
+            # What the model says about itself, for a borrowed profile to
+            # be retuned by: the profile nearest this aeroplane is flown
+            # at this aeroplane's own speeds, not the profile's donor's.
+            declared: dict = {}
+            try:
+                state = self.get_state()
+            except Exception:
+                state = None
+            if state is not None:
+                declared = {
+                    "rotate_kt": float(getattr(state, "min_rotation_kt", 0.0)
+                                       or getattr(state,
+                                                  "design_takeoff_kt", 0.0)
+                                       or 0.0),
+                    "cruise_kt": float(getattr(state, "estimated_cruise_kt",
+                                               0.0)
+                                       or getattr(state, "design_vc_kt",
+                                                  0.0) or 0.0),
+                    "approach_kt": float(getattr(state, "design_vs1_kt", 0.0)
+                                         or 0.0) * 1.3,
+                    "descend_fpm": float(
+                        getattr(state, "typical_descent_fpm", 0.0) or 0.0),
+                }
+                declared = {k: v for k, v in declared.items() if v > 0}
             from ..autofly import override
-            self._perf = override(code, title, base)
+            self._perf = override(
+                code, title, base,
+                aircraft_class=getattr(self, "_aircraft_class", "") or "",
+                declared=declared)
         return self._perf
 
     @property
@@ -76,7 +103,8 @@ class _Plumbing:
             title = getattr(getattr(self.session, "aircraft", None),
                             "title", "") or ""
             self._gains = handling(
-                code, title, fixed_wing_gains(self.performance))
+                code, title, fixed_wing_gains(self.performance),
+                aircraft_class=getattr(self, "_aircraft_class", "") or "")
         return self._gains
 
     def _pid(self, channel: str):

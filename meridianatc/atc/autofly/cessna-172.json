@@ -1,6 +1,7 @@
 {
   "name": "Cessna 172 Skyhawk",
   "titleMatches": [ "172", "cessna 172", "skyhawk", "c172" ],
+  "icao": [ "C172", "C172S", "C172R" ],
   "flightTested": false,
   "borrowedProfile": true,
   "canAutofly": true,

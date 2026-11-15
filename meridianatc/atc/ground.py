@@ -293,15 +293,21 @@ class GroundLayout:
     # -- routes -----------------------------------------------------------
 
     def route(self, start: object, goal: object,
-              avoid: set[object] | None = None) -> list[object]:
+              avoid: set[object] | None = None,
+              closed: set[tuple[object, object]] | None = None
+              ) -> list[object]:
         """The cheapest way from one node to another, or [] if there is none.
 
         Stands are ends only: a route never cuts through somebody else's
-        stand on the way past.
+        stand on the way past. ``avoid`` keeps whole nodes out of the way;
+        ``closed`` keeps single edges out -- the segments running along an
+        in-use runway, where a taxi route has no business while a way round
+        exists (:meth:`strip_edges`).
         """
         if start not in self.edges or goal not in self.edges:
             return []
         avoid = avoid or set()
+        closed = closed or set()
         best = {start: 0.0}
         came: dict[object, object] = {}
         queue = [(0.0, 0, start)]
@@ -316,6 +322,8 @@ class GroundLayout:
                 if other in avoid and other != goal:
                     continue
                 if other[0] == "k" and other != goal:
+                    continue
+                if (node, other) in closed or (other, node) in closed:
                     continue
                 step = length * (RUNWAY_COST if runway else 1.0)
                 if cost + step < best.get(other, math.inf):
@@ -522,6 +530,53 @@ class GroundLayout:
         across = dx * math.cos(rad) - dz * math.sin(rad)
         return along, across
 
+    # A segment on a runway's pavement counts as running along it -- the
+    # thing a taxi clearance should not have the aeroplane doing on an
+    # in-use runway -- when it points this close to the runway's heading
+    # (either way); squarer edges are it crossing the strip.
+    STRIP_ALONG_DEG = 35.0
+
+    def strip_edges(self, threshold: tuple[float, float], heading: float,
+                    length_m: float) -> tuple[set, set]:
+        """The edges lying on this runway, as (along, crossing) node pairs.
+
+        ``along`` is the runway-flagged edges running with the centreline:
+        taxiing down the runway. ``crossing`` is every edge that gets an
+        aeroplane onto, off, or over the pavement without running down it:
+        a connector in from the holding bars, a taxiway through it, one
+        runway's pavement over another's. Closing ``along`` keeps a taxi
+        route off the strip; closing ``crossing`` too keeps it from even
+        stepping onto it -- the fallback for a runway it may not be on at
+        all is the caller's, when no other way exists.
+        """
+        margin = RUNWAY_HALF_M * 1.5
+
+        def on(x: float, z: float) -> bool:
+            along, across = self.runway_frame(x, z, threshold, heading)
+            return -50.0 <= along <= length_m + 50.0 and abs(across) <= margin
+
+        along_edges: set = set()
+        crossing_edges: set = set()
+        for a, near in self.edges.items():
+            for b, _length, runway, _label in near:
+                if (b, a) in along_edges or (b, a) in crossing_edges:
+                    continue
+                ax, az = self.xy[a]
+                bx, bz = self.xy[b]
+                in_a, in_b = on(ax, az), on(bx, bz)
+                if not (in_a or in_b):
+                    continue
+                if in_a != in_b:
+                    crossing_edges.add((a, b))
+                    continue
+                turn = _turn(_heading(bx - ax, bz - az), heading)
+                if runway and (turn <= self.STRIP_ALONG_DEG
+                               or turn >= 180.0 - self.STRIP_ALONG_DEG):
+                    along_edges.add((a, b))
+                else:
+                    crossing_edges.add((a, b))
+        return along_edges, crossing_edges
+
     def entries(self, threshold: tuple[float, float], heading: float,
                 length_m: float) -> list[tuple[float, object]]:
         """Where taxiways meet this runway, as (metres from the threshold,
@@ -556,7 +611,8 @@ class GroundLayout:
 
     def departure(self, stand: Stand | None, start_xy: tuple[float, float],
                   threshold: tuple[float, float], heading: float,
-                  length_m: float, avoid: set[object] | None = None
+                  length_m: float, avoid: set[object] | None = None,
+                  closed: set[tuple[object, object]] | None = None
                   ) -> tuple[Taxiing, Taxiing] | None:
         """From a stand (or wherever it is) to the holding point, and from
         there onto the runway.
@@ -575,7 +631,8 @@ class GroundLayout:
         if start is None:
             return None
         for _along, entry in entries:
-            nodes = self.route(start, entry, avoid)
+            nodes = (self.route(start, entry, avoid, closed=closed)
+                     if closed else self.route(start, entry, avoid))
             if len(nodes) < 2:
                 continue
             # The route may reach its entry across the runway itself: the
@@ -625,7 +682,9 @@ class GroundLayout:
     def vacate(self, x: float, z: float, heading: float,
                threshold: tuple[float, float], runway_heading: float,
                length_m: float, stand: Stand,
-               avoid: set[object] | None = None) -> Taxiing | None:
+               avoid: set[object] | None = None,
+               closed: set[tuple[object, object]] | None = None
+               ) -> Taxiing | None:
         """Off the runway at the first exit ahead, and on to a stand."""
         along_here, _ = self.runway_frame(x, z, threshold, runway_heading)
         entries = self.entries(threshold, runway_heading, length_m)
@@ -637,7 +696,8 @@ class GroundLayout:
                                key=lambda item: -item[0])
         goal = ("k", stand.index)
         for _along, exit_node in order:
-            nodes = self.route(exit_node, goal, avoid)
+            nodes = (self.route(exit_node, goal, avoid, closed=closed)
+                     if closed else self.route(exit_node, goal, avoid))
             if len(nodes) < 2:
                 continue
             taxi = self._taxiing(nodes, (x, z))
@@ -654,11 +714,15 @@ class GroundLayout:
             return taxi
         return None
 
-    def to_stand(self, x: float, z: float, stand: Stand) -> Taxiing | None:
+    def to_stand(self, x: float, z: float, stand: Stand,
+                 closed: set[tuple[object, object]] | None = None
+                 ) -> Taxiing | None:
         start = self.nearest_node(x, z)
         if start is None:
             return None
-        nodes = self.route(start, ("k", stand.index))
+        nodes = (self.route(start, ("k", stand.index), closed=closed)
+                 if closed
+                 else self.route(start, ("k", stand.index)))
         if len(nodes) < 2:
             return None
         return self._taxiing(nodes, (x, z))

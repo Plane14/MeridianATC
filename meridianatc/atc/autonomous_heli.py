@@ -465,9 +465,16 @@ class RotorcraftFlight:
 
     def _checklist(self, name: str) -> None:
         done = self.owner.state.checklists_completed
-        if name not in done:
-            self.crew.checklists.start(name)
-            done.add(name)
+        if name in done:
+            return
+        runner = self.crew.checklists
+        if runner is not None and runner.waiting:
+            # Still working the one before: start() would abandon it
+            # mid-item, and the stage is checked again on the next pass.
+            return
+        if runner is not None:
+            runner.start(name)
+        done.add(name)
 
     def _elapsed(self) -> float:
         return time.monotonic() - self.state.stage_entered_at

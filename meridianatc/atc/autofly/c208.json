@@ -1,6 +1,7 @@
 {
   "name": "Cessna 208 Caravan",
   "titleMatches": [ "c208", "208", "caravan", "grand caravan" ],
+  "icao": [ "C208" ],
   "flightTested": false,
   "borrowedProfile": true,
   "canAutofly": true,

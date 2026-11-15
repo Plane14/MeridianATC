@@ -1,6 +1,7 @@
 {
   "name": "Embraer 190",
   "titleMatches": [ "e190", "e195", "e-190", "erj 190", "embraer 190" ],
+  "icao": [ "E190", "E195" ],
   "flightTested": false,
   "borrowedProfile": true,
   "canAutofly": true,

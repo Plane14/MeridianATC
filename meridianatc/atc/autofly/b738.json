@@ -1,6 +1,7 @@
 {
   "name": "Boeing 737-800",
   "titleMatches": [ "738", "b738", "737-800", "737 800", "boeing 737" ],
+  "icao": [ "B738", "B737", "B739", "B38M" ],
   "flightTested": false,
   "borrowedProfile": true,
   "canAutofly": true,

@@ -453,10 +453,14 @@ class _The_live_ones:
             # are composed on the situation loop like everybody else's.
             flight.step = 0
             flight.next_at = now
-        if self._on_runway(one) and (
+        if (under := self._runway_under(one)) and (
                 flight.phase in ("takeoff", "final", "landed")
                 or self._lined_up(one)):
-            self._hold_runway(flight.runway, now, 8.0)
+            # The strip the aeroplane is actually on, not the one its strip
+            # happened to be filed under: on a mixed-ops field the two are
+            # not the same, and a booking on the wrong runway protects
+            # nobody on the right one.
+            self._hold_runway(under, now, 8.0)
 
     def _observed_phase(self, flight: Flight, one, to_run) -> str:
         """What an observed aeroplane is doing, from what it is doing.
@@ -551,8 +555,8 @@ class _The_live_ones:
                 return True
         return False
 
-    def _on_runway(self, one) -> bool:
-        """Whether an observed aeroplane is on the runway in use."""
+    def _runway_under(self, one) -> str:
+        """The in-use runway an observed aeroplane is on, or ""."""
         for name in (self.field.departure_runway, self.field.arrival_runway):
             end = self._threshold(name)
             if end is None:
@@ -561,8 +565,12 @@ class _The_live_ones:
                                               end[0], end[1], end[2])
             if (abs(across) <= RUNWAY_WIDTH_NM
                     and -0.15 <= along <= RUNWAY_LENGTH_NM):
-                return True
-        return False
+                return name
+        return ""
+
+    def _on_runway(self, one) -> bool:
+        """Whether an observed aeroplane is on the runway in use."""
+        return bool(self._runway_under(one))
 
     def _advance_observed(self, flight: Flight, now: float) -> None:
         """What the controller says to an aeroplane it cannot instruct.
@@ -752,13 +760,16 @@ class _The_live_ones:
                 continue
             if hold is None:
                 continue
-            # Departures: kept off the pilot's runway.
+            # Departures: kept off the pilot's runway. The strip is only
+            # marked held when the drawing actually stopped -- a flight the
+            # feed has already lost keeps moving whatever this says, and a
+            # frozen strip about a moving aeroplane is the worse lie.
             if (flight.live_held != "give way"
                     and flight.phase in ("lineup", "takeoff")
                     and not flight.live_held and busy
-                    and not self._on_runway(flight)):
+                    and not self._on_runway(flight)
+                    and hold(flight.hex, True)):
                 flight.live_held = "runway"
-                hold(flight.hex, True)
                 decision("live_traffic", event="held short",
                          callsign=flight.written,
                          why="the pilot is on the runway or its final")
@@ -773,9 +784,8 @@ class _The_live_ones:
                     )
             # On the ground: give way to the pilot taxiing.
             ahead = self._pilot_ahead(flight)
-            if ahead and not flight.live_held:
+            if ahead and not flight.live_held and hold(flight.hex, True):
                 flight.live_held = "give way"
-                hold(flight.hex, True)
             elif flight.live_held == "give way" and not ahead:
                 flight.live_held = ""
                 hold(flight.hex, False)
@@ -958,7 +968,10 @@ class _The_live_ones:
             if arriving:
                 stand = self._free_stand(
                     airliner=flight.operator is not None or flight.ifr)
-                taxi = stand is not None and layout.to_stand(x, z, stand)
+                taxi = stand is not None and layout.to_stand(
+                    x, z, stand,
+                    closed=self._closed_runway_edges(
+                        flight.runway or self.field.arrival_runway))
                 if not taxi:
                     return False            # nowhere to send it
         # Committed. Ours now, the feed's copy suppressed.
@@ -1087,18 +1100,20 @@ class _The_live_ones:
         self.user = user
 
     def _user_on_runway(self) -> bool:
-        """Whether the person flying is on the runway in use."""
+        """Whether the person flying is on a runway in use."""
         user = self.user
         if user is None or not user.on_ground or not user.has_position:
             return False
-        end = self._threshold(self.field.departure_runway
-                              or self.field.arrival_runway)
-        if end is None:
-            return False
-        along, across = offset_from_track(user.latitude, user.longitude,
-                                          end[0], end[1], end[2])
-        return (abs(across) <= RUNWAY_WIDTH_NM
-                and -0.15 <= along <= RUNWAY_LENGTH_NM)
+        for name in {self.field.departure_runway, self.field.arrival_runway}:
+            end = self._threshold(name)
+            if end is None:
+                continue
+            along, across = offset_from_track(user.latitude, user.longitude,
+                                              end[0], end[1], end[2])
+            if (abs(across) <= RUNWAY_WIDTH_NM
+                    and -0.15 <= along <= RUNWAY_LENGTH_NM):
+                return True
+        return False
 
     def _user_on_final(self) -> float | None:
         """How far the person flying has to run, if they are on final.
@@ -1110,18 +1125,20 @@ class _The_live_ones:
         user = self.user
         if user is None or user.on_ground or not user.has_position:
             return None
-        end = self._threshold(self.field.arrival_runway
-                              or self.field.departure_runway)
-        if end is None:
-            return None
-        along, across = offset_from_track(user.latitude, user.longitude,
-                                          end[0], end[1], end[2])
-        to_run = -along
-        if not 0.0 < to_run <= 12.0 or abs(across) > 1.0:
-            return None
-        if abs((user.heading - end[2] + 540.0) % 360.0 - 180.0) > 30.0:
-            return None
-        return to_run
+        best = None
+        for name in {self.field.arrival_runway, self.field.departure_runway}:
+            end = self._threshold(name)
+            if end is None:
+                continue
+            along, across = offset_from_track(user.latitude, user.longitude,
+                                              end[0], end[1], end[2])
+            to_run = -along
+            if not 0.0 < to_run <= 12.0 or abs(across) > 1.0:
+                continue
+            if abs((user.heading - end[2] + 540.0) % 360.0 - 180.0) > 30.0:
+                continue
+            best = to_run if best is None else min(best, to_run)
+        return best
 
     def runway_occupied(self, now: float, ignore: Flight | None = None) -> bool:
         """Whether anybody at all is on the runway -- the user included.
@@ -1138,9 +1155,10 @@ class _The_live_ones:
                 or self._somebody_on_runway(ignore))
 
     def _somebody_on_runway(self, ignore: Flight | None = None) -> bool:
-        end = self._threshold(self.field.departure_runway
-                              or self.field.arrival_runway)
-        if end is None:
+        ends = [self._threshold(name) for name in
+                {self.field.departure_runway, self.field.arrival_runway}]
+        ends = [end for end in ends if end is not None]
+        if not ends:
             return False
         for other in self.flights:
             if other is ignore or other.done or not other.positioned:
@@ -1149,14 +1167,15 @@ class _The_live_ones:
                 continue
             if other.phase in ("lineup",) and other.taxi is None:
                 continue          # counted as lined up, not as in the way
-            along, across = offset_from_track(other.latitude, other.longitude,
-                                              end[0], end[1], end[2])
-            # The runway itself, not the strip around it: an aeroplane at the
-            # holding point is forty-five metres off the centreline and
-            # counting it sent every arrival round.
-            if abs(across) <= self.ON_RUNWAY_NM and \
-                    -0.15 <= along <= RUNWAY_LENGTH_NM:
-                return True
+            for end in ends:
+                along, across = offset_from_track(
+                    other.latitude, other.longitude, end[0], end[1], end[2])
+                # The runway itself, not the strip around it: an aeroplane
+                # at the holding point is forty-five metres off the
+                # centreline and counting it sent every arrival round.
+                if abs(across) <= self.ON_RUNWAY_NM and \
+                        -0.15 <= along <= RUNWAY_LENGTH_NM:
+                    return True
         return False
 
     # Thirty metres: half a wide runway and a little more.

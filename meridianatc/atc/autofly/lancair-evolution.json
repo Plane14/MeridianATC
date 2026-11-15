@@ -1,6 +1,7 @@
 {
   "name": "Lancair Evolution",
   "titleMatches": [ "evot", "evolution", "lancair evolution", "n844x" ],
+  "icao": [ "EVOT", "LNC4" ],
   "flightTested": false,
   "borrowedProfile": false,
   "canAutofly": true,

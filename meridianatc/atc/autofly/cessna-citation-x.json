@@ -1,6 +1,7 @@
 {
   "name": "Cessna Citation X",
   "titleMatches": [ "c750", "citation x", "citx", "citation-x" ],
+  "icao": [ "C750" ],
   "flightTested": false,
   "borrowedProfile": false,
   "canAutofly": true,

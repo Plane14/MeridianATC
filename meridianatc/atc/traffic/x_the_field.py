@@ -149,6 +149,71 @@ class _The_field:
     # How long a runway is taken to be where nothing says otherwise. Only used
     # to bound where an entry or an exit may be found.
     RUNWAY_LENGTH_M = 3500.0
+    _M_PER_NM = 1852.0
+
+    def _closed_runway_edges(self, own: str = "") -> set:
+        """Taxi edges an aeroplane of ours may not be routed over: along
+        every runway in use, and across the ones that are not ``own``.
+
+        ``own`` is the strip the aeroplane is bound for or has just left:
+        it still has to be able to cross it, and to reach its holding
+        point along it where the pavement is the only way. Every other
+        strip in use is crossed only by the fallback the callers take when
+        there is no way round.
+        """
+        layout = self.ground
+        if layout is None:
+            return set()
+        ends = {normalize_runway(r) for r in
+                (getattr(self.field, "departure_runway", ""),
+                 getattr(self.field, "arrival_runway", "")) if r}
+        own_ends = {normalize_runway(own)} if own else set()
+        thresholds = getattr(self.field, "thresholds", {}) or {}
+        closed: set = set()
+        for name in ends:
+            end = thresholds.get(name)
+            if end is None:
+                continue
+            threshold = layout.to_xy(end[0], end[1])
+            surface = getattr(self.field, "surfaces", {}).get(name)
+            length_m = (surface[2] * self._M_PER_NM
+                        if surface else self.RUNWAY_LENGTH_M)
+            try:
+                along, across = layout.strip_edges(
+                    threshold, end[2], length_m)
+            except (AttributeError, TypeError, ValueError):
+                continue            # a layout without strip edges: a mock
+            along = along if isinstance(along, (set, frozenset)) else set()
+            across = across if isinstance(across, (set, frozenset)) else set()
+            closed |= along
+            if name not in own_ends and not self._same_strip(
+                    own_ends, threshold, end[2], length_m):
+                closed |= across
+        return closed
+
+    def _same_strip(self, own_ends: set, threshold, heading: float,
+                    length_m: float) -> bool:
+        """Whether a strip ends name is physically the runway ``own`` names
+        -- the other end of the same pavement, not a parallel."""
+        layout = self.ground
+        thresholds = getattr(self.field, "thresholds", {}) or {}
+        for own_name in own_ends:
+            end = thresholds.get(own_name)
+            if end is None:
+                continue
+            try:
+                along, across = layout.runway_frame(
+                    threshold[0], threshold[1],
+                    layout.to_xy(end[0], end[1]), end[2])
+            except (AttributeError, TypeError, ValueError):
+                continue
+            own_surface = getattr(self.field, "surfaces", {}).get(own_name)
+            own_length = (own_surface[2] * self._M_PER_NM
+                          if own_surface else self.RUNWAY_LENGTH_M)
+            if -50.0 <= along <= own_length + 50.0 \
+                    and abs(across) <= groundwork.RUNWAY_HALF_M * 2.0:
+                return True
+        return False
 
     def _runway_xy(self, runway: str):
         """A threshold in the ground layout's plane, with its heading."""

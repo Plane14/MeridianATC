@@ -321,12 +321,18 @@ class LiveRoster:
 
     # -- held by our tower -------------------------------------------------
 
-    def hold(self, hex_: str, now: float) -> None:
+    def hold(self, hex_: str, now: float) -> bool:
         """Stop drawing ``hex_`` where it is: held short by our tower, or
         giving way to the pilot. Its history is kept, so when it is let go
-        it carries on from there, only further behind the feed."""
-        if hex_ not in self._held and hex_ in self.history:
-            self._held[hex_] = (now, self._shown_at(hex_, now))
+        it carries on from there, only further behind the feed. False when
+        there is nothing drawn to stop -- a flight the feed has already
+        forgotten is not held, whatever the tower asked."""
+        if hex_ in self._held:
+            return True
+        if hex_ not in self.history:
+            return False
+        self._held[hex_] = (now, self._shown_at(hex_, now))
+        return True
 
     def release(self, hex_: str, now: float) -> None:
         held = self._held.pop(hex_, None)

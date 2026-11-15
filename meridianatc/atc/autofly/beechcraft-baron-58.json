@@ -1,6 +1,7 @@
 {
   "name": "Beechcraft Baron 58",
   "titleMatches": [ "be58", "baron 58", "baron58", "beechcraft baron", "b58", "g58" ],
+  "icao": [ "BE58", "BE55", "BE56" ],
   "flightTested": false,
   "borrowedProfile": false,
   "canAutofly": true,

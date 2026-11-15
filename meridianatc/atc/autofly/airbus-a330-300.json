@@ -1,6 +1,7 @@
 {
   "name": "Airbus A330-300",
   "titleMatches": [ "a330", "a332", "a333", "a339", "a-330", "airbus a330" ],
+  "icao": [ "A333", "A332" ],
   "flightTested": false,
   "borrowedProfile": false,
   "canAutofly": true,

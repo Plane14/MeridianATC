@@ -772,12 +772,16 @@ class ChecklistRunner:
             "before_start": phase in (Phase.PREFLIGHT, Phase.CLEARED)
             and not engines,
             "after_start": phase in (Phase.PREFLIGHT, Phase.CLEARED,
-                                     Phase.PUSHBACK)
+                                     Phase.PUSHBACK, Phase.TAXI_OUT)
             and engines and speed < 1.0,
             "taxi": phase is Phase.TAXI_OUT and speed > 3.0,
             "before_takeoff": phase is Phase.HOLDING_SHORT,
-            "after_takeoff": phase in (Phase.TAKEOFF, Phase.DEPARTURE)
-            and height >= 1000.0,
+            # A fast climber is through TAKEOFF and DEPARTURE and into
+            # ENROUTE inside a thousand feet; the after-takeoff items are
+            # still the ones this moment belongs to.
+            "after_takeoff": (phase in (Phase.TAKEOFF, Phase.DEPARTURE)
+                              and height >= 1000.0)
+            or (phase is Phase.ENROUTE and height < 3000.0),
             "cruise": bool(self._level_since)
             and now - self._level_since >= LEVEL_FOR_CRUISE_S,
             "descent": phase is Phase.DESCENT,

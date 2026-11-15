@@ -1,6 +1,7 @@
 {
   "name": "Pilatus PC-12",
   "titleMatches": [ "pc12", "pc-12", "pilatus" ],
+  "icao": [ "PC12" ],
   "flightTested": false,
   "borrowedProfile": true,
   "canAutofly": true,

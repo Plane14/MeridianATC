@@ -192,9 +192,13 @@ class _Where_it_is:
         stand = (layout.stands[flight.stand] if flight.stand is not None
                  else None)
         here = layout.to_xy(flight.latitude, flight.longitude)
+        closed = self._closed_runway_edges(
+            flight.runway or self.field.departure_runway)
         return (layout.departure(stand, here, threshold, heading,
                                  self.RUNWAY_LENGTH_M,
-                                 avoid=self._avoid_user())
+                                 avoid=self._avoid_user(), closed=closed)
+                or layout.departure(stand, here, threshold, heading,
+                                    self.RUNWAY_LENGTH_M, closed=closed)
                 or layout.departure(stand, here, threshold, heading,
                                     self.RUNWAY_LENGTH_M))
 

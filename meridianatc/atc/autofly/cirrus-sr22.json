@@ -1,6 +1,7 @@
 {
   "name": "Cirrus SR22",
   "titleMatches": [ "sr22", "sr-22", "cirrus sr", "sr22t" ],
+  "icao": [ "SR22", "SR22T" ],
   "flightTested": false,
   "borrowedProfile": false,
   "canAutofly": true,

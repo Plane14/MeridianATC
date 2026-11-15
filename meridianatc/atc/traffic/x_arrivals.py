@@ -318,12 +318,22 @@ class _Arrivals:
         # through a holding point left the arrival on the runway waiting
         # for the departure, and the departure waiting for the runway.
         standing = self._avoid_user() | self._avoid_standing(flight)
+        closed = self._closed_runway_edges(
+            flight.runway or self.field.arrival_runway)
         taxi = None
         for avoid in (standing, self._avoid_user(), set()):
             taxi = layout.vacate(x, z, flight.heading, threshold, heading,
-                                 self.RUNWAY_LENGTH_M, stand, avoid=avoid)
+                                 self.RUNWAY_LENGTH_M, stand, avoid=avoid,
+                                 closed=closed)
             if taxi is not None:
                 break
+        if taxi is None and closed:
+            for avoid in (standing, self._avoid_user(), set()):
+                taxi = layout.vacate(x, z, flight.heading, threshold,
+                                     heading, self.RUNWAY_LENGTH_M, stand,
+                                     avoid=avoid)
+                if taxi is not None:
+                    break
         if taxi is None:
             return
         flight.on_layout = True

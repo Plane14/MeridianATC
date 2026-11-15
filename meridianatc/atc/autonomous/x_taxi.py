@@ -332,8 +332,12 @@ class _Taxi:
         try:
             lines = taxiplan.runway_lines(
                 layout, self.navdb.runways(airport.ident))
+            busy = {r for r in (getattr(self.session, "departure_runway", ""),
+                                getattr(self.session, "arrival_runway", ""),
+                                runway) if r}
             plan, _why = taxiplan.plan_departure(
-                layout, state.latitude, state.longitude, runway, lines)
+                layout, state.latitude, state.longitude, runway, lines,
+                busy=busy)
         except Exception:
             log.debug("self-planned taxi at %s raised", airport.ident,
                       exc_info=True)

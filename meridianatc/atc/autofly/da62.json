@@ -1,6 +1,7 @@
 {
   "name": "Diamond DA62",
   "titleMatches": [ "da62", "da-62", "diamond da62" ],
+  "icao": [ "DA62" ],
   "flightTested": false,
   "borrowedProfile": true,
   "canAutofly": true,

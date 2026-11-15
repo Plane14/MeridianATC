@@ -157,7 +157,15 @@ class _The_envelope:
 
     def _run_checklist_for_phase(self, checklist_name: str) -> None:
         """Trigger a checklist for the current phase."""
-        if checklist_name not in self.state.checklists_completed:
-            self.crew.checklists.start(checklist_name)
-            self.state.checklists_completed.add(checklist_name)
+        if checklist_name in self.state.checklists_completed:
+            return
+        runner = self.crew.checklists
+        if runner is not None and runner.waiting:
+            # The checklist before this one is still being worked: let it
+            # finish rather than abandon it mid-item. The phase is checked
+            # again on the next pass, so this run is only deferred.
+            return
+        if runner is not None:
+            runner.start(checklist_name)
+        self.state.checklists_completed.add(checklist_name)
 

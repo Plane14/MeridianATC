@@ -1037,8 +1037,7 @@ class CrewDirector:
     # minute and none of that is the top of descent.
     DESCENDING_FPM = -500.0
 
-    @staticmethod
-    def _height(state) -> float:
+    def _height(self, state) -> float:
         """Height above the ground, or the best stand-in there is for it.
 
         Not every aircraft in every simulator reports a height above ground,
@@ -1049,6 +1048,16 @@ class CrewDirector:
         """
         if state.altitude_agl_ft > 0:
             return state.altitude_agl_ft
+        # With no AGL the field's elevation under them is the next best
+        # answer: a mile above Denver is not a mile above sea level.
+        if self.here is not None:
+            try:
+                airport = self.here()
+            except Exception:
+                airport = None
+            elevation = getattr(airport, "elev_ft", 0.0) or 0.0
+            if elevation:
+                return max(0.0, state.altitude_ft - elevation)
         return max(0.0, state.altitude_ft)
 
     def _watch_descent(self, previous, state, session) -> None:

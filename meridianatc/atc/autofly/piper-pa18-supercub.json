@@ -1,6 +1,7 @@
 {
   "name": "Piper PA-18 Super Cub",
   "titleMatches": [ "pa18", "pa-18", "pa 18", "super cub", "supercub", "top cub" ],
+  "icao": [ "PA18" ],
   "flightTested": false,
   "borrowedProfile": false,
   "canAutofly": true,

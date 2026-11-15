@@ -1,6 +1,7 @@
 {
   "name": "McDonnell Douglas MD-82",
   "titleMatches": [ "md82", "md-82", "md80", "md-80", "maddog", "mcdonnell douglas md" ],
+  "icao": [ "MD82", "MD83", "MD88", "MD81", "MD87" ],
   "flightTested": false,
   "borrowedProfile": false,
   "canAutofly": true,

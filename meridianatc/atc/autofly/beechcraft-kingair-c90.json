@@ -1,6 +1,7 @@
 {
   "name": "Beechcraft King Air C90B",
   "titleMatches": [ "be9l", "king air c90", "kingair c90", "c90b", "c90" ],
+  "icao": [ "BE9L", "BE90" ],
   "flightTested": false,
   "borrowedProfile": false,
   "canAutofly": true,

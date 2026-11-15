@@ -500,9 +500,44 @@ def avoid_near(layout: GroundLayout,
     return found
 
 
+def closed_runway_edges(layout: GroundLayout, lines: list[RunwayLine],
+                        *, along=frozenset(), across=frozenset()
+                        ) -> set[tuple[object, object]]:
+    """Edges a taxi route may not use: the ones running along the runways
+    named in ``along``, and the ones crossing the runways in ``across``
+    (runway idents, either end).
+
+    A taxi on the pavement of a runway in use is not a taxi route, it is a
+    runway incursion with a callsign: where a way round exists the route
+    should take it, and where none does the callers' fallback gives the
+    runway route a clearance would have had to cover anyway.
+    """
+    want_along = {normalize_runway(r) for r in along if r}
+    want_across = {normalize_runway(r) for r in across if r}
+    closed: set[tuple[object, object]] = set()
+    for line in lines:
+        ends = set(line.ends)
+        if not (ends & want_along or ends & want_across):
+            continue
+        start, end = line.a, line.b
+        heading = math.degrees(math.atan2(end[0] - start[0],
+                                          end[1] - start[1])) % 360.0
+        try:
+            a_edges, x_edges = layout.strip_edges(
+                start, heading, math.dist(start, end))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if ends & want_along:
+            closed |= a_edges
+        if ends & want_across:
+            closed |= x_edges
+    return closed
+
+
 def plan_departure(layout: GroundLayout, latitude: float, longitude: float,
                    runway: str, lines: list[RunwayLine],
-                   avoid: set[object] = frozenset()
+                   avoid: set[object] = frozenset(),
+                   busy: set[str] = frozenset()
                    ) -> tuple[TaxiPlan | None, str]:
     """From where the aeroplane is to the holding point of ``runway``.
 
@@ -511,6 +546,10 @@ def plan_departure(layout: GroundLayout, latitude: float, longitude: float,
     reasonable way round (``DETOUR``) and not otherwise: an aeroplane stopped
     on a taxiway now will usually have moved by the time the pilot gets
     there, and no route at all is worse than one through where it was.
+    ``busy`` is every runway in use, the departure runway included: the
+    route is kept off their pavement where a way round exists -- on it
+    only when the runway itself is the way (a backtrack field), and never
+    through a different in-use runway it could go around.
     """
     end = _threshold(lines, runway)
     if end is None:
@@ -520,10 +559,27 @@ def plan_departure(layout: GroundLayout, latitude: float, longitude: float,
     stand = stand_under(layout, x, z)
     if stand is None and not _on_layout(layout, x, z):
         return None, "the aeroplane is not on the simulator's taxiways"
-    legs = layout.departure(stand, (x, z), threshold, heading, length_m)
+    own = {normalize_runway(runway)}
+    own |= next((set(line.ends) for line in lines if own & set(line.ends)),
+                set())
+    in_use = own | {normalize_runway(r) for r in busy if r}
+    closed = closed_runway_edges(
+        layout, lines, along=in_use, across=in_use - own)
+    closed_along = closed_runway_edges(layout, lines, along=in_use) \
+        if closed else set()
+    legs = layout.departure(stand, (x, z), threshold, heading, length_m,
+                            closed=closed)
+    if legs is None and closed_along != closed:
+        legs = layout.departure(stand, (x, z), threshold, heading, length_m,
+                                closed=closed_along)
+    if legs is None and closed:
+        legs = layout.departure(stand, (x, z), threshold, heading, length_m)
     if avoid and legs is not None:
         around = layout.departure(stand, (x, z), threshold, heading,
-                                  length_m, avoid=set(avoid))
+                                  length_m, avoid=set(avoid), closed=closed)
+        if around is None and closed:
+            around = layout.departure(stand, (x, z), threshold, heading,
+                                      length_m, avoid=set(avoid))
         # Round somebody only by a way a controller would give. Avoiding an
         # aeroplane stopped at the entry found a two-kilometre backtrack from
         # the far end of the runway; the ordinary route, with them gone by
@@ -567,7 +623,7 @@ def plan_arrival(layout: GroundLayout, latitude: float, longitude: float,
                  lines: list[RunwayLine], *, airliner: bool, key: str,
                  occupied: list[tuple[float, float, float]] = (),
                  taken: set[int] = frozenset(),
-                 runway: str = "",
+                 runway: str = "", busy: set[str] = frozenset(),
                  min_radius_m: float = 0.0) -> tuple[TaxiPlan | None, str]:
     """From where the aeroplane has stopped to a free stand.
 
@@ -577,7 +633,9 @@ def plan_arrival(layout: GroundLayout, latitude: float, longitude: float,
     flight is given the same stand every time it lands here, the way a
     schedule gives it the same gate -- and a stand that cannot be reached is
     passed over for the next. ``runway`` is the one just vacated, which the
-    route may still be on without being told to cross it.
+    route may still be on without being told to cross it; ``busy`` is every
+    runway in use, whose pavement the route stays off while a way round
+    exists.
     """
     x, z = layout.to_xy(latitude, longitude)
     if not _on_layout(layout, x, z):
@@ -590,8 +648,18 @@ def plan_arrival(layout: GroundLayout, latitude: float, longitude: float,
     reciprocal = next((line.ends for line in lines
                        if normalize_runway(runway) in line.ends), ()) \
         if runway else ()
+    own = {normalize_runway(runway)} | set(reciprocal) if runway else set()
+    in_use = own | {normalize_runway(r) for r in busy if r}
+    closed = closed_runway_edges(
+        layout, lines, along=in_use, across=in_use - own)
+    closed_along = closed_runway_edges(layout, lines, along=in_use) \
+        if closed else set()
     for stand in candidates[first:] + candidates[:first]:
-        taxi = layout.to_stand(x, z, stand)
+        taxi = layout.to_stand(x, z, stand, closed=closed)
+        if taxi is None and closed_along != closed:
+            taxi = layout.to_stand(x, z, stand, closed=closed_along)
+        if taxi is None and closed:
+            taxi = layout.to_stand(x, z, stand)
         if taxi is None:
             continue
         nodes = [node for node in taxi.nodes if node is not None]
@@ -601,5 +669,6 @@ def plan_arrival(layout: GroundLayout, latitude: float, longitude: float,
 
 
 __all__ = ["TaxiPlan", "RunwayLine", "runway_lines", "crossings",
-           "spoken_legs", "stand_under", "avoid_near", "plan_departure",
-           "plan_arrival", "designator", "distance_to_line", "MAX_TAXIWAYS"]
+           "spoken_legs", "stand_under", "avoid_near", "closed_runway_edges",
+           "plan_departure", "plan_arrival", "designator",
+           "distance_to_line", "MAX_TAXIWAYS"]

@@ -1,6 +1,7 @@
 {
   "name": "Boeing 777-300ER",
   "titleMatches": [ "77w", "b77w", "777-300", "777 300", "boeing 777" ],
+  "icao": [ "B77W", "B772", "B773" ],
   "flightTested": false,
   "borrowedProfile": true,
   "canAutofly": true,

@@ -1,6 +1,7 @@
 {
   "name": "Boeing 747-400",
   "titleMatches": [ "b744", "b747", "747-400", "744", "747" ],
+  "icao": [ "B744" ],
   "flightTested": false,
   "borrowedProfile": false,
   "canAutofly": true,
