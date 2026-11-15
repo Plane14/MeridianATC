@@ -441,6 +441,9 @@ class FlightSession:
     holding_at: str = ""
     # When the takeoff clearance was given (time.monotonic), for "expedite".
     cleared_takeoff_at: float = 0.0
+    # The wind the last takeoff/landing clearance carried, as
+    # (direction, kt, gust kt): the baseline a wind check is issued from.
+    wind_at_clearance: tuple = ()
     # The point a VFR departure was released by and has not yet reported.
     expected_exit: str = ""
     # The station whose busy frequency let this flight's first call go
@@ -654,6 +657,15 @@ class FlightSession:
         otherwise reads a runway entry as an incursion.
         """
         self.cleared_runway = str(runway or "")
+
+    def note_clearance_wind(self, weather) -> None:
+        """The wind a clearance carried, kept so a wind check can be
+        issued when it has moved since."""
+        if weather is not None:
+            self.wind_at_clearance = (
+                float(getattr(weather, "wind_dir", 0.0) or 0.0),
+                float(getattr(weather, "wind_kt", 0.0) or 0.0),
+                float(getattr(weather, "gust_kt", 0.0) or 0.0))
 
     def pending_crossing(self) -> str:
         """The runway whose crossing the aircraft has reached or is still

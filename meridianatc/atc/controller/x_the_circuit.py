@@ -346,7 +346,8 @@ class _The_circuit:
             return self._clear_the_circuit(
                 session, station, weather, p, runway, sequence, station_name,
                 caution=self._caution(session, weather, p,
-                                      followed.type_code if followed is not None else ""))
+                                      followed.type_code if followed is not None else ""),
+                low_approach="low approach" in parsed.normalized)
 
         # --- in the circuit: sequence them and give them the next report ---
         if reported in ("overhead", "deadside"):
@@ -481,13 +482,15 @@ class _The_circuit:
         return Reply(text, station, instruction=instruction)
 
     def _clear_the_circuit(self, session, station, weather, p, runway,
-                           sequence, station_name, caution: str = "") -> Reply:
+                           sequence, station_name, caution: str = "",
+                           low_approach: bool = False) -> Reply:
         """The clearance at the end of a circuit.
 
         An aircraft doing circuits gets "cleared for the option", which covers
         the touch-and-go, the low approach and the full stop without the tower
-        having to know which one the pilot has decided on. One that is coming
-        in to land gets a landing clearance.
+        having to know which one the pilot has decided on. One that asked for
+        a low approach by name is given it; one that is coming in to land gets
+        a landing clearance.
         """
         aircraft = session.aircraft
         abbreviated = bool(session.established_with(station))
@@ -497,7 +500,14 @@ class _The_circuit:
             caution=caution)
         if withheld is not None:
             return withheld
-        if session.pattern_work:
+        if low_approach:
+            # Asked for by name: "cleared low approach", not the option.
+            # It is still a runway clearance -- the phase and the wind
+            # snapshot below treat it like any other.
+            text = p.cleared_low_approach(aircraft, runway)
+            kind = "low_approach_clearance"
+            session.cleared_landing = True
+        elif session.pattern_work:
             text = p.cleared_touch_and_go(
                 aircraft, runway, weather, sequence=sequence,
                 station=station_name, abbreviated=abbreviated, caution=caution)
@@ -511,6 +521,7 @@ class _The_circuit:
             session.cleared_landing = True
         session.phase = Phase.LANDING
         session.allow_runway(runway)
+        session.note_clearance_wind(weather)
         instruction = session.remember(
             Instruction(kind, station_key(station), text, {"runway": runway}))
         return Reply(text, station, instruction=instruction)
@@ -683,6 +694,7 @@ class _The_circuit:
         session.cleared_landing = True
         session.phase = Phase.LANDING
         session.allow_runway(runway)
+        session.note_clearance_wind(weather)
         instruction = session.remember(
             Instruction("landing_clearance", station_key(station), text,
                         {"runway": runway})

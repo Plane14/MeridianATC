@@ -403,7 +403,7 @@ def test_rolling_under_the_clearance_marks_the_abort_watch():
 # -- stands for the kind of flight ------------------------------------------------
 
 def _gate_and_ramp_layout():
-    from meridianatc.atc.ground import GroundLayout, PATH_PARKING
+    from meridianatc.atc.ground import PATH_PARKING, GroundLayout
     points = [(0, 0, 0.0, 0.0)]
     parkings = [
         (8, 0, "G1", "", 1, 0, 90.0, 20.0, 50.0, 0.0),    # a gate
@@ -499,7 +499,11 @@ def _runway_layout():
     """A strip with a threshold-side entry and a midfield one, the stand
     beside the midfield and the taxi to the threshold end a long way."""
     from meridianatc.atc.ground import (
-        GroundLayout, PATH_PARKING, PATH_RUNWAY, PATH_TAXI)
+        PATH_PARKING,
+        PATH_RUNWAY,
+        PATH_TAXI,
+        GroundLayout,
+    )
     points = [
         (0, 0, 0.0, 60.0),       # 0
         (0, 0, 200.0, 0.0),      # 1 junction near the threshold
@@ -551,3 +555,264 @@ def test_an_entry_too_short_for_the_takeoff_is_not_used():
     runway_nodes = [n for n in line_up.nodes
                     if n in layout.runway_nodes]
     assert ("p", 1) in runway_nodes
+
+
+# -- the lifelike-controls-and-phraseology overhaul ---------------------------
+
+def test_the_yaw_rate_cap_schedules_down_with_speed():
+    """Fifteen degrees a second is a ramp turn; the same ask at twenty-five
+    knots was the swerve."""
+    from meridianatc.atc.autonomous._shared import _yaw_rate_cap
+    assert _yaw_rate_cap(5.0) == pytest.approx(15.0)
+    assert _yaw_rate_cap(8.0) == pytest.approx(15.0)
+    assert _yaw_rate_cap(17.0) < 15.0
+    assert _yaw_rate_cap(26.0) == pytest.approx(6.0)
+    assert _yaw_rate_cap(60.0) == pytest.approx(6.0)
+
+
+def test_the_nosewheel_fades_to_nothing_while_the_pedals_keep_their_share():
+    """The tiller's authority is gone by seventy knots; the demand itself is
+    not -- the rudder is still steering."""
+    from meridianatc.atc.autonomous._shared import _nws_fade
+    assert _nws_fade(10.0) == pytest.approx(1.0)
+    assert _nws_fade(20.0) == pytest.approx(1.0)
+    assert 0.0 < _nws_fade(45.0) < 1.0
+    assert _nws_fade(70.0) == pytest.approx(0.0)
+    assert _nws_fade(120.0) == pytest.approx(0.0)
+
+
+def test_the_groundspeed_bands_split_where_the_authority_changes():
+    from meridianatc.atc.autonomous._shared import _gs_band
+    assert _gs_band(5.0) == 0
+    assert _gs_band(8.0) == 1
+    assert _gs_band(16.0) == 2
+    assert _gs_band(26.0) == 3
+    assert _gs_band(45.0) == 4
+    assert _gs_band(80.0) == 5
+
+
+def _steerable():
+    """An AutonomousFlight shell with the steering fields the laws read."""
+    flight = _flight()
+    flight._pedal_demand = 0.0
+    flight._demand_streak = 0
+    flight._pedal_votes = 0
+    flight._pedal_flip = False
+    flight._steer_dt = 0.25
+    flight._turn_rate_log = []
+    return flight
+
+
+def test_yaw_authority_is_learned_per_band_and_read_back_nearest():
+    flight = _steerable()
+    learned = {}
+    adapt = SimpleNamespace(
+        learn=lambda key, value, blend=0.0: learned.__setitem__(key, value),
+        learn_votes=lambda key, votes: None,
+        set=lambda key, value: None,
+    )
+    flight._adapt = adapt
+    flight._yaw_authority = 0.0
+    flight._yaw_authority_b = {}
+    # Two calls at the same band and demand side: one seeds, one blends.
+    flight._pedal_check(0.5, 20.0, gs=30.0)
+    flight._pedal_check(0.5, 20.0, gs=30.0)
+    band = 3  # 26-45 kt
+    assert flight._yaw_authority_b[band] == pytest.approx(40.0)
+    assert learned["steer.authority.3"] == pytest.approx(40.0)
+    assert "steer.authority" in learned     # the legacy figure is kept warm
+    # The band answers its own figure; a band with no evidence falls to the
+    # nearest measured one rather than the default.
+    assert flight._yaw_authority_at(30.0) == pytest.approx(40.0)
+    assert flight._yaw_authority_at(60.0) == pytest.approx(40.0)
+
+
+def test_yaw_authority_defaults_when_nothing_is_learned():
+    flight = _steerable()
+    flight._yaw_authority = 0.0
+    flight._yaw_authority_b = {}
+    assert flight._yaw_authority_at(30.0) == pytest.approx(30.0)
+
+
+def test_the_pedal_check_ignores_evidence_that_is_not_the_wheels():
+    """A parked aeroplane nosed round by a tug teaches the steering nothing."""
+    flight = _steerable()
+    learned = {}
+    flight._adapt = SimpleNamespace(
+        learn=lambda key, value, blend=0.0: learned.__setitem__(key, value),
+        learn_votes=lambda key, votes: None,
+        set=lambda key, value: None,
+    )
+    flight._yaw_authority = 0.0
+    flight._yaw_authority_b = {}
+    flight._pedal_check(0.0, 20.0, gs=0.0)     # no demand: no sample
+    flight._pedal_check(0.5, 1.0, gs=30.0)     # no rate: no sample
+    assert flight._yaw_authority_b == {}
+    assert learned == {}
+
+
+def test_the_breakaway_lever_uses_the_learned_pull_away():
+    flight = _steerable()
+    flight._adapt = SimpleNamespace(
+        value=lambda key, default: 0.38 if key == "taxi.breakaway"
+        else default)
+    assert flight._breakaway_lever() == pytest.approx(0.38)
+    # Below the floor the class default stands; above the ceiling it is
+    # clamped rather than trusted.
+    flight._adapt = SimpleNamespace(
+        value=lambda key, default: 0.9 if key == "taxi.breakaway"
+        else default)
+    assert flight._breakaway_lever() == pytest.approx(0.5)
+    flight._adapt = None
+    default = flight._breakaway_lever()
+    assert 0.0 < default <= 0.5
+
+
+def test_the_heli_pedal_check_learns_authority_per_band():
+    from meridianatc.atc.autonomous_heli import PEDAL_MAX, _pedal_check
+    heli = SimpleNamespace(
+        _pedal_demand=None, _pedal_hdg=None, _pedal_at=0.0,
+        _demand_streak=0, _pedal_votes=0, _pedal_flip=False,
+        _pedal_authority_b={})
+    learned = {}
+    heli._adapt = SimpleNamespace(
+        learn=lambda key, value, blend=0.0: learned.__setitem__(key, value),
+        learn_votes=lambda key, votes: None,
+        set=lambda key, value: None,
+    )
+    now = time.monotonic()
+    # First call seeds the previous demand; the second, a second later,
+    # reads the answer. monotonic is real time, so patch the clock the
+    # function keeps on self instead.
+    _pedal_check(heli, PEDAL_MAX // 2, 100.0, gs=10.0)
+    heli._pedal_at = now - 2.0                # a two-second tick
+    _pedal_check(heli, PEDAL_MAX // 2, 120.0, gs=10.0)
+    # 20 degrees over two seconds = 10 deg/s at half pedal = 20 per full.
+    assert heli._pedal_authority_b[1] == pytest.approx(20.0)
+    assert learned["pedals.authority.1"] == pytest.approx(20.0)
+    assert "pedals.authority" in learned
+
+
+def test_the_heli_steering_set_is_faded_with_groundspeed():
+    """The code sends the pedal demand through _nws_fade -- verified by the
+    fade itself: full at taxi, none by seventy knots, which is where a
+    moving helicopter's nosewheel stops being the steering."""
+    import inspect
+
+    import meridianatc.atc.autonomous_heli as heli_mod
+    from meridianatc.atc.autonomous._shared import _nws_fade
+    source = inspect.getsource(heli_mod)
+    assert "STEERING_SET, int(pedal * _nws_fade(gs))" in source
+    assert _nws_fade(70.0) == 0.0
+
+
+def test_wind_moved_uses_the_atis_materiality():
+    """Five knots or thirty degrees, or a gust spread that was not there --
+    what re-letters an ATIS is what earns a wind check."""
+    from meridianatc.atc.traffic._shared import wind_moved, wind_snapshot
+    weather = SimpleNamespace(wind_dir=260.0, wind_kt=18.0, gust_kt=0.0)
+    was = wind_snapshot(weather)
+    assert was == (260.0, 18.0, 0.0)
+    assert not wind_moved(was, weather)
+    moved = SimpleNamespace(wind_dir=260.0, wind_kt=24.0, gust_kt=0.0)
+    assert wind_moved(was, moved)                      # +6 kt
+    veered = SimpleNamespace(wind_dir=300.0, wind_kt=18.0, gust_kt=0.0)
+    assert wind_moved(was, veered)                     # +40 deg
+    gusting = SimpleNamespace(wind_dir=260.0, wind_kt=18.0, gust_kt=30.0)
+    assert wind_moved(was, gusting)                    # spread appeared
+    calm = wind_snapshot(SimpleNamespace(wind_dir=260.0, wind_kt=2.0,
+                                         gust_kt=0.0))
+    calm_shift = SimpleNamespace(wind_dir=300.0, wind_kt=2.0, gust_kt=0.0)
+    assert not wind_moved(calm, calm_shift)            # veered but calm
+    assert not wind_moved((), weather)                 # no baseline: silent
+    assert not wind_moved(was, None)
+
+
+def test_the_session_keeps_the_wind_the_clearance_carried():
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    weather = SimpleNamespace(wind_dir=260.0, wind_kt=18.0, gust_kt=25.0)
+    session.note_clearance_wind(weather)
+    assert session.wind_at_clearance == (260.0, 18.0, 25.0)
+
+
+def test_the_lineup_reason_names_who_is_on_the_strip():
+    injector = _injector()
+    departing = SimpleNamespace(phase="takeoff", describe=lambda lang: "a Boeing")
+    landing = SimpleNamespace(phase="landed", describe=lambda lang: "a Cessna")
+    assert injector._lineup_reason(departing, "en") == "departing traffic"
+    assert "landing" in injector._lineup_reason(landing, "en").lower()
+    assert injector._lineup_reason(None, "en") == ""
+
+
+def test_when_able_renders_in_every_handoff():
+    from meridianatc.atc.language import phraseology_for
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.speech import parse_callsign
+    for language in ("en", "fr", "es", "de", "it", "pt"):
+        p = phraseology_for(language)
+        a = Aircraft(parse_callsign("N123"))
+        a.language = language
+        when = p.when_able()
+        assert when
+        text = p.handoff(a, "Ground", 121.7, when=when)
+        assert when.split()[0] in text
+
+
+def test_the_dormant_phrases_speak_in_every_language():
+    from meridianatc.atc.language import phraseology_for
+    from meridianatc.atc.phraseology import Aircraft, Weather
+    from meridianatc.atc.speech import parse_callsign
+    for language in ("en", "fr", "es", "de", "it", "pt"):
+        p = phraseology_for(language)
+        a = Aircraft(parse_callsign("N123"))
+        a.language = language
+        weather = Weather(wind_dir=260.0, wind_kt=18.0)
+        assert p.wind_check(weather, a)
+        assert p.make_short_approach(a, reason="traffic waiting to depart")
+        assert p.cleared_low_approach(a, "27")
+        assert p.line_up_and_wait(a, "27", reason="departing traffic")
+
+
+def _pilot(language):
+    from meridianatc.atc.language import phraseology_for
+    from meridianatc.atc.pilot import PilotSpeech
+    return PilotSpeech(language, phraseology_for(language))
+
+
+def _aircraft(language="en"):
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.speech import parse_callsign
+    a = Aircraft(parse_callsign("N123"))
+    a.language = language
+    return a
+
+
+def test_a_first_call_carries_the_type_and_the_information():
+    speech = _pilot("en")
+    a = _aircraft()
+    text = speech.request_taxi(a, "Ground", atis_letter="K",
+                               type_name="Cessna")
+    assert "Cessna" in text
+    assert "information" in text and "Kilo" in text
+    # Nothing learned, nothing said: the plain call is unchanged.
+    plain = speech.request_taxi(a, "Ground")
+    assert "information" not in plain
+
+
+def test_a_first_call_without_the_extras_is_unchanged():
+    speech = _pilot("en")
+    a = _aircraft()
+    assert speech.request_vfr_departure(a, "Tower")
+    assert speech.inbound_for_landing(a, "Tower")
+    assert speech.checking_in(a, "Approach", 4000.0, climbing=False)
+
+
+def test_the_information_letter_speaks_every_language():
+    for language in ("fr", "es", "de", "it", "pt"):
+        speech = _pilot(language)
+        a = _aircraft(language)
+        text = speech.request_taxi(a, "Sol", atis_letter="K")
+        assert text

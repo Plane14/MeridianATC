@@ -415,6 +415,7 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         # And the ATIS each field is broadcasting, so a call reporting an old
         # letter is told the current one.
         self.brain.atis = self.atis_for
+        self.traffic.atis = self.atis_for
         self.brain.weather_for = self.weather_for
         # And everything the simulator reports, the pilot's own excluded,
         # for the controller's picture (ControllerBrain.contacts).

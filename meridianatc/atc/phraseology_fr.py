@@ -1270,6 +1270,11 @@ class FrenchPhraseology:
     def remain_this_frequency(self, aircraft: Aircraft) -> str:
         return _join(aircraft.spoken(True), "restez sur cette fréquence") + "."
 
+    def when_able(self) -> str:
+        """Ce que le transfert pendant le roulement porte: "dès que
+        possible"."""
+        return "dès que possible"
+
     def frequency_change_approved(self, aircraft: Aircraft,
                                   squawk: str = "") -> str:
         parts = [aircraft.spoken(True)]

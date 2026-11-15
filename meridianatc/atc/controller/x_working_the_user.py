@@ -175,7 +175,8 @@ class _Working_the_user:
                                 station=station_name, abbreviated=abbreviated,
                                 caution=caution)
             decision("landing_clearance", said="land_after", **log_fields)
-            return self._landing_given(session, station, runway, text)
+            return self._landing_given(session, station, runway, text,
+                                       weather)
         if region == "faa" and departing and not session.pattern_work:
             text = p.cleared_to_land(
                 aircraft, runway, weather, station=station_name,
@@ -183,7 +184,8 @@ class _Working_the_user:
                 caution=", ".join(c for c in (caution, p.departing_prior()) if c))
             session.landing_anticipated = first.written
             decision("landing_clearance", said="anticipated", **log_fields)
-            return self._landing_given(session, station, runway, text)
+            return self._landing_given(session, station, runway, text,
+                                       weather)
         session.landing_withheld = True
         session.phase = Phase.LANDING
         text = p.continue_approach(aircraft, runway_traffic(language))
@@ -193,11 +195,13 @@ class _Working_the_user:
                         readback_required=False))
         return Reply(text, station, instruction=instruction)
 
-    def _landing_given(self, session, station, runway, text) -> Reply:
+    def _landing_given(self, session, station, runway, text,
+                       weather=None) -> Reply:
         session.cleared_landing = True
         session.landing_withheld = False
         session.phase = Phase.LANDING
         session.allow_runway(runway)
+        session.note_clearance_wind(weather)
         instruction = session.remember(
             Instruction("landing_clearance", station_key(station), text,
                         {"runway": runway}))
@@ -328,6 +332,7 @@ class _Working_the_user:
         session.cleared_takeoff_at = time.monotonic()
         session.phase = Phase.TAKEOFF
         session.allow_runway(runway)
+        session.note_clearance_wind(weather)
         instruction = session.remember(
             Instruction("takeoff_clearance", station_key(station), text,
                         {"runway": runway})

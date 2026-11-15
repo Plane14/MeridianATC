@@ -32,7 +32,9 @@ class _Departures:
             self._exchange(
                 flight, now, "DEL",
                 pilot_first=lambda p, a, s: p.request_clearance(
-                    a, s, flight.destination),
+                    a, s, flight.destination,
+                    atis_letter=self._atis_letter(flight.language),
+                    type_name=self._type_of(flight)),
                 controller=lambda c, a, s: c.ifr_clearance(
                     a, s, flight.destination,
                     departure_procedure=flight.sid,
@@ -68,16 +70,20 @@ class _Departures:
                 self.ground, planned[0], self.field.ident, inbound=False)
             route = route or self._taxi_route()
             flight.taxi_rest, flight.taxi_split_xy = rest, where
+            letter = self._atis_letter(flight.language)
+            type_name = self._type_of(flight)
             if flight.ifr:
                 def first(p, a, s):
-                    return p.request_taxi(a, s)
+                    return p.request_taxi(a, s, atis_letter=letter,
+                                          type_name=type_name)
             elif flight.pattern_work:
                 def first(p, a, s):
                     return p.call(
                                     a, s, p.book.request_pattern_work, greeting=True)
             else:
                 def first(p, a, s):
-                    return p.request_vfr_departure(a, s)
+                    return p.request_vfr_departure(a, s, atis_letter=letter,
+                                                   type_name=type_name)
             self._exchange(
                 flight, now, "GND",
                 pilot_first=first,
@@ -106,9 +112,12 @@ class _Departures:
 
         if phase == "taxi":
             route = self._taxi_route()
+            letter = self._atis_letter(flight.language)
+            type_name = self._type_of(flight)
             if flight.ifr:
                 def first(p, a, s):
-                    return p.request_taxi(a, s)
+                    return p.request_taxi(a, s, atis_letter=letter,
+                                          type_name=type_name)
             elif flight.pattern_work:
                 # No clearance to collect: a VFR departure asks to taxi and,
                 # if it is staying in the circuit rather than going somewhere,
@@ -118,7 +127,8 @@ class _Departures:
                                     a, s, p.book.request_pattern_work, greeting=True)
             else:
                 def first(p, a, s):
-                    return p.request_vfr_departure(a, s)
+                    return p.request_vfr_departure(a, s, atis_letter=letter,
+                                                   type_name=type_name)
             self._exchange(
                 flight, now, "GND",
                 pilot_first=first,

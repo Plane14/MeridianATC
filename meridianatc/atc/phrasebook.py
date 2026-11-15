@@ -143,6 +143,7 @@ PHRASE_KEYS: tuple[str, ...] = (
     "hold_fix", "on_radial", "turns_to", "legs_of", "expect_further_clearance",
     # handoffs
     "contact", "monitor", "remain_this_frequency", "frequency_change_approved",
+    "when_able",
     "did_you_get_frequency",
     "unable_due_traffic", "unable_direct", "maintain_present_routing",
     "expect_lower_in",
@@ -1434,6 +1435,11 @@ class LocalisedPhraseology:
             text += " " + _pick(self.book.farewells,
                                 aircraft.callsign.written + next_station)
         return text
+
+    def when_able(self) -> str:
+        """The qualifier a handoff made during the rollout carries:
+        "when able"."""
+        return self._("when_able")
 
     def monitor(self, aircraft: Aircraft, next_station: str,
                 next_freq: float) -> str:

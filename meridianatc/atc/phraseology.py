@@ -1859,6 +1859,10 @@ class Phraseology:
     def remain_this_frequency(self, aircraft: Aircraft) -> str:
         return _join(aircraft.spoken(True), "remain this frequency") + "."
 
+    def when_able(self) -> str:
+        """The qualifier a handoff made during the rollout carries."""
+        return "when able"
+
     def frequency_change_approved(self, aircraft: Aircraft,
                                   squawk: str = "") -> str:
         """Letting an aeroplane go, with the code to set when it is leaving

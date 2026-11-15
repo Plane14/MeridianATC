@@ -339,6 +339,58 @@ _SUB_RESETS = {
     "go_around": ("vertical",),
 }
 
+# The groundspeed edges the learned yaw authorities are kept against, in
+# knots. A nosewheel's authority grows with the speed -- the same tiller
+# travel turns the nose faster the faster the wheels roll -- and the
+# rudder's with its square, so a figure measured on the apron is not the
+# figure that holds on the roll. Six bands, indexed 0-5.
+_GS_BAND_EDGES = (8.0, 16.0, 26.0, 45.0, 80.0)
+
+
+def _gs_band(gs: float) -> int:
+    """Which groundspeed band a speed lands in, 0-5."""
+    band = 0
+    for edge in _GS_BAND_EDGES:
+        if gs >= edge:
+            band += 1
+    return band
+
+
+def _nws_fade(gs: float) -> float:
+    """How much of the demanded tiller the nosewheel still gets at this
+    groundspeed: all of it at taxi pace, none of it once the rudder is
+    the authority.
+
+    A steering wheel that still bought full nosewheel travel at seventy
+    knots would be the accident it is scheduled away from being -- on a
+    transport the tiller's authority is faded out by the speed the
+    rudder takes over (the A320's handwheel goes from about 75 degrees
+    at rest to nothing by 70 kt; a 737's pedals never buy more than
+    seven). The fade spans 20-70 kt: below it the nosewheel is the
+    steering, through it the two share, above it the rudder alone
+    answers.
+    """
+    if gs <= 20.0:
+        return 1.0
+    if gs >= 70.0:
+        return 0.0
+    return 1.0 - (gs - 20.0) / 50.0
+
+
+def _yaw_rate_cap(gs: float) -> float:
+    """The fastest turn the taxi steering law may order, in deg/s.
+
+    Fifteen degrees a second is a brisk ramp turn at walking speed; the
+    same demand at twenty-five knots is the swerve this cap exists to
+    prevent, so it schedules down with the knots the way a pilot's hand
+    asks for less as the ride speeds up.
+    """
+    if gs <= 8.0:
+        return 15.0
+    if gs >= 26.0:
+        return 6.0
+    return 15.0 - (gs - 8.0) * 0.5
+
 
 
 
@@ -348,6 +400,10 @@ __all__ = [
     "SUB_STATES",
     "AutonomousState",
     "_SUB_RESETS",
+    "_GS_BAND_EDGES",
+    "_gs_band",
+    "_nws_fade",
+    "_yaw_rate_cap",
     "contextlib",
     "logging",
     "math",

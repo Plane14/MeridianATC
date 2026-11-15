@@ -80,15 +80,27 @@ class _Shared_helpers:
         """The nose-up attitude the rotation and the go-around aim at.
 
         By the same cruise-speed ladder the envelope sorts aeroplanes
-        with: ten degrees for the light aeroplane, twelve for the
-        turboprop, fifteen for the jet.
+        with -- ten degrees for the light aeroplane, twelve for the
+        turboprop, fifteen for the jet -- trimmed toward the attitude
+        this model actually lifted off at last time, where the store
+        has measured one. The learned figure is let three degrees off
+        the class's, no more: a tail-scraper is met halfway, not
+        followed into the runway.
         """
         cruise = self.performance.cruise_kt
         if cruise >= 230.0:
-            return 15.0
-        if cruise >= 140.0:
-            return 12.0
-        return 10.0
+            target = 15.0
+        elif cruise >= 140.0:
+            target = 12.0
+        else:
+            target = 10.0
+        adapt = getattr(self, "_adapt", None)
+        learned = adapt.value("rotate.pitch", 0.0) \
+            if adapt is not None else 0.0
+        if learned > 0.0:
+            target = max(target - 3.0, min(target + 3.0,
+                                           0.5 * target + 0.5 * learned))
+        return target
 
     def _altitude_target(self, state) -> float:
         """The level to fly now: what ATC last assigned, else the plan's."""

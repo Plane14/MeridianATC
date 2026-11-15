@@ -77,6 +77,9 @@ class TrafficInjector(_The_field, _Flying_them, _What_the_pilot, _Making_aeropla
         # Funchal, in the same order, on every flight.
         self.random = random.Random(seed)
         self.field = _Field()
+        # The field's ATIS, asked of the engine which issues it, so a first
+        # call can carry "with information Kilo". None until wired.
+        self.atis = None
         self.flights: list[Flight] = []
         self.pending: list[Call] = []
         # Numbers the exchanges, so the halves of one can be recognised as

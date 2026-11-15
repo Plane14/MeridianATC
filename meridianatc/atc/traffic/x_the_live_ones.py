@@ -637,7 +637,9 @@ class _The_live_ones:
                 self._exchange(
                     flight, now, "DEL",
                     pilot_first=lambda p, a, s: p.request_clearance(
-                        a, s, flight.destination),
+                        a, s, flight.destination,
+                        atis_letter=self._atis_letter(flight.language),
+                        type_name=self._type_of(flight)),
                     controller=lambda c, a, s: c.ifr_clearance(
                         a, s, flight.destination,
                         initial_altitude=INITIAL_CLIMB_FT,
@@ -677,10 +679,12 @@ class _The_live_ones:
 
         if phase == "lineup":
             flight.step = 1
+            occupier = self._runway_occupier(flight)
+            reason = self._lineup_reason(occupier, flight.language)
             self._exchange(
                 flight, now, "TWR",
                 controller=lambda c, a, s: c.line_up_and_wait(
-                    a, runway_out, station=s),
+                    a, runway_out, reason=reason, station=s),
                 pilot_back=lambda p, a, s: p.line_up(a, runway_out),
             )
             return
@@ -700,7 +704,9 @@ class _The_live_ones:
             self._exchange(
                 flight, now, "APP",
                 pilot_first=lambda p, a, s: p.checking_in(
-                    a, s, flight.altitude_ft, climbing=False),
+                    a, s, flight.altitude_ft, climbing=False,
+                    atis_letter=self._atis_letter(flight.language),
+                    type_name=self._type_of(flight)),
                 controller=lambda c, a, s: c.radar_contact(a, s),
             )
             return
@@ -739,7 +745,8 @@ class _The_live_ones:
             flight.step = 1
             self._exchange(
                 flight, now, "TWR",
-                controller=lambda c, a, s: c.handoff(a, station, mhz),
+                controller=lambda c, a, s: c.handoff(
+                    a, station, mhz, when=c.when_able()),
                 pilot_back=lambda p, a, s: p.contact(a, station, mhz),
             )
             if flight.source == "live":

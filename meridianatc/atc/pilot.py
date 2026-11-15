@@ -479,31 +479,51 @@ class PilotSpeech:
     # requests
     # ------------------------------------------------------------------
 
-    def request_clearance(self, aircraft: Aircraft, station: str,
-                          destination: str, atis_letter: str = "") -> str:
-        body = self.book.request_clearance.format(dest=destination)
+    def _first_call(self, body: str, type_name: str = "",
+                    atis_letter: str = "") -> str:
+        """What a first call carries beyond the request itself: what the
+        aeroplane is ("Heathrow Ground, G-ABCD, Cessna, request taxi"), and
+        the information letter the crew is holding."""
+        if type_name:
+            body = _join(type_name, body)
         if atis_letter:
             body = _join(body, self.book.with_information.format(
                 letter=self.p.d(atis_letter) if atis_letter.isdigit()
                 else _spell(atis_letter)))
+        return body
+
+    def request_clearance(self, aircraft: Aircraft, station: str,
+                          destination: str, atis_letter: str = "",
+                          type_name: str = "") -> str:
+        body = self.book.request_clearance.format(dest=destination)
+        return self.call(aircraft, station,
+                         self._first_call(body, type_name, atis_letter),
+                         greeting=True)
+
+    def request_taxi(self, aircraft: Aircraft, station: str,
+                     atis_letter: str = "", type_name: str = "") -> str:
+        body = self._first_call(self.book.request_taxi, type_name, atis_letter)
         return self.call(aircraft, station, body, greeting=True)
 
-    def request_taxi(self, aircraft: Aircraft, station: str) -> str:
-        return self.call(aircraft, station, self.book.request_taxi,
-                         greeting=True)
+    def request_pushback(self, aircraft: Aircraft, station: str,
+                         atis_letter: str = "", type_name: str = "") -> str:
+        body = self._first_call(self.book.request_pushback, type_name,
+                                atis_letter)
+        return self.call(aircraft, station, body, greeting=True)
 
-    def request_pushback(self, aircraft: Aircraft, station: str) -> str:
-        return self.call(aircraft, station, self.book.request_pushback,
-                         greeting=True)
+    def request_vfr_departure(self, aircraft: Aircraft, station: str,
+                              atis_letter: str = "",
+                              type_name: str = "") -> str:
+        body = self._first_call(self.book.request_vfr_departure, type_name,
+                                atis_letter)
+        return self.call(aircraft, station, body, greeting=True)
 
-    def request_vfr_departure(self, aircraft: Aircraft, station: str) -> str:
-        return self.call(aircraft, station, self.book.request_vfr_departure,
-                         greeting=True)
-
-    def inbound_for_landing(self, aircraft: Aircraft, station: str) -> str:
+    def inbound_for_landing(self, aircraft: Aircraft, station: str,
+                            atis_letter: str = "", type_name: str = "") -> str:
         """A VFR arrival calling the tower up, from outside the circuit."""
-        return self.call(aircraft, station, self.book.request_landing,
-                         greeting=True)
+        body = self._first_call(self.book.request_landing, type_name,
+                                atis_letter)
+        return self.call(aircraft, station, body, greeting=True)
 
     def pattern_entry(self, aircraft: Aircraft, runway: str,
                       leg: str = "", direction: str = "") -> str:
@@ -520,11 +540,13 @@ class PilotSpeech:
                 else self.report(aircraft, body))
 
     def checking_in(self, aircraft: Aircraft, station: str, altitude_ft: float,
-                    climbing: bool) -> str:
+                    climbing: bool, atis_letter: str = "",
+                    type_name: str = "") -> str:
         frame = (self.book.checking_in_climbing if climbing
                  else self.book.checking_in_descending)
+        body = frame.format(altitude=self.p.alt(altitude_ft))
         return self.call(aircraft, station,
-                         frame.format(altitude=self.p.alt(altitude_ft)),
+                         self._first_call(body, type_name, atis_letter),
                          greeting=True)
 
     def maintaining(self, aircraft: Aircraft, station: str,

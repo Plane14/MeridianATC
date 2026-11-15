@@ -16,6 +16,8 @@ from ._shared import (
     make_of,
     runway_traffic,
     wake_suffix,
+    wind_moved,
+    wind_snapshot,
     windshear,
 )
 
@@ -54,6 +56,7 @@ class _The_tower_watching:
                 continue
             if flight.arriving and flight.phase in ("inbound", "final"):
                 self._watch_final(flight, now)
+                self._watch_wind(flight, now)
                 self._watch_spacing(flight, now)
             elif flight.phase == "downwind":
                 self._watch_downwind(flight, now)
@@ -126,6 +129,27 @@ class _The_tower_watching:
             flight.weather_ga_done = True
             return True
         return False
+
+    def _watch_wind(self, flight: Flight, now: float) -> None:
+        """"The wind is now ..." when it has moved since the clearance.
+
+        The clearance carried the field's wind at the time; when it has
+        moved enough that the ATIS would have re-issued, the tower says
+        so on final -- the way an arrival hears "wind is now two six
+        zero at one eight, gusting two five" a mile out.
+        """
+        if flight.phase != "final" or flight.on_ground:
+            return
+        was = flight.wind_at_clearance
+        if not wind_moved(was, self.field.weather):
+            return
+        flight.wind_at_clearance = wind_snapshot(self.field.weather)
+        self._exchange(
+            flight, now, "TWR",
+            controller=lambda c, a, s: c.wind_check(
+                self.field.weather, a),
+            pilot_back=lambda p, a, s: p.roger(a),
+        )
 
     def _watch_final(self, flight: Flight, now: float) -> None:
         """An aeroplane on short final to a runway that may not be free."""
@@ -234,6 +258,22 @@ class _The_tower_watching:
         room = self._room_on_final(flight.distance_nm, ignore=flight,
                                    within_s=self._rollout_s(flight, across))
 
+        # There is room to turn in, and somebody is standing at the hold
+        # point waiting for it: tighten the circuit rather than stretch
+        # it, the way a tower gets a departure out between arrivals.
+        if room and not flight.extending \
+                and not getattr(flight, "short_approach", False) \
+                and self._departure_waiting(flight):
+            flight.short_approach = True
+            self._exchange(
+                flight, now, "TWR",
+                controller=lambda c, a, s: c.make_short_approach(
+                    a, reason="traffic waiting to depart"),
+                pilot_back=lambda p, a, s: p.wilco(a),
+                command=("short_approach", {}),
+            )
+            return
+
         if flight.extending:
             if not room:
                 # Still no gap. It keeps going until there is one -- the
@@ -267,6 +307,15 @@ class _The_tower_watching:
             pilot_back=lambda p, a, s: p.wilco(a),
             command=("extend", {}),
         )
+
+    def _departure_waiting(self, ignore: Flight) -> bool:
+        """Somebody standing at the hold point for the same runway."""
+        runway = getattr(ignore, "runway", None)
+        return any(
+            not f.done and f is not ignore and not f.arriving
+            and f.on_ground and f.runway == runway
+            and f.phase in ("ready", "waiting", "lineup")
+            for f in self.flights)
 
     def _runway_blocked_for(self, flight: Flight, now: float) -> bool:
         """Whether this arrival will have something in its way when it gets there.

@@ -3,6 +3,7 @@ from __future__ import annotations
 from ._shared import (
     Flight,
     landing_traffic,
+    make_of,
 )
 
 
@@ -14,6 +15,21 @@ class _Small_facts_about:
     def _freq(self, position: str) -> float:
         station = self.field.stations.get(position)
         return station.mhz if station else 0.0
+
+    def _atis_letter(self, language: str = "en") -> str:
+        """The letter the field's ATIS is broadcasting, for a first call."""
+        if not self.atis or not self.field.ident:
+            return ""
+        try:
+            report = self.atis(self.field.ident, language)
+        except Exception:
+            return ""
+        return getattr(report, "letter", "") or "" if report else ""
+
+    @staticmethod
+    def _type_of(flight: Flight) -> str:
+        """The make a first call names: "Cessna, request taxi"."""
+        return make_of(flight.type_code)
 
     def _next_station(self, position: str,
                       language: str = "en") -> tuple[str, float]:

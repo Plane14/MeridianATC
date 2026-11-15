@@ -12,6 +12,7 @@ from ._shared import (
     _runway_key,
     _said_route,
     _strips_parallel,
+    wind_snapshot,
 )
 
 
@@ -46,7 +47,10 @@ class _Arrivals:
 
                 self._exchange(
                     flight, now, "TWR",
-                    pilot_first=lambda p, a, s: p.inbound_for_landing(a, s),
+                    pilot_first=lambda p, a, s: p.inbound_for_landing(
+                        a, s,
+                        atis_letter=self._atis_letter(flight.language),
+                        type_name=self._type_of(flight)),
                     controller=joined,
                     pilot_back=read_back,
                     command=("pattern", {"leg": "downwind"}),
@@ -103,7 +107,9 @@ class _Arrivals:
                 self._exchange(
                     flight, now, "APP",
                     pilot_first=lambda p, a, s: p.checking_in(
-                        a, s, flight.altitude_ft, climbing=False),
+                        a, s, flight.altitude_ft, climbing=False,
+                        atis_letter=self._atis_letter(flight.language),
+                        type_name=self._type_of(flight)),
                     controller=controller,
                 )
             # The queue ahead may be longer than the runway takes. Then
@@ -148,7 +154,8 @@ class _Arrivals:
             if station:
                 self._exchange(
                     flight, now, "TWR",
-                    controller=lambda c, a, s: c.handoff(a, station, mhz),
+                    controller=lambda c, a, s: c.handoff(
+                        a, station, mhz, when=c.when_able()),
                     pilot_back=lambda p, a, s: p.contact(a, station, mhz),
                     command=("handoff", {}),
                 )
@@ -392,6 +399,7 @@ class _Arrivals:
                     pilot_back=lambda p, a, s: p.land(a, flight.runway),
                     command=("land", {"runway": flight.runway}),
                 )
+            flight.wind_at_clearance = wind_snapshot(self.field.weather)
             flight.next_at = now + 3.0
             return
 

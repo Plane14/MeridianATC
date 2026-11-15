@@ -38,6 +38,7 @@ from dataclasses import dataclass
 
 from .aircraft_class import HELICOPTER
 from .autonomous import AutonomousPhase
+from .autonomous._shared import _gs_band, _nws_fade
 from .powerplant import limits_for
 from .vspeeds import speeds_for
 
@@ -281,7 +282,7 @@ def _pedal_dir(self) -> int:
     return -1 if getattr(self, "_pedal_flip", False) else 1
 
 
-def _pedal_check(self, demand: int, hdg: float) -> None:
+def _pedal_check(self, demand: int, hdg: float, gs: float = 0.0) -> None:
     """Flip the pedal sign when the axis answers backwards.
 
     The same check the fixed-wing steering runs: a pedal axis on which
@@ -310,6 +311,25 @@ def _pedal_check(self, demand: int, hdg: float) -> None:
     if dt <= 0.5:
         return
     rate = _heading_error(hdg, prev_hdg) / dt
+    # Gain autoadjust, the way the fixed-wing steering learns it: the
+    # yaw a full pedal buys on this model, kept per speed band -- the
+    # tail rotor's answer in a hover is not its answer at eighty
+    # knots, and the wheel's on a runway taxi is neither's.
+    if abs(prev) >= PEDAL_MAX * 0.15 and abs(rate) >= 3.0:
+        sample = abs(rate) / (abs(prev) / PEDAL_MAX)
+        if 5.0 <= sample <= 300.0:
+            band = _gs_band(gs)
+            bands = getattr(self, "_pedal_authority_b", None)
+            if bands is None:
+                bands = self._pedal_authority_b = {}
+            learned = bands.get(band, 0.0)
+            bands[band] = sample if learned <= 0.0 \
+                else 0.6 * learned + 0.4 * sample
+            adapt = getattr(self, "_adapt", None)
+            if adapt is not None:
+                adapt.learn(f"pedals.authority.{band}",
+                            bands[band], blend=0.4)
+                adapt.learn("pedals.authority", bands[band], blend=0.4)
     if abs(prev) < PEDAL_MAX * 0.3 or abs(rate) < 5.0 or streak < 3:
         return
     votes = getattr(self, "_pedal_votes", 0)
@@ -364,6 +384,11 @@ class HeliState:
     ias_approach_kt: float = 60.0
     # The learned hover collective, per cent depressed.
     coll_trim: float = COLL_TRIM_PCT
+    # The learned forward-flight collective and longitudinal cyclic:
+    # translational lift wants a different lever than the hover does,
+    # and the cruise cyclic is whatever axis holds this model on speed.
+    coll_trim_cruise: float = COLL_TRIM_PCT
+    cyclic_trim: float = CYCLIC_TRIM_AIRBORNE
     last_agl_ft: float = 0.0
     last_ias_kt: float = 0.0
     # One-shots.
@@ -509,11 +534,19 @@ class RotorcraftFlight:
         if adapt is not None and getattr(adapt, "enabled", False):
             self.state.coll_trim = adapt.value(
                 "coll_trim", COLL_TRIM_PCT)
+            self.state.coll_trim_cruise = adapt.value(
+                "coll.trim.cruise", self.state.coll_trim)
+            self.state.cyclic_trim = adapt.value(
+                "cyclic.trim", CYCLIC_TRIM_AIRBORNE)
             self._pedal_flip = adapt.value("pedals.flip", 0.0) > 0.5
             self._pedal_votes = int(adapt.signs.get("pedals", 0))
+            self._pedal_authority_b = {
+                i: v for i in range(6)
+                if (v := adapt.value(f"pedals.authority.{i}", 0.0)) > 0.0}
         else:
             self._pedal_flip = False
             self._pedal_votes = 0
+            self._pedal_authority_b = {}
         # The type's own envelope where the table knows it -- an R44 and
         # an S-76 do not share a transition speed or a ceiling.
         self._profile = heli_profile_for(
@@ -903,7 +936,8 @@ class RotorcraftFlight:
                 demand = int(_clamp(-PEDAL_DEG_PER_AXIS * err_h,
                                     -PEDAL_MAX, PEDAL_MAX))
                 _pedal_check(self, demand, float(
-                    getattr(state, "heading_true", 0.0) or 0.0))
+                    getattr(state, "heading_true", 0.0) or 0.0),
+                    float(getattr(state, "ground_speed_kt", 0.0) or 0.0))
                 pedal = demand * _pedal_dir(self)
                 if not self._send(PEDAL_SET, pedal):
                     self._send(TAIL_ROTOR_SET, pedal)
@@ -1005,11 +1039,15 @@ class RotorcraftFlight:
                 coll = self.state.coll_trim + COLL_KP_PER_FT * err \
                     + COLL_KD_PER_FPM * ((vs_target or 0.0) - vs)
             # Learn the trim only in a steady hover, so a climb does not
-            # teach the collective the wrong number.
-            if airborne and abs(vs) < 150.0 and abs(err) < 40.0:
+            # teach the collective the wrong number -- and only off a
+            # lever that is reporting: a model that does not publish the
+            # collective reads 0.0, which would bleed the trim to nothing
+            # and leave the next flight holding a fistful of air.
+            pos = float(getattr(state, "collective_position", 0.0) or 0.0)
+            if airborne and abs(vs) < 150.0 and abs(err) < 40.0 \
+                    and pos > 5.0:
                 self.state.coll_trim += COLL_ADAPT * (
-                    float(getattr(state, "collective_position", 0.0) or 0.0)
-                    - self.state.coll_trim) * 0.1
+                    pos - self.state.coll_trim) * 0.1
                 adapt = getattr(self, "_adapt", None)
                 if adapt is not None:
                     adapt.set("coll_trim",
@@ -1018,17 +1056,37 @@ class RotorcraftFlight:
             # Cruise/climb/descent: feet to the level, rate of climb damped.
             # The caller's target vertical speed bounds the ask where it
             # gives one -- a climb at eight hundred feet a minute is not
-            # the envelope's twelve hundred.
+            # the envelope's twelve hundred. The base is the *cruise*
+            # trim, not the hover's: translational lift carries some of
+            # the weight the rotor was holding alone, so the hover's
+            # lever is too much at speed and the loop paid that
+            # transient on every leg it was not learned for.
             err = alt_target - alt
             limit = (min(self._profile.max_vs_fpm, abs(vs_target))
                      if vs_target else self._profile.max_vs_fpm)
             want_vs = _clamp(err * 2.0, -limit, limit)
             if self._use_pids:
-                coll = self.state.coll_trim + self._pid("collective") \
-                    .update(err * 0.1, rate=(want_vs - vs) * 0.1)
+                coll = self.state.coll_trim_cruise \
+                    + self._pid("collective") \
+                        .update(err * 0.1, rate=(want_vs - vs) * 0.1)
             else:
-                coll = self.state.coll_trim + COLL_KP_PER_FT * err / 10.0 \
+                coll = self.state.coll_trim_cruise \
+                    + COLL_KP_PER_FT * err / 10.0 \
                     + COLL_KD_PER_FPM * (want_vs - vs) / 10.0
+            # Learned only in a level cruise -- a climb or a descent
+            # would teach the lever the wrong regime -- and only off a
+            # lever that is reporting, the way the hover's guard reads
+            # it: an unpublished collective would pull the trim to zero.
+            pos = float(getattr(state, "collective_position", 0.0) or 0.0)
+            if airborne and abs(vs) < 150.0 and abs(err) < 40.0 \
+                    and abs(ias - self.state.ias_cruise_kt) < 10.0 \
+                    and pos > 5.0:
+                self.state.coll_trim_cruise += COLL_ADAPT * (
+                    pos - self.state.coll_trim_cruise) * 0.1
+                adapt = getattr(self, "_adapt", None)
+                if adapt is not None:
+                    adapt.set("coll.trim.cruise",
+                              round(self.state.coll_trim_cruise, 2))
         else:
             coll = self.state.coll_trim
         self._collective(coll)
@@ -1042,15 +1100,29 @@ class RotorcraftFlight:
                              self._profile.max_ias_kt * 0.95)
             err = ias_target - ias
             if self._use_pids:
-                axis = CYCLIC_TRIM_AIRBORNE + self._pid("cyclic") \
+                axis = self.state.cyclic_trim + self._pid("cyclic") \
                     .update(err, measurement=ias)
             else:
-                axis = CYCLIC_TRIM_AIRBORNE + CYCLIC_KT_PER_AXIS * err
+                axis = self.state.cyclic_trim + CYCLIC_KT_PER_AXIS * err
             # A helicopter cannot climb vertically forever: bleed speed
             # protection -- if the collective is asking hard and the speed
             # is low, lower the nose rather than stall in the H-V curve.
             if ias < 45.0 and agl > 200.0:
                 axis -= 1500
+            # On speed and steady, the axis being commanded is the
+            # forward-flight cyclic this model wants -- the trim the
+            # next leg starts from, the way the collective's hover
+            # figure was. Never while the bleed-speed deduction is in
+            # the axis: it would teach the trim the H-V protection's
+            # nose-down instead of the cruise figure.
+            if abs(err) < 3.0 and abs(vs) < 200.0 \
+                    and not (ias < 45.0 and agl > 200.0):
+                self.state.cyclic_trim += (axis
+                                           - self.state.cyclic_trim) * 0.05
+                adapt = getattr(self, "_adapt", None)
+                if adapt is not None:
+                    adapt.set("cyclic.trim",
+                              round(self.state.cyclic_trim, 1))
             self._send(CYCLIC_LONG_SET, int(_clamp(axis, -axis_max,
                                                  axis_max)))
         elif not airborne:
@@ -1080,11 +1152,15 @@ class RotorcraftFlight:
             else:
                 demand = int(_clamp(-PEDAL_DEG_PER_AXIS * err, -pedal_max,
                                     pedal_max))
-            _pedal_check(self, demand, hdg)
+            gs = float(getattr(state, "ground_speed_kt", 0.0) or 0.0)
+            _pedal_check(self, demand, hdg, gs)
             pedal = demand * _pedal_dir(self)
             if not self._send(PEDAL_SET, pedal):
                 self._send(TAIL_ROTOR_SET, pedal)
-            self._send(STEERING_SET, pedal)
+            # The nosewheel gets the same demand faded out with speed,
+            # the way the fixed-wing gear's tiller does: at taxi pace it
+            # is the steering, past transition the tail rotor alone is.
+            self._send(STEERING_SET, int(pedal * _nws_fade(gs)))
 
         # -- throttle ---------------------------------------------------------
         if throttle is not None:

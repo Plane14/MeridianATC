@@ -236,6 +236,9 @@ class Flight:
     # The circuit it has decided will be its last: it goes round once more and
     # lands off that one rather than asking for the option again.
     last_circuit: bool = False
+    # The wind the last takeoff/landing clearance carried, as
+    # (direction, kt, gust kt): the baseline a wind check is issued from.
+    wind_at_clearance: tuple = ()
 
     # Somebody else's aeroplane: FSLTL, AIG, the simulator's own live traffic.
     # It is read rather than flown and it cannot be instructed, so the flight
@@ -528,6 +531,33 @@ def runway_traffic(language: str = "en") -> str:
 def windshear(language: str = "en") -> str:
     """Why an aircraft is going around on a gusty day."""
     return _WINDSHEAR.get(language, _WINDSHEAR["en"])
+
+
+def wind_moved(was: tuple, weather) -> bool:
+    """Whether the field's wind has moved enough since ``was`` that the
+    tower would say so -- the same materiality the ATIS applies before
+    it rolls a new letter: five knots or thirty degrees, or a gust
+    spread appearing that was not there."""
+    if not was or weather is None:
+        return False
+    was_dir, was_kt, was_gust = was
+    kt = float(getattr(weather, "wind_kt", 0.0) or 0.0)
+    deg = float(getattr(weather, "wind_dir", 0.0) or 0.0)
+    gust = float(getattr(weather, "gust_kt", 0.0) or 0.0)
+    return (abs(was_kt - kt) >= 5.0
+            or (abs((was_dir - deg + 540.0) % 360.0 - 180.0) >= 30.0
+                and kt >= 5.0)
+            or (gust - kt >= 10.0 and was_gust - was_kt < 10.0))
+
+
+def wind_snapshot(weather) -> tuple:
+    """The (direction, kt, gust kt) a clearance carried, kept so a wind
+    check can be issued when it has moved since."""
+    if weather is None:
+        return ()
+    return (float(getattr(weather, "wind_dir", 0.0) or 0.0),
+            float(getattr(weather, "wind_kt", 0.0) or 0.0),
+            float(getattr(weather, "gust_kt", 0.0) or 0.0))
 
 
 def make_of(type_code: str) -> str:

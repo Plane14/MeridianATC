@@ -14,9 +14,11 @@ from ._shared import (
     _strips_parallel,
     bearing_deg,
     glide_altitude,
+    landing_traffic,
     log,
     make_of,
     project,
+    wind_snapshot,
 )
 
 
@@ -246,6 +248,28 @@ class _Where_it_is:
                 return True
         return False
 
+    def _runway_occupier(self, flight: Flight) -> Flight | None:
+        """The aeroplane on the runway in front of a waiting departure --
+        the one whose roll the departure is waiting behind."""
+        return next(
+            (other for other in self.flights
+             if other is not flight and not other.done
+             and other.on_ground and other.runway == flight.runway
+             and other.phase in ("takeoff", "landed")),
+            None)
+
+    @staticmethod
+    def _lineup_reason(occupier: Flight | None, language: str) -> str:
+        """Why the departure is being lined up behind somebody: a rolling
+        departure ahead of it, or a landing clearing the runway -- the
+        "departing traffic" / "landing traffic" a tower says when it does
+        not clear an aeroplane straight off."""
+        if occupier is None:
+            return ""
+        if occupier.phase == "takeoff":
+            return "departing traffic"
+        return landing_traffic(occupier.describe(language), language)
+
     def _somebody_lined_up(self, ignore: Flight | None = None,
                            runway: str = "") -> bool:
         """Whether the runway already has an aeroplane sitting on it."""
@@ -354,10 +378,12 @@ class _Where_it_is:
                     and not self._somebody_lined_up(
                         flight, runway=flight.runway)):
                 flight.step = 2
+                occupier = self._runway_occupier(flight)
+                reason = self._lineup_reason(occupier, flight.language)
                 self._exchange(
                     flight, now, "TWR",
                     controller=lambda c, a, s: c.line_up_and_wait(
-                        a, flight.runway, station=s),
+                        a, flight.runway, reason=reason, station=s),
                     pilot_back=lambda p, a, s: p.line_up(a, flight.runway),
                     command=("line_up", {"runway": flight.runway}),
                 )
@@ -385,6 +411,7 @@ class _Where_it_is:
                 announce=taking_the_runway,
                 command=("takeoff", {"runway": flight.runway}),
             )
+        flight.wind_at_clearance = wind_snapshot(self.field.weather)
         self._hold_runway(flight.runway, now, RUNWAY_ROLL_S)
         flight.next_at = now + RUNWAY_ROLL_S * 0.5
 

@@ -203,6 +203,7 @@ SPANISH = Phrasebook(
         "expect_further_clearance": "autorización posterior prevista a las {time}",
         # handoffs
         "contact": "contacte {station} {frequency}",
+        "when_able": "cuando pueda",
         "monitor": "escuche {station} {frequency}",
         "remain_this_frequency": "permanezca en esta frecuencia",
         # UNVERIFIED: no recording of a handoff said again was checked.
@@ -563,6 +564,7 @@ GERMAN = Phrasebook(
         "expect_further_clearance": "weitere Freigabe erwartet um {time}",
         # handoffs
         "contact": "rufen Sie {station} {frequency}",
+        "when_able": "wenn möglich",
         "monitor": "hören Sie {station} {frequency}",
         "remain_this_frequency": "bleiben Sie auf dieser Frequenz",
         # UNVERIFIED: no recording of a handoff said again was checked.
@@ -919,6 +921,7 @@ ITALIAN = Phrasebook(
         "expect_further_clearance": "ulteriore autorizzazione prevista alle {time}",
         # handoffs
         "contact": "contatti {station} {frequency}",
+        "when_able": "quando possibile",
         "monitor": "ascolti {station} {frequency}",
         "remain_this_frequency": "rimanga su questa frequenza",
         # UNVERIFIED: no recording of a handoff said again was checked.
@@ -1276,6 +1279,7 @@ PORTUGUESE = Phrasebook(
         "expect_further_clearance": "autorização posterior prevista às {time}",
         # handoffs
         "contact": "contacte {station} {frequency}",
+        "when_able": "quando possível",
         "monitor": "escute {station} {frequency}",
         "remain_this_frequency": "permaneça nesta frequência",
         # UNVERIFIED: no recording of a handoff said again was checked.

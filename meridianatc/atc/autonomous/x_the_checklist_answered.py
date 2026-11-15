@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from ._shared import (
+    _gs_band,
+    _nws_fade,
+    _yaw_rate_cap,
     holds,
     ip,
     log,
@@ -110,9 +113,10 @@ class _The_checklist_answered:
         # Switches whose "off" is never asked for while the aeroplane is
         # moving or flying: an item answered there fought the phase
         # machine (the brake) or switched the aeroplane off in the air
-        # (the masters). Parked is the only place they are asked for off.
-        parked = getattr(state, "on_ground", True) \
-            and (state.ground_speed_kt or 0.0) <= 5.0
+        # (the masters). Parked is the only place they are asked for off
+        # -- and no state read is not parked.
+        parked = bool(getattr(state, "on_ground", False)) \
+            and (getattr(state, "ground_speed_kt", 0.0) or 0.0) <= 5.0
         table = {
             "parking_brake": lambda: d.parking_brake(want_on),
             # Gear out goes through the same gear-speed gate the flying
@@ -303,16 +307,30 @@ class _The_checklist_answered:
         # which is exactly when the estimate matters most. The
         # aeroplane must be rolling too: a tug or the wind can put
         # rate on a parked airframe that the pedal never made.
+        #
+        # The figure is kept per groundspeed band: authority grows with
+        # the knots, so a sample taken on the apron is written where it
+        # was taken and the rollout's band keeps its own. The legacy
+        # whole-speed value is kept updated too -- it is the fallback a
+        # band that has no evidence yet reads, and the only figure an
+        # old store carries.
         if abs(prev) >= 0.15 and abs(rate) >= 3.0 and gs >= 1.0:
             sample = abs(rate) / abs(prev)
             if 5.0 <= sample <= 150.0:
-                learned = getattr(self, "_yaw_authority", 0.0)
-                self._yaw_authority = sample if learned <= 0.0 \
+                band = _gs_band(gs)
+                bands = getattr(self, "_yaw_authority_b", None)
+                if bands is None:
+                    bands = self._yaw_authority_b = {}
+                learned = bands.get(band, 0.0)
+                bands[band] = sample if learned <= 0.0 \
                     else 0.6 * learned + 0.4 * sample
+                self._yaw_authority = bands[band]
                 adapt = getattr(self, "_adapt", None)
                 if adapt is not None:
+                    adapt.learn(f"steer.authority.{band}",
+                                bands[band], blend=0.4)
                     adapt.learn("steer.authority",
-                                self._yaw_authority, blend=0.4)
+                                bands[band], blend=0.4)
         if abs(prev) < 0.3 or abs(rate) < 3.0 or gs < 1.0 or streak < 3:
             return
         adapt = getattr(self, "_adapt", None)
@@ -329,15 +347,74 @@ class _The_checklist_answered:
         if adapt is not None:
             adapt.learn_votes("steer", votes)
 
+    def _yaw_authority_at(self, gs: float) -> float:
+        """The deg/s of yaw one unit of pedal buys at this groundspeed.
+
+        Learned per speed band in ``_pedal_check``, because the same
+        travel steers harder the faster the wheels roll: the figure
+        measured on the apron applied to a rollout at sixty knots is
+        the weave this law exists to stop. The current band's figure
+        answers first, then the nearest band that has one, then the
+        legacy whole-speed figure, then a middling guess.
+        """
+        bands = getattr(self, "_yaw_authority_b", None) or {}
+        got = bands.get(_gs_band(gs))
+        if got is None:
+            band = _gs_band(gs)
+            for off in range(1, 6):
+                got = bands.get(band - off) or bands.get(band + off)
+                if got is not None:
+                    break
+        if not got:
+            got = getattr(self, "_yaw_authority", 0.0)
+        if got < 5.0:
+            got = 30.0
+        return got
+
+    def _ground_directional(self, state, want_hdg: float, gs: float,
+                            rate_cap: float = 5.0,
+                            pedal_max: float = 0.4) -> float:
+        """The signed pedal demand that holds a heading on a fast roll.
+
+        The takeoff roll, the rollout and the flare's de-crab steer by
+        rate, the way the taxi law does: the led error asks for a small
+        yaw rate -- a few degrees a second is a correction at a hundred
+        knots, not a weave -- and the pedal answers the difference
+        between that and the measured rate, divided by the authority
+        this model has shown at this speed. The bare proportional law
+        this replaces had no memory: a model whose rudder answered half
+        as strongly as the assumed one weaved until the weave was the
+        flight.
+        """
+        hdg = state.heading_true or 0.0
+        err = ((want_hdg - hdg + 540.0) % 360.0 - 180.0)
+        rate = self._turn_rate(hdg)
+        lead = self._steer_lead(err, rate)
+        want_rate = max(-rate_cap, min(rate_cap, lead / 4.0))
+        authority = self._yaw_authority_at(gs)
+        pedal = max(-pedal_max,
+                    min(pedal_max, (want_rate - rate) / authority))
+        if abs(err) < 1.5 and abs(rate) < 1.0:
+            pedal = 0.0
+        self._pedal_check(pedal, rate, gs)
+        return pedal * self._pedal_dir()
+
     def _breakaway_lever(self) -> float:
         """The momentary lever that starts the aeroplane rolling.
 
         A loaded transport wants a third of the travel to break away
-        from the stand; a light single wants a fifth. Asked for only
-        while the wheels are stopped -- once rolling, the speed law
-        owns the lever and the power comes back to idle, the way the
-        surge ends the moment the aeroplane is moving.
+        from the stand; a light single wants a fifth -- and this model
+        wants whatever it took last time, where the store has measured
+        one: the lever the last pull-away actually moved at. Asked for
+        only while the wheels are stopped -- once rolling, the speed
+        law owns the lever and the power comes back to idle, the way
+        the surge ends the moment the aeroplane is moving.
         """
+        adapt = getattr(self, "_adapt", None)
+        learned = adapt.value("taxi.breakaway", 0.0) \
+            if adapt is not None else 0.0
+        if learned >= 0.15:
+            return max(0.15, min(0.50, learned))
         cruise = self.performance.cruise_kt
         if cruise >= 230.0:
             return 0.38
@@ -462,18 +539,22 @@ class _The_checklist_answered:
         # which is the damping a loop running on seconds-old reads needs
         # and a proportional term cannot supply -- the apron showed the
         # slalom the other shape makes.
-        want_rate = max(-15.0, min(15.0, err / 4.0))
-        # The gain autoadjusts to the airframe: ``_yaw_authority`` is
-        # the degrees a second one unit of pedal buys on this model,
-        # learned in ``_pedal_check``; until it has evidence the demand
-        # assumes a middling answer and the estimate corrects it.
-        authority = getattr(self, "_yaw_authority", 0.0)
-        if authority < 5.0:
-            authority = 30.0
+        gs = state.ground_speed_kt or 0.0
+        # The ask also comes down with speed: fifteen degrees a second
+        # is a brisk ramp turn, and the same rate at twenty-five knots
+        # is the swerve a fast taxi is lost to.
+        rate_cap = _yaw_rate_cap(gs)
+        want_rate = max(-rate_cap, min(rate_cap, err / 4.0))
+        # The gain autoadjusts to the airframe *at this speed*: the
+        # degrees a second one unit of pedal buys on this model, learned
+        # in ``_pedal_check`` per groundspeed band -- authority grows
+        # with the knots, so the apron's figure steered at rollout speed
+        # is the weave, not the answer. Until a band has evidence the
+        # nearest one -- or a middling guess -- corrects it.
+        authority = self._yaw_authority_at(gs)
         rudder = max(-0.5, min(0.5, (want_rate - rate) / authority))
         limit = self._ground_steer_limit(state)
         rudder = max(-limit, min(limit, rudder))
-        gs = state.ground_speed_kt or 0.0
         sent = rudder * self._pedal_dir()
         log.info(
             "steer: hdg %.0f want %.0f err %+.0f rate %+.1f "
@@ -483,9 +564,12 @@ class _The_checklist_answered:
         self._pedal_check(rudder, rate, gs)
         d.rudder(sent)
         # The nosewheel follows the same demand where the model steers it
-        # separately: a taildragger on rudder alone and a tricycle gear on
-        # STEERING_SET both get their turn.
-        d.steering(sent)
+        # separately -- faded out with speed the way a real gear's tiller
+        # is, so a full ask at forty knots reaches the tiller as a
+        # fraction of itself while the rudder keeps the whole demand. A
+        # taildragger on rudder alone and a tricycle gear on STEERING_SET
+        # both get their turn.
+        d.steering(sent * _nws_fade(gs))
         # Taxi and rollout speeds are throttle jobs, not AP jobs -- and
         # progressive ones: the further below target, the more asked for,
         # and the lever is walked to the answer at a hand's rate rather
@@ -535,6 +619,20 @@ class _The_checklist_answered:
         else:
             lever = self._slew_lever(max(0.0, min(0.6, want)),
                                      up_per_s=0.05, down_per_s=0.15)
+        # What a pull-away took is what the next one starts with: the
+        # lever under way while the wheels were still stopped is noted,
+        # and the first pass over two knots writes it down -- bounded,
+        # so a pull-away measured against a chock does not poison it.
+        if state.on_ground and gs < 2.0 and target_kt > 0.0 \
+                and lever > 0.05:
+            self._broke_lever = lever
+        elif gs >= 2.0 and getattr(self, "_broke_lever", None) is not None:
+            took = self._broke_lever
+            self._broke_lever = None
+            adapt = getattr(self, "_adapt", None)
+            if adapt is not None:
+                adapt.learn("taxi.breakaway",
+                            max(0.15, min(0.50, took)), blend=0.4)
         d.throttle(lever)
         if state.on_ground:
             # Fast is brought down on the brakes, not coasted out on the

@@ -245,10 +245,19 @@ class _Entry:
             self._pedal_flip = adapt.value("steer.flip", 0.0) > 0.5
             self._pedal_votes = int(adapt.signs.get("steer", 0))
             self._yaw_authority = adapt.value("steer.authority", 0.0)
+            # The authority measured at each speed is its own figure:
+            # bands a previous flight filled are preloaded, and a store
+            # that only carries the legacy whole-speed number leaves
+            # every band to seed from it at first use.
+            self._yaw_authority_b = {
+                i: v for i in range(6)
+                if (v := adapt.value(f"steer.authority.{i}", 0.0)) > 0.0}
         else:
             self._pedal_flip = False
             self._pedal_votes = 0
             self._yaw_authority = 0.0
+            self._yaw_authority_b = {}
+        self._broke_lever = None
 
     def begin_flight(self, session: FlightSession) -> None:
         """Start a new autonomous flight."""

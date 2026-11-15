@@ -2197,6 +2197,9 @@ class _The_other_aeroplanes:
     # stops watching and passes you on.
     HANDOFF_ABOVE_AGL_FT = 700.0
     HANDOFF_BELOW_KT = 35.0
+    # The rollout's "when able, contact ground": slow enough that the
+    # rollout is made, still on the strip.
+    ROLLOUT_HANDOFF_BELOW_KT = 60.0
 
     def _hand_off_on_phase(self, state: AircraftState,
                            session: FlightSession) -> None:
@@ -2228,6 +2231,7 @@ class _The_other_aeroplanes:
             return
 
         if station.position == "TWR":
+            self._watch_the_wind(session, station)
             self._tower_hands_on(state, session, station)
         elif station.position in ("GND", "DEL"):
             self._ground_hands_on(state, session, station)
@@ -2256,6 +2260,53 @@ class _The_other_aeroplanes:
         if session.advise_once("handoff:ground_to_tower"):
             self._pass_to(session, station, "TWR",
                           runway=session.departure_runway)
+
+    def _watch_the_wind(self, session: FlightSession,
+                        station: Station) -> None:
+        """"The wind is now ..." when it has moved since the clearance.
+
+        A takeoff or landing clearance carries the wind it was issued
+        with; when the field's wind moves enough that the ATIS would
+        have re-issued, the tower says so -- the same materiality rule
+        the ATIS itself uses, and the reason a waiting departure or an
+        arrival on final hears "wind is now two five zero at one
+        eight". Each issue resets the baseline, so a wind that keeps
+        veering is reported again, but only by material steps.
+        """
+        was = session.wind_at_clearance
+        if not was:
+            return
+        if not (session.cleared_takeoff or session.cleared_landing
+                or session.cleared_option):
+            session.wind_at_clearance = ()
+            return
+        weather = self.weather_for(station.ident)
+        if weather is None:
+            return
+        was_dir, was_kt, was_gust = was
+        moved = (
+            abs(was_kt - (weather.wind_kt or 0.0)) >= 5.0
+            or (abs((was_dir - (weather.wind_dir or 0.0) + 540.0)
+                    % 360.0 - 180.0) >= 30.0
+                and (weather.wind_kt or 0.0) >= 5.0)
+            or ((weather.gust_kt or 0.0) - (weather.wind_kt or 0.0) >= 10.0
+                and was_gust - was_kt < 10.0))
+        if not moved:
+            return
+        session.wind_at_clearance = (
+            float(weather.wind_dir or 0.0), float(weather.wind_kt or 0.0),
+            float(weather.gust_kt or 0.0))
+        decision("wind_check", airport=station.ident,
+                 was=f"{int(was_dir)}/{int(was_kt)}g{int(was_gust)}",
+                 now=f"{int(weather.wind_dir or 0)}/"
+                     f"{int(weather.wind_kt or 0)}"
+                     f"g{int(weather.gust_kt or 0)}")
+        spoken = self._language_for(station.ident, self.last_language)
+        p = self.brain.for_station(station, spoken)
+        text = p.wind_check(weather, session.aircraft)
+        self.emit("atc", text, station.callsign)
+        self.speak(text, station, language=spoken)
+        self._radio_unprompted(text, station, "wind_check", spoken)
 
     def _tower_hands_on(self, state: AircraftState, session: FlightSession,
                         station: Station) -> None:
@@ -2298,7 +2349,21 @@ class _The_other_aeroplanes:
             state.on_ground and state.ground_speed_kt < self.HANDOFF_BELOW_KT
             and session.phase in (Phase.LANDED, Phase.TAXI_IN)
             and not self._on_a_runway(station.ident, state))
-        if clear_of_the_runway and session.advise_once("handoff:arrival"):
+        # Still rolling but slow enough to be sent on: a tower that has
+        # no more for the aeroplane says so during the rollout -- "when
+        # able, contact ground" -- rather than making it wait at the
+        # exit for a call that was always coming. Whichever of the two
+        # gates fires first wins the one handoff.
+        rolling_out = (
+            state.on_ground
+            and session.phase in (Phase.LANDED, Phase.TAXI_IN)
+            and state.ground_speed_kt < self.ROLLOUT_HANDOFF_BELOW_KT
+            and self._on_a_runway(station.ident, state))
+        if rolling_out and session.advise_once("handoff:arrival"):
+            self._pass_to(session, station, "GND", when_able=True,
+                          welcome=self._welcome_to(station)
+                          if session.landed_cleared else "")
+        elif clear_of_the_runway and session.advise_once("handoff:arrival"):
             # And a word about where you have arrived, for an aeroplane that
             # was cleared to land here. A tower that has just had to tell
             # somebody they landed without a clearance does not then welcome
@@ -3061,7 +3126,7 @@ class _The_other_aeroplanes:
 
     def _pass_to(self, session: FlightSession, station: Station,
                  *positions: str, at: str = "", welcome: str = "",
-                 runway: str = "") -> None:
+                 runway: str = "", when_able: bool = False) -> None:
         """Say who to call next, or release the frequency if nobody is next.
 
         ``at`` is the field whose positions to look through, which is the one
@@ -3080,10 +3145,12 @@ class _The_other_aeroplanes:
             if found is not None and station_key(found) != station_key(station):
                 nxt = found
                 break
-        self._pass_to_station(session, station, nxt, welcome=welcome)
+        self._pass_to_station(session, station, nxt, welcome=welcome,
+                              when_able=when_able)
 
     def _pass_to_station(self, session: FlightSession, station: Station,
-                         nxt: Station | None, welcome: str = "") -> None:
+                         nxt: Station | None, welcome: str = "",
+                         when_able: bool = False) -> None:
         """Say the handoff, in the language the frequency is being worked in."""
         spoken = self._language_for(station.ident, self.last_language)
         p = self.brain.for_station(station, spoken)
@@ -3092,6 +3159,7 @@ class _The_other_aeroplanes:
         if nxt is not None:
             text = p.handoff(session.aircraft,
                              nxt.callsign_in(spoken, short=True), nxt.mhz,
+                             when=p.when_able() if when_able else "",
                              farewell=True, welcome=welcome)
             instruction = Instruction("handoff", station_key(station), text,
                                       {"frequency": nxt.mhz})

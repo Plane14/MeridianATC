@@ -3,6 +3,7 @@ from __future__ import annotations
 from ._shared import (
     AutonomousPhase,
     Phase,
+    _nws_fade,
     auto_nav,
     capabilities,
     fly,
@@ -630,26 +631,20 @@ class _The_phase_machine:
                 return
             self._set_takeoff_power(state)
             # Directional control: the nosewheel does the early work, the
-            # rudder takes over as the airflow comes alive. Both get the
-            # same demand; a model that only honours one still tracks.
-            # The demand is kept small: a hard pedal at eighty knots is
-            # the swerve a takeoff roll is lost to, not saved by. The
-            # band stays proportional out to a real excursion -- a law
-            # saturated inside a few degrees under a tick or two of lag
-            # is the same weave the apron showed, at eighty knots. The
-            # rate term takes the pedal off as the nose comes around:
-            # an answer for where the heading will be, not for where a
-            # stale read says it is.
-            hdg = state.heading_true or 0.0
-            err = ((self.state.runway_heading - hdg + 540.0)
-                   % 360.0 - 180.0)
-            lead = self._steer_lead(err, self._turn_rate(hdg))
-            keep = ((0.0 if abs(lead) < 2.0
-                     else max(-0.4, min(0.4, lead / 36.0)))
-                    * self._pedal_dir())
+            # rudder takes over as the airflow comes alive -- faded
+            # across the handover the way the gear's own schedule is,
+            # not cut at a number. Both get a demand from the same rate
+            # servo the taxi law runs, tightened to a few degrees a
+            # second and divided by the authority this model has shown
+            # at this speed: a hard pedal at eighty knots is the swerve
+            # a takeoff roll is lost to, not saved by, and a model that
+            # answers its rudder differently was weaving under a fixed
+            # gain.
+            gs = state.ground_speed_kt or ias
+            keep = self._ground_directional(
+                state, self.state.runway_heading, gs, rate_cap=5.0)
             d.rudder(keep)
-            d.steering(keep if (state.indicated_airspeed_kt or 0.0) < 35.0
-                       else 0.0)
+            d.steering(keep * _nws_fade(gs))
             rotate_at = (self.state.vr_kt
                          or getattr(state, "min_rotation_kt", 0.0) or 0.0
                          or self.performance.rotate_kt)
@@ -683,6 +678,15 @@ class _The_phase_machine:
 
         if sub == "rotate":
             if not state.on_ground:
+                # The attitude that actually flew the wheels off is
+                # this model's liftoff attitude -- written down, so the
+                # next rotation asks for it rather than only for the
+                # class's figure. A tail-scraper and a floater file
+                # different numbers.
+                adapt = getattr(self, "_adapt", None)
+                pitch = float(getattr(state, "pitch_deg", 0.0) or 0.0)
+                if adapt is not None and pitch > 0.0:
+                    adapt.learn("rotate.pitch", pitch, blend=0.3)
                 self._goto_sub("initial_climb")
                 return
             # Pull to the rotation attitude and hold it until the wheels
@@ -1094,6 +1098,19 @@ class _The_phase_machine:
             self._run_checklist_for_phase("before_landing")
             if state.on_ground:
                 self.state.touchdown_at = now
+                # What this flare earned is this model's next flare:
+                # the sink the last airborne read showed, turned into
+                # the bias the schedule's floor is trimmed by. A hard
+                # arrival asks for less sink next time, a floater for
+                # more -- the way a pilot adjusts the flare for the
+                # aeroplane he has just put down.
+                adapt = getattr(self, "_adapt", None)
+                sink_td = getattr(self, "_flare_sink", 0.0)
+                if adapt is not None and self._use_pids \
+                        and sink_td > 0.0:
+                    needed = max(-150.0, min(150.0, 250.0 - sink_td))
+                    adapt.learn("flare.bias", needed, blend=0.4)
+                self._flare_sink = 0.0
                 # The flare's clock belongs to this landing: a
                 # touch-and-go would read it as a fifteen-second float
                 # the moment the next pass sank under sixty feet.
@@ -1113,13 +1130,21 @@ class _The_phase_machine:
                 d.throttle(0.0)
                 self._last_lever = 0.0
                 sink = abs(state.vertical_speed_fpm or 0.0)
+                self._flare_sink = sink
                 if self._use_pids:
                     # A real flare is a decaying sink target, not one
                     # pull: from the approach's descent rate at the flare
                     # height down to a hundred-odd feet a minute at the
-                    # numbers. The loop chases that schedule against the
+                    # numbers -- trimmed by what this model's last
+                    # touchdowns earned, so a model that keeps arriving
+                    # hard is asked for less sink and a floater for
+                    # more. The loop chases that schedule against the
                     # sink the model reports.
-                    want = max(100.0, min(750.0, agl * 13.0))
+                    adapt = getattr(self, "_adapt", None)
+                    bias = adapt.value("flare.bias", 0.0) \
+                        if adapt is not None else 0.0
+                    floor = max(50.0, min(250.0, 100.0 + bias))
+                    want = max(floor, min(750.0, agl * 13.0))
                     pull = 0.05 + self._pid("flare").update(
                         sink - want,
                         measurement=float(
@@ -1138,13 +1163,15 @@ class _The_phase_machine:
                 # (the wind component's sign is the sim's, UNVERIFIED --
                 # a wrong one shows as a slow bank, not a departure).
                 if self.state.runway_heading > 0:
-                    hdg = state.heading_true or 0.0
-                    err = ((self.state.runway_heading - hdg + 540.0)
-                           % 360.0 - 180.0)
-                    lead = self._steer_lead(err, self._turn_rate(hdg))
-                    d.rudder((0.0 if abs(lead) < 2.0
-                              else max(-0.4, min(0.4, lead / 36.0)))
-                             * self._pedal_dir())
+                    # The de-crab kick runs the same rate servo the
+                    # ground steering does -- a few degrees a second of
+                    # yaw answered against the authority this model has
+                    # shown, not a bare proportional pedal.
+                    d.rudder(self._ground_directional(
+                        state, self.state.runway_heading,
+                        state.ground_speed_kt
+                        or (state.indicated_airspeed_kt or 0.0),
+                        rate_cap=4.0))
                 xwind = float(getattr(state, "aircraft_wind_x_kt", 0.0)
                               or 0.0)
                 d.aileron(max(-0.15, min(0.15, xwind * 0.02)))
@@ -1232,20 +1259,15 @@ class _The_phase_machine:
                 self._transition(AutonomousPhase.TAXI_IN)
                 self._goto_sub("taxi")
                 return
-            # Keep it on the centreline until slow. Above walking pace
-            # the rudder alone holds the line -- the nosewheel thrown in
-            # at rollout speed is the swerve a landing is lost to, not
-            # saved by.
+            # Keep it on the centreline until slow. The rudder does the
+            # holding at rollout pace while the nosewheel's share fades
+            # out under it -- thrown in whole at rollout speed it is the
+            # swerve a landing is lost to, not saved by.
             if self.state.runway_heading > 0:
-                hdg = state.heading_true or 0.0
-                err = ((self.state.runway_heading - hdg + 540.0)
-                       % 360.0 - 180.0)
-                lead = self._steer_lead(err, self._turn_rate(hdg))
-                rudder = ((0.0 if abs(lead) < 2.0
-                           else max(-0.4, min(0.4, lead / 36.0)))
-                          * self._pedal_dir())
+                rudder = self._ground_directional(
+                    state, self.state.runway_heading, gs, rate_cap=4.0)
                 d.rudder(rudder)
-                d.steering(rudder if gs < 35.0 else 0.0)
+                d.steering(rudder * _nws_fade(gs))
             return
 
     def _phase_taxi_in(self, state, now: float) -> None:
