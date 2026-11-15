@@ -375,3 +375,25 @@ def test_airborne_fo_tick_runs_phase_logic_with_axes(xp):
     fo.tick()
     fo._execute_phase.assert_called_once()
     assert fo.enabled
+
+
+def test_close_hands_the_stick_back_before_the_socket_goes():
+    peer = FakeXPlane()
+    peer.values[READS["control:autothrottle"]] = -1
+    source = XPlaneSource(port=peer.port, discovery_s=0, timeout_s=.2)
+    try:
+        assert source.connect()
+        eventually(lambda: all(key in source._values for key in READS))
+        assert source._send(b"ELEVATOR_SET", 4000)
+        eventually(lambda: (
+            "sim/operation/override/override_joystick_pitch", 1)
+            in peer.writes)
+        source.close()
+        # Released on the way out: a latched override is a dead stick in
+        # the pilot's hands for the rest of the X-Plane session.
+        eventually(lambda: peer.writes[-1:] and (
+            "sim/operation/override/override_joystick_pitch", 0)
+            in peer.writes)
+    finally:
+        source.close()
+        peer.close()

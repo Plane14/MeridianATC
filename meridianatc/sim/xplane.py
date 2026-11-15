@@ -19,7 +19,7 @@ from dataclasses import fields
 
 from .source import SimConnectSource
 from .state import AircraftState
-from .xpcontrols import READS, XPlaneControls
+from .xpcontrols import OVERRIDES, OVR, READS, XPlaneControls
 
 FT = 3.280839895
 KT = 1.943844492
@@ -733,6 +733,15 @@ class XPlaneSource:
     def close(self):
         self._stop.set()
         if self._socket is not None:
+            # The overrides first, while there is still a socket to say
+            # it on, and whether or not the link is still answering:
+            # released after the socket was shut, the write went nowhere
+            # and X-Plane was left ignoring the pilot's own stick, pedals
+            # and brakes for the rest of the session.
+            for flag in OVERRIDES:
+                with contextlib.suppress(OSError, ValueError):
+                    self._packet(b"DREF\0" + struct.pack(
+                        "<f500s", 0.0, (OVR + flag).encode("ascii")))
             for index, (_key, path) in enumerate(self._subscriptions):
                 with contextlib.suppress(OSError):
                     self._subscribe(index, path, 0)
