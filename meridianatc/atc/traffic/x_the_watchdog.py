@@ -221,6 +221,8 @@ class _The_watchdog:
                     if not flight.on_layout:
                         self._place(flight)
                     continue
+            if now > getattr(flight, "expedite_until", 0.0):
+                flight.expedite_until = 0.0
             self._aim(flight)
             fly_step(flight, flight.target, flight.performance, elapsed,
                      self._surface_ft(flight), energy=self.energy_model)

@@ -120,6 +120,28 @@ class FieldApproaches:
     def types(self, runway: str) -> set[str]:
         return set(self.by_runway.get(normalize_runway(runway), set()))
 
+    def missed_for(self, runway: str, name: str = ""):
+        """The procedure whose published missed an aeroplane goes around
+        onto: the one named ("ILS Z"), else the runway's best, and None
+        where nothing charted a missed segment -- the old circuit answer.
+        ``missed_legs`` is filled only where the procedure data decodes
+        them (the CIFP feed); an empty one is treated as none."""
+        runway = normalize_runway(runway)
+        candidates = [a for a in self.procedures
+                      if a.runway == runway and a.missed_legs]
+        if not candidates:
+            return None
+        kind, suffix = split_name(name)
+        for approach in candidates:
+            if kind and approach.kind == kind \
+                    and (not suffix or approach.suffix == suffix):
+                return approach
+        return min(candidates, key=lambda a: (
+            PREFERENCE.index(LEGACY_KIND.get(a.kind, a.kind))
+            if LEGACY_KIND.get(a.kind, a.kind) in PREFERENCE
+            else len(PREFERENCE),
+            _letter_rank(a.suffix)))
+
 
 def choose(available: set[str] | None, requested: str = "") -> str:
     """The approach to name for a runway.
@@ -219,6 +241,10 @@ class Approach:
     lines: frozenset = frozenset()   # an RNAV's minima lines
     faf_ft: float = 0.0
     missed_ft: float = 0.0
+    # The legs after the missed-approach point, as ProcedureLegs where
+    # the source decodes them (the CIFP feed); empty elsewhere, which is
+    # a go-around flown the generic way.
+    missed_legs: tuple = ()
 
     @property
     def circling_only(self) -> bool:

@@ -105,8 +105,9 @@ class _Instructions_and_being:
             self._hold_runway(flight.runway, now, RUNWAY_ROLL_S)
         elif kind == "go_around":
             # The one instruction that has to work the instant it is read
-            # back: the aeroplane stops descending, climbs away on the runway
-            # heading, and rejoins the circuit for another go.
+            # back: the aeroplane stops descending and climbs away. An IFR
+            # arrival flies the approach's published missed; a VFR one --
+            # or a field whose data codes none -- rejoins the circuit.
             flight.phase = "go_around"
             flight.arriving = False
             flight.extending = False
@@ -115,7 +116,13 @@ class _Instructions_and_being:
             flight.assigned_heading = None
             flight.assigned_altitude_ft = None
             flight.assigned_speed_kt = None
+            flight.missed_nav = self._missed_for(flight)
             flight.next_at = now + self.random.uniform(20.0, 35.0)
+        elif kind == "expedite":
+            # "Expedite": a firmer aim for a while and no more waiting --
+            # whatever the flight does next, it does it now.
+            flight.expedite_until = now + 90.0
+            flight.next_at = now
         elif kind == "turn_out":
             # "Turn out approved" is a heading: at the field it filed
             # for where the navdata can point at it, and off to the
@@ -151,4 +158,41 @@ class _Instructions_and_being:
             flight.assigned_speed_kt = None
         elif kind == "hold_short":
             flight.target.hold = True
+
+    def _missed_for(self, flight: Flight):
+        """The published missed for the approach it was flying, as a
+        navigator -- an IFR go-around's answer instead of the circuit.
+
+        None for VFR, and None where the field's approach data codes no
+        missed segment (the CIFP feed keeps the legs after the MAP; other
+        sources do not), which keeps the answer the circuit always was.
+        """
+        if not flight.ifr:
+            return None
+        known = (self.approach_data or {}).get(
+            getattr(self.field, "ident", ""))
+        if known is None:
+            return None
+        approach = known.missed_for(flight.runway, flight.approach)
+        if approach is None:
+            return None
+        from ..procedure_legs import (
+            ProcedureNavigator, ProcedureTransition, TerminalProcedure)
+
+        procedure = TerminalProcedure(
+            name=f"{approach.name} missed approach", kind="sid")
+        transition = ProcedureTransition(
+            name="missed", runway=approach.runway,
+            legs=tuple(approach.missed_legs))
+        # A SID's climb floors are exactly a missed's levels: never level
+        # under a leg's altitude, and on to the published missed height.
+        nav = ProcedureNavigator(
+            procedure, transition,
+            start=(flight.latitude, flight.longitude),
+            fallback_altitude_ft=(
+                approach.missed_ft
+                or self.field.elevation_ft
+                + flight.performance.pattern_agl_ft),
+            fallback_speed_kt=flight.performance.climb_kt)
+        return nav if nav.active else None
 

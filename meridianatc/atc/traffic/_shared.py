@@ -282,6 +282,15 @@ class Flight:
     # The navigator flying those legs (ProcedureNavigator), built when
     # the model takes over; None again once the legs are done.
     procedure_nav: object | None = None
+    # The published missed-approach navigator, built when an IFR arrival
+    # is sent around (integrations.cifp keeps the legs after the MAP on
+    # the Approach record); None for VFR or a field with no missed coded,
+    # which keeps the old circuit -- and None again once it is flown,
+    # when the flight comes back for another approach.
+    missed_nav: object | None = None
+    # Told to hurry and by when that expires: a higher climb/roll speed
+    # and shorter pauses until then, 0 if it was never told.
+    expedite_until: float = 0.0
     # The hold approach gave it when the queue ahead was longer than the
     # runway takes (atc.holds.Hold): the fix and the pattern, plus which
     # half of the racetrack the model is on and when that half began.

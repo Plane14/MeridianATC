@@ -386,10 +386,26 @@ class _Where_it_is:
     def _after_the_go_around(self, flight: Flight, now: float) -> None:
         """What happens to an aeroplane that has just been sent around.
 
-        It is climbing away on the runway heading. Once it is high enough and
-        far enough out it is put back into the circuit, which it then flies --
-        so a go-around costs it a full circuit, exactly as one does.
+        An IFR arrival with a missed coded flies the published procedure
+        out to its end and is then put back into the arrival stream for
+        another approach, which is what a real go-around buys. Everything
+        else -- a VFR flight, or a field whose data codes no missed --
+        climbs away on the runway heading and rejoins the circuit once it
+        is high enough and far enough out, exactly as one does.
         """
+        missed_nav = getattr(flight, "missed_nav", None)
+        if missed_nav is not None:
+            if not missed_nav.guidance(flight).done:
+                flight.next_at = now + 3.0
+                return
+            flight.missed_nav = None
+            # The missed is flown: back into the stream for another
+            # approach rather than round the circuit again.
+            flight.phase = "inbound"
+            flight.arriving = True
+            flight.step = 0
+            flight.next_at = now + 5.0
+            return
         pattern_ft = (self.field.elevation_ft
                       + flight.performance.pattern_agl_ft)
         if (flight.altitude_ft < pattern_ft - 200.0

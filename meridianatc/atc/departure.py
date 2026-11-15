@@ -66,6 +66,8 @@ class DepartureWatch:
         # When the runway was last seen to be occupied, so a clearance is not
         # issued in the same instant it comes free.
         self._busy_at = 0.0
+        # Since when the cleared departure has not moved -- the abort watch.
+        self._stopped_since = 0.0
 
     # ------------------------------------------------------------------
 
@@ -85,8 +87,14 @@ class DepartureWatch:
             return None
         if session.emergency:
             return None
-        if session.cleared_takeoff and self.brain.realism.delays:
-            return self._expedite(session, station, state, now, language)
+        if session.cleared_takeoff:
+            reply = self._vacate_the_stopped(
+                session, station, state, now, weather_for, language)
+            if reply is not None:
+                return reply
+            if self.brain.realism.delays:
+                return self._expedite(session, station, state, now, language)
+            return None
         # Lined up and not yet cleared. Both halves matter: an aeroplane still
         # at the holding point has not been put anywhere it cannot leave, and
         # one already cleared is not waiting for anything. Held short for an
@@ -127,6 +135,75 @@ class DepartureWatch:
     # the final: "expedite". UNVERIFIED: both figures.
     EXPEDITE_AFTER_S = 12.0
     EXPEDITE_WITHIN_NM = 3.0
+    # Stopped this long on the runway after the clearance before the tower
+    # works the aeroplane off it. An abort, a failure or a pilot who has
+    # changed their mind all read the same way from the tower: stopped,
+    # where the roll should be. Longer than the expedite watch above, which
+    # is what answers a roll that is merely slow to start.
+    ABORT_AFTER_S = 20.0
+
+    def _vacate_the_stopped(self, session, station, state, now,
+                          weather_for, language) -> Reply | None:
+        """A departure that has stopped on the runway is worked off it.
+
+        The clearance it was rolling on is gone and what it is now is an
+        aeroplane that has to get off the runway -- given the same taxi to
+        a stand an arrival gets, because the alternative was the one the
+        log showed: an aeroplane holding mid-runway for the rest of the
+        session while every arrival was sent around it.
+        """
+        if not session.phase.outbound:
+            return None
+        if not getattr(state, "on_ground", True) \
+                or float(getattr(state, "ground_speed_kt", 0.0) or 0.0) >= 3.0:
+            self._stopped_since = 0.0
+            return None
+        if not self._stopped_since:
+            self._stopped_since = now
+            return None
+        if now - self._stopped_since < self.ABORT_AFTER_S:
+            return None
+        field = self.navdb.airport(station.ident)
+        runway = session.departure_runway or session.arrival_runway
+        if not self._still_on_it(field, runway, state):
+            # Already off the strip and stopped somewhere else: its next
+            # call, not the tower's instruction.
+            self._stopped_since = 0.0
+            return None
+        if not session.advise_once("abort:vacate"):
+            return None
+        standing = now - self._stopped_since
+        self._stopped_since = 0.0
+        p = self.brain.for_station(station, language)
+        session.aircraft.language = language_of(p)
+        weather = self._weather(weather_for, field, station)
+        session.cleared_takeoff = False
+        session.cleared_takeoff_at = 0.0
+        session.lined_up = False
+        if not session.arrival_runway:
+            session.arrival_runway = runway
+        decision("abort_vacate", airport=station.ident, runway=runway,
+                 standing_s=round(standing))
+        return self.brain._issue_taxi_in(session, station, weather, p, state)
+
+    def _still_on_it(self, field, runway: str, state) -> bool:
+        """Whether the aeroplane is still on the strip -- the check that a
+        stop on the taxiway out is not answered with the runway's taxi in."""
+        if field is None or not runway \
+                or not getattr(state, "has_position", True):
+            return False
+        from types import SimpleNamespace
+
+        from .occupancy import on_the_runway
+
+        me = SimpleNamespace(
+            latitude=state.latitude, longitude=state.longitude,
+            altitude_ft=float(getattr(state, "altitude_ft", 0.0) or 0.0),
+            on_ground=True,
+            heading=float(getattr(state, "heading_true", 0.0)
+                          or getattr(state, "heading_magnetic", 0.0) or 0.0),
+            ground_speed_kt=0.0)
+        return bool(on_the_runway(self.navdb, field, runway, [me]))
 
     def _expedite(self, session, station, state, now, language) -> Reply | None:
         """A departure cleared in front of an arrival that has not moved."""
@@ -156,6 +233,7 @@ class DepartureWatch:
     def began(self) -> None:
         """A new flight, so forget which runway was busy on the last one."""
         self._busy_at = 0.0
+        self._stopped_since = 0.0
 
     @staticmethod
     def _weather(weather_for, field, station) -> Weather:

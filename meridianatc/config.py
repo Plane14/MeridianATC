@@ -1158,6 +1158,11 @@ class TrafficConfig:
     # integrator it replaced. On by default; off for a comparison or a
     # misbehaving model.
     energy_model: bool = True
+    # Whether the tower may hurry a traffic aeroplane standing where the
+    # runway wants it moving -- "expedite vacating", "expedite your
+    # departure" -- when somebody is on final behind it. On by default;
+    # off, a slow roll is waited out the way it always was.
+    expedite: bool = True
     # Whether other crews can call the pilot directly: on an uncontrolled
     # frequency a crew that has not heard the pilot before asks their
     # position and intentions, as one does.
@@ -1288,6 +1293,7 @@ describe(
                       restart=True, label="set.traffic_callsigns",
                       help="set.traffic_callsigns_why"),
     smooth_motion=Setting("traffic", "traffic", restart=True, advanced=True),
+    expedite=Setting("traffic", "traffic"),
     fsltl_rules=Setting("traffic", "traffic", kind="path", restart=True,
                         advanced=True),
     handling_observed=Setting("traffic", "handling", advanced=True),

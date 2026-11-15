@@ -204,6 +204,20 @@ class _Flying_them:
             target.speed_kt = performance.climb_kt
             target.altitude_ft = elevation + performance.pattern_agl_ft
             target.intent = "going around"
+            missed_nav = getattr(flight, "missed_nav", None)
+            if missed_nav is not None:
+                # The published missed steers, the way the SID and STAR
+                # legs do elsewhere; done or not, _after_the_go_around
+                # decides what comes after it.
+                guide = missed_nav.guidance(flight)
+                if not guide.done:
+                    if guide.heading is not None:
+                        target.heading = guide.heading
+                    if guide.altitude_ft:
+                        target.altitude_ft = guide.altitude_ft
+                    if guide.speed_kt:
+                        target.speed_kt = guide.speed_kt
+                    target.intent = "missed approach"
         elif phase == "joining":
             target.heading = self._bearing_to_join(flight, heading)
             target.speed_kt = performance.cruise_kt * 0.85
@@ -255,6 +269,16 @@ class _Flying_them:
         if (flight.assigned_speed_kt is not None and not target.hold
                 and not flight.on_ground):
             target.speed_kt = flight.assigned_speed_kt
+        if getattr(flight, "expedite_until", 0.0):
+            # "Expedite": a higher aim speed, and a firmer push into it,
+            # until the moment passes or the runway is given back.
+            if not target.hold and target.speed_kt is not None:
+                cap = (performance.cruise_kt if not flight.on_ground
+                       else performance.rotate_kt * 0.6)
+                target.speed_kt = min(target.speed_kt * 1.25 + 10.0, cap)
+            if flight.on_ground:
+                target.accel_kt_s = max(target.accel_kt_s or 0.0,
+                                        performance.takeoff_kt_s * 1.3)
 
     def _steer_procedure(self, flight: Flight, target) -> None:
         """The SID or STAR legs as this tick's aim.

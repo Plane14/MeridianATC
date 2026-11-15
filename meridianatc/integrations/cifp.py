@@ -609,7 +609,9 @@ def _approaches(af: _AirportFile, fixes: _FixIndex,
                                    "RNP": "RNAV"}.get(word, word))
         found.add_procedure(Approach(
             kind, runway, _approach_suffix(proc_ident), frozenset(lines),
-            float(faf_ft), float(missed_ft)))
+            float(faf_ft), float(missed_ft),
+            missed_legs=tuple(leg for leg in legs
+                              if leg.index > map_index)))
     return found if found.procedures else None
 
 

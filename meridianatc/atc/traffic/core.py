@@ -57,6 +57,9 @@ class TrafficInjector(_The_field, _Flying_them, _What_the_pilot, _Making_aeropla
         # The energy model moves the aeroplanes: on by default, off puts
         # them back on the plain integrator it replaced.
         self.energy_model = True
+        # Whether the tower hurries a traffic aeroplane that is standing
+        # where the runway wants it moving ("expedite"). traffic.expedite.
+        self.expedite = True
         # The hour of day sets the field's rhythm: the banks busy, the
         # small hours nearly quiet. On by default; off, the density alone
         # decides, as it always did.

@@ -57,6 +57,8 @@ class _The_tower_watching:
                 self._watch_spacing(flight, now)
             elif flight.phase == "downwind":
                 self._watch_downwind(flight, now)
+            elif flight.phase in ("takeoff", "landed"):
+                self._watch_the_roll(flight, now)
 
     # A stable approach, the crew's own gate: inside this distance it is on
     # the centreline to within this, and pointing down the runway to within
@@ -180,6 +182,41 @@ class _The_tower_watching:
     MAX_EXTEND_NM = 6.0
     # And past this it is simply gone: out of sight, and somebody else's.
     GIVE_UP_EXTENDING_NM = 20.0
+
+    # Told to roll or told to vacate, and still barely moving this long
+    # with the next arrival this close behind it: "expedite". UNVERIFIED,
+    # both figures -- the tower's version of the same watch is twelve
+    # seconds and three miles (atc.departure.DepartureWatch).
+    EXPEDITE_ROLL_AFTER_S = 10.0
+    EXPEDITE_ROLL_WITHIN_NM = 3.0
+
+    def _watch_the_roll(self, flight: Flight, now: float) -> None:
+        """Hurry an aeroplane that is standing where the runway wants it
+        moving -- a departure that has not rolled, an arrival not yet
+        vacating -- when somebody is on final behind it."""
+        if not getattr(self, "expedite", True) or not flight.on_ground \
+                or flight.ground_speed_kt >= 30.0 \
+                or self._already_told(flight, "expedite"):
+            flight.__dict__.pop("slow_roll_since", None)
+            return
+        if self._traffic_on_final(self.EXPEDITE_ROLL_WITHIN_NM,
+                                  ignore=flight,
+                                  runway=flight.runway) is None:
+            flight.__dict__.pop("slow_roll_since", None)
+            return
+        since = float(getattr(flight, "slow_roll_since", 0.0) or 0.0)
+        if not since:
+            flight.slow_roll_since = now
+            return
+        if now - since < self.EXPEDITE_ROLL_AFTER_S:
+            return
+        flight.slow_roll_since = 0.0
+        reason = ("vacating" if flight.phase == "landed"
+                  else "your departure")
+        self._exchange(
+            flight, now, "TWR",
+            controller=lambda c, a, s: c.expedite(a, reason),
+            command=("expedite", {}))
 
     def _watch_downwind(self, flight: Flight, now: float) -> None:
         """An aeroplane at the point it would turn base, with somebody on final.

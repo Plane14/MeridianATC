@@ -1774,7 +1774,8 @@ class CrewDirector:
                         keep.append(pending)
                     else:
                         dropped.append(pending.cue)
-                elif floor and pending.cue != floor:
+                elif floor and pending.cue != floor \
+                        and CUE_GROUPS.get(pending.cue) in self._FLOOR_GROUPS:
                     keep.append(pending)      # somebody is mid-announcement
                 elif live and pending.cue == "radio_call":
                     # The one line the yield cannot be lifted for: a call
@@ -1842,6 +1843,17 @@ class CrewDirector:
     # recorded boarding announcement can run for minutes, and a queue sitting
     # patiently behind one of those is the system working.
     BLOCKED_FREQUENCY_S = 30.0
+    # A callout's whole window is seconds -- the cabin cannot afford the
+    # full patience a briefing can for a live frequency, or an "eighty"
+    # outlives its stale window before it is ever tried.
+    BLOCKED_CALLOUT_S = 5.0
+
+    # Groups the announcement floor binds: other announcements, which must
+    # not interleave. A callout, a checklist line or a radio call is taken
+    # between an announcement's paragraphs instead -- "eighty knots"
+    # inside a safety briefing is still the same briefing afterwards, but
+    # an unsaid "eighty" is gone for good.
+    _FLOOR_GROUPS = ("announcements", "briefings", "service", "chatter")
     BLOCKED_PLAYER_S = 240.0
     BLOCKED_EVERY_S = 120.0
 
@@ -1886,12 +1898,20 @@ class CrewDirector:
         on top. A radio call does not count: it goes out on the frequency
         itself, and a busy one leaves it no room.
         """
-        if not self._blocked_since \
-                or now - self._blocked_since < self.BLOCKED_FREQUENCY_S:
+        if not self._blocked_since:
             return False
         with self._lock:
-            return any(p.at <= now and p.cue != "radio_call"
-                       for p in self.state.queue)
+            due = [p for p in self.state.queue
+                   if p.at <= now and p.cue != "radio_call"]
+            if not due:
+                return False
+            # A line with a stale window -- a callout -- cannot wait the
+            # cabin's whole patience; it is said over the frequency's tail
+            # or it is not said at all.
+            threshold = (self.BLOCKED_CALLOUT_S
+                         if any(p.stale_at for p in due)
+                         else self.BLOCKED_FREQUENCY_S)
+        return now - self._blocked_since >= threshold
 
     def _radio_is_live(self) -> bool:
         """Whether the frequency is busy, so nobody in here speaks over it.

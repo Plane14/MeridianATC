@@ -337,6 +337,8 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         self.traffic.requires_sim = True
         self.traffic.energy_model = getattr(
             self.config.traffic, "energy_model", True)
+        self.traffic.expedite = getattr(
+            self.config.traffic, "expedite", True)
         self.traffic.diurnal = getattr(
             self.config.traffic, "diurnal_rhythm", True)
         self.traffic.max_invented = self.config.traffic.in_simulator_limit

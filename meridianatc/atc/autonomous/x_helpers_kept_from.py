@@ -83,6 +83,11 @@ class _Helpers_kept_from:
 
     def _emit(self, kind: str, text: str, key: str = "") -> None:
         """Emit an event."""
+        # An event the pilot sees is not a log line: a rejected takeoff's
+        # reason used to reach the panel and leave nothing in the log to
+        # explain why the aeroplane stopped.
+        if kind in ("error", "warning"):
+            log.warning("%s", text)
         self.on_event(kind, text, "Autonomous", key=key)
 
     def _ensure_systems_on(self, state) -> None:
