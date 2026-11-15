@@ -656,8 +656,9 @@ class Phraseology:
         parts.append(f"runway {self.rwy(runway)}")
         if after_departure:
             parts.append(after_departure)
-        # ICAO Doc 4444 chapter 12: "cleared for immediate take-off".
-        # UNVERIFIED: the FAA's use of the same words.
+        # ICAO Doc 4444 chapter 12: "cleared for immediate take-off". The
+        # FAA's own words too -- US AIP GEN 3.4 34.1 and AIM 4-4-13 print
+        # "CLEARED FOR IMMEDIATE TAKEOFF" for a clearance that cannot wait.
         parts.append("cleared for immediate takeoff" if immediate
                      else "cleared for takeoff")
         return _join(*parts) + "."
@@ -765,9 +766,10 @@ class Phraseology:
         return _join(*parts) + "."
 
     def departing_prior(self) -> str:
-        """The FAA's anticipated separation, said with the landing clearance.
-        UNVERIFIED: the plan's wording, not checked against JO 7110.65."""
-        return "traffic will be departing prior to your arrival"
+        """The FAA's anticipated separation, said with the landing clearance:
+        "traffic departing prior to your arrival, runway two seven, cleared
+        to land" is the form working towers use."""
+        return "traffic departing prior to your arrival"
 
     def line_up_behind(self, aircraft: Aircraft, runway: str, traffic: str, *,
                        station: str = "", abbreviated: bool = True) -> str:
@@ -829,10 +831,12 @@ class Phraseology:
                        station: str = "", sequence: str = "") -> str:
         """A tower's answer to an arrival checking in on the final before
         it can be cleared, with its place in the sequence when somebody is
-        ahead ("number two"). UNVERIFIED: the IFR plan's "runway NN,
-        continue, I'll call your clearance" (FAA); ICAO "continue approach"."""
+        ahead ("number two"). JO 7110.65 3-10-1 has "CONTINUE" carry more:
+        "continue, expect landing clearance two mile final" is its own
+        example; ICAO "continue approach"."""
         if self.dialect == "faa":
-            body = f"runway {self.rwy(runway)}, continue, I'll call your clearance"
+            body = (f"runway {self.rwy(runway)}, continue, "
+                    "expect landing clearance")
         else:
             body = f"continue approach, runway {self.rwy(runway)}"
         return _join(self.addressed(aircraft, station, not station),
@@ -1485,10 +1489,15 @@ class Phraseology:
             parts.append(f"indicating {height}" if self.region == "uk" else height)
         return _join(*parts) + "."
 
-    def caution_wake(self) -> str:
+    def caution_wake(self, traffic: str = "") -> str:
         # FAA JO 7110.65 2-1-20 and ICAO Doc 4444 chapter 12 both have
-        # "caution wake turbulence".
-        return "caution wake turbulence"
+        # "caution wake turbulence"; 2-1-20 carries the traffic with it --
+        # "caution wake turbulence, heavy Boeing 747 departing runway two
+        # seven right" -- which is what ``traffic`` holds.
+        parts = ["caution wake turbulence"]
+        if traffic:
+            parts.append(traffic)
+        return ", ".join(parts)
 
     def runway_wet(self) -> str:
         # UNVERIFIED: the words, and that rain at the field means it.

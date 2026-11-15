@@ -182,11 +182,48 @@ def runway_wet(weather) -> bool:
                for token in weather_tokens(body))
 
 
-def caution(p, *, wet: bool = False, wake: bool = False) -> str:
+# What the wake caution names the generating aeroplane as doing (FAA JO
+# 7110.65 2-1-20: "CAUTION WAKE TURBULENCE (traffic information)", e.g.
+# "heavy Boeing 747 departing runway two seven right").
+_WAKE_ROLE: dict[str, dict[str, str]] = {
+    "departing": {"en": "departing", "fr": "au décollage", "es": "en despegue",
+                  "de": "beim Start", "it": "in decollo", "pt": "em decolagem"},
+    "landing": {"en": "on final", "fr": "en finale", "es": "en final",
+                "de": "im Endanflug", "it": "in finale", "pt": "em final"},
+}
+
+
+def wake_traffic(type_code: str, role: str = "", language: str = "en") -> str:
+    """Who a wake caution names: "heavy Boeing departing".
+
+    JO 7110.65 2-1-20 wants the generating aircraft described in the caution,
+    with "heavy" or "super" in the description when it is one -- the same
+    words the callsign carries, which is why they stay in English.
+    """
+    from .traffic import make_of
+
+    make = make_of(type_code)
+    if not make:
+        return ""
+    from .phraseology import wake_suffix
+
+    words = []
+    category = wake_suffix(type_code)
+    if category:
+        words.append(category)
+    words.append(make)
+    said = _WAKE_ROLE.get(role, {}).get(language, _WAKE_ROLE.get(role, {}).get("en", ""))
+    if said:
+        words.append(said)
+    return " ".join(words)
+
+
+def caution(p, *, wet: bool = False, wake: bool = False,
+            wake_traffic: str = "") -> str:
     """The cautions for a clearance, in the phrasebook's words."""
     parts = []
     if wake:
-        parts.append(p.caution_wake())
+        parts.append(p.caution_wake(wake_traffic))
     if wet:
         parts.append(p.runway_wet())
     return ", ".join(parts)

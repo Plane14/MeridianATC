@@ -961,7 +961,10 @@ class FrenchPhraseology:
                          f"{'plus haut' if relative_ft > 0 else 'plus bas'}")
         return _join(*parts) + "."
 
-    def caution_wake(self) -> str:
+    def caution_wake(self, traffic: str = "") -> str:
+        """See :meth:`Phraseology.caution_wake`."""
+        if traffic:
+            return f"attention turbulence de sillage, {traffic}"
         return "attention turbulence de sillage"
 
     def runway_wet(self) -> str:

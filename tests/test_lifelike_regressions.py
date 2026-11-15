@@ -816,3 +816,55 @@ def test_the_information_letter_speaks_every_language():
         a = _aircraft(language)
         text = speech.request_taxi(a, "Sol", atis_letter="K")
         assert text
+
+
+def test_the_continue_carries_the_expectation_the_book_gives_it():
+    # JO 7110.65 3-10-1: "continue" is issued with more -- "expect landing
+    # clearance" is its own example, not "I'll call your clearance".
+    from meridianatc.atc.language import phraseology_for
+    p = phraseology_for("en")
+    p.dialect, p.region = "faa", "faa"
+    a = _aircraft()
+    text = p.tower_continue(a, "27")
+    assert "continue" in text
+    assert "expect landing clearance" in text
+    assert "call your clearance" not in text
+
+
+def test_the_departing_traffic_says_it_the_way_the_towers_do():
+    # "Traffic departing prior to your arrival" is the form working towers
+    # use with an anticipated-separation landing clearance.
+    from meridianatc.atc.language import phraseology_for
+    p = phraseology_for("en")
+    assert p.departing_prior() == "traffic departing prior to your arrival"
+
+
+def test_the_wake_caution_names_the_aeroplane_that_makes_the_wake():
+    # JO 7110.65 2-1-20: "CAUTION WAKE TURBULENCE (traffic information)",
+    # with "heavy" or "super" in the description when it is one.
+    from meridianatc.atc.language import phraseology_for
+    from meridianatc.atc.trafficinfo import wake_traffic
+    p = phraseology_for("en")
+    assert "heavy Boeing" in wake_traffic("B77W", "departing")
+    assert "departing" in wake_traffic("B77W", "departing")
+    assert "super Airbus" in wake_traffic("A388", "landing")
+    assert wake_traffic("B738", "landing").startswith("Boeing")
+    assert not wake_traffic("C172", "landing").startswith(("heavy", "super"))
+    assert not wake_traffic("", "departing")
+    text = p.caution_wake(wake_traffic("B77W", "departing"))
+    assert text == "caution wake turbulence, heavy Boeing departing"
+    # No traffic known: the caution alone, as before.
+    assert p.caution_wake() == "caution wake turbulence"
+    assert p.caution_wake("") == "caution wake turbulence"
+
+
+def test_the_wake_caution_takes_traffic_in_every_language():
+    from meridianatc.atc.language import phraseology_for
+    from meridianatc.atc.trafficinfo import wake_traffic
+    for language in ("en", "fr", "es", "de", "it", "pt"):
+        p = phraseology_for(language)
+        assert p.caution_wake()
+        assert p.caution_wake("Boeing")
+        described = wake_traffic("B77W", "departing", language)
+        assert "heavy Boeing" in described
+        assert p.caution_wake(described).endswith(described)

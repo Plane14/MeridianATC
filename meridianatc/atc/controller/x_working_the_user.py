@@ -321,7 +321,8 @@ class _Working_the_user:
             text = p.cleared_for_takeoff(
                 session.aircraft, runway, weather,
                 caution=self._caution(session, weather, p,
-                                      self._departing_airliner(airport)),
+                                      self._departing_airliner(airport),
+                                      "departing"),
                 station=station_name,
                 after_departure=self._after_takeoff(session, airport, runway, p),
                 abbreviated=session.established_with(station),

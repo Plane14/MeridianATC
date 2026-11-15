@@ -173,16 +173,23 @@ class _The_circuit:
         placed.sort(key=lambda pair: pair[0].to_go_nm)
         return placed
 
-    def _caution(self, session, weather, p, ahead_type: str = "") -> str:
-        """Wake turbulence behind an airliner, a wet runway in rain."""
-        from ..trafficinfo import caution, needs_wake_caution, runway_wet
+    def _caution(self, session, weather, p, ahead_type: str = "",
+                 role: str = "") -> str:
+        """Wake turbulence behind an airliner, a wet runway in rain.
+
+        ``role`` is what the aeroplane making the wake is doing -- the
+        clearance says who it is ("caution wake turbulence, heavy Boeing
+        departing", JO 7110.65 2-1-20)."""
+        from ..trafficinfo import caution, needs_wake_caution, runway_wet, wake_traffic
 
         wake = needs_wake_caution(ahead_type, session.aircraft.type_code,
                                   light=not session.profile.airliner)
         wet = runway_wet(weather)
         if wake or wet:
             decision("caution", wake=wake, wet=wet, ahead=ahead_type or None)
-        return caution(p, wet=wet, wake=wake)
+        traffic = (wake_traffic(ahead_type, role, language_of(p))
+                   if wake else "")
+        return caution(p, wet=wet, wake=wake, wake_traffic=traffic)
 
     def _departing_airliner(self, airport) -> str:
         """An airliner just off this field, climbing out: what a departure
@@ -346,7 +353,8 @@ class _The_circuit:
             return self._clear_the_circuit(
                 session, station, weather, p, runway, sequence, station_name,
                 caution=self._caution(session, weather, p,
-                                      followed.type_code if followed is not None else ""),
+                                      followed.type_code if followed is not None else "",
+                                      "landing"),
                 low_approach="low approach" in parsed.normalized)
 
         # --- in the circuit: sequence them and give them the next report ---
@@ -678,7 +686,8 @@ class _The_circuit:
                           if not session.established_with(station) else ""),
             sequence=sequence,
             caution=self._caution(session, weather, p,
-                                  ahead[-1].type_code if ahead else ""),
+                                  ahead[-1].type_code if ahead else "",
+                                  "landing"),
             state=state)
         if withheld is not None:
             return withheld
@@ -689,7 +698,8 @@ class _The_circuit:
             sequence=sequence,
             abbreviated=session.established_with(station),
             caution=self._caution(session, weather, p,
-                                  ahead[-1].type_code if ahead else ""),
+                                  ahead[-1].type_code if ahead else "",
+                                  "landing"),
         )
         session.cleared_landing = True
         session.phase = Phase.LANDING

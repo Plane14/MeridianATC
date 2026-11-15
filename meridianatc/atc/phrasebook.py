@@ -1105,8 +1105,9 @@ class LocalisedPhraseology:
             parts.append(self._(key).format(height=self.alt(abs(relative_ft))))
         return _join(*parts) + "."
 
-    def caution_wake(self) -> str:
-        return self._("caution_wake")
+    def caution_wake(self, traffic: str = "") -> str:
+        caution = self._("caution_wake")
+        return f"{caution}, {traffic}" if traffic else caution
 
     def runway_wet(self) -> str:
         return self._("runway_wet")
