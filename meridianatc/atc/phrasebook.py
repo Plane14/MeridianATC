@@ -580,7 +580,7 @@ class LocalisedPhraseology:
         if not intersection:
             return self._("runway_is").format(runway=self.rwy(runway))
         return self._("runway_at").format(runway=self.rwy(runway),
-                                         taxiway=intersection)
+                                         taxiway=self._route([intersection]))
 
     def line_up_and_wait(self, aircraft: Aircraft, runway: str, *,
                          reason: str = "", station: str = "",

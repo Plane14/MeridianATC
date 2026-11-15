@@ -548,6 +548,15 @@ class PilotSpeech:
             direction=direction or self.p.side("left"),
             runway=self.p.rwy(runway)))
 
+    def _say_taxiway(self, name: str) -> str:
+        """The taxiway's name spelled the way this crew says it --
+        "B4" as "Bravo four", the field's words as words."""
+        if self.language == "fr":
+            from .speech_fr import taxiway
+        else:
+            from .speech import taxiway
+        return taxiway(name)
+
     def ready_for_departure(self, aircraft: Aircraft, runway: str,
                             station: str = "", intersection: str = "") -> str:
         """"Ready for departure at taxiway alpha": a pilot calling for
@@ -557,7 +566,7 @@ class PilotSpeech:
         body = self.book.ready_for_departure.format(runway=self.p.rwy(runway))
         if intersection:
             body += ", " + self.book.at_intersection.format(
-                taxiway=intersection)
+                taxiway=self._say_taxiway(intersection))
         return (self.call(aircraft, station, body, greeting=True) if station
                 else self.report(aircraft, body))
 
@@ -675,7 +684,7 @@ class PilotSpeech:
         body = self.book.line_up.format(runway=self.p.rwy(runway))
         if intersection:
             body += ", " + self.book.at_intersection.format(
-                taxiway=intersection)
+                taxiway=self._say_taxiway(intersection))
         return self.report(aircraft, body)
 
     def takeoff(self, aircraft: Aircraft, runway: str,
@@ -683,7 +692,7 @@ class PilotSpeech:
         body = self.book.takeoff.format(runway=self.p.rwy(runway))
         if intersection:
             body += ", " + self.book.at_intersection.format(
-                taxiway=intersection)
+                taxiway=self._say_taxiway(intersection))
         return self.report(aircraft, body)
 
     def land(self, aircraft: Aircraft, runway: str) -> str:

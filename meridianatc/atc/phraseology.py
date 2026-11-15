@@ -630,7 +630,8 @@ class Phraseology:
         incident the rule was written against)."""
         if not intersection:
             return f"runway {self.rwy(runway)}"
-        return f"runway {self.rwy(runway)} at taxiway {intersection}"
+        return (f"runway {self.rwy(runway)} at taxiway "
+                f"{sp.taxiway(intersection)}")
 
     def _remaining(self, remaining_m: float) -> str:
         """The distance an intersection departure has ahead of it.

@@ -413,7 +413,8 @@ class FrenchPhraseology:
         la forme française du nommage d'intersection."""
         if not intersection:
             return f"piste {self.rwy(runway)}"
-        return f"piste {self.rwy(runway)} à l'intersection {intersection}"
+        return (f"piste {self.rwy(runway)} à l'intersection "
+                f"{fr.taxiway(intersection)}")
 
     def _remaining(self, remaining_m: float) -> str:
         """La distance restante annoncée pour un départ d'intersection.
