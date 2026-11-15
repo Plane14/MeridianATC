@@ -440,6 +440,8 @@ class _The_phase_machine:
         d = self.director
         sub = self.state.sub or "align"
 
+        if not getattr(state, "taxi_light", False):
+            d.taxi_light(True)
         if not state.on_ground:
             self._transition(AutonomousPhase.TAKEOFF)
             return

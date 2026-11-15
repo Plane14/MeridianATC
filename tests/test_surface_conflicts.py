@@ -826,3 +826,33 @@ def test_fo_backtrack_slowing_for_the_turn():
     assert fo.state.sub == "backtrack"
     _, kt = fo._steer.call_args[0][1:]
     assert 3.5 <= kt < fo.performance.taxi_kt
+
+
+# -- the light a moving aeroplane shows -------------------------------------
+
+
+def test_fo_puts_the_taxi_light_on_for_the_taxi():
+    path = _path()
+    fo = _fo()
+    fo.session = _fo_session(path)
+    state = _state(path[0][0], path[0][1], taxi_light=False)
+    fo._taxi_along_path(state, outbound=True)
+    fo._dir.taxi_light.assert_called_once_with(True)
+
+
+def test_fo_leaves_a_lit_taxi_light_alone():
+    path = _path()
+    fo = _fo()
+    fo.session = _fo_session(path)
+    state = _state(path[0][0], path[0][1], taxi_light=True)
+    fo._taxi_along_path(state, outbound=True)
+    fo._dir.taxi_light.assert_not_called()
+
+
+def test_fo_lines_up_with_the_light_on():
+    fo = _fo_for_lineup()
+    fo.session = _fo_session(_path())
+    fo._runway_blocked = Mock(return_value=False)
+    fo.state.sub_entered_at = time.monotonic()
+    fo._phase_line_up(_state(51.15, -0.19), 100.0)
+    fo._dir.taxi_light.assert_called_once_with(True)

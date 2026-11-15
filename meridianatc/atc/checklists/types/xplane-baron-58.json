@@ -93,7 +93,7 @@
         { "challenge": "Flaps", "response": "as required", "accept": ["set", "down"] },
         { "challenge": "Landing gear", "response": "down", "accept": ["down"], "check": {"var": "gear_down", "op": "eq", "value": true} },
         { "challenge": "Landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true} },
-        { "challenge": "Taxi lights", "response": "as required", "accept": ["set", "on"] },
+        { "challenge": "Taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
         { "challenge": "Prop levers", "response": "full forward", "accept": ["set", "check"] },
         { "challenge": "Power", "response": "as required", "accept": ["set", "check"] }
       ]

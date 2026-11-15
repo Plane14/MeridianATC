@@ -765,6 +765,17 @@ class CrewDirector:
         if settings.verbosity == "quiet" and group not in ("callouts",
                                                            "notices"):
             return "immersion.verbosity is quiet"
+        if self._fo_flies():
+            # The aeroplane's own first officer is at the controls. A
+            # notice for the pilot about a switch the FO owns is a note
+            # it is writing to itself, and a piece of chatter is noise
+            # over the calls it is actually making. The safety notices
+            # stay: they report the aeroplane, whoever flies it, and one
+            # of them is how the flight deck learns the FO forgot.
+            if group == "notices" and cue not in SAFETY_NOTICES:
+                return "the first officer is flying"
+            if group == "chatter":
+                return "the first officer is flying"
         # "Taxi checklist complete" about a checklist nobody ran. Where the
         # first officer runs them with the pilot, it offers instead.
         if cue in self.RUN_WITH_THE_PILOT and not self._checklists_refused():
@@ -2641,6 +2652,17 @@ class CrewDirector:
     # because a checklist is a quick exchange.
     CHECKLIST_AFTER_S = 0.6
 
+    def _fo_flies(self) -> bool:
+        """Whether the autonomous first officer has the aeroplane.
+
+        The flag the panel's engage sets: while it is on, a call meant
+        for a pilot who is flying -- "your transponder's on standby",
+        "checklist when you're ready?" -- is addressed to nobody, since
+        the person meant to answer is the machine making the call.
+        """
+        return bool(getattr(self.config.immersion, "autonomous_flight",
+                            False))
+
     def _checklists_refused(self) -> str:
         """What stops the first officer running checklists, or ""."""
         settings = self.config.immersion
@@ -2718,8 +2740,11 @@ class CrewDirector:
         self.checklists.rules = "ifr" if session.ifr else "vfr"
         self.checklists.configure(self.config.immersion.first_officer)
         # Asked-for checklists run in either mode; offers only when the
-        # pilot has not asked for a quieter cockpit.
-        self.checklists.offers = self.cockpit == "normal"
+        # pilot has not asked for a quieter cockpit and is the one flying
+        # -- the "checklist when you're ready?" offer is a question for
+        # the pilot, and an autonomous FO is already running it.
+        self.checklists.offers = self.cockpit == "normal" \
+            and not self._fo_flies()
         self.checklists.aircraft_title = getattr(state, "title", "") or ""
         self.checklists.tick(state, session=session,
                              height_ft=self._height(state))

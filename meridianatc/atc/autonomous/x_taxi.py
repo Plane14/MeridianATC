@@ -46,6 +46,12 @@ class _Taxi:
         does not invent a taxiway.
         """
         path = list(getattr(self.session, "taxi_path", None) or [])
+        if not getattr(state, "taxi_light", False):
+            # The light a moving aeroplane shows, whatever the checklist
+            # left unsaid -- "as required" answers on some types never
+            # reach a switch, and a dark aeroplane on the taxiway is how
+            # ground collisions start.
+            self.director.taxi_light(True)
         if not path or len(path) < 2:
             self._taxi_without_path(state, outbound)
             return

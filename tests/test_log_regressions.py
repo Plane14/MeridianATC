@@ -1856,6 +1856,9 @@ def _path_flight(path, taxi_kt=14.0):
     flight._transition = Mock()
     flight._ground_still = Mock(return_value=False)
     flight._held_at_split = False
+    flight.sim = Mock()
+    flight._dir = Mock()
+    flight._dir.sim = flight.sim
     return flight
 
 
