@@ -231,18 +231,31 @@ def caution(p, *, wet: bool = False, wake: bool = False,
 
 def needs_wake_caution(ahead_type: str, own_type: str,
                        light: bool | None = None) -> bool:
-    """Behind an airliner in anything that is not one. The categories are
-    not modelled finer than that: a light aircraft behind a jet is the case
-    that matters (ICAO Doc 4444 chapter 5 wake turbulence categories; FAA
-    JO 7110.65 2-1-20 for the caution).
+    """Who the wake caution goes to.
+
+    A light aircraft behind a jet is the case that matters most (ICAO Doc
+    4444 chapter 5 wake turbulence categories; FAA JO 7110.65 2-1-20 for the
+    caution), and the same paragraph has it issued to *any* aircraft it may
+    affect -- so an airliner hears it behind a heavy or a super as well
+    ("caution wake turbulence, heavy Boeing seven seven"), just not behind
+    one of its own category.
 
     ``light`` is the pilot's profile saying whether their own aeroplane is
     not an airliner; None asks the type, which did not know a C25C."""
     from . import speech as sp
+    from .phraseology import wake_suffix
 
     if light is None:
         light = not sp.is_airliner(own_type or "")
-    return bool(ahead_type) and sp.is_airliner(ahead_type) and light
+    if not ahead_type:
+        return False
+    if sp.is_airliner(ahead_type) and light:
+        return True
+    # A bigger category ahead: the same advisory goes to a 737 behind a
+    # 777, and to anything at all behind a super.
+    rank = {"super": 2, "heavy": 1, "": 0}
+    return rank.get(wake_suffix(ahead_type), 0) > rank.get(
+        wake_suffix(own_type), 0)
 
 
 # ----------------------------------------------------------------------
