@@ -7,6 +7,8 @@ from ._shared import (
     STABLE_BY_NM,
     Aircraft,
     Flight,
+    _runway_key,
+    _strips_parallel,
     _turn_radius_nm,
     approach_speed,
     article,
@@ -219,7 +221,8 @@ class _The_tower_watching:
                 or room or self._already_told(flight, "extend")):
             return
         ahead = self._ahead_of(flight) or self._traffic_on_final(
-            self.SPACING_NM * 3.0, ignore=flight)
+            self.SPACING_NM * 3.0, ignore=flight,
+            runway=flight.runway)
         self._exchange(
             flight, now, "TWR",
             controller=lambda c, a, s: c.extend_downwind(
@@ -238,18 +241,27 @@ class _The_tower_watching:
         one in front of it was still rolling out, which on a single runway is
         every time.
         """
-        if self._user_on_runway():
+        runway = flight.runway or self.field.arrival_runway
+        if self._user_on_runway(runway):
             return True
-        if self._somebody_on_runway(ignore=flight):
+        if self._somebody_on_runway(ignore=flight, runway=runway):
             # Crossing it, backtracking along it, still turning off it:
             # whatever the timetable says, the runway is not clear.
             return True
         arrives_in = self._seconds_to_threshold(flight)
-        runway = flight.runway or self.field.arrival_runway
         if self._runway_free_at(runway) > now + arrives_in:
             return True
+        strip = _runway_key(runway)
         for other in self.flights:
             if other is flight or other.done:
+                continue
+            theirs = _runway_key(
+                other.runway
+                or (self.field.arrival_runway if other.arriving
+                    else self.field.departure_runway))
+            if theirs != strip and _strips_parallel(theirs, strip):
+                # Another runway's queue: a parallel lined up or landing
+                # does not put anything on this strip.
                 continue
             # An aeroplane sitting on the runway waiting for a clearance is
             # not going anywhere on its own. Everything else that is on it --
@@ -366,8 +378,11 @@ class _The_tower_watching:
         )
 
     def _traffic_on_final(self, miles: float,
-                          ignore: Flight | None = None) -> Flight | None:
+                          ignore: Flight | None = None,
+                          runway: str = "") -> Flight | None:
         """Anybody on final inside that distance, the user counted.
+        ``runway`` scopes it to a strip: a parallel's final is somebody
+        else's runway, not this one's.
 
         The user does not have a :class:`Flight`, so a stand-in is made for
         them. It is never added to the roster: it exists for the length of
@@ -376,12 +391,18 @@ class _The_tower_watching:
         for other in self.flights:
             if other is ignore or other.done:
                 continue
+            if runway and not self._conflicts(
+                    runway, other, self.field.arrival_runway):
+                continue        # another strip's final does not count
             if (other.arriving and other.phase in ("final", "base")
                     and other.distance_nm <= miles):
                 return other
         to_run = self._user_on_final()
         if to_run is not None and to_run <= miles:
-            return self._user_flight()
+            stand = self._user_flight()
+            if not runway or self._conflicts(
+                    runway, stand, self.field.arrival_runway):
+                return stand
         return None
 
     # How far round the circuit the person flying can be and still count as
@@ -394,23 +415,30 @@ class _The_tower_watching:
         user = self.user
         if user is None or user.on_ground or not user.has_position:
             return None
-        runway = self.field.arrival_runway or self.field.departure_runway
-        if not runway or not self.field.ident:
+        ends = getattr(self.field, "arrival_runways", None) \
+            or [self.field.arrival_runway or self.field.departure_runway]
+        if not any(ends) or not self.field.ident:
             return None
         from ..circuit import circuit_for
 
-        published = self.navdb.circuit_data(self.field.ident, runway)
-        side = published.side if published is not None and published.side else "left"
-        circuit = circuit_for(self.navdb, self.field.ident, runway, side=side)
-        if circuit is None:
-            return None
-        here = circuit.locate_at(user.latitude, user.longitude,
-                                 user.altitude_ft, user.heading)
-        if here.leg not in ("base", "downwind", "final"):
-            return None
-        if here.to_go_nm > self.USER_IN_CIRCUIT_NM:
-            return None
-        return here.to_go_nm
+        for runway in ends:
+            if not runway:
+                continue
+            published = self.navdb.circuit_data(self.field.ident, runway)
+            side = (published.side
+                    if published is not None and published.side else "left")
+            circuit = circuit_for(self.navdb, self.field.ident, runway,
+                                  side=side)
+            if circuit is None:
+                continue
+            here = circuit.locate_at(user.latitude, user.longitude,
+                                     user.altitude_ft, user.heading)
+            if here.leg not in ("base", "downwind", "final"):
+                continue
+            if here.to_go_nm > self.USER_IN_CIRCUIT_NM:
+                continue
+            return here.to_go_nm
+        return None
 
     def _user_ahead_of(self, flight: Flight) -> str:
         """The person flying, said as traffic, when they are ahead of this
@@ -434,10 +462,12 @@ class _The_tower_watching:
                                dialect=self.profile.dialect_for(self.field.ident))
         aircraft = Aircraft(forms["en"], user.type_code,
                             wake_suffix(user.type_code), callsigns=forms)
+        final = self._final_for(user)
         return Flight(
             written=user.callsign, type_code=user.type_code,
             aircraft=aircraft, language="en", operator=None,
-            arriving=True, runway=self.field.arrival_runway,
+            arriving=True,
+            runway=(final[1] if final else self.field.arrival_runway),
             phase="final", latitude=user.latitude, longitude=user.longitude,
             altitude_ft=user.altitude_ft, heading=user.heading,
             distance_nm=(distance_nm if distance_nm is not None

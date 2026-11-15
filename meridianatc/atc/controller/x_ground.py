@@ -89,11 +89,11 @@ class _Ground:
 
         if parsed.intent in (Intent.REQUEST_TAXI, Intent.CHECK_IN):
             if session.phase in (Phase.LANDED, Phase.TAXI_IN):
-                return self._issue_taxi_in(session, station, p, state)
+                return self._issue_taxi_in(session, station, weather, p, state)
             return self._issue_taxi(session, station, weather, p, state)
 
         if parsed.intent is Intent.REQUEST_TAXI_TO_PARKING:
-            return self._issue_taxi_in(session, station, p, state)
+            return self._issue_taxi_in(session, station, weather, p, state)
 
         if parsed.intent is Intent.REQUEST_PATTERN_WORK:
             # Circuits are the tower's to approve; ground's job is to get the
@@ -133,7 +133,7 @@ class _Ground:
                 session.answer_assistance()
                 decision("assist", taken="taxi", station=station.callsign)
                 if session.phase is Phase.TAXI_IN:
-                    return self._issue_taxi_in(session, station, p, state)
+                    return self._issue_taxi_in(session, station, weather, p, state)
                 return self._issue_taxi(session, station, weather, p, state)
             return Reply("", station, silent=True)
 
@@ -184,7 +184,8 @@ class _Ground:
             log.debug("could not ask the traffic where it is", exc_info=True)
             return [], set()
 
-    def _plan_taxi(self, session, station, state, *, inbound: bool):
+    def _plan_taxi(self, session, station, state, *, inbound: bool,
+                   weather=None):
         """The taxi on the simulator's own taxiways, or None and the reason
         it is the invented one instead (see :mod:`meridianatc.atc.taxi`)."""
         from .. import aircraft_class
@@ -197,8 +198,10 @@ class _Ground:
             return None, "no aircraft position"
         lines = taxiplan.runway_lines(layout, self.navdb.runways(station.ident))
         occupied, taken = self._ground_traffic(layout)
-        busy = {r for r in (session.departure_runway, session.arrival_runway,
-                            session.touchdown_runway) if r}
+        busy = taxiplan.busy_runways(
+            layout, self.navdb, station.ident,
+            (session.departure_runway, session.arrival_runway,
+             session.touchdown_runway), weather=weather)
         if inbound:
             aircraft = session.aircraft
             # An airline stand for an airline flight, as the pilot said,
@@ -217,12 +220,14 @@ class _Ground:
             layout, state.latitude, state.longitude, session.departure_runway,
             lines, avoid=taxiplan.avoid_near(layout, occupied), busy=busy)
 
-    def _safely_plan(self, session, station, state, *, inbound: bool):
+    def _safely_plan(self, session, station, state, *, inbound: bool,
+                     weather=None):
         # Scenery is data somebody else wrote, and a layout nobody tested
         # against is the likeliest place for a surprise. A pilot who asked
         # to taxi gets the invented route rather than silence.
         try:
-            return self._plan_taxi(session, station, state, inbound=inbound)
+            return self._plan_taxi(session, station, state, inbound=inbound,
+                                   weather=weather)
         except Exception as error:
             log.info("planning the taxi at %s raised", station.ident,
                      exc_info=True)
@@ -294,7 +299,8 @@ class _Ground:
         runway = session.departure_runway or self._departure_runway(airport, weather)
         session.departure_runway = runway
 
-        plan, why = self._safely_plan(session, station, state, inbound=False)
+        plan, why = self._safely_plan(session, station, state, inbound=False,
+                                      weather=weather)
         if plan is None and self._layout_pending(station.ident):
             # The field's taxiways are still being read: "stand by" now
             # and the next ask gets the real route, where answering the
@@ -357,8 +363,9 @@ class _Ground:
         )
         return Reply(text, station, instruction=instruction)
 
-    def _issue_taxi_in(self, session, station, p, state=None) -> Reply:
-        plan, why = self._safely_plan(session, station, state, inbound=True)
+    def _issue_taxi_in(self, session, station, weather, p, state=None) -> Reply:
+        plan, why = self._safely_plan(session, station, state, inbound=True,
+                                      weather=weather)
         if plan is None and self._layout_pending(station.ident):
             decision("taxi_route", airport=station.ident, inbound=True,
                      source="waiting", why="the taxiways are still being read")
@@ -470,9 +477,9 @@ class _Ground:
                                   or session.arrival_runway or "")
         if normalize_runway(runway) == active:
             try:
-                if traffic.runway_occupied(now):
+                if traffic.runway_occupied(now, runway=runway):
                     return "runway occupied"
-                if traffic._nearest_arrival_s(None) \
+                if traffic._nearest_arrival_s(None, runway=runway) \
                         < self.CROSSING_TAKES_S + self.CROSS_CLEAR_S:
                     return "arrival inside the window"
             except Exception:

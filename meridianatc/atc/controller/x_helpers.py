@@ -13,8 +13,10 @@ from ._shared import (
     _similar,
     bearing_deg,
     decision,
+    flowmod,
     language_of,
     math,
+    normalize_runway,
     re,
     station_key,
     time,
@@ -57,12 +59,31 @@ class _Helpers:
             return ""
         return runway
 
+    def _flow_runway(self, airport, weather, *, departing: bool) -> str:
+        """The scenery flow's first end for the direction, or "".
+
+        X-Plane's apt.dat runway-in-use rules are the airport's own "which
+        runway when": where one passes it outranks a wind guess, which is
+        all the fallback ever was. Nothing under MSFS -- its facility data
+        carries no flows -- or where no flow applies.
+        """
+        try:
+            layout = self._layout_for(airport.ident)
+        except Exception:
+            layout = None
+        flow = flowmod.pick_flow(getattr(layout, "flows", None), weather)
+        ends = flow.ends(departing) if flow is not None else []
+        return normalize_runway(ends[0]) if ends else ""
+
     def _departure_runway(self, airport, weather) -> str:
         if airport is None:
             return "01"
         planned = self._planned(airport, weather, "departing")
         if planned:
             return planned
+        flow = self._flow_runway(airport, weather, departing=True)
+        if flow:
+            return flow
         return self._wind_runway(airport, weather, departing=True)
 
     def _arrival_runway(self, airport, weather) -> str:
@@ -71,6 +92,9 @@ class _Helpers:
         planned = self._planned(airport, weather, "landing")
         if planned:
             return planned
+        flow = self._flow_runway(airport, weather, departing=False)
+        if flow:
+            return flow
         return self._wind_runway(airport, weather, departing=False)
 
     def _wind_runway(self, airport, weather, *, departing: bool) -> str:

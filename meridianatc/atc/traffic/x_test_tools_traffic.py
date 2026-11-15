@@ -83,7 +83,9 @@ class _Test_tools_traffic:
         user = self.user
         if user is None or not user.has_position:
             return None, "no_position"
-        if self._threshold(self.field.arrival_runway) is None:
+        ends = getattr(self.field, "arrival_runways", None) \
+            or [self.field.arrival_runway]
+        if not any(self._threshold(e) is not None for e in ends):
             return None, "no_runway"
         occupied = self._on_ground_obstacles() + [
             (*self.ground.to_xy(lat, lon), 20.0)
@@ -169,7 +171,7 @@ class _Test_tools_traffic:
                 controller=lambda c, a, s: c.taxi_to_parking(a, s, rest),
                 pilot_back=lambda p, a, s: p.leaving(a))
             return
-        runway = self.field.departure_runway or flight.runway
+        runway = flight.runway or self.field.departure_runway
         self._exchange(
             flight, now, position,
             controller=lambda c, a, s: c.taxi_to_runway(a, s, runway, rest),
@@ -291,8 +293,7 @@ class _Test_tools_traffic:
         aircraft = Aircraft(forms["en"], type_code, wake_suffix(type_code),
                             callsigns=forms, language=language)
 
-        runway = (self.field.arrival_runway if arriving
-                  else self.field.departure_runway)
+        runway = self._pick_runway(arriving, type_code)
         flight = Flight(
             squawk=self._new_squawk(),
             written=written,

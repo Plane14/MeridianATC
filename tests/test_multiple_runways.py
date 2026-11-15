@@ -1,0 +1,337 @@
+"""Several runways in use at once, the way a big field really works.
+
+Covers the X-Plane traffic flows parsed out of apt.dat (the scenery
+author's runway-in-use rules), the curated '+' groups and parallel
+geometry in ``NavDB.active_runways``, and the traffic's use of the sets:
+which strip a new flight is given, and which final a live arrival is on.
+"""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+from meridianatc.atc import flows as flowmod
+from meridianatc.atc.flows import Flow, RunwayUse, pick_flow
+from meridianatc.atc.phraseology import Weather
+from meridianatc.atc.traffic import TrafficInjector
+from meridianatc.navdata.db import NavDB, Runway
+
+
+def _weather(**kw) -> Weather:
+    return Weather(**kw)
+
+
+# -- the flow model ---------------------------------------------------------
+
+def test_in_range_wraps_through_north():
+    assert flowmod.in_range(350.0, 340.0, 20.0)
+    assert flowmod.in_range(10.0, 340.0, 20.0)
+    assert not flowmod.in_range(100.0, 340.0, 20.0)
+    assert flowmod.in_range(180.0, 0.0, 359.0)
+
+
+def _ksea_like() -> Flow:
+    """Seattle's own shape: two direction-split arrival strips and the
+    heavies' own, one departure runway."""
+    flow = Flow(name="Calm and South")
+    flow.wind = [(0.0, 359.0, 5.0), (70.0, 250.0, 999.0)]
+    flow.runways = [
+        RunwayUse("16C", arrivals=True,
+                  types=frozenset({"jets", "turboprops", "props"}),
+                  course=(160.0, 340.0)),
+        RunwayUse("16R", arrivals=True,
+                  types=frozenset({"jets", "turboprops", "props"}),
+                  course=(341.0, 159.0)),
+        RunwayUse("16L", arrivals=True,
+                  types=frozenset({"heavy"}), course=(0.0, 359.0)),
+        RunwayUse("16C", departures=True,
+                  types=frozenset({"jets", "turboprops", "props",
+                                   "heavy"})),
+    ]
+    return flow
+
+
+def test_flow_passes_on_its_wind_rules():
+    flow = _ksea_like()
+    # Calm from anywhere -- the first wind rule covers it.
+    assert flow.passes(_weather(wind_dir=90.0, wind_kt=3.0))
+    # A south wind of any strength -- the second rule.
+    assert flow.passes(_weather(wind_dir=160.0, wind_kt=25.0))
+    # Strong out of the north passes neither rule.
+    assert not flow.passes(_weather(wind_dir=20.0, wind_kt=15.0))
+
+
+def test_flow_passes_only_when_every_class_passes():
+    flow = _ksea_like()
+    flow.ceiling_ft = 3000
+    flow.visibility_sm = 5.0
+    weather = _weather(wind_dir=160.0, wind_kt=10.0, visibility_sm=8.0,
+                       clouds=[("SCT", 1200), ("BKN", 4500)])
+    assert flow.passes(weather)
+    # Ceiling under the rule fails the class even with wind and vis fine.
+    low = _weather(wind_dir=160.0, wind_kt=10.0, visibility_sm=8.0,
+                   clouds=[("BKN", 2000)])
+    assert not flow.passes(low)
+    murk = _weather(wind_dir=160.0, wind_kt=10.0, visibility_sm=3.0)
+    assert not flow.passes(murk)
+
+
+def test_pick_flow_takes_the_first_that_passes():
+    first = _ksea_like()
+    second = Flow(name="Anything")
+    # No rules at all -- always passes, so it must never win over the
+    # weather-matched one.
+    assert pick_flow([first, second],
+                     _weather(wind_dir=160.0, wind_kt=8.0)) is first
+    assert pick_flow([first, second],
+                     _weather(wind_dir=20.0, wind_kt=40.0)) is second
+    assert pick_flow([first],
+                     _weather(wind_dir=20.0, wind_kt=40.0)) is None
+
+
+def test_flow_ends_and_assignment():
+    flow = _ksea_like()
+    assert flow.ends(departing=False) == ["16C", "16R", "16L"]
+    assert flow.ends(departing=True) == ["16C"]
+    # The on-course range routes the arrival: inbound from the south
+    # (last leg heading ~350) is 16R's, from the north 16C's.
+    assert flow.assign(departing=False, xp_class="jets",
+                       course=350.0) == "16R"
+    assert flow.assign(departing=False, xp_class="jets",
+                       course=200.0) == "16C"
+    # The heavy takes its own strip whatever the course says.
+    assert flow.assign(departing=False, xp_class="heavy",
+                       course=350.0) == "16L"
+    # No course: the first class-matching rule stands in.
+    assert flow.assign(departing=False, xp_class="turboprops") == "16C"
+    assert flow.assign(departing=True, xp_class="jets") == "16C"
+
+
+def test_xp_type_maps_our_classes():
+    assert flowmod.xp_type("airliner", "B738") == "jets"
+    assert flowmod.xp_type("airliner", "B77W") == "heavy"
+    assert flowmod.xp_type("turboprop_twin", "AT76") == "turboprops"
+    assert flowmod.xp_type("piston_single", "C172") == "props"
+    assert flowmod.xp_type("helicopter", "H160") == "helos"
+
+
+# -- apt.dat parsing ---------------------------------------------------------
+
+def test_parse_block_reads_the_flow():
+    from meridianatc.integrations import xpground
+
+    text = """A
+1100 Generated by test
+1 448 0 0 KSEA Seattle
+100 45 1 0 0 0 1 0 16C 47.460 -122.300 0 0 0 0 0 0 34C 47.480 -122.300 0 0 0 0 0 0
+1000 Calm and South flow
+1001 KSEA 000 359 5
+1001 KSEA 070 250 999
+1002 KSEA 0
+1003 KSEA 0
+1004 0000 2400
+1100 16C 11920 arrivals jets|turboprops|props 160340 161161 Arrival 16C
+1100 16R 11920 arrivals jets|turboprops|props 341159 161161 Arrival 16R
+1100 16L 11920 arrivals heavy 000359 161161 Arrival Heavy
+1100 16C 11920 departures jets|turboprops|props|heavy 000359 161161 Dep 16C
+1101 16R right
+1201 47.463 -122.306 both 5416 A_stop
+1201 47.464 -122.307 both 5417 B_stop
+1202 5416 5417 twoway taxiway A
+99
+"""
+    block = xpground._parse_block(text)
+    assert len(block.flows) == 1
+    flow = block.flows[0]
+    assert flow.name == "Calm and South flow"
+    assert flow.wind == [(0.0, 359.0, 5.0), (70.0, 250.0, 999.0)]
+    assert flow.ceiling_ft == 0
+    assert flow.visibility_sm == 0.0
+    assert flow.times == [(0, 2400)]
+    arrivals = [u.end for u in flow.runways if u.arrivals]
+    assert arrivals == ["16C", "16R", "16L"]
+    heavy = flow.runways[2]
+    assert heavy.types == frozenset({"heavy"})
+    assert heavy.course == (0.0, 359.0)
+    assert flow.runways[0].course == (160.0, 340.0)
+    assert flow.pattern == {"16R": "right"}
+
+
+# -- NavDB.active_runways ----------------------------------------------------
+
+def _runway(ident: str, le_lat: float, le_lon: float,
+            he_lat: float, he_lon: float) -> Runway:
+    """A north-south strip for the geometry tests."""
+    return Runway(ident=ident, le_ident=ident[:2] + "L",
+                  he_ident=ident[2:] + "R", length_ft=12000.0,
+                  width_ft=150.0, surface="ASP", lighted=True,
+                  closed=False, le_lat=le_lat, le_lon=le_lon,
+                  le_heading=90.0, he_lat=he_lat, he_lon=he_lon,
+                  he_heading=270.0)
+
+
+def _navdb(ends, preferences=None) -> NavDB:
+    """A NavDB shell with runway_ends and preferences pre-loaded."""
+    navdb = NavDB.__new__(NavDB)
+    navdb._preferences = preferences if preferences is not None else {}
+    navdb.runway_ends = Mock(return_value=list(ends))
+    return navdb
+
+
+def test_active_runways_uses_the_plus_group():
+    """'27R+26L' in the file means the two land at the same time."""
+    ends = [("27R", 270.0, Mock()), ("26L", 260.0, Mock()),
+            ("09L", 90.0, Mock())]
+    preferences = {"LFPG": ([("27R", "26L"), ("09L",)], [("27R",)],
+                           5.0, 20.0)}
+    navdb = _navdb(ends, preferences)
+    assert navdb.active_runways("LFPG", "27R", departing=False) \
+        == ["27R", "26L"]
+    # An end whose group is a plain word still lands alone.
+    assert navdb.active_runways("LFPG", "09L", departing=False) == ["09L"]
+    # The other direction's groups are their own rows.
+    assert navdb.active_runways("LFPG", "27R", departing=True) == ["27R"]
+
+
+def test_active_runways_finds_the_parallel_geometrically():
+    """No preference: a second strip far enough over is worked too."""
+    # Two east-west strips ~600 m apart -- far enough to be two runways.
+    rw1 = _runway("09L27R", 51.000, 0.000, 51.000, 0.030)
+    rw2 = _runway("09R27L", 51.0054, 0.000, 51.0054, 0.030)
+    ends = [("09L", 90.0, rw1), ("27R", 270.0, rw1),
+            ("09R", 90.0, rw2), ("27L", 270.0, rw2)]
+    navdb = _navdb(ends)
+    assert navdb.active_runways("TEST", "09L", departing=True) \
+        == ["09L", "09R"]
+    # And not when told the field would not run two.
+    assert navdb.active_runways("TEST", "09L", departing=True,
+                              parallels=False) == ["09L"]
+
+
+def test_active_runways_ignores_a_second_name_on_the_pavement():
+    """A threshold 50 m over is the same strip, not a parallel."""
+    rw1 = _runway("09L27R", 51.000, 0.000, 51.000, 0.030)
+    rw2 = _runway("09R27L", 51.00045, 0.000, 51.00045, 0.030)
+    ends = [("09L", 90.0, rw1), ("09R", 90.0, rw2)]
+    navdb = _navdb(ends)
+    assert navdb.active_runways("TEST", "09L", departing=True) == ["09L"]
+
+
+def test_active_runways_without_the_runway_is_itself():
+    navdb = _navdb([])
+    assert navdb.active_runways("TEST", "09L", departing=True) == ["09L"]
+    assert navdb.active_runways("TEST", "", departing=True) == []
+
+
+# -- the traffic's sets ------------------------------------------------------
+
+def _injector() -> TrafficInjector:
+    navdb = Mock()
+    navdb.airport.return_value = None
+    injector = TrafficInjector(navdb, seed=1, density=1.0)
+    injector.field.ident = "KSEA"
+    injector.field.latitude = 47.45
+    injector.field.longitude = -122.30
+    injector.field.departure_runway = "16C"
+    injector.field.arrival_runway = "16C"
+    injector.field.thresholds = {
+        "16C": (47.450, -122.300, 160.0),
+        "16R": (47.450, -122.295, 160.0),
+        "16L": (47.450, -122.290, 160.0),
+        "34R": (47.470, -122.300, 340.0),
+    }
+    injector._exchange = Mock()
+    return injector
+
+
+def test_runway_sets_come_from_the_flow():
+    injector = _injector()
+    injector.ground = SimpleNamespace(flows=[_ksea_like()])
+    injector.field.weather = _weather(wind_dir=160.0, wind_kt=8.0)
+    injector._runway_sets()
+    assert injector.field.arrival_runways == ["16C", "16R", "16L"]
+    assert injector.field.departure_runways == ["16C"]
+
+
+def test_runway_sets_keep_the_primary_first():
+    """A flow that does not name the controller's runway does not take
+    it away -- the user is still being sent there."""
+    injector = _injector()
+    injector.field.arrival_runway = "34R"
+    injector.field.runway_locked = True      # the controller chose it
+    injector.ground = SimpleNamespace(flows=[_ksea_like()])
+    injector.field.weather = _weather(wind_dir=160.0, wind_kt=8.0)
+    injector._runway_sets()
+    assert injector.field.arrival_runways[0] == "34R"
+    assert "16R" in injector.field.arrival_runways
+
+
+def test_runway_sets_take_the_flows_primaries_unchosen():
+    """With nobody's runway to keep, the primary is the flow's own --
+    the wind pick is only a guess against the authored config."""
+    injector = _injector()
+    injector.field.arrival_runway = "34R"    # a wind guess, nobody's ask
+    injector.ground = SimpleNamespace(flows=[_ksea_like()])
+    injector.field.weather = _weather(wind_dir=160.0, wind_kt=8.0)
+    injector._runway_sets()
+    assert injector.field.arrival_runway == "16C"
+    assert injector.field.departure_runway == "16C"
+
+
+def test_runway_sets_fall_back_to_navdb_without_flows():
+    injector = _injector()
+    injector.ground = SimpleNamespace(flows=[])
+    injector.navdb.active_runways = Mock(
+        side_effect=lambda ident, rw, dep, parallels=True:
+        [rw, "16R"] if rw == "16C" and not dep else [rw])
+    injector.field.weather = _weather()
+    injector._runway_sets()
+    assert injector.field.arrival_runways == ["16C", "16R"]
+    assert injector.field.departure_runways == ["16C"]
+
+
+def test_pick_runway_uses_the_flow_course():
+    injector = _injector()
+    injector.ground = SimpleNamespace(flows=[_ksea_like()])
+    injector.field.weather = _weather(wind_dir=160.0, wind_kt=8.0)
+    injector._runway_sets()
+    # A jet arriving on a last leg from the south is 16R's.
+    assert injector._pick_runway(True, "B738", course=350.0) == "16R"
+    # The heavy is 16L's either way.
+    assert injector._pick_runway(True, "B77W", course=350.0) == "16L"
+    # And a departure is 16C's, the flow's only departure rule.
+    assert injector._pick_runway(False, "B738", course=350.0) == "16C"
+
+
+def test_pick_runway_balances_without_a_flow():
+    injector = _injector()
+    injector.field.arrival_runways = ["16C", "16R"]
+    injector.field.departure_runways = ["16C", "16R"]
+    queued = SimpleNamespace(done=False, arriving=True, phase="inbound",
+                             runway="16C")
+    injector.flights = [queued]
+    assert injector._pick_runway(True, "B738") == "16R"
+    assert injector._pick_runway(False, "B738") in ("16C", "16R")
+
+
+def test_final_for_picks_the_aligned_parallel():
+    injector = _injector()
+    injector.field.arrival_runways = ["16C", "16R"]
+    # On 16R's centreline at six miles: aligned with 16R, a centreline
+    # offset from 16C. Offset_from_track is real math, so put the
+    # aeroplane south of 16R's threshold on its extended centreline.
+    end = injector.field.thresholds["16R"]
+    from meridianatc.navdata.build import project
+    lat, lon = project(end[0], end[1], (end[2] + 180.0) % 360.0, 6.0)
+    one = SimpleNamespace(on_ground=False, latitude=lat, longitude=lon,
+                          heading=160.0)
+    found = injector._final_for(one)
+    assert found is not None
+    dist, name = found
+    assert name == "16R" and 5.0 < dist < 7.0
+    assert injector._final_distance(one) == dist
+    # Nothing aligned: not a final.
+    far = SimpleNamespace(on_ground=False, latitude=lat, longitude=lon,
+                          heading=90.0)
+    assert injector._final_for(far) is None

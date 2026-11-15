@@ -10,6 +10,7 @@ from ._shared import (
     WIDEBODY,
     Flight,
     Operator,
+    bearing_deg,
     fleets,
     groundwork,
     haversine_nm,
@@ -335,6 +336,20 @@ class _The_ground_driven:
         else:
             flight.origin, flight.origin_icao = field_name, field_icao
             flight.destination, flight.destination_icao = far_name, far_icao
+        # The route's bearing is what a flow's runway-in-use rules match
+        # on -- the first leg out for a departure, the last leg in for an
+        # arrival -- so the strip is chosen now that the far end is known.
+        far = self.navdb.airport(far_icao) if far_icao else None
+        course = None
+        if far is not None and far.lat is not None:
+            if arriving:
+                course = bearing_deg(far.lat, far.lon,
+                                     self.field.latitude, self.field.longitude)
+            else:
+                course = bearing_deg(self.field.latitude,
+                                     self.field.longitude, far.lat, far.lon)
+        flight.runway = self._pick_runway(
+            arriving, flight.type_code, course=course)
         self._assign_procedures(flight, arriving, far_icao)
 
     def _assign_procedures(self, flight: Flight, arriving: bool,

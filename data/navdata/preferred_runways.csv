@@ -18,6 +18,9 @@
 #
 # ident            ICAO identifier.
 # landing          Preferred landing runway ends, best first, separated by spaces.
+#                  Ends joined by '+' are used AT THE SAME TIME, the way a
+#                  field really works parallel runways: '27R+26L' lands both.
+#                  Ends in separate words still alternate as they always did.
 # departing        Preferred departure ends. Leave blank to reuse 'landing'.
 # max_tailwind_kt  Keep using the preference until the tailwind exceeds this
 #                  (5 kt is the usual operational limit, and 0 means 5).
@@ -54,8 +57,8 @@ ident,landing,departing,max_tailwind_kt,max_crosswind_kt
 # KSFO  San Francisco "West Plan": arrivals 28L/28R, departures 01L/01R
 #       (the example above). The 5 kt figure is the usual operational limit,
 #       not a published one for SFO.
-EBBR,25L 25R,25R,7,20
+EBBR,25L+25R,25R,7,20
 EGLL,27L 27R,27R 27L,5,
 EHAM,06,36L,7,20
-LFPG,27R 26L,27L 26R,5,
-KSFO,28L 28R,01L 01R,5,
+LFPG,27R+26L,27L+26R,5,
+KSFO,28L+28R,01L+01R,5,

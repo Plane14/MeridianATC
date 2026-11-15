@@ -123,7 +123,7 @@ class _Tower:
             # to parking when they are in, to the runway when they are out.
             if parsed.intent is Intent.REQUEST_TAXI_TO_PARKING \
                     or session.phase in (Phase.LANDED, Phase.TAXI_IN):
-                return self._issue_taxi_in(session, station, p, state)
+                return self._issue_taxi_in(session, station, weather, p, state)
             return self._issue_taxi(session, station, weather, p, state)
 
         if parsed.intent is Intent.RADIO_CHECK:

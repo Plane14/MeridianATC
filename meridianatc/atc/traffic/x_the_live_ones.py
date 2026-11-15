@@ -35,6 +35,7 @@ from ._shared import (
     Flight,
     ParkedObserved,
     UserAircraft,
+    _runway_key,
     _said_route,
     _spell_route,
     _squawk,
@@ -406,11 +407,14 @@ class _The_live_ones:
         category = (getattr(one, "category", "")
                     or livemod.category_of(written, type_code,
                                            operator=operator))
+        final = self._final_for(one)
+        runway = (final[1] if final else self._pick_runway(
+            arriving=not one.on_ground, type_code=type_code))
         return Flight(
             written=written, type_code=type_code, aircraft=aircraft,
             language=language, operator=operator, arriving=not one.on_ground,
             ifr=True, observed=True, observed_id=one.object_id,
-            runway=self.field.arrival_runway or self.field.departure_runway,
+            runway=runway,
             phase="taxi", step=0, source=source, category=category,
             origin=getattr(one, "origin", "") or "",
             destination=getattr(one, "destination", "") or "",
@@ -500,27 +504,43 @@ class _The_live_ones:
             return "departed"
         return "inbound"
 
-    def _final_distance(self, one) -> float | None:
-        """How far an observed aeroplane has to run, if it is on final.
+    def _final_for(self, one):
+        """``(distance to run, runway)`` on the final it is on, or None.
 
-        The same test the user gets: lined up with the landing runway to
-        within thirty degrees, inside the centreline, and closing. Anything
-        else is an aeroplane near the airport rather than one landing at it.
+        A big field lands two strips at once, so the check runs over every
+        arrival end in use and the answer is the one the aeroplane is most
+        squarely behind -- the parallel three hundred metres off is a
+        different approach, not this one's.
         """
         if one.on_ground:
             return None
-        end = self._threshold(self.field.arrival_runway
-                              or self.field.departure_runway)
-        if end is None:
-            return None
-        along, across = offset_from_track(one.latitude, one.longitude,
-                                          end[0], end[1], end[2])
-        to_run = -along
-        if not 0.0 < to_run <= 14.0 or abs(across) > 1.2:
-            return None
-        if abs((one.heading - end[2] + 540.0) % 360.0 - 180.0) > 30.0:
-            return None
-        return to_run
+        names = getattr(self.field, "arrival_runways", None) \
+            or [self.field.arrival_runway or self.field.departure_runway]
+        best = None
+        for name in names:
+            end = self._threshold(name)
+            if end is None:
+                continue
+            along, across = offset_from_track(one.latitude, one.longitude,
+                                              end[0], end[1], end[2])
+            to_run = -along
+            if not 0.0 < to_run <= 14.0 or abs(across) > 1.2:
+                continue
+            if abs((one.heading - end[2] + 540.0) % 360.0 - 180.0) > 30.0:
+                continue
+            if best is None or abs(across) < best[0]:
+                best = (abs(across), to_run, name)
+        return None if best is None else (best[1], best[2])
+
+    def _final_distance(self, one) -> float | None:
+        """How far an observed aeroplane has to run, if it is on final.
+
+        The same test the user gets: lined up with a landing runway to
+        within thirty degrees, inside the centreline, and closing. Anything
+        else is an aeroplane near the airport rather than one landing at it.
+        """
+        found = self._final_for(one)
+        return found[0] if found is not None else None
 
     def _lined_up(self, one) -> bool:
         """Whether an observed aeroplane is sitting on the runway, ready to go.
@@ -541,7 +561,7 @@ class _The_live_ones:
         heading = getattr(one, "heading", None)
         if heading is None:
             return False
-        for name in (self.field.departure_runway, self.field.arrival_runway):
+        for name in getattr(self.field, "thresholds", None) or {}:
             end = self._threshold(name)
             if end is None:
                 continue
@@ -556,8 +576,14 @@ class _The_live_ones:
         return False
 
     def _runway_under(self, one) -> str:
-        """The in-use runway an observed aeroplane is on, or ""."""
-        for name in (self.field.departure_runway, self.field.arrival_runway):
+        """The runway an observed aeroplane is on, or "".
+
+        Every published end is tried, not just the ones in use: what the
+        feed actually put there is the truth to book occupancy against,
+        and an aeroplane on a strip our configuration did not pick is
+        still an aeroplane on a strip.
+        """
+        for name in getattr(self.field, "thresholds", None) or {}:
             end = self._threshold(name)
             if end is None:
                 continue
@@ -569,7 +595,7 @@ class _The_live_ones:
         return ""
 
     def _on_runway(self, one) -> bool:
-        """Whether an observed aeroplane is on the runway in use."""
+        """Whether an observed aeroplane is on any runway."""
         return bool(self._runway_under(one))
 
     def _advance_observed(self, flight: Flight, now: float) -> None:
@@ -596,7 +622,7 @@ class _The_live_ones:
         if flight.step:
             return
         phase = flight.phase
-        runway_out = self.field.departure_runway or flight.runway
+        runway_out = flight.runway or self.field.departure_runway
 
         # The departure, as it happens -- for a live one half a minute
         # before it is seen to happen: its clearance and its push, its taxi
@@ -682,10 +708,10 @@ class _The_live_ones:
         if phase == "final":
             if flight.lead_distance_nm > LANDING_CLEARANCE_NM:
                 return                     # not yet close enough to clear
-            if self.runway_occupied(now):
+            runway = flight.runway or self.field.arrival_runway
+            if self.runway_occupied(now, runway=runway):
                 return                     # and not while somebody is on it
             flight.step = 1
-            runway = self.field.arrival_runway or flight.runway
             self._exchange(
                 flight, now, "TWR",
                 controller=lambda c, a, s: c.cleared_to_land(
@@ -779,7 +805,7 @@ class _The_live_ones:
                         flight, now, "TWR",
                         controller=lambda c, a, s, f=flight:
                         c.hold_short_instruction(
-                            a, self.field.departure_runway or f.runway),
+                            a, f.runway or self.field.departure_runway),
                         pilot_back=lambda p, a, s: p.wilco(a),
                     )
             # On the ground: give way to the pilot taxiing.
@@ -897,7 +923,9 @@ class _The_live_ones:
         flight.observed = False
         flight.source = "taken over"
         flight.arriving = True
-        flight.runway = self.field.arrival_runway or flight.runway
+        final = self._final_for(flight)
+        flight.runway = (final[1] if final else flight.runway
+                         or self.field.arrival_runway)
         flight.performance = perftable.traffic_performance(
             flight.type_code, light=livemod.flight_category(flight)
             == livemod.GA)
@@ -996,10 +1024,10 @@ class _The_live_ones:
         flight.ground_speed_kt = one.ground_speed_kt
         flight.vertical_rate_fpm = one.vertical_speed_fpm
         flight.arriving = arriving
-        flight.runway = ((self.field.arrival_runway
-                          or self.field.departure_runway) if arriving
-                         else (self.field.departure_runway
-                               or self.field.arrival_runway))
+        final = self._final_for(one) if arriving and not one.on_ground \
+            else None
+        flight.runway = (final[1] if final
+                         else self._pick_runway(arriving, flight.type_code))
         if not one.on_ground:
             flight.airborne_model = True
             flight.on_ground = False
@@ -1099,12 +1127,26 @@ class _The_live_ones:
         """
         self.user = user
 
-    def _user_on_runway(self) -> bool:
-        """Whether the person flying is on a runway in use."""
+    def _strip_ends(self, runway: str) -> list[str]:
+        """The ends on the same pavement as ``runway``, as threshold names.
+
+        "09L" and "27R" share one strip's occupancy; "09R" does not, which
+        is what makes one parallel's landing not block the other's.
+        """
+        key = _runway_key(runway)
+        ends = [name
+                for name in (getattr(self.field, "thresholds", None) or {})
+                if _runway_key(name) == key]
+        return ends or ([runway] if runway else [])
+
+    def _user_on_runway(self, runway: str = "") -> bool:
+        """Whether the person flying is on a runway in use -- or on the
+        strip ``runway`` names, when a particular one is being asked about."""
         user = self.user
         if user is None or not user.on_ground or not user.has_position:
             return False
-        for name in {self.field.departure_runway, self.field.arrival_runway}:
+        names = self._strip_ends(runway) if runway else self._in_use()
+        for name in names:
             end = self._threshold(name)
             if end is None:
                 continue
@@ -1126,7 +1168,9 @@ class _The_live_ones:
         if user is None or user.on_ground or not user.has_position:
             return None
         best = None
-        for name in {self.field.arrival_runway, self.field.departure_runway}:
+        names = getattr(self.field, "arrival_runways", None) \
+            or [self.field.arrival_runway or self.field.departure_runway]
+        for name in names:
             end = self._threshold(name)
             if end is None:
                 continue
@@ -1140,23 +1184,31 @@ class _The_live_ones:
             best = to_run if best is None else min(best, to_run)
         return best
 
-    def runway_occupied(self, now: float, ignore: Flight | None = None) -> bool:
+    def runway_occupied(self, now: float, ignore: Flight | None = None,
+                        runway: str = "") -> bool:
         """Whether anybody at all is on the runway -- the user included.
 
         :meth:`runway_is_busy` deliberately does not count the user, because
         the controller asks it whether the user may be cleared. This one is
         what the traffic asks before it rolls.
 
+        ``runway`` names the strip being cleared: its own ends are what
+        count, so an aeroplane on the parallel does not block this one the
+        way two independently worked runways should not block each other.
+        Without one, every end in use counts, as it always has.
+
         On an airport whose taxiways are driven, an aeroplane is on the
         runway because it is on it -- still rolling out, crossing, turning
         off -- and not only while a timer says so.
         """
-        return (self.runway_is_busy(now) or self._user_on_runway()
-                or self._somebody_on_runway(ignore))
+        return (self.runway_is_busy(now, runway)
+                or self._user_on_runway(runway)
+                or self._somebody_on_runway(ignore, runway))
 
-    def _somebody_on_runway(self, ignore: Flight | None = None) -> bool:
-        ends = [self._threshold(name) for name in
-                {self.field.departure_runway, self.field.arrival_runway}]
+    def _somebody_on_runway(self, ignore: Flight | None = None,
+                            runway: str = "") -> bool:
+        names = self._strip_ends(runway) if runway else self._in_use()
+        ends = [self._threshold(name) for name in names]
         ends = [end for end in ends if end is not None]
         if not ends:
             return False

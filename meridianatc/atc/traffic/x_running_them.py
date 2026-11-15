@@ -286,8 +286,8 @@ class _Running_them:
                      for a, b in zip(stretch, stretch[1:], strict=False))
         # Off the far side as well: the tail has to clear it, not the nose.
         takes = metres / groundwork.TURN_MS + 30.0
-        if (self.runway_occupied(now, ignore=flight)
-                or self._somebody_lined_up(flight)
+        if (self.runway_occupied(now, ignore=flight, runway=flight.runway)
+                or self._somebody_lined_up(flight, runway=flight.runway)
                 or self._nearest_arrival_s(flight) < takes
                 + self.CROSS_CLEAR_S):
             return False

@@ -92,6 +92,10 @@ class AtisGenerator:
         self.approach_for = lambda runway: "ILS"
         # And the runway, from the same place. Unset, the wind decides.
         self.runway_for = None
+        # The whole set in use, where the caller knows it (the traffic's
+        # own runway lists, scenery flows included). Unset, the runway
+        # above is expanded from the database the way it always was.
+        self.runways_for = None
         # The VFR part of the departure briefing for a runway: ``(side,
         # [point, ...])`` -- the published circuit side, "" where none is
         # published, and the reporting points a controller would name.
@@ -145,6 +149,10 @@ class AtisGenerator:
 
     def _runway_choice(self, weather: Weather,
                        departing: bool = False) -> tuple[str, ...]:
+        if self.runways_for is not None:
+            found = self.runways_for(weather, departing)
+            if found:
+                return tuple(found)
         if self.runway_for is not None:
             end = self.runway_for(weather, departing)
             if not end:
@@ -158,6 +166,16 @@ class AtisGenerator:
             if not best:
                 return ()
             end, _rw = best
+        # The ends the field really works at once -- the curated '+'
+        # groups and, where this is a scheduled-service field, the chosen
+        # runway's parallels -- announced as they are used.
+        airport = self.navdb.airport(self.airport.ident)
+        big = bool(getattr(airport, "scheduled", False)
+                   or getattr(airport, "size_rank", 0) >= 3)
+        active = self.navdb.active_runways(
+            self.airport.ident, end, departing, parallels=big)
+        if active:
+            return tuple(active)
         parallels = self.navdb.parallel_runways(self.airport.ident, end)
         return tuple([end] + sorted(parallels))
 
@@ -216,8 +234,12 @@ class AtisGenerator:
 
         # --- runways in use ---
         if split:
-            parts.append(f"landing runway {p.rwy(runways[0])}, "
-                         f"departure runway {p.rwy(departing[0])}")
+            landing = " and ".join(p.rwy(r) for r in runways)
+            taking_off = " and ".join(p.rwy(r) for r in departing)
+            parts.append(
+                f"landing runway{'s' if len(runways) > 1 else ''} "
+                f"{landing}, departure runway"
+                f"{'s' if len(departing) > 1 else ''} {taking_off}")
             if p.dialect == "icao":
                 parts.append(f"expect {self._approach_type(runways)} approach")
         elif runways:

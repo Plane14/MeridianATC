@@ -332,9 +332,11 @@ class _Taxi:
         try:
             lines = taxiplan.runway_lines(
                 layout, self.navdb.runways(airport.ident))
-            busy = {r for r in (getattr(self.session, "departure_runway", ""),
-                                getattr(self.session, "arrival_runway", ""),
-                                runway) if r}
+            busy = taxiplan.busy_runways(
+                layout, self.navdb, airport.ident,
+                (getattr(self.session, "departure_runway", ""),
+                 getattr(self.session, "arrival_runway", ""), runway),
+                weather=self._field_weather(airport))
             plan, _why = taxiplan.plan_departure(
                 layout, state.latitude, state.longitude, runway, lines,
                 busy=busy)

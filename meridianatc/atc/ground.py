@@ -199,8 +199,13 @@ class GroundLayout:
 
     def __init__(self, ident: str, latitude: float, longitude: float,
                  points: list, parkings: list, paths: list,
-                 names: list[str]):
+                 names: list[str], flows: list | None = None):
         self.ident = (ident or "").upper()
+        # The airport's ATC traffic flows, where the scenery source carries
+        # them (X-Plane apt.dat; atc.flows). MSFS's facility data has no
+        # equivalent, so an empty list is the common case and callers fall
+        # back to weather-chosen runways.
+        self.flows = list(flows or [])
         self.latitude = float(latitude)
         self.longitude = float(longitude)
         self._cos = math.cos(math.radians(self.latitude))

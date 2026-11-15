@@ -33,6 +33,7 @@ import math
 import re
 from pathlib import Path
 
+from ..atc.flows import Flow, RunwayUse, parse_course_range
 from ..atc.ground import (
     EARTH_M,
     PATH_PARKING,
@@ -165,6 +166,10 @@ class _AirportBlock:
         # (num1, lat1, lon1, disp1 m, num2, lat2, lon2, disp2 m,
         #  width m, surface code, edge lights on) per row-100 runway
         self.runway_records: list[tuple] = []
+        # The ATC traffic flows (rows 1000 onward): the scenery author's
+        # "in this weather we use these runways for these aircraft", which
+        # is the only place X-Plane writes its runway-in-use choices down.
+        self.flows: list = []
 
 
 def _parse_block(text: str) -> _AirportBlock:
@@ -177,6 +182,7 @@ def _parse_block(text: str) -> _AirportBlock:
     block = _AirportBlock()
     datum: dict[str, float] = {}
     last_edge = -1
+    flow: Flow | None = None
     for raw in text.splitlines():
         fields = raw.split()
         if not fields:
@@ -229,6 +235,51 @@ def _parse_block(text: str) -> _AirportBlock:
                         float(fields[18]), float(fields[19]),
                         float(fields[20]), float(fields[1]),
                         int(float(fields[2])), float(fields[6]) != 0))
+            elif code == "1000":
+                # A traffic flow opens: its rules and runway-in-use rows
+                # follow until the next header. The name is free text.
+                flow = Flow(name=" ".join(fields[1:]))
+                block.flows.append(flow)
+            elif code == "1001" and flow is not None and len(fields) >= 4:
+                # <metar-icao> <dir min> <dir max> <max kt>; hand-made
+                # files sometimes drop the reporting station.
+                nums = fields[1:]
+                if len(nums) >= 4:
+                    nums = nums[1:]
+                flow.wind.append((float(nums[0]) % 360.0,
+                                  float(nums[1]) % 360.0,
+                                  float(nums[2])))
+            elif code == "1002" and flow is not None and len(fields) >= 2:
+                flow.ceiling_ft = int(float(fields[-1]))
+            elif code == "1003" and flow is not None and len(fields) >= 2:
+                flow.visibility_sm = float(fields[-1])
+            elif code == "1004" and flow is not None and len(fields) >= 3:
+                # <start hhmm> <end hhmm> UTC; read from the back so a
+                # stray station field in a hand-made file cannot shift it.
+                flow.times.append((int(fields[-2]), int(fields[-1])))
+            elif code in ("1100", "1110") and flow is not None \
+                    and len(fields) >= 6:
+                # <rwy> <freq> <ops> <types> <course range> <dep range>
+                # <name...> -- 1100's frequency is 10 kHz units, 1110's
+                # 1 kHz (8.33 spacing fields). The ops and types are
+                # pipe lists: "arrivals", "jets|turboprops|props".
+                ops = set(fields[3].lower().split("|"))
+                use = RunwayUse(
+                    end=fields[1].upper(),
+                    frequency=float(fields[2]) / (100.0 if code == "1100"
+                                                  else 1000.0),
+                    arrivals="arrivals" in ops,
+                    departures="departures" in ops,
+                    types=frozenset(
+                        t for t in fields[4].lower().split("|") if t),
+                    course=parse_course_range(fields[5]),
+                    departure=(parse_course_range(fields[6])
+                               if len(fields) > 6 else (0.0, 359.0)),
+                    name=" ".join(fields[7:]) if len(fields) > 7 else "")
+                flow.runways.append(use)
+            elif code == "1101" and flow is not None and len(fields) >= 3:
+                # The VFR circuit direction for one end: "16R right".
+                flow.pattern[fields[1].upper()] = fields[2].lower()
             elif code.isdigit() and int(code) in _FREQ_ROWS \
                     and len(fields) >= 2:
                 # ATC comm rows: <code> <frequency x100> <name>.
@@ -476,7 +527,7 @@ class XPlaneGround:
                 paths.append((PATH_PARKING, 0.0, 0, 0, nearest, i, 0))
 
         layout = GroundLayout(ident, lat0, lon0, points, parkings, paths,
-                              names)
+                              names, flows=block.flows)
         if not layout:
             return None
         # apt.dat's ``runway`` segments are not just the pavement: they are

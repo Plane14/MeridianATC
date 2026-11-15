@@ -3,6 +3,7 @@ from __future__ import annotations
 from ._shared import (
     CONCURRENT_BY_RANK,
     Flight,
+    bearing_deg,
     fleets,
     livemod,
 )
@@ -177,7 +178,6 @@ class _The_ones_standing:
         flight.boarding = False
         flight.static = False
         flight.arriving = False
-        flight.runway = self.field.departure_runway
         if not flight.destination:
             # A static aeroplane was routed when it was parked; only an
             # older one without a destination needs one now.
@@ -189,6 +189,14 @@ class _The_ones_standing:
             else:
                 flight.destination = (self._nearby_field()
                                       or self._elsewhere())
+        course = None
+        far = (self.navdb.airport(flight.destination_icao)
+               if flight.destination_icao else None)
+        if far is not None and far.lat is not None:
+            course = bearing_deg(self.field.latitude, self.field.longitude,
+                                 far.lat, far.lon)
+        flight.runway = self._pick_runway(False, flight.type_code,
+                                          course=course)
         flight.parked_at = 0.0
         flight.next_at = now + self.random.uniform(2.0, 12.0)
         flight.sequence = len(self.traffic_ahead(False)) + 1
@@ -205,9 +213,13 @@ class _The_ones_standing:
     MAX_ON_APPROACH = 4
 
     def _max_on_approach(self) -> int:
-        """The cap, scaled by the density the field is being run at: a
-        busy field's stream is longer, and the arrivals queue by the
-        distance they spawned at rather than never existing."""
+        """The cap, scaled by the density the field is being run at and
+        by the runways landing: two strips in use take the stream a real
+        dual-approach field takes, one and a half per extra runway --
+        parallels never quite double a single strip's rate."""
+        runways = len(getattr(self.field, "arrival_runways", None) or [1])
+        scale = min(runways, 4)
+        extra = 0.5 * (scale - 1)
         return max(1, int(round(self.MAX_ON_APPROACH
-                                * max(0.0, self.density))))
+                                * max(0.0, self.density) * (1.0 + extra))))
 

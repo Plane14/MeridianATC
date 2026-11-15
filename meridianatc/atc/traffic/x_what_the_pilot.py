@@ -136,7 +136,6 @@ class _What_the_pilot:
         the strip; without one, the field's active runways are what is
         asked about."""
         keys = {_runway_key(runway)} if runway else {
-            _runway_key(r) for r in (self.field.departure_runway,
-                                     self.field.arrival_runway) if r}
+            _runway_key(r) for r in self._in_use()}
         return any(now < self._runway_free.get(key, 0.0) for key in keys)
 

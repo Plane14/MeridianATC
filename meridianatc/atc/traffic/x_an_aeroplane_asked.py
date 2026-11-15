@@ -44,14 +44,18 @@ class _An_aeroplane_asked:
             # Nothing to put it in. An aeroplane on the radio and not on the
             # runway is exactly what the pilot asked this never to do.
             return None, "not_in_sim"
-        runway = self.field.departure_runway
-        if not runway or self._threshold(runway) is None:
+        ends = getattr(self.field, "departure_runways", None) \
+            or [self.field.departure_runway]
+        runway = next((e for e in ends if self._threshold(e) is not None),
+                      None)
+        if runway is None:
             return None, "no_runway"
         free = not (any(f.phase == "lineup"
                         for f in self._asked_for + self._materialising)
-                    or self._somebody_lined_up()
-                    or self.runway_occupied(now)
-                    or self._traffic_on_final(self.LINEUP_BLOCK_NM)
+                    or self._somebody_lined_up(runway=runway)
+                    or self.runway_occupied(now, runway=runway)
+                    or self._traffic_on_final(self.LINEUP_BLOCK_NM,
+                                              runway=runway)
                     is not None)
         flight = self._new_flight(now, arriving=False, parked=False)
         if flight is None:
@@ -94,7 +98,7 @@ class _An_aeroplane_asked:
         flight.step = 2
         # Recorded as already said and done, so the strip reads "lined up"
         # and the tower does not tell it to line up a second time.
-        lined_up = self._tell(flight, "line_up", now, runway=runway)
+        lined_up = self._tell(flight, "line_up", now, runway=flight.runway)
         lined_up.applied = True
         flight.doing = lined_up
         self._start_flying(flight)

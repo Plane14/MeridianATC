@@ -616,13 +616,20 @@ class Station:
 
 @dataclass(frozen=True)
 class RunwayPreference:
-    """A locally configured preferential runway configuration."""
+    """A locally configured preferential runway configuration.
+
+    ``runways`` is every named end in preference order, as it always was;
+    ``groups`` keeps the file's '+' notation: ends joined by '+' are run
+    simultaneously, the way Paris lands 27R and 26L at once, while ends in
+    separate words still alternate.
+    """
 
     runways: list[str]
     max_tailwind_kt: float = 5.0
     # Both Brussels and Schiphol publish 20 kt for their preferential
     # systems, gusts included; used where a row does not give its own.
     max_crosswind_kt: float = 20.0
+    groups: tuple[tuple[str, ...], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -712,6 +719,17 @@ def _heading_from_ident(ident: str) -> float | None:
         return (int(digits) % 36) * 10.0
     except ValueError:
         return None
+
+
+def _end_position(end_ident: str, runway) -> tuple[float, float] | None:
+    """The threshold's ``(lat, lon)`` for one end of a runway record."""
+    if (end_ident or "").upper() == (runway.le_ident or "").upper():
+        pair = (runway.le_lat, runway.le_lon)
+    else:
+        pair = (runway.he_lat, runway.he_lon)
+    if None in pair:
+        return None
+    return pair
 
 
 class NavDB:
@@ -1560,8 +1578,11 @@ class NavDB:
         chosen = (depart or landing) if departing else landing
         if not chosen:
             return None
-        return RunwayPreference(runways=chosen, max_tailwind_kt=limit,
-                                max_crosswind_kt=crosswind)
+        return RunwayPreference(
+            runways=[end for group in chosen for end in group],
+            max_tailwind_kt=limit,
+            max_crosswind_kt=crosswind,
+            groups=tuple(chosen))
 
     def _load_preferences(self) -> None:
         if self._preferences is not None:
@@ -1578,8 +1599,13 @@ class NavDB:
             ident = (r.get("ident") or "").strip().upper()
             if not ident:
                 continue
-            landing = (r.get("landing") or "").upper().split()
-            departing = (r.get("departing") or "").upper().split()
+            # A word of '+'-joined ends is one simultaneous group -- the
+            # strips the field really works together. Plain separate words
+            # are the alternates it switches between.
+            landing = [tuple(t.split("+"))
+                       for t in (r.get("landing") or "").upper().split()]
+            departing = [tuple(t.split("+"))
+                         for t in (r.get("departing") or "").upper().split()]
             try:
                 limit = float(r.get("max_tailwind_kt") or 5.0)
             except ValueError:
@@ -1732,6 +1758,75 @@ class NavDB:
             if abs(((hdg - target) + 540) % 360 - 180) <= 12:
                 out.append(other)
         return out
+
+    def active_runways(self, ident: str, runway: str, departing: bool,
+                       parallels: bool = True) -> list[str]:
+        """The ends the field works at once, the chosen runway first.
+
+        Real big fields do not run one strip: Paris lands 27R and 26L
+        together, Seattle departs two parallels and lands a third for the
+        heavies. Two sources say which ends share the air:
+
+        * a '+'-joined group in ``preferred_runways.csv`` -- the curated
+          file's own spelling for "these run at once" ("27R+26L"), while
+          separately listed ends keep their alternating meaning;
+        * failing that, the ends parallel to the chosen one and far
+          enough apart to be their own strip. ``parallels=False`` skips
+          this for callers where a second runway would be wishful rather
+          than real -- a GA strip does not grow a parallel because two
+          grass headings happen to align.
+
+        The chosen runway leads the list because it stays the primary:
+        the user's runway, the strip a crossing clearance counts against.
+        """
+        runway = (runway or "").strip().upper()
+        if not runway:
+            return []
+        own_key = normalize_runway(runway)
+        ends = {normalize_runway(e): (e, h, rw)
+                for e, h, rw in self.runway_ends(ident)}
+        pref = self._preference(ident, departing)
+        if pref:
+            for group in pref.groups:
+                if own_key not in {normalize_runway(e) for e in group}:
+                    continue
+                found = [ends[normalize_runway(e)][0] for e in group
+                         if normalize_runway(e) in ends]
+                if not found:
+                    break
+                if not any(normalize_runway(e) == own_key for e in found):
+                    found.insert(0, runway)
+                return found
+        if not parallels or own_key not in ends:
+            return [runway]
+        own_end, own_hdg, own_rw = ends[own_key]
+        spot = _end_position(own_end, own_rw)
+        if spot is None:
+            return [runway]
+        lat0, _ = spot
+        cos = math.cos(math.radians(lat0))
+        rad = math.radians(own_hdg)
+        # The unit vector across the strip, for how far to the side the
+        # other threshold lies. Nearer than a couple of hundred metres it
+        # is the same pavement with a second name -- displaced thresholds
+        # and survey twins -- not a strip that can be worked at once.
+        ux, uz = math.cos(rad), -math.sin(rad)
+        close: list[tuple[float, str]] = []
+        for key, (other, hdg, rw) in ends.items():
+            if key == own_key:
+                continue
+            if abs(((hdg - own_hdg) + 540) % 360 - 180) > 12:
+                continue
+            there = _end_position(other, rw)
+            if there is None:
+                continue
+            dx = (there[1] - spot[1]) * 111_195.0 * cos
+            dz = (there[0] - spot[0]) * 111_195.0
+            offset = abs(dx * ux + dz * uz)
+            if offset >= 250.0:
+                close.append((offset, other))
+        close.sort()
+        return [runway] + [e for _off, e in close]
 
     # ------------------------------------------------------------------
     # navaids and fixes

@@ -75,6 +75,7 @@ from ..climb import (
 )
 from ..enroute import is_oceanic
 from ..final import final_for
+from .. import flows as flowmod
 from ..intents import _REPORT_WORD, Intent, ParsedIntent
 from ..phraseology import Phraseology, Weather, _join, language_of
 from ..procedures import heard as procedure_heard
@@ -271,6 +272,7 @@ __all__ = [
     "decision",
     "terrain",
     "same_channel",
+    "flowmod",
     "DEFAULT_TRANSITION_FT",
     "NavDB",
     "Station",

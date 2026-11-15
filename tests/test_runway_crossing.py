@@ -51,8 +51,10 @@ def _brain(navdb, layout, *, occupied=False, arrival_s=1e9, on_strip=()):
     brain.staffed = lambda station: True
     brain.ground_layout = lambda ident: layout
     brain.traffic = Mock()
-    brain.traffic.runway_occupied = lambda now, ignore=None: occupied
-    brain.traffic._nearest_arrival_s = lambda flight: arrival_s
+    brain.traffic.runway_occupied = (
+        lambda now, ignore=None, runway="": occupied)
+    brain.traffic._nearest_arrival_s = (
+        lambda flight, runway="": arrival_s)
     brain.traffic.ground_occupancy = lambda lay: (list(on_strip), set())
     return brain
 

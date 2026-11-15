@@ -197,6 +197,12 @@ class _State_and_weather:
                 lambda weather, departing, field=airport: (
                     self.brain.departure_runway(field, weather) if departing
                     else self.brain.arrival_runway(field, weather)))
+            # The set the traffic is actually working, parallels and flow
+            # runways included, so the broadcast names them all.
+            generator.runways_for = (
+                lambda weather, departing, field=airport: (
+                    self.traffic.runways_in_use(field.ident, departing)
+                    if self.traffic is not None else ()))
             generator.vfr_briefing = (
                 lambda runway, field=airport, p=generator.phrase:
                 self.brain.atis_briefing(field, runway, p))

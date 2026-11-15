@@ -211,13 +211,29 @@ class _Where_it_is:
     # exactly enough time is a departure that goes wrong.
     DEPARTURE_MARGIN_S = 25.0
 
+    def _conflicts(self, runway: str, other: Flight,
+                   fallback: str = "") -> bool:
+        """Whether ``other`` is on this runway's stream.
+
+        Its own strip conflicts, and so does a crossing one -- the strips
+        share pavement. A parallel is another runway's queue, the way the
+        arrival count and the roll window already treat it.
+        """
+        strip = _runway_key(runway or fallback)
+        theirs = _runway_key(other.runway or fallback)
+        return theirs == strip or not _strips_parallel(theirs, strip)
+
     def _runway_taken_by_departure(self, flight: Flight) -> bool:
         """Whether another departure holds the runway: told to line up or
         to take off, and still on the ground."""
+        strip = flight.runway or self.field.departure_runway
         for other in self.flights:
             if other is flight or other.done or other.arriving:
                 continue
             if not other.on_ground:
+                continue
+            if not self._conflicts(strip, other,
+                                   self.field.departure_runway):
                 continue
             if other.phase in ("lineup", "takeoff") or any(
                     command.kind in ("line_up", "takeoff")
@@ -225,21 +241,30 @@ class _Where_it_is:
                 return True
         return False
 
-    def _somebody_lined_up(self, ignore: Flight | None = None) -> bool:
+    def _somebody_lined_up(self, ignore: Flight | None = None,
+                           runway: str = "") -> bool:
         """Whether the runway already has an aeroplane sitting on it."""
         return any(
             other is not ignore and not other.done
             and (other.phase == "lineup"
                  or self._already_told(other, "line_up"))
+            and (not runway
+                 or self._conflicts(runway, other,
+                                    self.field.departure_runway))
             for other in self.flights)
 
     def _seconds_to_threshold(self, flight: Flight) -> float:
         """How long this arrival has left to run, at the speed it is doing."""
         return flight.distance_nm / max(30.0, flight.ground_speed_kt) * 3600.0
 
-    def _nearest_arrival_s(self, flight: Flight) -> float:
+    def _nearest_arrival_s(self, flight: Flight,
+                           runway: str = "") -> float:
         """How long before the closest thing on the approach is on the runway."""
-        approaching = self._approaching(flight)
+        strip = (runway or getattr(flight, "runway", "")
+                 or self.field.departure_runway)
+        approaching = [other for other in self._approaching(flight)
+                       if self._conflicts(strip, other,
+                                          self.field.arrival_runway)]
         if not approaching:
             return 1e6
         return min(self._seconds_to_threshold(other) for other in approaching)
@@ -282,7 +307,8 @@ class _Where_it_is:
         # departure stuck on the runway with an arrival closing on it -- and
         # the arrival was then the one that had to go round.
         pressing = (flight.phase == "lineup"
-                    and not self.runway_occupied(now, ignore=flight)
+                    and not self.runway_occupied(
+                        now, ignore=flight, runway=flight.runway)
                     and self._nearest_arrival_s(flight) >= RUNWAY_ROLL_S)
 
         flight.held_since = flight.held_since or now
@@ -296,7 +322,8 @@ class _Where_it_is:
 
         if not pressing and not self._room_to_depart(flight, now):
             blocking = self._traffic_on_final(self.LINEUP_BLOCK_NM,
-                                              ignore=flight)
+                                              ignore=flight,
+                                              runway=flight.runway)
             # Somebody is landing. The departure stays where it is: held at
             # the holding point if it is still there, and held on the runway
             # if it was already lined up before the arrival got this close.
@@ -313,13 +340,14 @@ class _Where_it_is:
             flight.next_at = now + self.random.uniform(6.0, 14.0)
             return
 
-        if self.runway_occupied(now, ignore=flight):
+        if self.runway_occupied(now, ignore=flight, runway=flight.runway):
             # Somebody is rolling, and will be gone in half a minute. That is
             # what lining up and waiting is for -- for one aeroplane. A runway
             # with three aeroplanes lined up on it is not a runway, and it was
             # what sent the next arrival round.
             if (flight.phase != "lineup" and flight.step < 2
-                    and not self._somebody_lined_up(flight)):
+                    and not self._somebody_lined_up(
+                        flight, runway=flight.runway)):
                 flight.step = 2
                 self._exchange(
                     flight, now, "TWR",

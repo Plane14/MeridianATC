@@ -534,6 +534,51 @@ def closed_runway_edges(layout: GroundLayout, lines: list[RunwayLine],
     return closed
 
 
+def busy_runways(layout: GroundLayout | None, navdb, ident: str,
+                 ends, weather=None) -> set[str]:
+    """The strips a taxi route should treat as in use.
+
+    ``ends`` are the runways the caller already knows -- the session's
+    departure and arrival, the runway it is bound for. To them this adds
+    whatever else the field is really working at the same time: the
+    scenery's own traffic flow where the layout carries one (X-Plane's
+    apt.dat runway-in-use rules), else the nav database's active-runway
+    list -- the curated groups and, at an airline field, the chosen
+    runway's parallels.
+    """
+    busy = {normalize_runway(r) for r in ends if r}
+    from . import flows as flowmod
+
+    flow = flowmod.pick_flow(getattr(layout, "flows", None), weather) \
+        if layout is not None else None
+    if flow is not None:
+        busy |= {normalize_runway(e)
+                 for e in flow.ends(True) + flow.ends(False)}
+        return busy
+    if navdb is None or not ident:
+        return busy
+    big = False
+    try:
+        from . import fleet as fleets
+
+        kind = fleets.classify(navdb, ident)
+        big = bool(getattr(kind, "airline", False)
+                   or getattr(kind, "scheduled", False))
+    except Exception:
+        big = False
+    for runway in ends:
+        if not runway:
+            continue
+        try:
+            for departing in (True, False):
+                busy |= {normalize_runway(e) for e in
+                         navdb.active_runways(ident, runway, departing,
+                                              parallels=big)}
+        except (AttributeError, TypeError):
+            busy.add(normalize_runway(runway))
+    return busy
+
+
 def plan_departure(layout: GroundLayout, latitude: float, longitude: float,
                    runway: str, lines: list[RunwayLine],
                    avoid: set[object] = frozenset(),
@@ -670,5 +715,5 @@ def plan_arrival(layout: GroundLayout, latitude: float, longitude: float,
 
 __all__ = ["TaxiPlan", "RunwayLine", "runway_lines", "crossings",
            "spoken_legs", "stand_under", "avoid_near", "closed_runway_edges",
-           "plan_departure", "plan_arrival", "designator",
+           "busy_runways", "plan_departure", "plan_arrival", "designator",
            "distance_to_line", "MAX_TAXIWAYS"]

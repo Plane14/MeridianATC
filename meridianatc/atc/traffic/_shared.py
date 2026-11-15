@@ -49,6 +49,7 @@ from ...navdata.db import (
 )
 from .. import circuit as circuitry
 from .. import fleet as fleets
+from .. import flows as flowmod
 from .. import ground as groundwork
 from .. import live as livemod
 from .. import perftable
@@ -949,6 +950,20 @@ class _Field:
     kind: fleets.FieldKind | None = None
     departure_runway: str = ""
     arrival_runway: str = ""
+    # Every end the field is working in each direction, primaries first.
+    # A big field lands two parallels at once; the single-runway fields
+    # these default to keep the list at one. Occupancy, closure and
+    # assignment all read these, never the primaries alone.
+    departure_runways: list[str] = field(default_factory=list)
+    arrival_runways: list[str] = field(default_factory=list)
+    # Somebody chose a runway for the user -- the session's assignment,
+    # not the field's own wind pick -- so the primaries are not the
+    # flow's to rewrite.
+    runway_locked: bool = False
+    # The scenery's own traffic flow in force (atc.flows.Flow), where the
+    # airport's apt.dat carries flows -- X-Plane's authored runway-in-use
+    # rules. None under MSFS or where no flow passes.
+    flow: object | None = None
     weather: Weather | None = None
     # The traffic frequency, where a field has one. Set when the field has no
     # controllers at all, which is what makes it an uncontrolled one.

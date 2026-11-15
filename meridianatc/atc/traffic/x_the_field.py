@@ -9,6 +9,7 @@ from ._shared import (
     _is_enroute_standin,
     decision,
     fleets,
+    flowmod,
     groundwork,
     normalize_runway,
     project,
@@ -118,6 +119,10 @@ class _The_field:
         self.field.departure_runway = departure_runway or self.field.departure_runway
         self.field.arrival_runway = (arrival_runway or departure_runway
                                      or self.field.arrival_runway)
+        if departure_runway or arrival_runway:
+            # A runway chosen for the user is not the wind's or a flow's
+            # to rewrite -- the field works the one they were given.
+            self.field.runway_locked = True
 
         # The user may not have been given a runway yet -- they have not asked
         # for anything -- but the traffic is already flying, and a takeoff
@@ -128,6 +133,20 @@ class _The_field:
             self.field.departure_runway = self._wind_runway()
             self.field.arrival_runway = (self.field.arrival_runway
                                          or self.field.departure_runway)
+        self._runway_sets()
+
+    def runways_in_use(self, ident: str, departing: bool) -> tuple:
+        """The ends this field is working, for an ATIS to announce.
+
+        Empty for any other airport -- the sets belong to the field being
+        injected, and a broadcast about another field says what the
+        database says.
+        """
+        if (ident or "").strip().upper() != self.field.ident:
+            return ()
+        ends = (getattr(self.field, "departure_runways", None) if departing
+                else getattr(self.field, "arrival_runways", None))
+        return tuple(ends or [])
 
     def set_ground(self, layout: groundwork.GroundLayout | None) -> None:
         """The taxiways of the field being worked, from the simulator.
@@ -145,11 +164,130 @@ class _The_field:
             self.statics.clear()
             self._stands_filled = False
         self.ground = layout
+        # A layout carries the scenery's traffic flows (apt.dat), which
+        # may not have been there when the field's runways were chosen.
+        self._runway_sets()
 
     # How long a runway is taken to be where nothing says otherwise. Only used
     # to bound where an entry or an exit may be found.
     RUNWAY_LENGTH_M = 3500.0
     _M_PER_NM = 1852.0
+
+    def _runway_sets(self) -> None:
+        """The ends the field is working in each direction -- several at
+        a big field, the way it really runs.
+
+        The scenery's own traffic flow decides where the airport's data
+        says so: X-Plane's apt.dat carries the flows, parsed onto the
+        ground layout, and the first flow the weather passes names its
+        runways for each direction. Where no flow answers -- MSFS has no
+        flows at all -- the curated preferences and, at an airline field,
+        the runway's parallels stand in. The primary the controller
+        chose always leads its set.
+        """
+        field = self.field
+        flow = None
+        if self.ground is not None:
+            flow = flowmod.pick_flow(getattr(self.ground, "flows", None),
+                                     field.weather)
+        field.flow = flow
+        if flow is not None and not field.runway_locked:
+            # Nobody chose a runway for the user yet, so the primaries
+            # are the flow's first ends -- the authored configuration is
+            # what the field is running, and a wind guess that disagrees
+            # was only ever that.
+            for departing, attr in ((True, "departure_runway"),
+                                    (False, "arrival_runway")):
+                ends = flow.ends(departing)
+                if ends:
+                    setattr(field, attr, normalize_runway(ends[0]))
+        kind = field.kind
+        airline = bool(getattr(kind, "airline", False)
+                       or getattr(kind, "scheduled", False))
+        known = getattr(field, "thresholds", None) or {}
+        for departing in (True, False):
+            primary = (field.departure_runway if departing
+                       else field.arrival_runway)
+            ends = flow.ends(departing) if flow is not None else []
+            if not ends and primary:
+                try:
+                    # list() turns an answer into one; a navdb without the
+                    # call -- a stub in a test -- is caught the same way.
+                    ends = list(self.navdb.active_runways(
+                        field.ident, primary, departing,
+                        parallels=airline))
+                except (AttributeError, TypeError):
+                    ends = [primary]
+            ends = [normalize_runway(e) for e in ends
+                    if not known or normalize_runway(e) in known]
+            # The controller's chosen runway stays first and stays in:
+            # it is the one the user is being sent to, whether or not a
+            # flow or a preference ever heard of it.
+            if primary:
+                key = normalize_runway(primary)
+                ends = [key] + [e for e in ends if e != key]
+            if departing:
+                field.departure_runways = ends
+            else:
+                field.arrival_runways = ends
+
+    def _in_use(self) -> list[str]:
+        """Every runway end the field is working, either direction."""
+        ends = list(getattr(self.field, "departure_runways", None) or [])
+        for end in getattr(self.field, "arrival_runways", None) or []:
+            if end not in ends:
+                ends.append(end)
+        if not ends:
+            ends = [r for r in
+                    (getattr(self.field, "departure_runway", ""),
+                     getattr(self.field, "arrival_runway", "")) if r]
+        return [normalize_runway(r) for r in ends]
+
+    def _pick_runway(self, arriving: bool, type_code: str = "",
+                     course: float | None = None) -> str:
+        """The end a flight of ours is given off the set in use.
+
+        Where the scenery's flow answers (X-Plane's apt.dat), it says
+        which runway an aircraft takes -- by class, heavies to their own
+        strip, and by where its route points, the on-course ranges doing
+        for a departure what "south departures on the south side" does at
+        a real field. Where no flow answers, the strip with the shallowest
+        queue of ours on it spreads the work the way a tower splits its
+        parallels.
+        """
+        ends = (getattr(self.field, "arrival_runways", None) if arriving
+                else getattr(self.field, "departure_runways", None))
+        if not ends:
+            return (self.field.arrival_runway if arriving
+                    else self.field.departure_runway)
+        flow = getattr(self.field, "flow", None)
+        if flow is not None:
+            from .. import aircraft_class
+
+            cls = aircraft_class.classify(type_code).name
+            picked = flow.assign(departing=not arriving,
+                                 xp_class=flowmod.xp_type(cls, type_code),
+                                 course=course)
+            if picked and normalize_runway(picked) in set(ends):
+                return normalize_runway(picked)
+        # The work still owed each strip: a departure counts until it has
+        # rolled, an arrival until it has landed. The shallowest queue
+        # takes the new strip, which is how two working runways actually
+        # fill -- not round-robin turns but whoever can take them sooner.
+        pending = {"inbound", "final"} if arriving else {
+            "clearance", "pushback", "taxi", "holding", "ready",
+            "lineup", "takeoff"}
+        usable = [e for e in ends if self._threshold(e) is not None] \
+            or list(ends)
+        counts = {end: 0 for end in usable}
+        for other in self.flights:
+            if other.done or other.arriving != arriving \
+                    or other.phase not in pending:
+                continue
+            key = normalize_runway(getattr(other, "runway", ""))
+            if key in counts:
+                counts[key] += 1
+        return min(usable, key=lambda e: counts[e])
 
     def _closed_runway_edges(self, own: str = "") -> set:
         """Taxi edges an aeroplane of ours may not be routed over: along
@@ -164,9 +302,7 @@ class _The_field:
         layout = self.ground
         if layout is None:
             return set()
-        ends = {normalize_runway(r) for r in
-                (getattr(self.field, "departure_runway", ""),
-                 getattr(self.field, "arrival_runway", "")) if r}
+        ends = set(self._in_use())
         own_ends = {normalize_runway(own)} if own else set()
         thresholds = getattr(self.field, "thresholds", {}) or {}
         closed: set = set()
