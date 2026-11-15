@@ -59,7 +59,7 @@ class _The_ground_driven:
         airline to the jetway, a freighter to the cargo apron, anything
         else off the gates while a ramp is free."""
         if flight.operator is not None:
-            return flight.operator.fleet != livemod.FREIGHT
+            return getattr(flight.operator, "fleet", ()) != livemod.FREIGHT
         return getattr(flight, "category", "") == livemod.AIRLINE
 
     def _free_stand(self, airliner: bool, also=(), prefer: int | None = None,
