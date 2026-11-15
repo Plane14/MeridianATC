@@ -141,3 +141,91 @@ def test_the_stub_sources_have_no_box_to_load():
 
     assert ManualSource().load_fms_plan(_route()) is False
     assert ReplaySource([]).load_fms_plan(_route()) is False
+
+
+# ------------------------------------------------------------------
+# the readback must not re-adopt the upload -- or reset the flight over it
+# ------------------------------------------------------------------
+
+from meridianatc.engine.x_the_plan_the import _The_plan_the
+
+
+def _engine(route=None):
+    """A bare plan-mixin: ``use_route``/``begin_session`` are counters."""
+    eng = _The_plan_the.__new__(_The_plan_the)
+    eng.route = route
+    eng.session = object()
+    eng.source = object()
+    eng.used, eng.begun = [], 0
+    eng.use_route = eng.used.append
+    eng.begin_session = lambda: setattr(eng, "begun", eng.begun + 1)
+    eng.emit = lambda *a, **k: None
+    return eng
+
+
+def _fms_entries(route):
+    return [{"id": f.ident, "t": {"apt": 1}.get(f.kind, 512),
+             "lat": f.lat, "lon": f.lon, "alt": f.alt_ft}
+            for f in route.fixes]
+
+
+def test_the_upload_echo_is_not_a_new_flight():
+    route = _route()
+    eng = _engine(route)
+    # The box answers with the plan this engine uploaded to it.
+    eng._use_fms_plan(_fms_entries(route))
+    assert eng.used == [] and eng.begun == 0
+    # And again every poll after: the fingerprint is settled.
+    eng._use_fms_plan(_fms_entries(route))
+    assert eng.begun == 0
+
+
+def test_sequencing_past_fixes_keeps_the_session():
+    route = _route()
+    eng = _engine(route)
+    entries = _fms_entries(route)
+    eng._use_fms_plan(entries)
+    # The FMS consumes the head of the plan as it is flown.
+    eng._use_fms_plan(entries[2:])
+    assert eng.begun == 0 and eng.route is route
+
+
+def test_a_genuinely_new_plan_is_a_new_flight():
+    eng = _engine(_route())
+    eng._sim_plan_fp = ()
+    other = Route(fixes=(RouteFix("LEMD", 40.47, -3.57, kind="apt"),
+                       RouteFix("EGLL", 51.47, -0.46, kind="apt")),
+                  origin="LEMD", destination="EGLL", source="sim")
+    eng._use_fms_plan(_fms_entries(other))
+    assert eng.begun == 1
+    # The adopted route is a fresh object, not `other`: it is rebuilt
+    # from the FMS entries.
+    assert len(eng.used) == 1
+    assert [f.ident for f in eng.used[0].fixes] == ["LEMD", "EGLL"]
+
+
+def test_the_msfs_upload_echo_is_skipped(tmp_path):
+    import os
+    eng = _engine(_route())
+    path = str(tmp_path / "meridianatc_plan.pln")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(to_pln(_route()))
+    eng.source = type("S", (), {"_pln_uploaded": os.path.abspath(path)})()
+    eng.load_route_file = lambda p: (_ for _ in ()).throw(
+        AssertionError("the echo must not be adopted"))
+    eng._use_pln_plan(path)
+    # Marked seen so later polls do not re-examine it.
+    assert eng._sim_plan_path == path
+
+
+def test_msfs_load_records_the_upload_path(tmp_path, monkeypatch):
+    import os
+    source = SimConnectSource()
+    source._connected = True
+    source._sim = _StubSim()
+    monkeypatch.setenv("TEMP", str(tmp_path))
+    monkeypatch.setenv("TMP", str(tmp_path))
+    assert source.load_fms_plan(_route())
+    import tempfile
+    assert source._pln_uploaded == os.path.abspath(
+        os.path.join(tempfile.gettempdir(), "meridianatc_plan.pln"))

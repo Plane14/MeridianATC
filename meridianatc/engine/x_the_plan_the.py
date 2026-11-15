@@ -85,12 +85,33 @@ class _The_plan_the:
             (str(e.get("id", "")), round(float(e.get("lat", 0) or 0), 5),
              round(float(e.get("lon", 0) or 0), 5), int(e.get("alt", 0) or 0))
             for e in entries if isinstance(e, dict))
-        if fingerprint == getattr(self, "_sim_plan_fp", None):
+        old = getattr(self, "_sim_plan_fp", None)
+        if fingerprint == old:
+            return
+        if old is not None and len(fingerprint) < len(old) \
+                and old[len(old) - len(fingerprint):] == fingerprint:
+            # The FMS sequenced past its head entries -- the same plan
+            # with legs already passed consumed. That is this plan being
+            # flown, not a new one: take the shorter fingerprint so the
+            # next sequence is seen too, but keep the route and the
+            # session the flight was built around.
+            self._sim_plan_fp = fingerprint
             return
         route = self._route_from_fms(entries)
         if route is None:
             return
         self._sim_plan_fp = fingerprint
+        current = self.route
+        if current is not None and [
+                (f.ident, round(f.lat, 5), round(f.lon, 5))
+                for f in route.fixes] == [
+                (f.ident, round(f.lat, 5), round(f.lon, 5))
+                for f in current.fixes]:
+            # The plan the box shows is already the flight's -- this is
+            # an upload of ours landing, or the box re-reading itself.
+            # Re-adopting it as a new flight would restart a session in
+            # the middle of the taxi it is already on.
+            return
         self.use_route(route)
         if self.session is not None:
             self.begin_session()
@@ -139,6 +160,15 @@ class _The_plan_the:
         try:
             mtime = os.path.getmtime(path)
         except OSError:
+            return
+        if os.path.abspath(path) == getattr(
+                self.source, "_pln_uploaded", ""):
+            # The active .pln is the one this engine wrote for
+            # ``FlightPlanLoad`` -- the echo of the upload, not a plan
+            # the pilot loaded. Adopting it would reset a live session
+            # over its own upload.
+            self._sim_plan_path = path
+            self._sim_plan_mtime = mtime
             return
         if path == self._sim_plan_path and mtime == self._sim_plan_mtime:
             return

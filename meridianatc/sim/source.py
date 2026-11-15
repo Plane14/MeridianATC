@@ -1808,7 +1808,13 @@ class SimConnectSource:
         except Exception:
             log.debug("FlightPlanLoad raised", exc_info=True)
             return False
-        return bool(sim.IsHR(hr, 0))
+        if sim.IsHR(hr, 0):
+            # The readback names this file the active plan: it is the
+            # echo of this write, not a pilot's load, and the engine
+            # must not re-adopt (and reset the flight over) it.
+            self._pln_uploaded = os.path.abspath(path)
+            return True
+        return False
 
     # ------------------------------------------------------------------
     # fuel
