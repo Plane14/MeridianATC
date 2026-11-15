@@ -68,6 +68,10 @@ class DepartureWatch:
         self._busy_at = 0.0
         # Since when the cleared departure has not moved -- the abort watch.
         self._stopped_since = 0.0
+        # The clearance timestamp the departure was seen rolling under --
+        # the evidence that a stop is a rejection and not a lineup that
+        # has never moved.
+        self._rolled_for = 0.0
 
     # ------------------------------------------------------------------
 
@@ -88,6 +92,9 @@ class DepartureWatch:
         if session.emergency:
             return None
         if session.cleared_takeoff:
+            if float(getattr(state, "ground_speed_kt", 0.0) or 0.0) \
+                    >= self.ROLLING_KT:
+                self._rolled_for = session.cleared_takeoff_at
             reply = self._vacate_the_stopped(
                 session, station, state, now, weather_for, language)
             if reply is not None:
@@ -141,6 +148,10 @@ class DepartureWatch:
     # where the roll should be. Longer than the expedite watch above, which
     # is what answers a roll that is merely slow to start.
     ABORT_AFTER_S = 20.0
+    # Faster than any lineup or backtrack drive, so only a takeoff roll
+    # reads as rolling: a stop that follows one is the abort the watch is
+    # for, where a lineup that has not moved yet is line-up-and-wait.
+    ROLLING_KT = 20.0
 
     def _vacate_the_stopped(self, session, station, state, now,
                           weather_for, language) -> Reply | None:
@@ -153,6 +164,14 @@ class DepartureWatch:
         session while every arrival was sent around it.
         """
         if not session.phase.outbound:
+            return None
+        if self._rolled_for != session.cleared_takeoff_at \
+                or not session.cleared_takeoff_at:
+            # Never rolled under this clearance: holding on the numbers
+            # for a departure ahead or a gap in the arrivals is the
+            # clearance doing what "line up and wait" is for, not an
+            # abort. The expedite watch above answers a roll that is
+            # merely slow to start.
             return None
         if not getattr(state, "on_ground", True) \
                 or float(getattr(state, "ground_speed_kt", 0.0) or 0.0) >= 3.0:
@@ -234,6 +253,7 @@ class DepartureWatch:
         """A new flight, so forget which runway was busy on the last one."""
         self._busy_at = 0.0
         self._stopped_since = 0.0
+        self._rolled_for = 0.0
 
     @staticmethod
     def _weather(weather_for, field, station) -> Weather:

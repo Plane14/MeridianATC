@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ._shared import (
     AutonomousPhase,
+    Phase,
     autofly_limit,
     capabilities,
     log,
@@ -136,6 +137,20 @@ class _The_loop:
         if not self._can_fly_phase(state):
             self._manual_control_required()
             return
+
+        # The session can move under a phase that is not watching it: a
+        # clearance the tower takes back becomes a taxi to a stand while
+        # the FO is still holding for the strip in ``align`` -- which
+        # left it parked on the runway for the rest of the session.
+        # Ground phases before the takeoff follow the session to the
+        # stand, the way the takeoff's own ``await`` already does.
+        if self.session.phase == Phase.TAXI_IN \
+                and self.session.taxi_path \
+                and phase in (AutonomousPhase.HOLDING_SHORT,
+                              AutonomousPhase.LINE_UP,
+                              AutonomousPhase.TAKEOFF):
+            self._transition(AutonomousPhase.TAXI_IN)
+            phase = AutonomousPhase.TAXI_IN
 
         try:
             if phase == AutonomousPhase.PREFLIGHT:

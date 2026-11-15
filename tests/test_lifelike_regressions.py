@@ -319,6 +319,8 @@ def test_a_departure_stopped_on_the_runway_is_worked_off_it():
     watch._busy_at = 0.0
     watch._stopped_since = 0.0
     session = _stopped_departure()
+    # It rolled under this clearance before it stopped.
+    watch._rolled_for = session.cleared_takeoff_at
     state = SimpleNamespace(ground_speed_kt=0.0, on_ground=True,
                             has_position=True, latitude=41.25,
                             longitude=-8.68, altitude_ft=100.0,
@@ -349,9 +351,50 @@ def test_a_stopped_departure_off_the_runway_is_not_taxied_in():
     watch._busy_at = 0.0
     watch._stopped_since = 0.0
     session = _stopped_departure()
+    watch._rolled_for = session.cleared_takeoff_at
     state = SimpleNamespace(ground_speed_kt=0.0, on_ground=True,
                             has_position=False)
     station = SimpleNamespace(ident="LPPR")
     assert watch._vacate_the_stopped(
         session, station, state, 200.0, lambda ident: None, "en") is None
     watch.brain._issue_taxi_in.assert_not_called()
+
+
+def test_a_departure_that_never_rolled_is_not_aborted():
+    """Line up and wait is not a rejection: holding on the numbers for a
+    departure ahead or a gap is what the clearance is for."""
+    from meridianatc.atc.departure import DepartureWatch
+    watch = DepartureWatch.__new__(DepartureWatch)
+    watch.navdb = SimpleNamespace(airport=lambda ident: None)
+    watch.brain = Mock()
+    watch._busy_at = 0.0
+    watch._stopped_since = 0.0
+    watch._rolled_for = 0.0
+    session = _stopped_departure()
+    state = SimpleNamespace(ground_speed_kt=0.0, on_ground=True,
+                            has_position=True, latitude=41.25,
+                            longitude=-8.68, altitude_ft=100.0,
+                            heading_true=170.0)
+    station = SimpleNamespace(ident="LPPR")
+    # Stopped far past the abort window but never rolled: no taxi-out.
+    assert watch._vacate_the_stopped(
+        session, station, state, 200.0, lambda ident: None, "en") is None
+    assert session.cleared_takeoff is True
+    watch.brain._issue_taxi_in.assert_not_called()
+
+
+def test_rolling_under_the_clearance_marks_the_abort_watch():
+    """The rolling evidence is taken under the clearance it belongs to."""
+    from meridianatc.atc.departure import DepartureWatch
+    watch = DepartureWatch.__new__(DepartureWatch)
+    watch.navdb = SimpleNamespace(airport=lambda ident: None)
+    watch.brain = Mock(realism=SimpleNamespace(delays=False))
+    watch._busy_at = 0.0
+    watch._stopped_since = 0.0
+    watch._rolled_for = 0.0
+    session = _stopped_departure()
+    station = SimpleNamespace(ident="LPPR", position="TWR")
+    rolling = SimpleNamespace(ground_speed_kt=60.0, on_ground=True,
+                              has_position=False)
+    watch.look(session, station, rolling, 60.0)
+    assert watch._rolled_for == session.cleared_takeoff_at
