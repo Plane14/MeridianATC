@@ -1767,6 +1767,49 @@ class SimConnectSource:
         with self._system_state_lock:
             return self._system_state.pop(self._FLIGHT_PLAN_REQUEST_ID, None)
 
+    def load_fms_plan(self, route) -> bool:
+        """The route into the simulator's own flight plan.
+
+        ``SimConnect_FlightPlanLoad`` takes a file path rather than a
+        buffer, so the route is written to a temp ``.pln`` and the path
+        handed over. The call is fire-and-forget -- the SDK documents
+        it as "no error, no response" -- and what the simulator made of
+        it comes back the usual way: the next ``FlightPlan`` system
+        state names this file, and the waypoint-synced avionics (the
+        stock Garmin units among them) draw it. An FMS that keeps its
+        own route model does not follow, which no external call can
+        change.
+        """
+        sim = self._sim
+        if not self._connected or sim is None:
+            return False
+        try:
+            from ..atc.route import to_pln
+
+            text = to_pln(route)
+        except Exception:
+            log.debug("the .pln text could not be built", exc_info=True)
+            return False
+        if not text:
+            return False
+        import os
+        import tempfile
+
+        path = os.path.join(tempfile.gettempdir(), "meridianatc_plan.pln")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+        except OSError:
+            log.debug("the .pln could not be written", exc_info=True)
+            return False
+        try:
+            hr = sim.dll.FlightPlanLoad(
+                sim.hSimConnect, os.fsencode(os.path.abspath(path)))
+        except Exception:
+            log.debug("FlightPlanLoad raised", exc_info=True)
+            return False
+        return bool(sim.IsHR(hr, 0))
+
     # ------------------------------------------------------------------
     # fuel
     # ------------------------------------------------------------------
@@ -1990,6 +2033,10 @@ class ManualSource:
     def flight_plan_reply(self) -> str | None:
         return None
 
+    def load_fms_plan(self, route) -> bool:
+        """No simulator to load it into."""
+        return False
+
     def fuel_tanks(self) -> list:
         return []
 
@@ -2059,6 +2106,10 @@ class ReplaySource:
 
     def flight_plan_reply(self) -> str | None:
         return None
+
+    def load_fms_plan(self, route) -> bool:
+        """A replay has no FMS to put it in."""
+        return False
 
     def fuel_tanks(self) -> list:
         return []

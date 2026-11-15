@@ -677,6 +677,191 @@ def resolver(navdb, sim: Resolver | None = None,
     return resolve
 
 
+# ----------------------------------------------------------------------
+# the route back out, as simulator plans
+# ----------------------------------------------------------------------
+
+# A v1100 .fms row opens with the waypoint's type -- airport, NDB, VOR or
+# named fix -- and a .pln ATCWaypoint names the same kinds in words.
+# RouteFix.kind uses the loader's names (apt, ndb, vor, wpt, ltlg).
+_FMS_KIND = {"apt": 1, "ndb": 2, "vor": 3, "wpt": 11, "ltlg": 11}
+_PLN_KIND = {"apt": "Airport", "ndb": "NDB", "vor": "VOR",
+             "wpt": "Intersection", "ltlg": "Intersection"}
+
+
+def _airac_cycle(today=None) -> str:
+    """The four-digit AIRAC cycle a .fms declares: the year, then which
+    of the year's thirteen 28-day turns the day is in."""
+    import datetime
+
+    day = today or datetime.date.today()
+    return f"{day.year % 100:02d}" \
+           f"{min(13, (day.timetuple().tm_yday - 1) // 28 + 1):02d}"
+
+
+def _fms_rows(route: Route) -> list[tuple[int, str, str, float, float, float]]:
+    """The en-route rows a v1100 plan carries: the airports either end
+    (via ADEP/ADES) and every fix between that is not a TOC/TOD marker
+    and not a procedure leg -- SID and STAR fixes are the simulator's to
+    expand from the names in the blocks above, not NUMENR's to draw."""
+    fixes = route.fixes
+    first, last = fixes[0], fixes[-1]
+    rows = [(1, route.origin or first.ident, "ADEP",
+             first.lat, first.lon, first.alt_ft)]
+    for f in fixes[1:-1]:
+        if f.ident.upper() in ("TOC", "TOD") or f.on_procedure:
+            continue
+        via = f.via if f.via and f.via not in ("DCT", "DIRECT") else "DRCT"
+        rows.append((_FMS_KIND.get(f.kind, 11), f.ident, via,
+                     f.lat, f.lon, f.alt_ft))
+    rows.append((1, route.destination or last.ident, "ADES",
+                 last.lat, last.lon, last.alt_ft))
+    return rows
+
+
+def to_fms(route: Route) -> str:
+    """The route as an X-Plane 11+ flight plan (the ``1100`` text).
+
+    This is the exact payload a ``FPLN`` datagram and
+    ``XPLMLoadFMSFlightPlan`` take: the departure and destination blocks
+    with the filed runway, SID and STAR, then the en-route waypoints as
+    ``type ident via altitude lat lon`` rows. The approach is left to
+    the cockpit: the format's single-letter approach types do not map
+    cleanly from the plan's words, and a wrong approach line is worse
+    than none.
+    """
+    if route is None or not route.fixes:
+        return ""
+    origin = route.origin or route.fixes[0].ident
+    destination = route.destination or route.fixes[-1].ident
+    lines = ["I", "1100 Version", f"CYCLE {_airac_cycle()}"]
+    lines.append(f"ADEP {origin}")
+    if route.sid_runway:
+        lines.append(f"DEPRWY RW{route.sid_runway}")
+    if route.sid:
+        lines.append(f"SID {route.sid}")
+    if route.sid_transition:
+        lines.append(f"SIDTRANS {route.sid_transition}")
+    lines.append(f"ADES {destination}")
+    if route.star_runway:
+        lines.append(f"DESRWY RW{route.star_runway}")
+    if route.star:
+        lines.append(f"STAR {route.star}")
+    if route.star_transition:
+        lines.append(f"STARTRANS {route.star_transition}")
+    rows = _fms_rows(route)
+    lines.append(f"NUMENR {len(rows)}")
+    lines += [f"{t} {i} {v} {a:.6f} {la:.6f} {lo:.6f}"
+              for t, i, v, la, lo, a in rows]
+    return "\n".join(lines)
+
+
+def _lla(lat: float, lon: float, alt_ft: float) -> str:
+    """``N41° 14' 51.50",W8° 40' 41.12",+000748.00`` -- a .pln position."""
+    def dms(value: float, pos: str, neg: str, digits: int) -> str:
+        hemi = pos if value >= 0 else neg
+        value = abs(value)
+        deg = int(value)
+        minutes = (value - deg) * 60.0
+        whole = int(minutes)
+        return (f"{hemi}{deg:0{digits}d}\u00b0 {whole:02d}' "
+                f"{(minutes - whole) * 60.0:05.2f}\"")
+    return f"{dms(lat, 'N', 'S', 2)},{dms(lon, 'E', 'W', 3)},{alt_ft:+010.2f}"
+
+
+_PLN_DESIGNATOR = {"L": "LEFT", "R": "RIGHT", "C": "CENTER",
+                   "W": "WATER", "": "NONE"}
+
+
+def _pln_runway(name: str) -> str:
+    """``36R`` as the ``RunwayNumberFP``/``RunwayDesignatorFP`` pair a
+    .pln writes, or "" when the name is not one it knows."""
+    match = re.match(r"^0?(\d{1,2})([LRCW]?)$", (name or "").upper())
+    if not match:
+        return ""
+    designator = _PLN_DESIGNATOR.get(match.group(2), "NONE")
+    return (f"<RunwayNumberFP>{int(match.group(1))}</RunwayNumberFP>"
+            f"<RunwayDesignatorFP>{designator}</RunwayDesignatorFP>")
+
+
+def to_pln(route: Route, ifr: bool = True) -> str:
+    """The route as an MSFS ``.pln``.
+
+    ``SimConnect_FlightPlanLoad`` takes a file path, not a buffer, so
+    this is the text a caller writes out before the call. Every fix is
+    an ``ATCWaypoint`` with its own ``WorldPosition`` -- nothing on the
+    simulator's side is asked to resolve a name. The filed runway, SID
+    and STAR ride where both readers look for them: on the endpoint
+    waypoints (2020's layout) and in the ``Details`` blocks (2024's).
+    """
+    if route is None or not route.fixes:
+        return ""
+    origin = route.origin or route.fixes[0].ident
+    destination = route.destination or route.fixes[-1].ident
+    first, last = route.fixes[0], route.fixes[-1]
+    dep_runway = _pln_runway(route.sid_runway)
+    arr_runway = _pln_runway(route.star_runway)
+    waypoints = []
+    for i, f in enumerate(route.fixes):
+        if f.ident.upper() in ("TOC", "TOD"):
+            continue
+        kind = _PLN_KIND.get(f.kind, "Intersection")
+        extra = ""
+        if i == 0 and route.sid:
+            extra = (f"<DepartureFP>{route.sid}</DepartureFP>" + dep_runway +
+                     (f"<TransitionFP>{route.sid_transition}</TransitionFP>"
+                      if route.sid_transition else ""))
+        elif i == len(route.fixes) - 1 and (route.star or route.approach):
+            extra = ((f"<ArrivalFP>{route.star}</ArrivalFP>"
+                      if route.star else "") + arr_runway +
+                     (f"<ApproachTypeFP>{route.approach}</ApproachTypeFP>"
+                      if route.approach else ""))
+        waypoints.append(
+            f'    <ATCWaypoint id="{f.ident}">\n'
+            f'      <ATCWaypointType>{kind}</ATCWaypointType>\n'
+            f'      <WorldPosition>{_lla(f.lat, f.lon, f.alt_ft)}'
+            f'</WorldPosition>\n'
+            + (f'      {extra}\n' if extra else '')
+            + f'      <ICAO><ICAOIdent>{f.ident}</ICAOIdent></ICAO>\n'
+            f'    </ATCWaypoint>')
+    details = ""
+    if route.sid or dep_runway:
+        details += ("    <DepartureDetails>\n"
+                    + (f"      <DepartureFP>{route.sid}</DepartureFP>\n"
+                       if route.sid else "")
+                    + (f"      {dep_runway}\n" if dep_runway else "")
+                    + (f"      <TransitionFP>{route.sid_transition}"
+                       f"</TransitionFP>\n" if route.sid_transition else "")
+                    + "    </DepartureDetails>\n")
+    if route.star or arr_runway or route.approach:
+        details += ("    <ArrivalDetails>\n"
+                    + (f"      <ArrivalFP>{route.star}</ArrivalFP>\n"
+                       if route.star else "")
+                    + (f"      {arr_runway}\n" if arr_runway else "")
+                    + (f"      <TransitionFP>{route.star_transition}"
+                       f"</TransitionFP>\n" if route.star_transition else "")
+                    + "    </ArrivalDetails>\n")
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<SimBase.Document Type="FlightPlan" version="1,5">\n'
+        '  <Descr>AceXML Document</Descr>\n'
+        '  <FlightPlan.FlightPlan>\n'
+        f'    <Title>{origin} to {destination}</Title>\n'
+        f'    <FPType>{"IFR" if ifr else "VFR"}</FPType>\n'
+        '    <RouteType>Direct</RouteType>\n'
+        f'    <CruisingAlt>{int(route.cruise_ft or 0)}</CruisingAlt>\n'
+        f'    <DepartureID>{origin}</DepartureID>\n'
+        f'    <DepartureLLA>{_lla(first.lat, first.lon, first.alt_ft)}'
+        f'</DepartureLLA>\n'
+        f'    <DestinationID>{destination}</DestinationID>\n'
+        f'    <DestinationLLA>{_lla(last.lat, last.lon, last.alt_ft)}'
+        f'</DestinationLLA>\n'
+        '    <Descr>Route loaded by MeridianATC</Descr>\n'
+        + details + "\n".join(waypoints) + "\n"
+        '  </FlightPlan.FlightPlan>\n'
+        '</SimBase.Document>\n')
+
+
 __all__ = ["Route", "RouteFix", "Progress", "PlnPlan", "from_ofp",
            "from_pln", "from_string", "parse_pln", "resolver",
-           "climb_groundspeed"]
+           "to_fms", "to_pln", "climb_groundspeed"]

@@ -314,6 +314,7 @@ class _Session:
                  tod=getattr(route.top_of_descent, "ident", ""),
                  floor_ft=route.arrival_floor_ft or 0,
                  notes=list(route.notes))
+        self._upload_fms_plan(self.route)
 
     def load_route_file(self, path) -> str:
         """A simulator flight plan (``.pln``) on disk as the flight's route."""

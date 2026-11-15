@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ._shared import (
+    decision,
     log,
     os,
     time,
@@ -56,10 +57,17 @@ class _The_plan_the:
         MSFS answers with the .pln path on disk; X-Plane's plugin reads
         the FMS itself and answers with the entry list.
         """
-        if isinstance(plan, (list, tuple)):
-            self._use_fms_plan(plan)
-            return
-        self._use_pln_plan(plan)
+        # The route this adopts is the box's own plan coming back: the
+        # flag keeps use_route's upload from sending it straight back in,
+        # which on MSFS would rewrite the file the read is parked on.
+        self._adopting_sim_plan = True
+        try:
+            if isinstance(plan, (list, tuple)):
+                self._use_fms_plan(plan)
+                return
+            self._use_pln_plan(plan)
+        finally:
+            self._adopting_sim_plan = False
 
     # The nav types an FMS entry can be and still be a route point --
     # approach elements (ILS, localizer, glideslope, markers) are skipped.
@@ -144,4 +152,31 @@ class _The_plan_the:
         self._sim_plan_mtime = mtime
         self.emit("info", f"Flight plan from the simulator: {described}",
                   key="log.simplan")
+
+    def _upload_fms_plan(self, route) -> None:
+        """The same plan into the simulator's own box, so the FMS flies
+        what the engine thinks was filed -- the chained legs included.
+
+        Every route adoption lands here through ``use_route``: the OFP,
+        a .pln loaded by hand, a typed string, the next leg's DCT, the
+        en-route re-plan. Two of them are skipped: a route the simulator
+        itself reported (``source="sim"``, or anything adopted under the
+        flag -- on MSFS it would otherwise rewrite the very file the
+        readback is parked on), and a link that cannot take a plan, whose
+        sources simply lack ``load_fms_plan``.
+        """
+        if route is None or route.source == "sim" or not route.fixes:
+            return
+        if getattr(self, "_adopting_sim_plan", False):
+            return
+        loader = getattr(self.source, "load_fms_plan", None)
+        if not callable(loader):
+            return
+        try:
+            loaded = loader(route)
+        except Exception:
+            log.debug("the simulator's FMS load raised", exc_info=True)
+            return
+        decision("route", event="fms_loaded" if loaded else "fms_refused",
+                 source=route.source, route=route.described())
 
