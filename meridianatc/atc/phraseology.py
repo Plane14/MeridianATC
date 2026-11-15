@@ -2084,6 +2084,18 @@ class Phraseology:
             if gust:
                 text += f" gusting {self.d(int(round(gust)))}"
             return text
+        knots = int(round(weather.wind_kt))
+        if self.dialect == "icao" and direction != "VRB" and knots > 0:
+            # Doc 4444 12.3.1.8: "WIND (number) DEGREES (speed) (units)".
+            # "Two seven zero at one two" is JO 7110.65 2-6-4 and is heard
+            # nowhere the unit is not taken for granted.
+            bearing = int(round(float(direction))) % 360 or 360
+            text = (f"wind {sp.digits(f'{bearing:03d}', self.digit_dialect)}"
+                    f" degrees {self.d(knots)} knots")
+            gust = sp.reportable_gust(weather.wind_kt, weather.gust_kt)
+            if gust and gust > weather.wind_kt:
+                text += f" gusting {self.d(int(round(gust)))}"
+            return text
         return sp.wind(direction, weather.wind_kt,
                        weather.gust_kt or None, self.digit_dialect)
 
