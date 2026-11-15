@@ -107,14 +107,22 @@ class _The_checklist_answered:
         want_on = (expected is True) or expected == "on" \
             or (isinstance(expected, (int, float))
                 and not isinstance(expected, bool) and expected > 0)
+        # Switches whose "off" is never asked for while the aeroplane is
+        # moving or flying: an item answered there fought the phase
+        # machine (the brake) or switched the aeroplane off in the air
+        # (the masters). Parked is the only place they are asked for off.
+        parked = getattr(state, "on_ground", True) \
+            and (state.ground_speed_kt or 0.0) <= 5.0
         table = {
             "parking_brake": lambda: d.parking_brake(want_on),
             # Gear out goes through the same gear-speed gate the flying
             # uses: a checklist item does not put the wheels out past
-            # Vlo. Retraction is its own item and asks the sim directly.
-            "gear_down": lambda: (not want_on
-                                  or self._gear_allowed(state))
-                                 and d.gear(want_on),
+            # Vlo. Coming up is allowed airborne only -- never a retraction
+            # while the wheels still carry the aeroplane.
+            "gear_down": lambda: (
+                (want_on and self._gear_allowed(state))
+                or (not want_on and not getattr(state, "on_ground", True))
+            ) and d.gear(want_on),
             "landing_light": lambda: d.landing_light(want_on),
             "taxi_light": lambda: d.taxi_light(want_on),
             "nav_light": lambda: d.nav_lights(want_on),
@@ -122,8 +130,10 @@ class _The_checklist_answered:
             "beacon_light": lambda: d.beacon(want_on),
             "pitot_heat": lambda: d.pitot_heat(want_on),
             "seatbelt_sign": lambda: d.seatbelts(want_on),
-            "battery_master": lambda: d.battery(want_on),
-            "avionics_master": lambda: d.avionics(want_on),
+            "battery_master": lambda: (want_on or parked) \
+                                      and d.battery(want_on),
+            "avionics_master": lambda: (want_on or parked) \
+                                       and d.avionics(want_on),
             "spoilers_armed": lambda: d.spoilers_arm(want_on),
             "autopilot": lambda: d.autopilot(want_on),
             "autothrottle": lambda: (d.autothrottle_arm() if want_on
