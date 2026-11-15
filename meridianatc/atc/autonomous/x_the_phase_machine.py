@@ -435,6 +435,14 @@ class _The_phase_machine:
                        "autonomous.fuel.short")
         return True
 
+    def _runway_half_m(self) -> float:
+        """How far off the centreline still counts as on the pavement:
+        half the runway's own width, minus the metres the gear tracking
+        keeps in hand. Without a width -- one the database or the
+        simulator never gave -- a conservative strip's worth."""
+        width_m = (self.state.runway_width_ft or 100.0) * 0.3048
+        return max(6.0, width_m / 2.0 - 3.0)
+
     def _phase_line_up(self, state, now: float) -> None:
         """Line up on runway and prepare for takeoff."""
         d = self.director
@@ -469,10 +477,16 @@ class _The_phase_machine:
             # heading itself once the wings are level on the numbers.
             err = auto_nav.align(state.latitude, state.longitude,
                                  self.state.runway_lat, self.state.runway_lon,
-                                 self.state.runway_heading)
+                                 self.state.runway_heading,
+                                 lookahead_m=120.0)
             hdg_err = abs((self.state.runway_heading
                             - (state.heading_true or 0.0) + 540.0)
                            % 360.0 - 180.0)
+            # On the pavement the strobes go on -- the call a crew makes
+            # crossing the bars, not only once lined up on the numbers.
+            if abs(err["offset_m"]) <= self._runway_half_m() + 2.0 \
+                    and not getattr(state, "strobe_light", False):
+                d.strobes(True)
             # The correction is applied at every offset: it self-nulls
             # on the line, and a "near enough" band wider than the
             # aligned gate would hold a parallel offset for ever
@@ -496,28 +510,54 @@ class _The_phase_machine:
                     lookahead_m=30.0)
                 if paved is not None \
                         and paved.get("heading") is not None \
-                        and not paved.get("done"):
+                        and not paved.get("done") \
+                        and abs(paved.get("cross_track_m") or 0.0) <= 60.0:
                     steer_hdg = paved["heading"]
                     on_path = True
-            if not on_path and err["along_m"] > self.BACKTRACK_MIN_M:
+            # Cleared onto the runway while still on the taxi route to
+            # the bars: the paved way there is the taxi path, not the
+            # diagonal over the infield to the connector -- steering at
+            # a lineup leg a field away is how the grass gets crossed.
+            if not on_path and abs(err["offset_m"]) > 40.0:
+                taxi = list(getattr(self.session, "taxi_path", None) or [])
+                if len(taxi) >= 2:
+                    # A route to the bars ends beside the runway, never
+                    # on it: a path whose last point lies on the
+                    # centreline is no taxi route to keep following.
+                    ends_at_the_bars = abs(auto_nav.align(
+                        *taxi[-1], self.state.runway_lat,
+                        self.state.runway_lon,
+                        self.state.runway_heading)["offset_m"]) > 15.0
+                    on_taxi = ends_at_the_bars and auto_nav.path_steering(
+                        state.latitude, state.longitude, taxi,
+                        lookahead_m=30.0)
+                    if on_taxi \
+                            and on_taxi.get("heading") is not None \
+                            and not on_taxi.get("done"):
+                        d.parking_brake(False)
+                        self._steer(state, on_taxi["heading"],
+                                    self.performance.taxi_kt)
+                        return
+            if not on_path and err["along_m"] > self.BACKTRACK_MIN_M \
+                    and abs(err["offset_m"]) <= 60.0:
                 # Joined the runway far from the departure end: the way
                 # to the threshold is along the pavement itself. Enter
                 # facing the way back, drive it, turn round at the end.
+                # Departures are from the threshold -- an intersection
+                # line-up is not offered.
                 self._goto_sub("backtrack")
                 return
             d.parking_brake(False)
             self._steer(state, steer_hdg, self.performance.taxi_kt)
-            if abs(err["offset_m"]) < 25.0 and hdg_err < 8.0:
+            # "Lined up" means on the pavement: inside the strip's own
+            # half-width, not the flat 25 m that parked a Baron beside
+            # a 45 m runway's edge and called it aligned.
+            if abs(err["offset_m"]) < min(25.0, self._runway_half_m()) \
+                    and hdg_err < 8.0:
                 self.state.aligned = True
                 self._goto_sub("set")
                 self._emit("info", "Lined up on runway",
                            "autonomous.lined_up")
-            elif self._sub_age() > 120.0:
-                # Could not line up: hold short rather than roll onto the
-                # runway unaligned.
-                self._goto_sub("taxi")
-                self._transition(AutonomousPhase.HOLDING_SHORT)
-                return
 
         elif sub == "backtrack":
             # Somebody turning onto the strip while the aeroplane is
@@ -547,7 +587,8 @@ class _The_phase_machine:
             # backtrack is down the centreline, not a parallel track.
             steer_err = auto_nav.align(
                 state.latitude, state.longitude,
-                self.state.runway_lat, self.state.runway_lon, back_hdg)
+                self.state.runway_lat, self.state.runway_lon, back_hdg,
+                lookahead_m=120.0)
             steer_hdg = (back_hdg + steer_err["correction_deg"]) % 360.0
             # The end of the drive is a 180 on the pavement that is
             # left: slow toward it the way a crew does, and slower
@@ -563,22 +604,28 @@ class _The_phase_machine:
                 self._goto_sub("turn_out")
                 self._emit("info", "At the departure end: turning round",
                            "autonomous.backtrack.turn")
-            elif self._sub_age() > 300.0:
-                # The backtrack is not getting made: take the lineup
-                # where the aeroplane is rather than wear the runway
-                # length out driving up and down it.
-                self._goto_sub("align")
 
         elif sub == "turn_out":
             # The 180 at the end of the backtrack: walking pace, and the
             # committed-reversal law in ``_steer`` picks the side and
-            # sees it through.
+            # sees it through. Once the nose is coming round onto the
+            # runway heading the turn is no longer the question -- the
+            # centreline is: a 180 that swings wide lands beside the
+            # strip, so the last of the swing is steered at the line
+            # itself and the roll-out finishes on it.
             d.parking_brake(False)
-            self._steer(state, self.state.runway_heading, 3.0)
             hdg_err = abs((self.state.runway_heading
                             - (state.heading_true or 0.0) + 540.0)
                           % 360.0 - 180.0)
-            if hdg_err < 15.0 or self._sub_age() > 120.0:
+            steer_hdg = self.state.runway_heading
+            if hdg_err < 60.0:
+                err = auto_nav.align(
+                    state.latitude, state.longitude,
+                    self.state.runway_lat, self.state.runway_lon,
+                    self.state.runway_heading, lookahead_m=60.0)
+                steer_hdg = (steer_hdg + err["correction_deg"]) % 360.0
+            self._steer(state, steer_hdg, 3.0)
+            if hdg_err < 15.0:
                 self._goto_sub("align")
 
         elif sub == "set":
@@ -597,7 +644,10 @@ class _The_phase_machine:
                 hdg_err = abs((self.state.runway_heading
                                - (state.heading_true or 0.0) + 540.0)
                               % 360.0 - 180.0)
-                if abs(err["offset_m"]) > 40.0 or hdg_err > 20.0:
+                # Beside the strip is a re-align, not a takeoff waited
+                # for on the grass.
+                if abs(err["offset_m"]) > min(40.0, self._runway_half_m()) \
+                        or hdg_err > 20.0:
                     self.state.aligned = False
                     self._goto_sub("align")
                     return
@@ -650,8 +700,23 @@ class _The_phase_machine:
                 self.state.airborne_at = now
                 self._goto_sub("rotate")
                 return
-            # Brakes off, takeoff power, rudder for direction -- the roll.
+            # Brakes off -- all of them: the parking lever and the toe
+            # pedals, whose override latches a hold the parking release
+            # alone does not undo -- then takeoff power, rudder for
+            # direction. The hold's release is asked for every tick
+            # because a write the sim never takes is a roll that never
+            # starts.
             d.parking_brake(False)
+            d.brakes(0.0)
+            if getattr(state, "parking_brake", False) \
+                    and self._sub_age() > 1.5:
+                if not getattr(self, "_brake_stuck_warned", False):
+                    self._brake_stuck_warned = True
+                    self._emit("info",
+                               "Parking brake not releasing on the roll",
+                               "autonomous.brake.stuck")
+            else:
+                self._brake_stuck_warned = False
             # Rejected takeoff: the roll is not accelerating. Below 60% of
             # rotation speed two thirds of the way through the expected
             # roll is an abort, not a rotate.
@@ -661,7 +726,10 @@ class _The_phase_machine:
             ias = state.indicated_airspeed_kt or 0.0
             if ias < vr * 0.6 and elapsed > expected * 0.66:
                 self.state.rejected = True
-                self._emit("error", "Rejected takeoff: insufficient acceleration",
+                why = ("brakes still applied"
+                       if getattr(state, "parking_brake", False)
+                       else "insufficient acceleration")
+                self._emit("error", f"Rejected takeoff: {why}",
                            "autonomous.rejected_takeoff")
                 self._goto_sub("abort")
                 return
@@ -810,6 +878,21 @@ class _The_phase_machine:
                     self._transition(AutonomousPhase.TAXI_IN)
                 elif self.session.phase == Phase.TAXI_OUT:
                     self._transition(AutonomousPhase.TAXI_OUT)
+                return
+            # Nobody's route came -- a rejected takeoff does not park
+            # the aeroplane mid-strip. Once it has been held a breath,
+            # the reject is worked off like a crew works it: the
+            # clearance is gone, the lineup starts over, and the tower
+            # hears the ready call again -- the next roll is a fresh
+            # clearance's, not a latch on the rejected one.
+            if (state.ground_speed_kt or 0.0) <= 1.0 \
+                    and self._sub_age() > 10.0:
+                self.state.rejected = False
+                self.state.abort_announced = False
+                self.state.aligned = False
+                self.session.cleared_takeoff = False
+                self._transition(AutonomousPhase.LINE_UP)
+                self._goto_sub("align")
             return
 
         if sub == "initial_climb":
@@ -1085,6 +1168,12 @@ class _The_phase_machine:
 
         self._configure_final(state)
 
+        # Below ten thousand the landing light is on -- the checklist
+        # may have named a switch for it, and where it did not the rule
+        # still stands.
+        if not getattr(state, "landing_light", False):
+            self.director.landing_light(True)
+
         # The cleared approach, as a recipe: which navaid, which course,
         # which minima. Resolved once and kept until the field or the
         # runway changes; the radio is tuned to its navaid on the way in.
@@ -1156,6 +1245,11 @@ class _The_phase_machine:
         """Flare, touchdown, rollout, vacate."""
         d = self.director
         sub = self.state.sub or "flare"
+
+        # The flare is short final: the landing light is on -- a crew
+        # does not reach the runway with it dark.
+        if not getattr(state, "landing_light", False):
+            d.landing_light(True)
 
         if sub == "flare":
             self._run_checklist_for_phase("before_landing")
@@ -1347,6 +1441,11 @@ class _The_phase_machine:
                 d.spoilers_arm(False)
                 if not self.state.vacated:
                     self.state.vacated = True
+                    # Clear of the runway: strobes and the landing light
+                    # come off -- the after-landing flow a crew runs on
+                    # the way out.
+                    d.strobes(False)
+                    d.landing_light(False)
                     self._run_checklist_for_phase("after_landing")
                 self._transition(AutonomousPhase.TAXI_IN)
                 self._goto_sub("taxi")

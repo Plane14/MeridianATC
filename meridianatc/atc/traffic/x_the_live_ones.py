@@ -678,6 +678,12 @@ class _The_live_ones:
             return
 
         if phase == "lineup":
+            # The same rule the landing clearance lives by: with somebody
+            # else on the strip a "line up and wait" is a clearance that is
+            # wrong, so nothing is said. ``ignore=flight`` -- it is the one
+            # on the runway being described.
+            if self.runway_occupied(now, ignore=flight, runway=runway_out):
+                return
             flight.step = 1
             occupier = self._runway_occupier(flight)
             reason = self._lineup_reason(occupier, flight.language)
@@ -690,6 +696,8 @@ class _The_live_ones:
             return
 
         if phase == "takeoff":
+            if self.runway_occupied(now, ignore=flight, runway=runway_out):
+                return
             flight.step = 1
             self._exchange(
                 flight, now, "TWR",
@@ -793,12 +801,20 @@ class _The_live_ones:
                 continue
             if hold is None:
                 continue
-            # Departures: kept off the pilot's runway. The strip is only
-            # marked held when the drawing actually stopped -- a flight the
-            # feed has already lost keeps moving whatever this says, and a
-            # frozen strip about a moving aeroplane is the worse lie.
+            # Departures: kept off the pilot's runway, and held before the
+            # runway rather than once the nose is on it -- the observed
+            # "lineup" phase only exists once it is there, so a taxiing
+            # departure that has reached the strip's edge is stopped while
+            # the pilot is on it or turning inside its final. The strip is
+            # only marked held when the drawing actually stopped -- a
+            # flight the feed has already lost keeps moving whatever this
+            # says, and a frozen strip about a moving aeroplane is the
+            # worse lie.
             if (flight.live_held != "give way"
-                    and flight.phase in ("lineup", "takeoff")
+                    and (flight.phase in ("ready", "waiting", "lineup",
+                                          "takeoff")
+                         or (flight.phase in ("pushback", "taxi")
+                             and self._near_departure_runway(flight)))
                     and not flight.live_held and busy
                     and not self._on_runway(flight)
                     and hold(flight.hex, True)):
@@ -835,6 +851,23 @@ class _The_live_ones:
                 self._last_release = now
                 decision("live_traffic", event="released",
                          callsign=first.written, why="the pilot is clear")
+
+    # The last bit of taxiway before the strip -- where an observed
+    # departure can still be stopped short of it.
+    NEAR_DEPARTURE_RUNWAY_NM = 0.15
+
+    def _near_departure_runway(self, flight: Flight) -> bool:
+        """Whether an observed departure's taxi has brought it to the
+        strip's edge -- the last moment holding it still keeps it off."""
+        end = self._threshold(
+            flight.runway or self.field.departure_runway)
+        if end is None:
+            return False
+        along, across = offset_from_track(
+            flight.latitude, flight.longitude, end[0], end[1], end[2])
+        near = self.NEAR_DEPARTURE_RUNWAY_NM
+        return (abs(across) <= RUNWAY_WIDTH_NM + near
+                and -0.15 - near <= along <= RUNWAY_LENGTH_NM + near)
 
     def _release_held(self, flight) -> None:
         """A live aeroplane frozen for the pilot is let go as its strip

@@ -135,11 +135,25 @@ def runway():
 
 
 def test_runway_lookup_requires_the_cleared_end_not_nearest_heading():
-    assert auto_nav.runway_end([runway()], "36") == (40, -74, 0, 6000)
+    assert auto_nav.runway_end([runway()], "36") == (40, -74, 0, 6000, 0.0)
     assert auto_nav.runway_end([runway()], "36L") is None
     assert auto_nav.runway_end([runway()], "09") is None
     assert auto_nav.runway_end([], "36") is None
     assert auto_nav.runway_end([SimpleNamespace(le_lat=None)], "36") is None
+
+
+def test_the_ground_intercept_aims_down_the_line_not_at_the_threshold():
+    # A kilometre down the strip and a wingspan off the line: the
+    # threshold-angle law corrects by a degree -- parallel grass for the
+    # length of the runway -- the lookahead law points at the line
+    # ~120 m ahead and actually closes.
+    err = auto_nav.align(41.2531, -8.68387, 41.263302, -8.68524, 172.8)
+    assert abs(err["offset_m"]) > 20.0
+    assert abs(err["correction_deg"]) < 3.0
+    err = auto_nav.align(41.2531, -8.68387, 41.263302, -8.68524, 172.8,
+                         lookahead_m=120.0)
+    assert err["correction_deg"] * err["offset_m"] < 0.0
+    assert abs(err["correction_deg"]) > 10.0
 
 
 @pytest.mark.parametrize("name", ["min_nm", "max_nm", "reserve_factor", "service_minutes"])

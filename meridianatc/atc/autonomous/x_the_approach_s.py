@@ -54,7 +54,8 @@ class _The_approach_s:
         if found is None:
             return
         self.state.runway_lat, self.state.runway_lon, \
-            self.state.runway_heading, self.state.runway_length_ft = found
+            self.state.runway_heading, self.state.runway_length_ft, \
+            self.state.runway_width_ft = found
         self.state.runway_heading = self.state.runway_heading or 360.0
         self.state.runway_key = key
 

@@ -356,6 +356,101 @@ def test_fo_backtracks_without_a_paved_lineup_path():
     fo._steer.assert_not_called()
 
 
+def test_fo_on_the_strip_never_bounces_to_holding_short():
+    """LPPR's Echo: no align clock bounces the aeroplane to a taxiway
+    state once it is on the pavement -- however long the line-up takes
+    it keeps steering to the line, and 'hold short' is never a stop
+    mid-runway."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo = _fo_for_lineup()
+    fo._runway_blocked = Mock(return_value=False)
+    fo.session = _fo_session(_path())
+    fo.state.sub_entered_at = 0.0        # the align is long past any clock
+    # On the pavement near the threshold, unaligned: keep driving.
+    state = _state(51.1501, -0.1899, heading_true=140.0)
+    fo._phase_line_up(state, 100.0)
+    assert fo.state.phase == AutonomousPhase.LINE_UP
+    assert fo.state.sub == "align"
+    fo._steer.assert_called()
+
+
+def test_fo_keeps_the_taxi_route_until_the_bars():
+    """LPPR: cleared to line up while still taxiing the parallel taxiway
+    ~100 m off the strip. The way to the runway is the rest of the taxi
+    route to the bars -- not the diagonal over the infield that the
+    intercept and the distant connector both draw."""
+    fo = _fo_for_lineup()
+    fo._runway_blocked = Mock(return_value=False)
+    # A parallel taxiway ~100 m south of the centreline, heading east.
+    taxi = [(51.1491, -0.186), (51.1491, -0.184), (51.1491, -0.182)]
+    fo.session = _fo_session(taxi)
+    fo.state.sub_entered_at = time.monotonic()
+    state = _state(51.1491, -0.185, heading_true=90.0)
+    fo._phase_line_up(state, 100.0)
+    assert fo.state.sub == "align"
+    fo._steer.assert_called()
+    on_taxi = auto_nav.path_steering(state.latitude, state.longitude,
+                                   taxi, lookahead_m=30.0)
+    assert fo._steer.call_args[0][1] == pytest.approx(on_taxi["heading"],
+                                                    abs=1.0)
+
+
+def test_fo_does_not_enter_the_backtrack_from_the_taxiway():
+    """The same place with nothing left to drive to: the far-along
+    check that would normally mean "backtrack" is only a backtrack when
+    the aeroplane is near the pavement -- on the parallel taxiway it is
+    a runway it has not reached."""
+    fo = _fo_for_lineup()
+    fo._runway_blocked = Mock(return_value=False)
+    fo.session = _fo_session([(51.1491, -0.185)])   # taxi path: already done
+    fo.state.sub_entered_at = time.monotonic()
+    state = _state(51.1491, -0.185, heading_true=90.0)
+    fo._phase_line_up(state, 100.0)
+    assert fo.state.sub == "align"
+
+
+def test_fo_does_not_follow_a_lineup_path_it_is_nowhere_near():
+    """A connector leg hundreds of metres away is not "the paved way
+    under the wheels": steering at it is the same diagonal through the
+    infield the path exists to prevent."""
+    fo = _fo_for_lineup()
+    fo._runway_blocked = Mock(return_value=False)
+    # The connector is far south-east -- nowhere near the aircraft.
+    lineup = [(51.1480, -0.1820), (51.1490, -0.1810), (51.1499, -0.1805)]
+    fo.session = _fo_session([(51.1491, -0.185)], lineup_path=lineup)
+    fo.state.sub_entered_at = time.monotonic()
+    state = _state(51.1491, -0.185, heading_true=90.0)
+    fo._phase_line_up(state, 100.0)
+    assert fo._steer.call_args[0][1] != pytest.approx(
+        auto_nav.path_steering(state.latitude, state.longitude,
+                               lineup, lookahead_m=30.0)["heading"],
+        abs=1.0)
+
+
+def test_fo_rejected_takeoff_recovers_to_a_fresh_lineup():
+    """The await after a reject is not a parking spot mid-strip: once
+    the aeroplane has been held a breath the reject is worked off and
+    the ready call goes out again -- the next roll is a fresh
+    clearance's, not a latch on the rejected one."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo = _fo()
+    fo.state.phase = AutonomousPhase.TAKEOFF
+    fo.state.sub = "await"
+    fo.state.sub_entered_at = 0.0          # long past the hold
+    fo.state.rejected = True
+    fo.state.abort_announced = True
+    fo.state.aligned = True
+    fo.session = _fo_session([], cleared_takeoff=True)
+    fo._compute_speeds = Mock()
+    state = _state(51.15, -0.19, ground_speed_kt=0.0)
+    fo._phase_takeoff(state, 100.0)
+    assert fo.state.phase == AutonomousPhase.LINE_UP
+    assert fo.state.sub == "align"
+    assert fo.state.rejected is False
+    assert fo.state.aligned is False
+    assert fo.session.cleared_takeoff is False
+
+
 def test_fo_wait_clearance_holds_and_never_errors():
     fo = _fo()
     from meridianatc.atc.autonomous import AutonomousPhase

@@ -144,6 +144,15 @@ class _The_plan_the:
         if len(fixes) < 2:
             return None
         airports = [f.ident for f in fixes if f.kind == "apt"]
+        # The readback does not always type the ends as airports -- some
+        # boxes hand the origin and destination back as waypoints. An
+        # ident the navdata knows as a field is one, whatever the box
+        # called it; unchecked, the route's destination stays the last
+        # flight's and a leg to LEVX is announced as a leg to LECO.
+        for f in (fixes[0], fixes[-1]):
+            if f.ident not in airports \
+                    and self.navdb.airport(f.ident) is not None:
+                airports.append(f.ident)
         return Route(fixes=tuple(fixes),
                      origin=airports[0] if airports else "",
                      destination=airports[-1] if airports else "",

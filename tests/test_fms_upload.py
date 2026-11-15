@@ -9,6 +9,7 @@ v1100 text; MSFS takes a .pln path through ``SimConnect_FlightPlanLoad``.
 from __future__ import annotations
 
 import time
+from types import SimpleNamespace
 
 from meridianatc.atc.route import Route, RouteFix, parse_pln, to_fms, to_pln
 from meridianatc.sim.source import SimConnectSource
@@ -160,6 +161,11 @@ def _engine(route=None):
     eng.use_route = eng.used.append
     eng.begin_session = lambda: setattr(eng, "begun", eng.begun + 1)
     eng.emit = lambda *a, **k: None
+    # The navdata's airport lookup: LPPR/LECO/LEVX are fields, the
+    # enroute idents are not.
+    eng.navdb = SimpleNamespace(
+        airport=lambda ident: object()
+        if ident in ("LPPR", "LECO", "LEVX", "LEMD", "EGLL") else None)
     return eng
 
 
@@ -202,6 +208,23 @@ def test_a_genuinely_new_plan_is_a_new_flight():
     # from the FMS entries.
     assert len(eng.used) == 1
     assert [f.ident for f in eng.used[0].fixes] == ["LEMD", "EGLL"]
+
+
+def test_untyped_ends_still_name_the_destination():
+    """The Baron flew to LEVX with the box calling both ends waypoints:
+    an ident the navdata knows as an airport is the destination,
+    whatever the entry type said."""
+    eng = _engine(_route())
+    eng._sim_plan_fp = ()
+    entries = [{"id": "LPPR", "t": 512, "lat": 41.24, "lon": -8.68,
+                "alt": 0},
+               {"id": "XAPIM", "t": 512, "lat": 41.3, "lon": -8.7,
+                "alt": 0},
+               {"id": "LEVX", "t": 512, "lat": 42.23, "lon": -8.63,
+                "alt": 0}]
+    eng._use_fms_plan(entries)
+    assert eng.used[0].origin == "LPPR"
+    assert eng.used[0].destination == "LEVX"
 
 
 def test_the_msfs_upload_echo_is_skipped(tmp_path):

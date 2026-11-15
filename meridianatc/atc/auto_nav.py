@@ -208,9 +208,10 @@ def runway_end(runways, runway: str):
 
     ``runways`` are the navdb's :class:`Runway` rows; ``runway`` the
     spoken designation ("24", "24L"). Returns ``(lat, lon, heading_deg,
-    length_ft)`` for the end the designation names -- the threshold a
-    departure lines up at and an arrival crosses first -- or None when
-    the field does not have it or the row lacks coordinates.
+    length_ft, width_ft)`` for the end the designation names -- the
+    threshold a departure lines up at and an arrival crosses first --
+    or None when the field does not have it or the row lacks
+    coordinates.
     """
     wanted = normalize_runway(runway or "")
     if not wanted:
@@ -224,6 +225,7 @@ def runway_end(runways, runway: str):
         le, he = (normalize_runway(getattr(rw, "le_ident", "") or ""),
                   normalize_runway(getattr(rw, "he_ident", "") or ""))
         length = float(getattr(rw, "length_ft", 0.0) or 0.0)
+        width = float(getattr(rw, "width_ft", 0.0) or 0.0)
         # Which end is the named threshold: the end whose own designation
         # matches first, the magnetic heading as the check after it.
         for ident, lat, lon, other_lat, other_lon in (
@@ -231,11 +233,11 @@ def runway_end(runways, runway: str):
                 (he, coords[2], coords[3], coords[0], coords[1])):
             heading = bearing_deg(lat, lon, other_lat, other_lon)
             candidates.append((ident == wanted, ident, lat, lon,
-                               heading, length))
+                               heading, length, width))
     exact = [c for c in candidates if c[0]]
     if exact:
-        _, _, lat, lon, heading, length = exact[0]
-        return lat, lon, heading, length
+        _, _, lat, lon, heading, length, width = exact[0]
+        return lat, lon, heading, length, width
     return None
 
 
@@ -247,10 +249,18 @@ def glide(threshold_lat: float, threshold_lon: float,
 
 
 def align(lat: float, lon: float, threshold_lat: float, threshold_lon: float,
-          runway_heading: float) -> dict:
+          runway_heading: float, lookahead_m: float = 0.0) -> dict:
     """How far the aeroplane is from the extended centreline, in metres,
     and the correction to fly to put it on it. Positive offset is right
-    of the runway heading."""
+    of the runway heading.
+
+    ``lookahead_m`` is how far down the line the intercept is aimed.
+    Unset, an aeroplane already down the strip gets the angle to the
+    threshold itself -- the final-approach law, which at a kilometre
+    down the runway is a degree of correction for a wingspan of offset
+    and never actually rejoins the line. On the ground the intercept
+    wants a fixed distance ahead, the way a crew picks a spot on the
+    pavement, not the far end of the strip."""
     distance = haversine_nm(threshold_lat, threshold_lon, lat, lon)
     track = bearing_deg(threshold_lat, threshold_lon, lat, lon)
     rel = math.radians(track - runway_heading)
@@ -261,9 +271,9 @@ def align(lat: float, lon: float, threshold_lat: float, threshold_lon: float,
     # there is no "on the numbers" to intercept -- but the centreline
     # extends back to it, and a hold-short point off that extension is
     # steered onto it, not held parallel to the runway heading for ever.
-    if along_nm <= 0.0:
+    if along_nm <= 0.0 or lookahead_m > 0.0:
         correction = max(-60.0, min(60.0, -math.degrees(
-            math.atan2(across_nm * 1852.0, 120.0))))
+            math.atan2(across_nm * 1852.0, lookahead_m or 120.0))))
     else:
         # Off to the right, the nose comes left: the correction is the
         # negative of the offset's angle.

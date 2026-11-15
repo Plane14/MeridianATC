@@ -12,8 +12,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-import pytest
-
 from meridianatc.atc.traffic import TrafficInjector
 from meridianatc.atc.traffic._shared import Flight
 
@@ -156,3 +154,77 @@ def test_an_invented_one_is_towed():
     assert flight.done
     assert injector._release_all.called
     assert not injector._unadopt.called
+
+
+# ------------------------------------------------------------------
+# the live ones answer to the same runway the invented ones do
+# ------------------------------------------------------------------
+
+def _observed(injector, flight):
+    flight.observed = True
+    flight.source = "live"
+    flight.hex = "4d0123"
+    flight.live_held = ""
+    injector.flights = [flight]
+    injector._rest_of_taxi = Mock()
+
+
+def test_a_live_line_up_is_not_said_over_an_occupied_strip():
+    injector = _injector()
+    flight = _departure(observed=True, source="live", phase="lineup")
+    _observed(injector, flight)
+    injector.runway_occupied = lambda now, ignore=None, runway="": True
+    injector._advance_observed(flight, 100.0)
+    assert flight.step == 0
+    assert not injector._exchange.called
+
+
+def test_a_live_line_up_is_said_when_only_it_occupies():
+    injector = _injector()
+    flight = _departure(observed=True, source="live", phase="lineup")
+    _observed(injector, flight)
+    injector.runway_occupied = lambda now, ignore=None, runway="": False
+    injector._runway_occupier = Mock(return_value=None)
+    injector._lineup_reason = Mock(return_value="")
+    injector._advance_observed(flight, 100.0)
+    assert flight.step == 1
+    assert injector._exchange.called
+
+
+def _pilot_protection(injector, *, near: bool):
+    injector.user = SimpleNamespace(on_ground=True, ground_speed_kt=0.0)
+    injector._user_on_runway = lambda runway="": True
+    injector._user_on_final = lambda: None
+    injector._on_runway = lambda flight: False
+    injector._near_departure_runway = lambda flight: near
+    injector._pilot_ahead = lambda flight: False
+    injector.hold_live = Mock(return_value=True)
+
+
+def test_a_taxiing_live_departure_is_held_at_the_strips_edge():
+    injector = _injector()
+    flight = _departure(observed=True, source="live", phase="taxi")
+    _observed(injector, flight)
+    _pilot_protection(injector, near=True)
+    injector._protect_the_pilot(100.0)
+    assert flight.live_held == "runway"
+    injector.hold_live.assert_called_once_with(flight.hex, True)
+
+
+def test_a_taxiing_live_departure_away_from_the_strip_is_left():
+    injector = _injector()
+    flight = _departure(observed=True, source="live", phase="taxi")
+    _observed(injector, flight)
+    _pilot_protection(injector, near=False)
+    injector._protect_the_pilot(100.0)
+    assert flight.live_held == ""
+    assert not injector.hold_live.called
+
+
+def test_a_live_departure_about_to_enter_is_still_held():
+    injector = _injector()
+    flight = _departure(observed=True, source="live", phase="takeoff")
+    _observed(injector, flight)
+    _pilot_protection(injector, near=False)
+    injector._protect_the_pilot(100.0)
+    assert flight.live_held == "runway"

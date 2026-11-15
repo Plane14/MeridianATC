@@ -144,6 +144,7 @@ class AutonomousState:
     runway_heading: float = 0.0
     runway_key: tuple[str, str] = ()
     runway_length_ft: float = 0.0
+    runway_width_ft: float = 0.0
     aligned: bool = False
     # Takeoff: when rotation began, whether the wheels are up, and the
     # rejected-takeoff watch on the roll.
