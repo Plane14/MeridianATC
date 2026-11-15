@@ -89,7 +89,8 @@ class _The_ones_standing:
         if flight is None:
             return None
         stand = self._free_stand(airliner=flight.operator is not None
-                                 or flight.ifr, also=away)
+                                 or flight.ifr, also=away,
+                                 gate=self._wants_gate(flight))
         if stand is None:
             self._used_callsigns.discard(flight.written)
             return None

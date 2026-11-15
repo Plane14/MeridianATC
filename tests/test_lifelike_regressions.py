@@ -398,3 +398,41 @@ def test_rolling_under_the_clearance_marks_the_abort_watch():
                               has_position=False)
     watch.look(session, station, rolling, 60.0)
     assert watch._rolled_for == session.cleared_takeoff_at
+
+
+# -- stands for the kind of flight ------------------------------------------------
+
+def _gate_and_ramp_layout():
+    from meridianatc.atc.ground import GroundLayout, PATH_PARKING
+    points = [(0, 0, 0.0, 0.0)]
+    parkings = [
+        (8, 0, "G1", "", 1, 0, 90.0, 20.0, 50.0, 0.0),    # a gate
+        (1, 0, "T1", "", 2, 0, 90.0, 20.0, 100.0, 0.0),   # a ramp big enough too
+    ]
+    paths = [(PATH_PARKING, 0, 0, "", 0, 0, -1),
+             (PATH_PARKING, 0, 0, "", 0, 1, -1)]
+    return GroundLayout("TEST", 51.0, 0.0, points, parkings, paths, [])
+
+
+def test_an_airline_goes_to_the_gate_while_one_is_free():
+    layout = _gate_and_ramp_layout()
+    stands = layout.free_stands(True, [], set())
+    assert [s.index for s in stands] == [0]
+
+
+def test_a_light_goes_to_the_ramp_while_one_is_free():
+    layout = _gate_and_ramp_layout()
+    stands = layout.free_stands(False, [], set())
+    assert [s.index for s in stands] == [1]
+
+
+def test_a_light_takes_the_gate_only_when_no_ramp_is_free():
+    layout = _gate_and_ramp_layout()
+    stands = layout.free_stands(False, [], {1})
+    assert [s.index for s in stands] == [0]
+
+
+def test_an_airliner_uses_the_ramp_when_the_gates_are_full():
+    layout = _gate_and_ramp_layout()
+    stands = layout.free_stands(True, [], {0})
+    assert [s.index for s in stands] == [1]

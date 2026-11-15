@@ -995,7 +995,8 @@ class _The_live_ones:
                 return False                # parked: not the tower's yet
             if arriving:
                 stand = self._free_stand(
-                    airliner=flight.operator is not None or flight.ifr)
+                    airliner=flight.operator is not None or flight.ifr,
+                    gate=self._wants_gate(flight))
                 taxi = stand is not None and layout.to_stand(
                     x, z, stand,
                     closed=self._closed_runway_edges(

@@ -309,7 +309,8 @@ class _Arrivals:
             return
         threshold, heading = runway
         stand = self._free_stand(airliner=flight.operator is not None
-                                 or flight.ifr, prefer=flight.planned_stand)
+                                 or flight.ifr, prefer=flight.planned_stand,
+                                 gate=self._wants_gate(flight))
         if stand is None:
             return
         x, z = layout.to_xy(flight.latitude, flight.longitude)

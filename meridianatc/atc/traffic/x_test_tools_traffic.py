@@ -385,7 +385,8 @@ class _Test_tools_traffic:
             # free is no departure: a full apron is a quiet frequency, not an
             # aeroplane parked on top of another one.
             stand = self._free_stand(airliner=flight.operator is not None
-                                     or flight.ifr)
+                                     or flight.ifr,
+                                     gate=self._wants_gate(flight))
             if stand is None:
                 # No departure and no aeroplane: the callsign is given
                 # back too, or a full apron burns one every attempt.

@@ -483,7 +483,8 @@ class GroundLayout:
     def free_stand(self, airliner: bool,
                    occupied: list[tuple[float, float, float]],
                    taken: set[int], choose=None,
-                   min_radius_m: float = 0.0) -> Stand | None:
+                   min_radius_m: float = 0.0,
+                   gate: bool | None = None) -> Stand | None:
         """A stand this aeroplane fits on that nobody is on or near.
 
         ``occupied`` is (x, z, radius) for everything already on the ground --
@@ -492,7 +493,7 @@ class GroundLayout:
         one.
         """
         candidates = self.free_stands(airliner, occupied, taken,
-                                      min_radius_m=min_radius_m)
+                                      min_radius_m=min_radius_m, gate=gate)
         if not candidates:
             return None
         return choose(candidates) if choose else candidates[0]
@@ -500,7 +501,8 @@ class GroundLayout:
     def free_stands(self, airliner: bool,
                     occupied: list[tuple[float, float, float]],
                     taken: set[int],
-                    min_radius_m: float = 0.0) -> list[Stand]:
+                    min_radius_m: float = 0.0,
+                    gate: bool | None = None) -> list[Stand]:
         """Every stand :meth:`free_stand` would choose from, in layout order.
 
         Public because the pilot's own stand is chosen from the same list
@@ -516,6 +518,17 @@ class GroundLayout:
                    for x, z, radius in occupied):
                 continue
             candidates.append(stand)
+        if candidates:
+            # The stand for the kind of flight: an airline to the gates
+            # while one is free, anything else off them -- the jetway and
+            # the passengers are what a gate is for, a light aeroplane
+            # parked under one is not where the next arrival goes, and a
+            # freighter's crew is not walking through the terminal. ``gate``
+            # is the caller's say so: the size flag by default.
+            suited = [c for c in candidates
+                      if c.gate == (airliner if gate is None else gate)]
+            if suited:
+                candidates = suited
         if candidates and not airliner:
             # A light aeroplane goes to the light ramp while there is room
             # on it, and takes an airliner's stand only when there is not.

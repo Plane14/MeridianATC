@@ -54,7 +54,16 @@ class _The_ground_driven:
                 | {f.planned_stand for f in everyone
                    if f.planned_stand is not None and not f.done})
 
-    def _free_stand(self, airliner: bool, also=(), prefer: int | None = None):
+    def _wants_gate(self, flight) -> bool:
+        """Whether the stand the flight is for is a terminal gate: an
+        airline to the jetway, a freighter to the cargo apron, anything
+        else off the gates while a ramp is free."""
+        if flight.operator is not None:
+            return flight.operator.fleet != livemod.FREIGHT
+        return getattr(flight, "category", "") == livemod.AIRLINE
+
+    def _free_stand(self, airliner: bool, also=(), prefer: int | None = None,
+                    gate: bool | None = None):
         """A free stand, chosen at random -- or ``prefer``, the one an
         arrival has held since it was invented, while it is still free."""
         occupied = self._on_ground_obstacles() + list(also) + [
@@ -70,7 +79,8 @@ class _The_ground_driven:
                     if option.index == prefer:
                         return option
                 return self.random.choice(options)
-        return self.ground.free_stand(airliner, occupied, taken, choose=choose)
+        return self.ground.free_stand(airliner, occupied, taken, choose=choose,
+                                      gate=gate)
 
     def ground_occupancy(self, layout: groundwork.GroundLayout
                          ) -> tuple[list[tuple[float, float, float]], set[int]]:
