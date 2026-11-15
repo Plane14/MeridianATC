@@ -100,6 +100,10 @@ class _Helpers_kept_from:
     def _start_engines(self, state) -> None:
         """Start engines using starter events."""
         if not state.engines_running:
+            # Props forward and mixture rich before the crank -- the
+            # levers a prop start is primed with, and the ones a low
+            # quadrant position would leave the start without.
+            self._prop_levers()
             self._send_event(b"ENGINE_AUTO_START", 1)
             self.director.starter(True)
             self.director.all_starters(True)

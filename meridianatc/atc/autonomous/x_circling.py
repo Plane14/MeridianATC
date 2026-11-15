@@ -325,12 +325,19 @@ class _Circling:
         d.forget("takeoff_power", "toga")
         d.go_around()
         d.takeoff_power()
+        self._prop_levers()
         d.throttle(1.0)
         self._last_lever = 1.0
         # What was tracking the approach's needles is done with them: a
         # go-around flown with APR still armed hunts the glide it just
         # left.
         d.approach(False)
+        # The flare's surface demands are the runway's, not the
+        # climb's: a de-crab pedal or an into-wind wing still commanded
+        # into the missed approach is a skid and a bank at fifty feet.
+        d.rudder(0.0)
+        d.steering(0.0)
+        d.aileron(0.0)
         d.elevator(self._g_pull_cap(state, 0.3))   # the pitch-up
         # The book's order is power, pitch, flap, THEN gear on the
         # positive rate -- the wheels stay down while the aeroplane can
@@ -363,7 +370,11 @@ class _Circling:
             pitch = float(getattr(state, "pitch_deg", 0.0) or 0.0)
             if pitch >= self._pitch_target_deg():
                 pull = min(pull, 0.05)
+            d.rudder(0.0)
+            d.steering(0.0)
+            d.aileron(0.0)
             d.elevator(self._g_pull_cap(state, pull))
+            self._prop_levers()
             d.throttle(1.0)
             self._last_lever = 1.0
             # Hand-flown for the first seconds, the way the book flies
@@ -371,6 +382,7 @@ class _Circling:
             # the climb are there, or pitch mode and the elevator write
             # fight each other.
             return
+        d.elevator(0.0)
         if state.gear_down and (state.vertical_speed_fpm or 0.0) > 0.0:
             d.gear(False)
         # Flap comes up a stage at a time, behind the speed -- the

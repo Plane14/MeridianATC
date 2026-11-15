@@ -1969,6 +1969,60 @@ def test_the_throttle_lever_falls_back_to_percent_without_units():
         assert value == 50.0
 
 
+def test_the_prop_and_mixture_levers_write_every_engine():
+    """The Baron's stand: props left at low pitch governed both engines
+    down to propellers that could not move the aeroplane. The levers go
+    out the way the throttles do -- per engine, in the lever's unit."""
+    from meridianatc.atc.ap import FlightDirector
+    writes = []
+
+    class Sim:
+        def set_variable(self, name, value, unit="Number"):
+            writes.append((name, value, unit))
+            return True
+
+    director = FlightDirector(Sim())
+    assert director.prop(1.0)
+    assert director.mixture(1.0)
+    for lever in ("PROPELLER LEVER POSITION", "MIXTURE LEVER POSITION"):
+        names = {w[0] for w in writes if lever in w[0]}
+        assert names == {f"GENERAL ENG {lever}:{n}" for n in (1, 2, 3, 4)}
+
+
+def test_the_prop_and_mixture_levers_fall_back_to_events():
+    """A source that cannot write the lever variables (a model with its
+    own engine code) still gets the levers moved -- the same fallback
+    the throttle learned."""
+    from meridianatc.atc.ap import FlightDirector
+    sent = []
+
+    class Sim:
+        connected = True
+
+        def set_variable(self, name, value, unit=None):
+            return False
+
+        def _send(self, name, value):
+            sent.append((name, value))
+            return True
+
+    director = FlightDirector(Sim())
+    assert director.prop(1.0)
+    names = {name for name, _v in sent}
+    assert b"PROP_PITCH_SET" in names or b"AXIS_PROPELLER_SET" in names
+    assert {b"PROP_PITCH1_SET", b"PROP_PITCH2_SET"} <= names
+    for _name, value in sent:
+        assert value == 16383
+
+    sent.clear()
+    assert director.mixture(1.0)
+    names = {name for name, _v in sent}
+    assert b"MIXTURE_SET" in names
+    assert {b"MIXTURE1_SET", b"MIXTURE2_SET"} <= names
+    for _name, value in sent:
+        assert value == 16383
+
+
 def test_the_taxi_leg_stops_short_of_a_route_that_crosses_the_runway():
     """The LPPR incursion: routing stand -> E5 rode 600 m down runway 17's
     centreline and the hold the walk-back picked sat on the FAR side

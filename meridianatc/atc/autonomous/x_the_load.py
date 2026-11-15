@@ -15,7 +15,8 @@ inside every limit -- and the watch simply never triggers.
 
 # Sub-phases whose elevator is hand-flown: the watch does not touch the
 # AP on them, it bounds the pull via _g_pull_cap inside the phase code.
-_HAND_FLOWN = {"rotate", "flare", "go_around", "roll", "rollout", "taxi", "align"}
+_HAND_FLOWN = {"rotate", "flare", "go_around", "roll", "rollout", "taxi",
+               "align", "initial_climb"}
 
 # How far inside the limit a soft-margin flag counts from: warn at 85%
 # of the book figure, ease commands over the book figure itself.

@@ -329,6 +329,60 @@ class FlightDirector:
                 ok = True
         return ok
 
+    def prop(self, position: float) -> bool:
+        """The propeller levers, 0..1 of travel: 0 feathered, 1 full
+        forward. Written the way the throttles are -- every engine's
+        lever variable, so a twin whose second prop was left at low
+        pitch follows the first instead of governing that engine to a
+        propeller that cannot make power. A model that takes no lever
+        variable gets the events, like the throttles' fallback: without
+        them the prop levers stay wherever the pilot's quadrant is
+        parked and the engines make no thrust anyone can taxi on."""
+        position = max(0.0, min(1.0, position))
+        ok = False
+        for engine in range(1, 5):
+            name = f"GENERAL ENG PROPELLER LEVER POSITION:{engine}"
+            if self.write(name, position, unit="Percent over 100") \
+                    or self.write(name, position * 100.0):
+                ok = True
+        if ok:
+            return True
+        # The prop events are signed like the stick's axes: -16383 the
+        # floor, +16383 full forward. At full forward -- the only place
+        # a prop lever is ever asked to go -- either scale ends at the
+        # same stop.
+        axis = int(round(-16383.0 + position * 32766.0))
+        ok = self.send(b"PROP_PITCH_SET", axis)
+        for engine in range(1, 5):
+            if self.send(f"PROP_PITCH{engine}_SET".encode(), axis):
+                ok = True
+        if self.send(b"AXIS_PROPELLER_SET", axis):
+            ok = True
+        return ok
+
+    def mixture(self, position: float) -> bool:
+        """The mixture levers, 0..1 of travel: 0 cut-off, 1 full rich.
+        Every engine -- writing only the first leaves a twin's second
+        engine on whatever the pilot's quadrant last said. The events
+        stand under the variables for the same reason the throttle's
+        do: a lever the variable cannot reach still has to move."""
+        position = max(0.0, min(1.0, position))
+        ok = False
+        for engine in range(1, 5):
+            name = f"GENERAL ENG MIXTURE LEVER POSITION:{engine}"
+            if self.write(name, position, unit="Percent over 100") \
+                    or self.write(name, position * 100.0):
+                ok = True
+        if ok:
+            return True
+        # ``MIXTURE_SET`` and its numbered forms take 0..16383.
+        value = int(round(position * 16383.0))
+        ok = self.send(b"MIXTURE_SET", value)
+        for engine in range(1, 5):
+            if self.send(f"MIXTURE{engine}_SET".encode(), value):
+                ok = True
+        return ok
+
     def throttle_idle(self) -> bool:
         return self.throttle(0.0)
 

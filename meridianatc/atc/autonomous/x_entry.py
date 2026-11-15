@@ -131,6 +131,10 @@ class _Entry:
                 d.throttle(0.0)
                 d.throttle_idle()
                 d.brakes(0.0)
+            # The levers' latches release last: a lever write re-latches
+            # its override, so the handback has to come after them or
+            # the quadrant stays the machine's after the FO has let go.
+            d.send(b"RELEASE_OVERRIDES", 0)
             d.reset()
         except Exception:
             log.debug("autonomous handoff raised", exc_info=True)

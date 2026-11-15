@@ -88,7 +88,15 @@ def test_real_director_heading_altitude_vs_speed_and_engagement(xp):
     assert (AP + "airspeed_dial_kts", 220.25) in peer.writes
     assert (AP + "autothrottle_enabled", 1) in peer.writes
     assert (AP + "autothrottle_enabled", 0) not in peer.writes
-    assert not any("override" in path for path, _ in peer.writes)
+    # Engaging the AP must not grab the pilot's controls: none of the
+    # stick, steering, brake or engine-lever overrides is an AP's to
+    # latch. The flap write in this batch legitimately owns its
+    # quadrant axis, the same way a lever write does.
+    held = ("override_joystick", "override_wheel_steer",
+            "override_toe_brakes", "override_throttles",
+            "override_prop_pitch", "override_mixture")
+    assert not any(any(flag in path for flag in held)
+                   for path, _ in peer.writes)
 
 
 @pytest.mark.parametrize("root,status,command", [
@@ -253,6 +261,87 @@ def test_center_controls_releases_every_override(xp):
 
     for flag in ("pitch", "roll", "heading", "wheel_steer", "toe_brakes"):
         eventually(lambda f=flag: released(f))
+
+
+def test_engine_levers_latch_and_release_their_overrides(xp):
+    # The takeoff's "power to idle at liftoff" was this: the levers were
+    # written while the pilot's throttle quadrant still owned the
+    # actuator, and X-Plane re-read the hardware the frame a write
+    # stopped. The levers latch the same override flags the stick does.
+    peer, source = xp
+    override = "sim/operation/override/"
+    assert source._send(b"THROTTLE_SET", 8192)
+    assert source.set_variable("GENERAL ENG MIXTURE LEVER POSITION:1", 90)
+    assert source.set_variable("GENERAL ENG PROPELLER LEVER POSITION:1", 90)
+    assert source._send(b"FLAPS_SET", 8192)
+    assert source._send(b"SPOILERS_SET", 8192)
+    assert source.set_variable("RECIP ENG COWL FLAP POSITION:1", 50)
+    latched = ("override_throttles", "override_mixture",
+               "override_prop_pitch", "override_flap_handle",
+               "override_speedbrakes", "override_cowl_flaps")
+    eventually(lambda: all((override + flag, 1) in peer.writes
+                           for flag in latched))
+    # A centred stick does not hand the quadrant back: a stop or a
+    # hold is still the FO's flight, and releasing the levers there is
+    # how the parked aeroplane's throttle ended up on the pilot's idle
+    # hardware between taxi probes.
+    assert source._send(b"CENTER_AILER_RUDDER", 0)
+    assert not any((override + flag, 0) in peer.writes for flag in latched)
+    # Handing the airplane back releases the levers like the axes --
+    # a latched quadrant is as dead as a latched stick.
+    assert source._send(b"RELEASE_OVERRIDES", 0)
+    eventually(lambda: all((override + flag, 0) in peer.writes
+                           for flag in latched))
+
+
+def test_lever_writes_reach_the_engines_use_path(xp):
+    # The parked-Baron failure: with a lever override latched X-Plane's
+    # engine reads the family's *_use dataref, not the lever the
+    # cockpit draws. Every lever write lands on both.
+    peer, source = xp
+    # The Baron's governor range, the scale a prop lever is mapped
+    # through: forward is fine pitch, the minimum.
+    for i in range(16):
+        peer.values[f"sim/aircraft/prop/acf_min_pitch[{i}]"] = 8.0
+        peer.values[f"sim/aircraft/prop/acf_max_pitch[{i}]"] = 45.0
+    eventually(lambda: source._values.get("acf_max_pitch1") == 45.0)
+    assert source.set_variable("GENERAL ENG THROTTLE LEVER POSITION:1", 75)
+    assert source.set_variable("GENERAL ENG THROTTLE LEVER POSITION:2", 75)
+    assert source.set_variable("GENERAL ENG MIXTURE LEVER POSITION:1", 90)
+    assert source.set_variable("GENERAL ENG PROPELLER LEVER POSITION:1", 100)
+    eng = "sim/flightmodel/engine/"
+
+    def wrote(path, expected):
+        return any(p == path and v == pytest.approx(expected)
+                   for p, v in peer.writes)
+
+    eventually(lambda: wrote(eng + "ENGN_thro_use[0]", .75)
+               and wrote(eng + "ENGN_thro_use[1]", .75)
+               and wrote(eng + "ENGN_mixt[0]", .9)
+               # Lever forward is fine pitch: the range's low stop.
+               and wrote(eng + "POINT_pitch_deg_use[0]", 8.0))
+    # The levers still move -- the cockpit's handle and the engine's
+    # ear are written together.
+    act = "sim/cockpit2/engine/actuators/"
+    assert wrote(act + "throttle_ratio[0]", .75)
+    assert wrote(act + "mixture_ratio[0]", .9)
+    assert wrote(act + "prop_ratio[0]", 1.0)
+    # The event forms and the collective reach the same use paths:
+    # THROTTLE_SET fans out to every engine, and collective up is more
+    # blade, the RPM lever's other direction.
+    assert source._send(b"THROTTLE_SET", 8192)
+    assert source._send(b"AXIS_COLLECTIVE_SET", 8192)
+    eventually(lambda: wrote(eng + "ENGN_thro_use[7]", 8192 / 16383)
+               and wrote(eng + "POINT_pitch_deg_use[0]",
+                         8 + (8192 + 16383.0) / 32766.0 * 37))
+    # Governor range absent: the fallback is the usual 8..45 degrees.
+    for i in range(16):
+        peer.missing.add(f"sim/aircraft/prop/acf_min_pitch[{i}]")
+        peer.missing.add(f"sim/aircraft/prop/acf_max_pitch[{i}]")
+        source._values.pop(f"acf_min_pitch{i}", None)
+        source._values.pop(f"acf_max_pitch{i}", None)
+    assert source.set_variable("GENERAL ENG PROPELLER LEVER POSITION:1", 50)
+    eventually(lambda: wrote(eng + "POINT_pitch_deg_use[0]", 26.5))
 
 
 def test_steering_scales_by_nosewheel_authority(xp):

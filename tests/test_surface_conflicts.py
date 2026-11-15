@@ -412,6 +412,220 @@ def test_fo_rejects_below_v1_on_an_engine_out():
     assert fo.state.sub == "abort"
 
 
+def test_prop_levers_forward_on_a_prop_aeroplane():
+    # The Baron's stand was this: props left at low pitch governed the
+    # engines down to propellers that could not move the aeroplane, and
+    # the hardware axis held them there -- the levers are the FO's the
+    # way the throttle is.
+    from meridianatc.atc import aircraft_class as ac
+    fo = _fo()
+    fo._aircraft_class = ac.PISTON_TWIN
+    fo._prop_levers()
+    fo._dir.prop.assert_called_once_with(1.0)
+    fo._dir.mixture.assert_called_once_with(1.0)
+
+
+@pytest.mark.parametrize("cls", ["helicopter", "business_jet",
+                                 "airliner", ""])
+def test_prop_levers_untouched_where_there_are_none(cls):
+    # On a helicopter the prop channel is the collective: a full-
+    # forward write there is a climb nobody asked for, and a jet has
+    # neither lever.
+    fo = _fo()
+    fo._aircraft_class = cls
+    fo._prop_levers()
+    fo._dir.prop.assert_not_called()
+    fo._dir.mixture.assert_not_called()
+
+
+def test_takeoff_power_puts_props_forward_first():
+    fo = _fo()
+    from meridianatc.atc import aircraft_class as ac
+    fo._aircraft_class = ac.PISTON_TWIN
+    fo._set_takeoff_power()
+    fo._dir.prop.assert_called_with(1.0)
+    fo._dir.mixture.assert_called_with(1.0)
+    fo._dir.throttle.assert_called()
+    fo._dir.toga.assert_called_with(True)
+
+
+def test_go_around_puts_props_forward():
+    fo = _fo()
+    from meridianatc.atc import aircraft_class as ac
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo._aircraft_class = ac.PISTON_TWIN
+    fo.state.phase = AutonomousPhase.LANDING
+    fo.state.go_arounds = 0
+    fo.state.go_around_at = 0.0
+    fo.state.circling = False
+    fo.state.flare_at = 0.0
+    fo.state.approach_recipe = None
+    fo.state.missed_alt_ft = 0.0
+    fo.state.flaps_index = 0
+    fo.state.pitch_deg = 0.0
+    fo.session = _fo_session(_path(), assigned_altitude_ft=0.0)
+    fo._manage_radio = False
+    fo._fo_say = Mock()
+    fo._emit = Mock()
+    fo._divert_after_go_arounds = Mock()
+    fo._manual_control_required = Mock()
+    fo._field_elevation = Mock(return_value=0.0)
+    fo._pitch_target_deg = Mock(return_value=12.0)
+    fo._g_pull_cap = Mock(return_value=0.3)
+    state = _state(51.15, -0.19, altitude_ft=100.0, source="xplane",
+                   flaps_index=0)
+    fo._start_go_around(state)
+    fo._dir.prop.assert_called_with(1.0)
+    fo._dir.mixture.assert_called_with(1.0)
+    fo._dir.throttle.assert_called_with(1.0)
+
+
+def _fo_in_initial_climb(**state_kw):
+    """A FO off the ground ten seconds into the initial climb."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo = _fo()
+    fo.state.phase = AutonomousPhase.TAKEOFF
+    fo.state.sub = "initial_climb"
+    fo.state.airborne_at = time.monotonic() - 3.0
+    fo.state.vr_kt = 85.0
+    fo.state.v2_kt = 90.0
+    fo._perf.cruise_kt = 180.0
+    # The lever the roll left at the stop: the slew continues from it,
+    # not from idle.
+    fo._last_lever = 1.0
+    fo._lever_at = time.monotonic() - 0.5
+    fo.session = _fo_session(_path())
+    fo._compute_speeds = Mock()
+    base = dict(on_ground=False, altitude_agl_ft=150.0,
+                indicated_airspeed_kt=92.0, vertical_speed_fpm=700.0,
+                pitch_deg=8.0, gear_down=True, flaps_index=0,
+                engines_running=1)
+    base.update(state_kw)
+    return fo, _state(51.15, -0.19, **base)
+
+
+def test_fo_rotate_stamps_the_liftoff_clock():
+    # The clock the initial climb is timed from: left at 0 on the
+    # rotate -> initial_climb path, elapsed never grew and the 25 s
+    # fallback to the AP was dead code.
+    fo = _fo()
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo.state.phase = AutonomousPhase.TAKEOFF
+    fo.state.sub = "rotate"
+    fo.state.rotate_at = time.monotonic()
+    fo.state.airborne_at = 0.0
+    fo.session = _fo_session(_path())
+    fo._compute_speeds = Mock()
+    state = _state(51.15, -0.19, on_ground=False, pitch_deg=8.0)
+    fo._phase_takeoff(state, time.monotonic())
+    assert fo.state.sub == "initial_climb"
+    assert fo.state.airborne_at > 0.0
+
+
+def test_fo_initial_climb_holds_power_and_flies_the_attitude():
+    # The crash in the log: the sub issued nothing at all, so the
+    # rotation's pull stayed latched on the stick and nothing held the
+    # levers -- the aeroplane bled to 67 kt and stalled at 133 ft.
+    fo, state = _fo_in_initial_climb()
+    fo._phase_takeoff(state, time.monotonic())
+    # The levers are commanded every pass -- and commanded to power,
+    # never to idle while the aeroplane is this low.
+    throttle = [c.args[0] for c in fo._dir.throttle.call_args_list]
+    assert throttle and all(w > 0.5 for w in throttle)
+    fo._dir.throttle_idle.assert_not_called()
+    fo._dir.toga.assert_called_with(True)
+    # The roll's steering demands are the runway's: released at liftoff
+    # rather than left pulling.
+    fo._dir.rudder.assert_called_with(0.0)
+    fo._dir.steering.assert_called_with(0.0)
+    # And the pitch is flown, eased rather than left where the rotation
+    # put it.
+    pull = fo._dir.elevator.call_args.args[0]
+    assert 0.0 < pull < 0.4
+    from meridianatc.atc.autonomous import AutonomousPhase
+    assert fo.state.phase == AutonomousPhase.TAKEOFF
+
+
+def test_fo_initial_climb_lowers_the_nose_below_the_safe_speed():
+    # The exact picture the log drew: 67 kt against a 90 kt safe speed
+    # and sinking a thousand feet a minute -- the nose is lowered
+    # outright, because a climb the wing cannot pay for is a stall.
+    fo, state = _fo_in_initial_climb(altitude_agl_ft=130.0,
+                                     indicated_airspeed_kt=67.0,
+                                     vertical_speed_fpm=-1100.0,
+                                     pitch_deg=14.0)
+    fo._phase_takeoff(state, time.monotonic())
+    assert fo._dir.elevator.call_args.args[0] < 0.0
+    fo._dir.throttle_idle.assert_not_called()
+
+
+def test_fo_initial_climb_engages_the_ap_after_the_wait():
+    fo, state = _fo_in_initial_climb(altitude_agl_ft=300.0,
+                                     indicated_airspeed_kt=95.0,
+                                     vertical_speed_fpm=800.0,
+                                     pitch_deg=10.0, gear_down=False)
+    fo.state.airborne_at = time.monotonic() - 30.0
+    fo._engage_climb = Mock()
+    fo._phase_takeoff(state, time.monotonic())
+    # The yoke is centred for the handoff: an AP handed a stick still
+    # pulled from the rotation fights the climb it is asked to fly.
+    assert fo._dir.elevator.call_args.args[0] == 0.0
+    fo._engage_climb.assert_called_once()
+    from meridianatc.atc.autonomous import AutonomousPhase
+    assert fo.state.phase == AutonomousPhase.CLIMB
+
+
+def test_fo_rollout_centres_the_surfaces_at_touchdown():
+    # The flare's pull and into-wind wing are flare demands: left
+    # latched on the stick they are a nosewheel held light through the
+    # rollout and a surface sitting displaced into the taxi-in.
+    fo = _fo()
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo.state.phase = AutonomousPhase.LANDING
+    fo.state.sub = "flare"
+    fo.session = _fo_session(_path())
+    state = _state(51.15, -0.19, on_ground=True, pitch_deg=4.0)
+    fo._phase_landing(state, time.monotonic())
+    assert fo.state.sub == "rollout"
+    fo._dir.throttle_idle.assert_called()
+    fo._dir.elevator.assert_called_with(0.0)
+    fo._dir.aileron.assert_called_with(0.0)
+
+
+def test_fo_go_around_releases_the_ground_axes():
+    # A go-around started from the flare inherits its de-crab pedal
+    # and its into-wind wing: latched into the climb they are a skid
+    # and a bank at fifty feet.
+    fo = _fo()
+    fo.state.sub = "go_around"
+    fo.state.go_around_at = time.monotonic()
+    fo._perf.cruise_kt = 180.0
+    state = _state(51.15, -0.19, on_ground=False, pitch_deg=6.0,
+                   indicated_airspeed_kt=90.0, vertical_speed_fpm=300.0)
+    fo._fly_go_around(state, time.monotonic())
+    fo._dir.rudder.assert_called_with(0.0)
+    fo._dir.steering.assert_called_with(0.0)
+    fo._dir.aileron.assert_called_with(0.0)
+    # The hand-flown pass still flies pitch and power.
+    assert fo._dir.elevator.call_args.args[0] > 0.0
+    assert fo._dir.throttle.call_args.args[0] >= 1.0
+
+
+def test_stop_centres_the_stick_while_still_rolling():
+    # A rejected takeoff rolling out at eighty knots: the stop is
+    # brakes, pedals and a neutral stick -- a rotation pull latched
+    # from the roll is a nosewheel held light through the braking.
+    fo = _fo()
+    fo.session = _fo_session(_path())
+    state = _state(51.15, -0.19, ground_speed_kt=80.0)
+    from meridianatc.atc.autonomous import AutonomousFlight
+    AutonomousFlight._stop(fo, state)
+    fo._dir.elevator.assert_called_with(0.0)
+    fo._dir.aileron.assert_called_with(0.0)
+    fo._dir.rudder.assert_called_with(0.0)
+    fo._dir.steering.assert_called_with(0.0)
+
+
 def test_fo_vacates_the_runway_on_a_taxi_instruction():
     fo = _fo()
     from meridianatc.atc.autonomous import AutonomousPhase

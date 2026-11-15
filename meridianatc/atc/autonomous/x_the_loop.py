@@ -96,7 +96,8 @@ class _The_loop:
                                     AutonomousPhase.TAXI_IN,
                                     AutonomousPhase.LINE_UP) \
             and self.state.sub in ("rotate", "flare", "taxi",
-                                   "align", "roll", "rollout")
+                                   "align", "roll", "rollout",
+                                   "initial_climb")
         # The go-around is hand-flown too, from the APPROACH phase: its
         # pitch and power answer wants the same quarter-second hand.
         if fast or self.state.sub == "go_around":

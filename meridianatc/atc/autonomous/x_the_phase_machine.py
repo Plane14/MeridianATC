@@ -581,6 +581,7 @@ class _The_phase_machine:
 
         if sub == "wait_clearance":
             if not state.on_ground:
+                self.state.airborne_at = self.state.airborne_at or now
                 self._goto_sub("initial_climb")
                 return
             d.parking_brake(True)
@@ -686,6 +687,9 @@ class _The_phase_machine:
                 pitch = float(getattr(state, "pitch_deg", 0.0) or 0.0)
                 if adapt is not None and pitch > 0.0:
                     adapt.learn("rotate.pitch", pitch, blend=0.3)
+                # The liftoff clock the initial climb is timed from:
+                # the roll's own path already stamps it where it fired.
+                self.state.airborne_at = self.state.airborne_at or now
                 self._goto_sub("initial_climb")
                 return
             # Pull to the rotation attitude and hold it until the wheels
@@ -774,10 +778,38 @@ class _The_phase_machine:
 
         if sub == "initial_climb":
             # Positive rate: flaps and gear come up on schedule, the climb
-            # speed is reached, then the AP takes the leg.
+            # speed is reached, then the AP takes the leg. Until it does
+            # the leg is hand-flown the way the go-around's first seconds
+            # are: a sub that issued nothing left the rotation's pull
+            # latched on the stick -- the aeroplane ballooned, bled its
+            # speed and stalled -- and the levers free to be pulled back
+            # to idle by anything else that could reach them.
             agl = state.altitude_agl_ft or 0.0
             ias = state.indicated_airspeed_kt or 0.0
             elapsed = now - (self.state.airborne_at or now)
+            # The roll's steering demands are the runway's, not the
+            # sky's: a pedal or a tiller still commanded past liftoff is
+            # a skid at a hundred feet.
+            d.rudder(0.0)
+            d.steering(0.0)
+            self._set_takeoff_power(state)
+            # The climb attitude is flown, not left where the rotation
+            # put it: held while the rate builds, eased once the VSI
+            # agrees the aeroplane is climbing -- and the nose is lowered
+            # outright under the safe speed, because a climb the wing
+            # cannot pay for is a stall, not a climb.
+            vs_now = float(state.vertical_speed_fpm or 0.0)
+            pitch = float(getattr(state, "pitch_deg", 0.0) or 0.0)
+            floor = self.state.v2_kt or self.state.vr_kt or 0.0
+            if floor and ias < floor - 5.0 or vs_now < -100.0:
+                pull = -0.10
+            elif pitch >= self._pitch_target_deg():
+                pull = 0.05
+            elif vs_now < 400.0:
+                pull = 0.25
+            else:
+                pull = 0.10
+            d.elevator(self._g_pull_cap(state, pull))
             # Flaps up once safely airborne and fast -- except through a
             # windshear escape, where the book's rule is to hold the
             # configuration until clear of the shear.
@@ -790,10 +822,13 @@ class _The_phase_machine:
             # AGL alone is not the rate: an aeroplane settling back is
             # kept on its wheels until the VSI agrees it is climbing.
             if state.gear_down and agl > 200.0 and not shear \
-                    and (state.vertical_speed_fpm or 0.0) > 0.0:
+                    and vs_now > 0.0:
                 d.gear(False)
-            # Checklist and AP engagement once stable.
+            # Checklist and AP engagement once stable. The yoke goes
+            # neutral first: an AP handed a stick still pulled from the
+            # rotation fights the climb it is being asked to fly.
             if agl > 400.0 or elapsed > 25.0:
+                d.elevator(0.0)
                 self._run_checklist_for_phase("after_takeoff")
                 self._engage_climb(state)
                 self._transition(AutonomousPhase.CLIMB)
@@ -1111,6 +1146,12 @@ class _The_phase_machine:
                 d.throttle_idle()
                 d.throttle(0.0)
                 self._last_lever = 0.0
+                # The surfaces the flare held go neutral with the wheels
+                # down: a pull left latched on the stick is a nosewheel
+                # held light through the whole rollout, and the
+                # into-wind wing frozen at its last answer.
+                d.elevator(0.0)
+                d.aileron(0.0)
                 self._goto_sub("rollout")
                 return
             agl = state.altitude_agl_ft or 0.0

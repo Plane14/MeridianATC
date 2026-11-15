@@ -148,16 +148,10 @@ class _The_checklist_answered:
             # off position: writing it would close the selector for good.
             "fuel_selector": lambda: d.write("FUEL TANK SELECTOR:1",
                                              float(expected) if float(expected) > 0 else 1.0),
-            # The checklist's figure is a percent; the lever variable is
-            # a fraction ("Percent over 100"), so a bare write asked for
-            # a mixture travel it does not have. A source without named
-            # units takes the percent it always did.
-            "mixture_pct": lambda: (
-                d.write("GENERAL ENG MIXTURE LEVER POSITION:1",
-                        float(expected) / 100.0,
-                        unit="Percent over 100")
-                or d.write("GENERAL ENG MIXTURE LEVER POSITION:1",
-                           float(expected))),
+            # The checklist's figure is a percent; the lever is a
+            # fraction on every engine -- a twin whose second mixture
+            # was never written runs at whatever the pilot left it.
+            "mixture_pct": lambda: d.mixture(float(expected) / 100.0),
             "transponder_code": lambda: d.transponder(str(expected)),
             "kohlsman_hpa": lambda: d.kohlsman(
                 self._altimeter_hpa(expected)),
@@ -422,6 +416,27 @@ class _The_checklist_answered:
             return 0.30
         return 0.22
 
+    def _prop_levers(self, prop: float = 1.0, mixture: float = 1.0) -> None:
+        """Props forward, mixture rich -- the levers power is made with,
+        on every engine.
+
+        A quadrant lever left at low pitch governs its propeller down to
+        an engine that cannot move the aeroplane -- the stand's "power
+        applied, nothing happens" -- and the hardware axis holds it
+        there every frame unless the FO owns the channel, which these
+        writes latch the same way the throttles' do. Only a prop class
+        has the levers to move: on a helicopter the prop channel is the
+        collective, and a full-forward write there is a climb nobody
+        asked for; a jet has neither lever."""
+        from .. import aircraft_class as ac
+        if getattr(self, "_aircraft_class", "") not in (
+                ac.PISTON_SINGLE, ac.PISTON_TWIN,
+                ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN):
+            return
+        d = self.director
+        d.prop(prop)
+        d.mixture(mixture)
+
     def _set_takeoff_power(self, state=None) -> None:
         """Takeoff thrust: advanced the way a hand moves the levers --
         briskly but progressively, not slammed to the stop -- and TO/GA
@@ -431,6 +446,9 @@ class _The_checklist_answered:
         itself stays under the engine watch's ceiling: the takeoff
         rating is a limit, not a target."""
         d = self.director
+        # Takeoff power on a prop aeroplane is props forward first --
+        # full forward is where the lever can actually give it.
+        self._prop_levers()
         cap = (self._engine_limit_cap(state, takeoff=True)
                if state is not None else 1.0)
         lever = self._slew_lever(min(1.0, cap))
@@ -502,6 +520,12 @@ class _The_checklist_answered:
         """
         d = self.director
         d.parking_brake(False)
+        # The levers power is made with, owned the way the throttle is:
+        # a prop lever left at low pitch governs its engine to a
+        # propeller that cannot pull the aeroplane away, and the
+        # pilot's hardware axis holds it there until an override takes
+        # it -- the parked Baron that would not taxi.
+        self._prop_levers()
         hdg = state.heading_true or 0.0
         # The pursuit point can teleport between legs of the route --
         # where two taxiway edges sit close, the nearest-point pick
@@ -666,4 +690,9 @@ class _The_checklist_answered:
             d.brakes(min(0.5, 0.10 + gs * 0.02))
             d.rudder(0.0)
             d.steering(0.0)
+            # A pull latched from a rotation or a flare is a nosewheel
+            # held light through the stop: the stick goes neutral while
+            # the wheels are still rolling.
+            d.elevator(0.0)
+            d.aileron(0.0)
 

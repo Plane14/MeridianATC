@@ -100,11 +100,33 @@ AXES = {
     "AXIS_TAIL_ROTOR_SET": ("yoke_heading_ratio", "override_joystick_heading"),
 }
 # Every override flag an axis or ground write can latch: released
-# together on CENTER_AILER_RUDDER and on close, so a dead stick is never
-# what the handoff leaves behind.
-OVERRIDES = ("override_joystick_pitch", "override_joystick_roll",
-             "override_joystick_heading", "override_wheel_steer",
-             "override_toe_brakes")
+# together on close, so a dead stick is never what the handoff leaves
+# behind. The engine levers latch theirs for the same reason the stick
+# does: without it X-Plane re-reads the pilot's throttle quadrant into
+# the actuator the frame a lever write stops -- the takeoff's "power to
+# idle at liftoff" was exactly that. They are two different releases,
+# though: CENTER_AILER_RUDDER hands back only the stick -- a stop or a
+# hold is still the FO's flight, and releasing the quadrant every time
+# the yoke centres is how the parked aeroplane's throttle lever ended up
+# back on the pilot's idle hardware between taxi probes. The levers
+# leave only on the handoff itself.
+STICK_OVERRIDES = ("override_joystick_pitch", "override_joystick_roll",
+                   "override_joystick_heading", "override_wheel_steer",
+                   "override_toe_brakes")
+LEVER_OVERRIDES = ("override_throttles", "override_prop_pitch",
+                   "override_mixture", "override_flap_handle",
+                   "override_speedbrakes", "override_cowl_flaps")
+OVERRIDES = STICK_OVERRIDES + LEVER_OVERRIDES
+# What each lever override feeds the engine through, per DataRefs.txt:
+# override_throttles -> "use ENGN_thro_use to control them",
+# override_prop_pitch -> "use POINT_pitch_deg_use to edit",
+# override_mixture -> "use ENGN_mixt to edit". The lever ratios are the
+# cockpit's handle; with the flag latched these are what the engines
+# actually run against -- the parked Baron had levers drawn at 66%
+# and engines idling on a use value nobody had written.
+THRO_USE = "sim/flightmodel/engine/ENGN_thro_use"
+MIX_USE = "sim/flightmodel/engine/ENGN_mixt"
+PITCH_USE = "sim/flightmodel/engine/POINT_pitch_deg_use"
 BRAKES = {
     "AXIS_LEFT_BRAKE_SET": "sim/cockpit2/controls/left_brake_ratio",
     "AXIS_RIGHT_BRAKE_SET": "sim/cockpit2/controls/right_brake_ratio",
@@ -139,6 +161,48 @@ class XPlaneControls:
         """Hand every overridden channel back to the pilot's hardware."""
         for flag in OVERRIDES:
             self.source._dref(OVR + flag, 0)
+
+    def _release_stick_overrides(self):
+        """Hand back the yoke, pedals, tiller and toe brakes only.
+
+        The engine levers are not the stick's business: a stop centres
+        the yoke without the quadrant leaving the FO's hands, so the
+        levers' latches stay down until ``_release_overrides`` at the
+        handoff.
+        """
+        for flag in STICK_OVERRIDES:
+            self.source._dref(OVR + flag, 0)
+
+    def _throttle_use(self, ratio, index=None):
+        """The engine's throttle under its override: every engine where
+        no index is named -- the _all lever writes' match."""
+        if index is None:
+            return all(self.source._dref(f"{THRO_USE}[{i}]", ratio)
+                       for i in range(16))
+        return self.source._dref(f"{THRO_USE}[{index}]", ratio)
+
+    def _pitch_range(self, index):
+        """The governor's pitch stops for a prop, as the .acf publishes."""
+        with self.source._lock:
+            lo = self.source._values.get(f"acf_min_pitch{index}")
+            hi = self.source._values.get(f"acf_max_pitch{index}")
+        if lo is None or hi is None or not lo < hi:
+            # A constant-speed prop's usual governed range.
+            return 8.0, 45.0
+        return float(lo), float(hi)
+
+    def _pitch_use(self, index, ratio, lever=True):
+        """The blade angle the engine reads under the prop override.
+
+        A prop lever is an RPM lever: forward asks fine pitch, back
+        asks coarse. A collective is a blade-angle lever: up asks more
+        pitch. The governor's own stops are the scale."""
+        lo, hi = self._pitch_range(index)
+        deg = hi - ratio * (hi - lo) if lever else lo + ratio * (hi - lo)
+        return self.source._dref(f"{PITCH_USE}[{index}]", deg)
+
+    def _pitch_use_all(self, ratio, lever=False):
+        return all(self._pitch_use(i, ratio, lever) for i in range(16))
 
     def _clear_axis_pending(self, axis, keep=None):
         for other, _engage, _disengage, other_axis, _threshold in MODES.values():
@@ -203,12 +267,23 @@ class XPlaneControls:
                 return False
             if not (0 <= index < 16 and 0 <= value <= 100):
                 return False
-            return self.source._dref(f"{THROTTLE}[{index}]", value / 100)
+            self.source._dref(OVR + "override_throttles", 1)
+            ok = self.source._dref(f"{THROTTLE}[{index}]", value / 100)
+            # The override moves the engine's input from the lever to
+            # ENGN_thro_use: write both or the handle moves and the
+            # engine never hears it.
+            return self._throttle_use(value / 100, index) and ok
         # The levers that are not the throttle, same 0..100 caller scale.
-        lever = {"GENERAL ENG MIXTURE LEVER POSITION:": ACT + "mixture_ratio",
-                 "GENERAL ENG PROPELLER LEVER POSITION:": ACT + "prop_ratio",
-                 "RECIP ENG COWL FLAP POSITION:": ACT + "cowl_flap_ratio"}
-        for prefix, path in lever.items():
+        # Each latches its own joystick override the way the axes do: a
+        # quadrant lever left partway would otherwise re-take the
+        # actuator the moment a write is not repeated every frame.
+        lever = {"GENERAL ENG MIXTURE LEVER POSITION:":
+                 (ACT + "mixture_ratio", "override_mixture"),
+                 "GENERAL ENG PROPELLER LEVER POSITION:":
+                 (ACT + "prop_ratio", "override_prop_pitch"),
+                 "RECIP ENG COWL FLAP POSITION:":
+                 (ACT + "cowl_flap_ratio", "override_cowl_flaps")}
+        for prefix, (path, flag) in lever.items():
             if name.startswith(prefix):
                 try:
                     index = int(name.rsplit(":", 1)[1]) - 1
@@ -216,7 +291,18 @@ class XPlaneControls:
                     return False
                 if not (0 <= index < 16 and 0 <= value <= 100):
                     return False
-                return self.source._dref(f"{path}[{index}]", value / 100)
+                if flag:
+                    self.source._dref(OVR + flag, 1)
+                ok = self.source._dref(f"{path}[{index}]", value / 100)
+                # Under each flag the engine's ear is the family's
+                # "use" dataref, the way ENGN_thro_use is the
+                # throttle's: the lever is what the cockpit draws.
+                if path == ACT + "mixture_ratio":
+                    ok = self.source._dref(
+                        f"{MIX_USE}[{index}]", value / 100) and ok
+                elif path == ACT + "prop_ratio":
+                    ok = self._pitch_use(index, value / 100) and ok
+                return ok
         if name.startswith("GENERAL ENG ANTI ICE POSITION:"):
             try:
                 index = int(name.rsplit(":", 1)[1]) - 1
@@ -274,6 +360,7 @@ class XPlaneControls:
             with self.source._lock:
                 detents = self.source._values.get("flap_detents", 0)
             return (detents > 1 and 0 <= value < detents and value == int(value)
+                    and self.source._dref(OVR + "override_flap_handle", 1)
                     and self.source._dref(FLAPS, value / (detents - 1)))
         mapping = VARIABLES.get(name)
         if mapping is None:
@@ -338,14 +425,23 @@ class XPlaneControls:
                 ok = source._dref(path, degrees) or ok
             return ok
         if name == "CENTER_AILER_RUDDER":
-            # Centre everything, then hand the axes back: the FO's
-            # last write before a handoff.
+            # Centre the stick, then hand just those axes back: the
+            # engine levers stay the FO's until the handoff itself, so
+            # a stop or a hold does not return the quadrant to wherever
+            # the pilot's hardware happens to be sitting.
             for axis in {axis for axis, _flag in AXES.values()}:
                 source._dref(JSTICK + axis, 0.0)
             for path in STEER_DREFS:
                 source._dref(path, 0.0)
             for path in BRAKES.values():
                 source._dref(path, 0.0)
+            self._release_stick_overrides()
+            return True
+        if name == "RELEASE_OVERRIDES":
+            # The handoff's release: every latched channel back to the
+            # pilot's hardware, engine levers included -- a quadrant the
+            # sim keeps ignoring after the FO lets go is the worst
+            # souvenir there is.
             self._release_overrides()
             return True
         # -- the rotorcraft's extra channels ---------------------------------
@@ -354,22 +450,39 @@ class XPlaneControls:
                 return False
             # X-Plane carries the collective on the prop lever. The axis
             # is signed like a joystick's; -16383 is the floor.
-            return source._dref(ACT + "prop_ratio_all",
-                                min(1.0, (value + 16383.0) / 32766.0))
+            source._dref(OVR + "override_prop_pitch", 1)
+            ratio = min(1.0, (value + 16383.0) / 32766.0)
+            ok = source._dref(ACT + "prop_ratio_all", ratio)
+            # Up on a collective is more blade angle, the prop lever's
+            # other way round -- lo..hi of the rotor's own range.
+            return self._pitch_use_all(ratio, lever=False) and ok
         if name in ("HELICOPTER_COLLECTIVE_SET", "COLLECTIVE_SET"):
             # The named forms are unipolar, 0..16384.
-            return 0 <= value <= 16384 \
-                and source._dref(ACT + "prop_ratio_all", value / 16383.0)
+            if not 0 <= value <= 16384:
+                return False
+            source._dref(OVR + "override_prop_pitch", 1)
+            ratio = value / 16383.0
+            ok = source._dref(ACT + "prop_ratio_all", ratio)
+            return self._pitch_use_all(ratio, lever=False) and ok
         if name == "AXIS_HELICOPTER_THROTTLE_SET":
             if not -16384 <= value <= 16384:
                 return False
-            return source._dref(THROTTLE + "_all",
-                                min(1.0, (value + 16383.0) / 32766.0))
+            source._dref(OVR + "override_throttles", 1)
+            ratio = min(1.0, (value + 16383.0) / 32766.0)
+            ok = source._dref(THROTTLE + "_all", ratio)
+            return self._throttle_use(ratio) and ok
         if name == "HELICOPTER_THROTTLE_SET":
-            return 0 <= value <= 16384 \
-                and source._dref(THROTTLE + "_all", value / 16383.0)
+            if not 0 <= value <= 16384:
+                return False
+            source._dref(OVR + "override_throttles", 1)
+            ratio = value / 16383.0
+            ok = source._dref(THROTTLE + "_all", ratio)
+            return self._throttle_use(ratio) and ok
         if name in ("HELICOPTER_THROTTLE_FULL", "HELICOPTER_THROTTLE_CUT"):
-            return source._dref(THROTTLE + "_all", int(name.endswith("FULL")))
+            source._dref(OVR + "override_throttles", 1)
+            ratio = float(name.endswith("FULL"))
+            ok = source._dref(THROTTLE + "_all", ratio)
+            return self._throttle_use(ratio) and ok
         if name == "ROTOR_GOV_SWITCH_SET":
             return value in (0, 1) and all(
                 source._dref(f"{ACT}governor_on[{i}]", value)
@@ -439,15 +552,28 @@ class XPlaneControls:
             if not minimum <= value <= 16383:
                 return False
             ratio = (value - minimum) / (16383 - minimum)
+            # A quadrant flap or spoiler axis left at a different detent
+            # fights the write the same way a throttle quadrant does.
+            source._dref(OVR + ("override_flap_handle" if "FLAPS" in name
+                                else "override_speedbrakes"), 1)
             return source._dref(FLAPS if "FLAPS" in name else "sim/cockpit2/controls/speedbrake_ratio", ratio)
         if name in ("SPOILERS_ARM_ON", "SPOILERS_ARM_OFF"):
+            source._dref(OVR + "override_speedbrakes", 1)
             return source._dref("sim/cockpit2/controls/speedbrake_ratio", -.5 if name.endswith("_ON") else 0)
         if name == "KOHLSMAN_SET":
             return source.set_variable("KOHLSMAN SETTING MB", value / 16)
         if name in ("THROTTLE_FULL", "THROTTLE_CUT", "THROTTLE_IDLE"):
-            return source._dref(THROTTLE + "_all", int(name == "THROTTLE_FULL"))
+            source._dref(OVR + "override_throttles", 1)
+            ratio = float(name == "THROTTLE_FULL")
+            ok = source._dref(THROTTLE + "_all", ratio)
+            return self._throttle_use(ratio) and ok
         if name == "THROTTLE_SET":
-            return 0 <= value <= 16383 and source._dref(THROTTLE + "_all", value / 16383)
+            if not 0 <= value <= 16383:
+                return False
+            source._dref(OVR + "override_throttles", 1)
+            ratio = value / 16383.0
+            ok = source._dref(THROTTLE + "_all", ratio)
+            return self._throttle_use(ratio) and ok
         if name.startswith("AXIS_THROTTLE") and name.endswith("_SET"):
             try:
                 index = int(name[13:-4]) - 1
@@ -455,6 +581,8 @@ class XPlaneControls:
                 return False
             if not (0 <= index < 16 and -16384 <= value <= 16384):
                 return False
-            return source._dref(f"{THROTTLE}[{index}]",
-                                max(0.0, min(1.0, (value + 16383.0) / 32766.0)))
+            source._dref(OVR + "override_throttles", 1)
+            ratio = max(0.0, min(1.0, (value + 16383.0) / 32766.0))
+            ok = source._dref(f"{THROTTLE}[{index}]", ratio)
+            return self._throttle_use(ratio, index) and ok
         return False

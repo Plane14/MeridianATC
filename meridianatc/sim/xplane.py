@@ -191,6 +191,14 @@ EXTRA["bank_mode"] = "sim/cockpit2/autopilot/bank_angle_mode"
 for _engine in range(16):
     EXTRA[f"running{_engine}"] = f"sim/flightmodel/engine/ENGN_running[{_engine}]"
     EXTRA[f"flow{_engine}"] = f"sim/flightmodel/engine/ENGN_FF_[{_engine}]"
+    # The governor's pitch stops per prop: the scale the override's
+    # POINT_pitch_deg_use writes are mapped through (props forward is
+    # fine pitch -- the min -- on an RPM lever, more blade on a
+    # collective).
+    EXTRA[f"acf_min_pitch{_engine}"] = \
+        f"sim/aircraft/prop/acf_min_pitch[{_engine}]"
+    EXTRA[f"acf_max_pitch{_engine}"] = \
+        f"sim/aircraft/prop/acf_max_pitch[{_engine}]"
 for _tank in range(9):
     EXTRA[f"tank{_tank}"] = f"sim/flightmodel/weight/m_fuel[{_tank}]"
     EXTRA[f"tank_ratio{_tank}"] = f"sim/aircraft/overflow/acf_tank_rat[{_tank}]"
