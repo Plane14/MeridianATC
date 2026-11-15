@@ -132,7 +132,9 @@ class _Putting_words_together:
         weather = self.field.weather or Weather()
         if kind == "takeoff":
             def opening(p, a, s):
-                return p.ready_for_departure(a, runway, station=s)
+                return p.ready_for_departure(
+                    a, runway, station=s,
+                    intersection=self._said_intersection(flight))
             def answer(c, a, s):
                 return c.afis_takeoff(a, weather)
         elif kind in ("land", "touch_and_go"):
