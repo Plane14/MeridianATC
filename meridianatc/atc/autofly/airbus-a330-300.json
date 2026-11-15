@@ -1,0 +1,23 @@
+{
+  "name": "Airbus A330-300",
+  "titleMatches": [ "a330", "a332", "a333", "a339", "a-330", "airbus a330" ],
+  "flightTested": false,
+  "borrowedProfile": false,
+  "canAutofly": true,
+  "performance": {
+    "rotationSpeedKnots": 150,
+    "climbSpeedKnots": 230,
+    "cruiseSpeedKnots": 245,
+    "approachSpeedKnots": 150,
+    "touchdownSpeedKnots": 140,
+    "goAroundSpeedKnots": 160,
+    "takeoffFlaps": 1,
+    "landingFlaps": 4,
+    "maxBankDegrees": 25,
+    "climbRateFpm": 2200,
+    "descentRateFpm": 1800,
+    "positiveGLimit": 2.5,
+    "negativeGLimit": -1.0
+  },
+  "_source": "X-Plane A330-300 POH: final approach 140-160 KIAS full flap/gear; Vr/V2 per POH fallback (VR=V2-5). Conf/F/S values per flight-test convention."
+}

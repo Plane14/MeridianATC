@@ -78,6 +78,13 @@ SCALE_UP, SCALE_DOWN = 1.15, 0.87
 #: travel mean the loop is chasing itself; the gains come down a step.
 OSC_WINDOW_S, OSC_FLIPS = 20.0, 8
 
+#: After a gain step the loop is left alone to show the new gain before
+#: another may be taken. Without it the saturation "ask more" and the
+#: oscillation "ask less" chase each other -- a lever swinging onto a
+#: rail looks saturated while it hunts, so the two verdicts must not be
+#: allowed to alternate in quick succession.
+BUMP_GAP_S = 12.0
+
 #: How fast a trim observation is blended in: an exponential blend, so a
 #: single odd phase cannot move a trim that took a flight to learn.
 TRIM_BLEND = 0.05
@@ -252,6 +259,8 @@ class AdaptivePid(Pid):
         self._sat_t = 0.0
         self._last_sign = 0
         self._flips: list[float] = []
+        # The last gain step, well in the past so the first evidence may act.
+        self._bump_t = -BUMP_GAP_S
         if terms.ki:
             self.reset()
 
@@ -286,40 +295,60 @@ class AdaptivePid(Pid):
                                    blend=min(dt * TRIM_BLEND, 0.25))
 
         bounded = t.high < math.inf and t.low > -math.inf
-        if bounded:
-            pushing = (out >= t.high - 1e-9 and err > t.deadband) \
-                or (out <= t.low + 1e-9 and err < -t.deadband)
-            if pushing:
-                self._sat_t += dt
-                if self._sat_t >= SAT_S:
-                    self._bump(SCALE_UP, now)
-                    self._sat_t = 0.0
-            else:
-                self._sat_t = max(0.0, self._sat_t - 2.0 * dt)
+        if not bounded:
+            return
 
-            # An error that keeps crossing zero while the lever works
-            # past half travel is the loop chasing itself: too much
-            # gain for this model, not too little.
-            sign = (err > t.deadband) - (err < -t.deadband)
-            if sign and self._last_sign and sign != self._last_sign:
-                span = t.high - t.low
-                if abs(out - (t.high + t.low) / 2.0) > 0.25 * span:
-                    self._flips = [f for f in self._flips
-                                   if now - f < OSC_WINDOW_S]
-                    self._flips.append(now)
-                    if len(self._flips) >= OSC_FLIPS:
-                        self._bump(SCALE_DOWN, now)
-                        self._flips.clear()
-            if sign:
-                self._last_sign = sign
+        pushing = (out >= t.high - 1e-9 and err > t.deadband) \
+            or (out <= t.low + 1e-9 and err < -t.deadband)
+        if pushing:
+            self._sat_t += dt
+        else:
+            self._sat_t = max(0.0, self._sat_t - 2.0 * dt)
 
-    def _bump(self, factor: float, now: float) -> None:
+        # An error that keeps crossing zero while the lever works
+        # past half travel is the loop chasing itself: too much
+        # gain for this model, not too little.
+        sign = (err > t.deadband) - (err < -t.deadband)
+        if sign and self._last_sign and sign != self._last_sign:
+            span = t.high - t.low
+            if abs(out - (t.high + t.low) / 2.0) > 0.25 * span:
+                self._flips = [f for f in self._flips
+                               if now - f < OSC_WINDOW_S]
+                self._flips.append(now)
+        if sign:
+            self._last_sign = sign
+
+        # The oscillation verdict wins over the saturation one: a lever
+        # that swings onto a rail and back looks saturated while it
+        # hunts, and growing the gains on that evidence is exactly
+        # backwards. Saturation grows them only against a settled sign.
+        if len(self._flips) >= OSC_FLIPS:
+            self._bump(SCALE_DOWN, now)
+            # Spent either way: a rejected bump still means this tally
+            # cannot count toward the next one.
+            self._flips.clear()
+            self._sat_t = 0.0
+        elif self._sat_t >= SAT_S:
+            self._bump(SCALE_UP, now)
+            self._sat_t = 0.0
+
+    def _bump(self, factor: float, now: float) -> bool:
+        if now - self._bump_t < BUMP_GAP_S:
+            return False
         scale = max(SCALE_LO, min(SCALE_HI, self._scale * factor))
         if scale == self._scale:
-            return
+            return False
+        old_ki = self.terms.ki
         self._scale = scale
+        self._bump_t = now
         self._adapt.learn_scale(self.channel, scale)
         self.terms = self._scaled(self._base_terms, scale)
+        # The integrator's contribution is ki * _i: rescale _i so the
+        # bump itself is not a step into the loop it is calming.
+        new_ki = self.terms.ki
+        if new_ki and old_ki:
+            self._i *= old_ki / new_ki
+        return True
 
     def reset(self, output: float | None = None) -> None:
         # What the loop converged to is learned before it is forgotten.
@@ -327,6 +356,11 @@ class AdaptivePid(Pid):
                 and self._out is not None:
             self._adapt.learn_trim(self.channel, self._out, blend=0.5)
         super().reset(output)
+        # A phase boundary is not evidence of anything: the saturation
+        # and oscillation tallies belong to the phase that made them.
+        self._sat_t = 0.0
+        self._flips.clear()
+        self._last_sign = 0
         # The learned trim preloads the integrator only: ``_out`` stays
         # cleared so a caller's bumpless transfer still wins, and the
         # loop's first real update opens near the trim the model wants

@@ -1,0 +1,23 @@
+{
+  "name": "Cessna Citation X",
+  "titleMatches": [ "c750", "citation x", "citx", "citation-x" ],
+  "flightTested": false,
+  "borrowedProfile": false,
+  "canAutofly": true,
+  "performance": {
+    "rotationSpeedKnots": 145,
+    "climbSpeedKnots": 270,
+    "cruiseSpeedKnots": 250,
+    "approachSpeedKnots": 132,
+    "touchdownSpeedKnots": 125,
+    "goAroundSpeedKnots": 150,
+    "takeoffFlaps": 1,
+    "landingFlaps": 4,
+    "maxBankDegrees": 25,
+    "climbRateFpm": 3650,
+    "descentRateFpm": 2500,
+    "positiveGLimit": 2.5,
+    "negativeGLimit": -1.0
+  },
+  "_source": "X-Plane Citation X manual operational speeds: Vr 145, Vref 132, Vso 115, Vs1 136, Vs 140, Vx 270, Vy 300, Vfe 180, Vle/Vlo 210, Vmo 270-350."
+}

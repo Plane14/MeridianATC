@@ -1,0 +1,23 @@
+{
+  "name": "Grumman F-14 Tomcat",
+  "titleMatches": [ "f14", "f-14", "tomcat" ],
+  "flightTested": false,
+  "borrowedProfile": false,
+  "canAutofly": true,
+  "performance": {
+    "rotationSpeedKnots": 150,
+    "climbSpeedKnots": 300,
+    "cruiseSpeedKnots": 300,
+    "approachSpeedKnots": 130,
+    "touchdownSpeedKnots": 120,
+    "goAroundSpeedKnots": 150,
+    "takeoffFlaps": 1,
+    "landingFlaps": 4,
+    "maxBankDegrees": 30,
+    "climbRateFpm": 5000,
+    "descentRateFpm": 3000,
+    "positiveGLimit": 6.5,
+    "negativeGLimit": -3.0
+  },
+  "_source": "X-Plane F-14 POH: rotate 150 KIAS, gear down at 250, flaps full at 220; G limits per F-14 NATOPS class figures."
+}

@@ -1,0 +1,22 @@
+{
+  "name": "Piper PA-18 Super Cub",
+  "titleMatches": [ "pa18", "pa-18", "pa 18", "super cub", "supercub", "top cub" ],
+  "flightTested": false,
+  "borrowedProfile": false,
+  "canAutofly": true,
+  "performance": {
+    "rotationSpeedKnots": 40,
+    "climbSpeedKnots": 60,
+    "cruiseSpeedKnots": 96,
+    "approachSpeedKnots": 50,
+    "touchdownSpeedKnots": 40,
+    "goAroundSpeedKnots": 55,
+    "landingFlaps": 4,
+    "maxBankDegrees": 30,
+    "climbRateFpm": 960,
+    "descentRateFpm": 500,
+    "positiveGLimit": 3.8,
+    "negativeGLimit": -1.5
+  },
+  "_source": "X-Plane PA-18 POH: Vr 40, Vs 41, Vso 33, Vx 55, Vy 60, glide 60, Vfe 85, Vne 120, cruise 96."
+}

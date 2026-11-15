@@ -246,7 +246,14 @@ class _The_field:
         elevation = self.field.elevation_ft
         end = self._threshold(flight.runway)
         phase = flight.phase
-        flight.ground_speed_kt = _SPEED.get(phase, 0.0)
+        speed = _SPEED.get(phase, 0.0)
+        if speed and phase in ("taxi", "taxi_in"):
+            # A placed taxi has no route to read corners from; what it
+            # does have is the type's own taxi figure, so a Cessna
+            # creeps where a heavy rolls -- the same number the routed
+            # aeroplanes' corner law tops out at per class.
+            speed = flight.performance.taxi_kt or speed
+        flight.ground_speed_kt = speed
         flight.vertical_rate_fpm = 0.0
         flight.on_ground = True
         flight.altitude_ft = elevation

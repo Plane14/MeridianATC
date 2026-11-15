@@ -1,0 +1,22 @@
+{
+  "name": "Van's RV-10",
+  "titleMatches": [ "rv10", "rv-10", "rv 10", "van's rv", "vans rv" ],
+  "flightTested": false,
+  "borrowedProfile": false,
+  "canAutofly": true,
+  "performance": {
+    "rotationSpeedKnots": 65,
+    "climbSpeedKnots": 103,
+    "cruiseSpeedKnots": 165,
+    "approachSpeedKnots": 75,
+    "touchdownSpeedKnots": 65,
+    "goAroundSpeedKnots": 85,
+    "landingFlaps": 4,
+    "maxBankDegrees": 30,
+    "climbRateFpm": 1450,
+    "descentRateFpm": 800,
+    "positiveGLimit": 3.8,
+    "negativeGLimit": -1.5
+  },
+  "_source": "X-Plane RV-10 POH: Vr 65, Vso 56, Vmc 60, Vx 65, Vy 103, glide 85, Vfe 95, Vno 188, Vne 200."
+}

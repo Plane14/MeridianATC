@@ -77,7 +77,7 @@ DOC_8643: dict[str, str] = {
     # turboprop singles
     "TBM9": "L1T", "TBM8": "L1T", "TBM7": "L1T", "PC12": "L1T",
     "PC6T": "L1T", "C208": "L1T", "KODI": "L1T", "AT8T": "L1T",
-    "PC21": "L1T", "PC9": "L1T", "M600": "L1T",
+    "PC21": "L1T", "PC9": "L1T", "M600": "L1T", "EVOT": "L1T",
     # turboprop twins
     "B350": "L2T", "BE20": "L2T", "BE9L": "L2T", "C441": "L2T",
     "DHC6": "L2T", "AT43": "L2T", "AT45": "L2T", "AT72": "L2T",
@@ -86,6 +86,9 @@ DOC_8643: dict[str, str] = {
     "P180": "L2T",
     # jets the business list below does not have
     "SF50": "L1J",
+    # the F-14 is a fighter, which the class table has no word for; a
+    # twin-jet with no airline lands as a business jet, the closest fit
+    "F14": "L2J",
     # helicopters
     "R22": "H1P", "R44": "H1P", "R66": "H1T", "CBRI": "H1P",
     "AS50": "H1T", "EC30": "H1T", "B06": "H1T", "B407": "H1T",
@@ -230,15 +233,15 @@ def min_runway_ft(type_code: str) -> int:
     """
     code = (type_code or "").strip().upper()
     if code in ("C152", "C172", "C182", "PA28", "DA40", "SR22", "BE36",
-                "TB20"):
+                "TB20", "PA18", "RV10", "BE58"):
         return 2500
     if code in ("TBM9", "PC12", "C25A", "C25C", "C525", "E55P", "E50P",
-                "AT76", "DH8D", "C208"):
+                "AT76", "DH8D", "C208", "BE9L", "EVOT", "SF50"):
         return 4000
     if code in ("CRJ7", "CRJ9", "E170", "E175", "E190", "E195",
                 "F2TH", "H25B", "LJ45", "LJ60", "C680", "C750", "G280"):
         return 5500
-    if code.startswith(("A3", "B73", "B38", "B39", "B75")):
+    if code.startswith(("A3", "B73", "B38", "B39", "B75", "MD8")):
         return 7000
     if code in ("A332", "A333", "A339", "A343", "A346", "A359", "A35K",
                 "A388", "B763", "B764", "B772", "B77W", "B77L", "B77X",

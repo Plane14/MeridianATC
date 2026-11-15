@@ -1,0 +1,82 @@
+{
+  "_comment": "X-Plane 12 Cirrus Vision SF50 manual checklists (x-plane.com/support/manuals/), mapped onto the standard names.",
+  "source": "X-Plane 12 Cirrus Vision SF50 manual, checklists section",
+  "match": [ "sf50", "sf-50", "vision sf", "vision jet", "cirrus vision" ],
+  "checklists": {
+    "after_start": {
+      "title": "cold and dark to engine start",
+      "items": [
+        { "challenge": "Cabin door", "response": "closed", "accept": ["check", "set"] },
+        { "challenge": "Battery one and two", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
+        { "challenge": "Nav lights", "response": "on", "accept": ["on"], "check": {"var": "nav_light", "op": "eq", "value": true} },
+        { "challenge": "Fuel control", "response": "auto", "accept": ["set", "on"] },
+        { "challenge": "Engine start stop", "response": "run", "accept": ["set", "on"], "note": "Monitor the EIS; all indications in the green." },
+        { "challenge": "Generator one and two", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Probe heat and ice protection", "response": "as required", "accept": ["set", "check"], "check": {"var": "pitot_heat", "op": "eq", "value": true} }
+      ]
+    },
+    "taxi": {
+      "title": "before taxi",
+      "items": [
+        { "challenge": "Elevator trim", "response": "takeoff", "accept": ["set", "check"] },
+        { "challenge": "Flaps", "response": "set, ten degrees", "accept": ["set", "check"] },
+        { "challenge": "Flight controls", "response": "checked, pitch roll yaw", "accept": ["check"] },
+        { "challenge": "Taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} }
+      ]
+    },
+    "before_takeoff": {
+      "title": "before takeoff",
+      "items": [
+        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
+        { "challenge": "Transponder", "response": "alt", "accept": ["on", "set"], "check": {"var": "transponder_state", "op": "in", "value": [3, 4]}, "note": "UNVERIFIED: TRANSPONDER STATE values are program-defined and unmeasured on a live sim." }
+      ]
+    },
+    "after_takeoff": {
+      "title": "after takeoff",
+      "items": [
+        { "challenge": "Landing gear", "response": "up", "accept": ["up"], "check": {"var": "gear_down", "op": "eq", "value": false} },
+        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
+        { "challenge": "Thrust", "response": "set as required", "accept": ["set", "check"] }
+      ]
+    },
+    "cruise": {
+      "title": "cruise",
+      "items": [
+        { "challenge": "Landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
+        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} }
+      ]
+    },
+    "before_landing": {
+      "title": "before landing",
+      "items": [
+        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
+        { "challenge": "Landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true} },
+        { "challenge": "Flaps", "response": "set as required", "accept": ["set", "down"] },
+        { "challenge": "Landing gear", "response": "down", "accept": ["down"], "check": {"var": "gear_down", "op": "eq", "value": true} }
+      ]
+    },
+    "after_landing": {
+      "title": "after landing",
+      "items": [
+        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
+        { "challenge": "Landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] }
+      ]
+    },
+    "shutdown": {
+      "title": "parking",
+      "items": [
+        { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
+        { "challenge": "Taxi lights", "response": "off", "accept": ["off"], "check": {"var": "taxi_light", "op": "eq", "value": false} },
+        { "challenge": "Transponder", "response": "standby", "accept": ["off", "set"] },
+        { "challenge": "Engine start stop", "response": "stop", "accept": ["off", "set"] },
+        { "challenge": "Nav lights", "response": "off", "accept": ["off"], "check": {"var": "nav_light", "op": "eq", "value": false} },
+        { "challenge": "Probe heat and ice protection", "response": "off", "accept": ["off"], "check": {"var": "pitot_heat", "op": "eq", "value": false} },
+        { "challenge": "Generator one and two", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Battery one and two", "response": "off", "accept": ["off"], "check": {"var": "battery_master", "op": "eq", "value": false} }
+      ]
+    }
+  }
+}

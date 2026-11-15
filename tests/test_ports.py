@@ -482,7 +482,7 @@ class TestAutofly:
     def test_no_match_passthrough(self):
         from meridianatc.atc import flying as fly
         from meridianatc.atc.autofly import override
-        assert override("B744", "PMDG 747-400", fly.AIRLINER) is fly.AIRLINER
+        assert override("DC6", "PMDG DC-6", fly.AIRLINER) is fly.AIRLINER
 
 
 class TestDemoPack:

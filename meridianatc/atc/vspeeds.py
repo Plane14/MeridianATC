@@ -110,6 +110,50 @@ TABLE: dict[str, Speeds] = {
                "from PMFlight's 737 Technical training aid -- not Boeing's "
                "data, and not today's weight",
         unverified=True),
+    # The X-Plane 12 native fleet, from its own manuals (x-plane.com/support/
+    # manuals/). The jets' speeds are by weight; where the manual prints an
+    # example set at a stated weight the entry is unverified, as the 738's.
+    "BE58": Speeds(
+        vr=85, vapp=95,
+        source="X-Plane 12 Beechcraft Baron 58 manual: rotate at 85 KIAS; "
+               "normal approach ~95 KIAS, Vso 74"),
+    "PA18": Speeds(
+        vr=40, vapp=50,
+        source="X-Plane 12 Piper PA-18 Super Cub manual: rotate at 40 KIAS; "
+               "final approach ~50 KIAS, Vso 33"),
+    "RV10": Speeds(
+        vr=65, vapp=75,
+        source="X-Plane 12 Van's RV-10 manual: rotate at 65 KIAS; final "
+               "approach ~75 KIAS, Vso 56"),
+    "EVOT": Speeds(
+        vr=77, vapp=90,
+        source="X-Plane 12 Lancair Evolution manual: rotate at 77 KIAS; "
+               "final approach ~90 KIAS, Vso 61"),
+    "BE9L": Speeds(
+        vr=90, vapp=100,
+        source="X-Plane 12 Beechcraft King Air C90B manual: rotate at ~90 "
+               "KIAS; final approach ~100 KIAS"),
+    "SF50": Speeds(
+        vr=90, vapp=95,
+        source="X-Plane 12 Cirrus Vision SF50 manual: rotate at 90 KIAS; "
+               "full-flap landing 87 KIAS, Vso 67"),
+    "F14": Speeds(
+        vr=150, vapp=130,
+        source="X-Plane 12 Grumman F-14 manual: rotate at 150 KIAS; "
+               "on-speed approach ~130 KIAS"),
+    "C750": Speeds(
+        vr=145, vapp=132,
+        source="X-Plane 12 Citation X manual: rotate at 145 KIAS; landing "
+               "reference 132 KIAS (Vso 115, Vx 270, Vy 300)"),
+    "MD82": Speeds(
+        v1=125, vr=130, v2=139, vapp=137,
+        source="UNVERIFIED: X-Plane 12 MD-82 manual's example speeds at a "
+               "stated weight; final approach 133-140 KIAS",
+        unverified=True),
+    "B744": _u(170, "747-400: the manual's speeds are by weight and none "
+                    "is published; a mid-range rotation figure; final "
+                    "approach 130-140 KIAS",
+               vapp=135),
 }
 # The rotary entries: no rotation speed -- vr stays 0 -- but an approach
 # speed, for the "speed" deviation call on the circuit. All UNVERIFIED:

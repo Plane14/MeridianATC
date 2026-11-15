@@ -1,0 +1,85 @@
+{
+  "_comment": "X-Plane 12 Cirrus SR22 manual checklists (x-plane.com/support/manuals/), mapped onto the standard names.",
+  "source": "X-Plane 12 Cirrus SR22 manual, checklists section",
+  "match": [ "cirrus sr22", "sr22" ],
+  "checklists": {
+    "after_start": {
+      "title": "cold and dark to engine start",
+      "items": [
+        { "challenge": "Cabin door", "response": "closed", "accept": ["check", "set"] },
+        { "challenge": "Mixture", "response": "full rich", "accept": ["set", "check"], "check": {"var": "mixture_pct", "op": "min", "value": 95} },
+        { "challenge": "Throttle", "response": "idle", "accept": ["set", "check"] },
+        { "challenge": "Fuel selector", "response": "as required, left or right tank", "accept": ["set", "check"], "check": {"var": "fuel_selector", "op": "ne", "value": 0} },
+        { "challenge": "Battery one and two", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
+        { "challenge": "Fuel quantity", "response": "check", "accept": ["check"] },
+        { "challenge": "Strobes", "response": "on", "accept": ["on"], "check": {"var": "strobe_light", "op": "eq", "value": true}, "note": "The manual: no beacon on this aircraft; strobes warn of engine start." },
+        { "challenge": "Engine", "response": "start", "accept": ["set", "on"] },
+        { "challenge": "Alternator one and two", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Avionics", "response": "on", "accept": ["on"], "check": {"var": "avionics_master", "op": "eq", "value": true} }
+      ]
+    },
+    "taxi": {
+      "title": "before taxi",
+      "items": [
+        { "challenge": "Elevator trim", "response": "takeoff", "accept": ["set", "check"] },
+        { "challenge": "Flight controls", "response": "checked, pitch roll yaw", "accept": ["check"] },
+        { "challenge": "Nav lights", "response": "on", "accept": ["on"], "check": {"var": "nav_light", "op": "eq", "value": true} },
+        { "challenge": "Landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true}, "note": "No separate taxi light; landing lights serve both." },
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} }
+      ]
+    },
+    "before_takeoff": {
+      "title": "before takeoff",
+      "items": [
+        { "challenge": "Flaps", "response": "set, fifty percent", "accept": ["set", "check"], "note": "Takeoff flap per the manual: 50%." },
+        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
+        { "challenge": "Transponder", "response": "alt", "accept": ["on", "set"], "check": {"var": "transponder_state", "op": "in", "value": [3, 4]}, "note": "UNVERIFIED: TRANSPONDER STATE values are program-defined and unmeasured on a live sim." }
+      ]
+    },
+    "after_takeoff": {
+      "title": "after takeoff",
+      "items": [
+        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
+        { "challenge": "Throttle", "response": "set as required", "accept": ["set", "check"] }
+      ]
+    },
+    "cruise": {
+      "title": "cruise",
+      "items": [
+        { "challenge": "Landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
+        { "challenge": "Mixture", "response": "lean as required", "accept": ["set", "check"] },
+        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} }
+      ]
+    },
+    "before_landing": {
+      "title": "before landing",
+      "items": [
+        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
+        { "challenge": "Landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true} },
+        { "challenge": "Mixture", "response": "full rich", "accept": ["set", "check"], "check": {"var": "mixture_pct", "op": "min", "value": 95} },
+        { "challenge": "Flaps", "response": "as required, one hundred percent for landing", "accept": ["set", "down"] }
+      ]
+    },
+    "after_landing": {
+      "title": "after landing",
+      "items": [
+        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] }
+      ]
+    },
+    "shutdown": {
+      "title": "parking",
+      "items": [
+        { "challenge": "Throttle", "response": "idle", "accept": ["set", "check"] },
+        { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
+        { "challenge": "Mixture", "response": "cut off", "accept": ["off", "set"], "check": {"var": "mixture_pct", "op": "max", "value": 5} },
+        { "challenge": "Fuel selector", "response": "off", "accept": ["off", "set"], "check": {"var": "fuel_selector", "op": "eq", "value": 0} },
+        { "challenge": "Transponder", "response": "standby", "accept": ["off", "set"] },
+        { "challenge": "Alternator two, then alternator one", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Avionics", "response": "off", "accept": ["off"], "check": {"var": "avionics_master", "op": "eq", "value": false} },
+        { "challenge": "Battery two, then battery one", "response": "off", "accept": ["off"], "check": {"var": "battery_master", "op": "eq", "value": false} }
+      ]
+    }
+  }
+}

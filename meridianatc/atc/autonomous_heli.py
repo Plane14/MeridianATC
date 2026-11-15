@@ -198,6 +198,11 @@ _HELI_PROFILES: dict[str, HeliProfile] = {
     # autorotation speed is ~65 KIAS with the flare at about 40 ft.
     "R44": _heli_profile(110, 80, 1000, 14000, low_g=0.4,
                          auto_kt=65.0, auto_flare_ft=40.0),
+    # Robinson R22 Beta II: X-Plane 12's native rotorcraft. ~96 KIAS
+    # cruise, VNE 102 KIAS, ~1,000 fpm, teetering rotor; the RFM's
+    # autorotation window centres on ~70 KIAS with the flare at 40 ft.
+    "R22": _heli_profile(96, 55, 1000, 14000, low_g=0.4,
+                         auto_kt=70.0, auto_flare_ft=40.0),
     # Airbus H125 / Leonardo H125 and the AS350 family via Bell 430.
     "H125": _heli_profile(130, 60, 1400, 14600, auto_kt=65.0),
     "B407": _heli_profile(130, 60, 1400, 14600, auto_kt=65.0),

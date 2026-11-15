@@ -1,0 +1,23 @@
+{
+  "name": "McDonnell Douglas MD-82",
+  "titleMatches": [ "md82", "md-82", "md80", "md-80", "maddog", "mcdonnell douglas md" ],
+  "flightTested": false,
+  "borrowedProfile": false,
+  "canAutofly": true,
+  "performance": {
+    "rotationSpeedKnots": 130,
+    "climbSpeedKnots": 230,
+    "cruiseSpeedKnots": 240,
+    "approachSpeedKnots": 137,
+    "touchdownSpeedKnots": 130,
+    "goAroundSpeedKnots": 145,
+    "takeoffFlaps": 1,
+    "landingFlaps": 4,
+    "maxBankDegrees": 25,
+    "climbRateFpm": 2500,
+    "descentRateFpm": 1800,
+    "positiveGLimit": 2.5,
+    "negativeGLimit": -1.0
+  },
+  "_source": "X-Plane MD-82 POH: example V1 125/VR 130/V2 139, final approach 133-140 KIAS full flap/gear, flap-up 150."
+}

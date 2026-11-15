@@ -119,3 +119,63 @@ def test_same_type_different_titles_learn_apart():
     typed = for_aircraft("", "B738")
     typed.learn_trim("throttle", 0.7)
     assert for_aircraft("", "B738").trim("throttle") == pytest.approx(0.7)
+
+
+def test_oscillation_verdict_beats_saturation():
+    adapt = Adaptation()
+    pid = AdaptivePid("throttle", adapt,
+                      PidTerms(kp=2.0, deadband=0.5, low=-1.0, high=1.0),
+                      clock=Clock())
+    # An error swinging fast enough to pin the lever on the rails both
+    # ways is oscillating, not under-gained: it must not grow the gain.
+    for i in range(80):
+        pid.update(8.0 if i % 2 else -8.0, dt=0.25)
+    assert adapt.scale("throttle") < 1.0
+
+
+def test_bump_gap_leaves_the_loop_alone():
+    adapt = Adaptation()
+    pid = AdaptivePid("collective", adapt,
+                      PidTerms(kp=1.0, deadband=1.0, low=0.0, high=1.0),
+                      clock=Clock())
+    clock = pid._clock
+    pid._bump(adaptation.SCALE_UP, clock())
+    pid._bump_t = clock()              # just bumped: the gap is open
+    after = adapt.scale("collective")
+    # Saturated evidence inside the gap does not bump again.
+    for _ in range(20):
+        clock.step(0.25)
+        pid.update(50.0, dt=0.25)
+    assert adapt.scale("collective") == pytest.approx(after)
+
+
+def test_bump_rescales_the_integrator_not_the_lever():
+    adapt = Adaptation()
+    pid = AdaptivePid("throttle", adapt,
+                      PidTerms(kp=0.1, ki=0.5, low=0.0, high=1.0),
+                      clock=Clock())
+    for _ in range(40):
+        pid.update(1.0, dt=0.25)
+    ki_i = pid._i * pid.terms.ki
+    pid._bump(adaptation.SCALE_DOWN, pid._clock())
+    assert pid._i * pid.terms.ki == pytest.approx(ki_i)
+
+
+def test_reset_clears_oscillation_evidence():
+    adapt = Adaptation()
+    pid = AdaptivePid("throttle", adapt,
+                      PidTerms(kp=0.1, deadband=0.5, low=-1.0, high=1.0),
+                      clock=Clock())
+    # Seven flips: one short of the oscillation verdict -- evidence on
+    # the tally that has not yet acted.
+    for i in range(8):
+        pid.update(8.0 if i % 2 else -8.0, dt=0.25)
+    assert pid._flips
+    assert adapt.scale("throttle") == pytest.approx(1.0)
+    pid.reset(output=0.5)
+    assert not pid._flips
+    assert pid._sat_t == 0.0
+    # The old phase's flips cannot trigger a bump in the new one.
+    for _ in range(6):
+        pid.update(5.0, dt=0.25)
+    assert adapt.scale("throttle") == pytest.approx(1.0)

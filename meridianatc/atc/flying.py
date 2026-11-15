@@ -158,8 +158,14 @@ LIGHT = Performance(
 _LIGHT_TYPES = frozenset({
     "C152", "C172", "C182", "PA28", "P28A", "PA34", "DA40", "DA42", "SR22",
     "BE36", "TB20", "AT3", "R44", "C25A",
+    # X-Plane 12's piston natives: the Baron is the twin in a table that
+    # judges by cabin rather than engines, the Cub and RV-10 its singles.
+    "BE58", "PA18", "RV10",
 })
-_TURBOPROP_TYPES = frozenset({"AT76", "DH8D", "TBM9", "PC12"})
+_TURBOPROP_TYPES = frozenset(
+    {"AT76", "DH8D", "TBM9", "PC12",
+     # King Air C90B and the Lancair Evolution: X-Plane 12's turboprops.
+     "BE9L", "EVOT"})
 
 
 def performance_for(type_code: str, light: bool = False) -> Performance:

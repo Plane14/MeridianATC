@@ -1,0 +1,23 @@
+{
+  "name": "Boeing 747-400",
+  "titleMatches": [ "b744", "b747", "747-400", "744", "747" ],
+  "flightTested": false,
+  "borrowedProfile": false,
+  "canAutofly": true,
+  "performance": {
+    "rotationSpeedKnots": 170,
+    "climbSpeedKnots": 240,
+    "cruiseSpeedKnots": 250,
+    "approachSpeedKnots": 140,
+    "touchdownSpeedKnots": 130,
+    "goAroundSpeedKnots": 150,
+    "takeoffFlaps": 1,
+    "landingFlaps": 4,
+    "maxBankDegrees": 25,
+    "climbRateFpm": 2000,
+    "descentRateFpm": 1800,
+    "positiveGLimit": 2.5,
+    "negativeGLimit": -1.0
+  },
+  "_source": "X-Plane Boeing 747-400 POH: final approach 130-140 KIAS full flap/gear; Vr ~170 class-consistent."
+}

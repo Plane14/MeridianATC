@@ -1,0 +1,60 @@
+{
+  "_comment": "X-Plane 12 Robinson R22 Beta II manual checklists (x-plane.com/support/manuals/), mapped onto the standard names.",
+  "source": "X-Plane 12 Robinson R22 Beta II manual, checklists section",
+  "match": [ "r22", "robinson r22" ],
+  "checklists": {
+    "preflight": {
+      "title": "pre-flight exterior inspection",
+      "items": [
+        { "challenge": "Master battery", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
+        { "challenge": "Fuel quantity", "response": "check", "accept": ["check"] },
+        { "challenge": "Tail rotor", "response": "check, blades move with yaw input", "accept": ["check"] },
+        { "challenge": "Main rotor", "response": "check, blades move with pitch and roll inputs", "accept": ["check"] },
+        { "challenge": "Landing lights", "response": "check", "accept": ["check"], "check": {"var": "landing_light", "op": "eq", "value": true} },
+        { "challenge": "Master battery", "response": "off", "accept": ["off"], "check": {"var": "battery_master", "op": "eq", "value": false} }
+      ]
+    },
+    "before_start": {
+      "title": "before starting engine",
+      "items": [
+        { "challenge": "Doors", "response": "closed and latched", "accept": ["check", "set"] },
+        { "challenge": "Fuel shut-off", "response": "on", "accept": ["on", "set"], "check": {"var": "fuel_selector", "op": "ne", "value": 0} },
+        { "challenge": "Cyclic friction", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Throttle", "response": "idle", "accept": ["set", "check"] },
+        { "challenge": "Governor", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Carb heat", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Mixture", "response": "full rich, down", "accept": ["set", "check"], "check": {"var": "mixture_pct", "op": "min", "value": 95} },
+        { "challenge": "Clutch", "response": "disengaged", "accept": ["set", "check"], "check": {"var": "rotor_clutch_active", "op": "eq", "value": false} },
+        { "challenge": "Altimeter", "response": "set, current baro and field elevation", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
+        { "challenge": "Rotor brake", "response": "disengaged, seated", "accept": ["off", "check"], "check": {"var": "rotor_brake_active", "op": "eq", "value": false} }
+      ]
+    },
+    "after_start": {
+      "title": "engine start",
+      "items": [
+        { "challenge": "Master battery", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
+        { "challenge": "Throttle", "response": "closed", "accept": ["set", "check"] },
+        { "challenge": "Strobe", "response": "on", "accept": ["on"], "check": {"var": "strobe_light", "op": "eq", "value": true} },
+        { "challenge": "Starter key", "response": "start, then both", "accept": ["set", "on"] },
+        { "challenge": "Clutch", "response": "engaged", "accept": ["set", "on"], "check": {"var": "rotor_clutch_active", "op": "eq", "value": true} },
+        { "challenge": "Alternator", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Oil pressure", "response": "check", "accept": ["check", "green"] },
+        { "challenge": "Engine gauges", "response": "green", "accept": ["green", "check"] },
+        { "challenge": "Magnetos", "response": "left only check, right only check, set both", "accept": ["check"] },
+        { "challenge": "Governor", "response": "on", "accept": ["on", "set"], "check": {"var": "rotor_gov_target_pct", "op": "min", "value": 1} }
+      ]
+    },
+    "shutdown": {
+      "title": "engine shutdown",
+      "items": [
+        { "challenge": "Cyclic friction", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Governor", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Throttle", "response": "closed", "accept": ["set", "check"] },
+        { "challenge": "Clutch", "response": "disengaged", "accept": ["set", "check"], "check": {"var": "rotor_clutch_active", "op": "eq", "value": false} },
+        { "challenge": "Mixture", "response": "idle cut-off", "accept": ["set", "off"], "check": {"var": "mixture_pct", "op": "max", "value": 5} },
+        { "challenge": "Rotor brake", "response": "engaged until rotor stationary", "accept": ["set", "on"], "check": {"var": "rotor_brake_active", "op": "eq", "value": true}, "note": "UNVERIFIED: the sim may not model the R22's rotor brake." },
+        { "challenge": "Electrical switches", "response": "nav lights off, strobe off, alternator off", "accept": ["off", "set"], "check": {"var": "strobe_light", "op": "eq", "value": false} }
+      ]
+    }
+  }
+}

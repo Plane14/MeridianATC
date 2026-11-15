@@ -1,0 +1,91 @@
+{
+  "_comment": "X-Plane 12 Grumman F-14 Tomcat manual checklists (x-plane.com/support/manuals/), mapped onto the standard names.",
+  "source": "X-Plane 12 Grumman F-14 manual, checklists section",
+  "match": [ "f-14", "tomcat" ],
+  "checklists": {
+    "after_start": {
+      "title": "cold and dark to engine start",
+      "items": [
+        { "challenge": "Ground service", "response": "requested", "accept": ["check", "set"] },
+        { "challenge": "GPU", "response": "toggle on", "accept": ["on", "set"] },
+        { "challenge": "Bleed air", "response": "toggle on", "accept": ["on", "set"] },
+        { "challenge": "MFD one", "response": "power on, menu, VDI", "accept": ["on", "set"] },
+        { "challenge": "MFD two", "response": "power on", "accept": ["on", "set"] },
+        { "challenge": "Fuel pumps", "response": "toggle on", "accept": ["on", "set"] },
+        { "challenge": "Left and right generators", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "External lights", "response": "as required", "accept": ["set", "check"] },
+        { "challenge": "Throttles", "response": "advance to idle, away from off", "accept": ["set", "check"] },
+        { "challenge": "Left engine", "response": "crank", "accept": ["set", "on"] },
+        { "challenge": "Exhaust gas temperature", "response": "monitor left engine; crank switch auto-returns to neutral", "accept": ["check"] },
+        { "challenge": "Right engine", "response": "crank", "accept": ["set", "on"] },
+        { "challenge": "Exhaust gas temperature", "response": "monitor right engine; crank switch auto-returns to neutral", "accept": ["check"] }
+      ]
+    },
+    "taxi": {
+      "title": "before taxi",
+      "items": [
+        { "challenge": "Wing sweep guard", "response": "up", "accept": ["set", "check"] },
+        { "challenge": "Wing sweep lever", "response": "oversweep, full rearward", "accept": ["set", "check"] },
+        { "challenge": "Anti-skid", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Nosewheel steering", "response": "toggle on", "accept": ["on", "set"] },
+        { "challenge": "Flaps", "response": "fifty percent", "accept": ["set", "check"] },
+        { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} }
+      ]
+    },
+    "before_takeoff": {
+      "title": "before takeoff",
+      "items": [
+        { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
+        { "challenge": "Wing sweep guard", "response": "up", "accept": ["set", "check"] },
+        { "challenge": "Wing sweep lever", "response": "twenty degrees, full forward", "accept": ["set", "check"] },
+        { "challenge": "Wing sweep guard", "response": "down", "accept": ["set", "check"] },
+        { "challenge": "Anti-skid", "response": "both", "accept": ["on", "set"] },
+        { "challenge": "Pitch trim", "response": "two degrees positive", "accept": ["set", "check"] },
+        { "challenge": "Throttles", "response": "advance until RPM reaches ninety-five percent", "accept": ["set", "check"] },
+        { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} },
+        { "challenge": "At one hundred knots", "response": "nosewheel steering toggle off", "accept": ["set", "check"] },
+        { "challenge": "At one fifty knots", "response": "rotate", "accept": ["check"] }
+      ]
+    },
+    "after_takeoff": {
+      "title": "after takeoff",
+      "items": [
+        { "challenge": "Landing gear", "response": "up", "accept": ["up"], "check": {"var": "gear_down", "op": "eq", "value": false} },
+        { "challenge": "Wing sweep", "response": "auto on", "accept": ["set", "check"] },
+        { "challenge": "Flaps", "response": "retract", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} }
+      ]
+    },
+    "before_landing": {
+      "title": "before landing",
+      "items": [
+        { "challenge": "MFD one", "response": "menu, VDI", "accept": ["set", "check"] },
+        { "challenge": "Speedbrakes", "response": "arm", "accept": ["set", "on"], "check": {"var": "spoilers_armed", "op": "eq", "value": true} },
+        { "challenge": "Wing sweep", "response": "auto", "accept": ["set", "check"] },
+        { "challenge": "At two fifty knots, landing gear", "response": "down", "accept": ["down"], "check": {"var": "gear_down", "op": "eq", "value": true} },
+        { "challenge": "At two twenty knots, flaps", "response": "extend full", "accept": ["down", "set"] }
+      ]
+    },
+    "after_landing": {
+      "title": "after landing",
+      "items": [
+        { "challenge": "At one hundred knots, nosewheel steering", "response": "toggle on", "accept": ["set", "check"] },
+        { "challenge": "Brakes", "response": "as required", "accept": ["set", "check"] },
+        { "challenge": "Wing sweep", "response": "auto off", "accept": ["set", "check"] },
+        { "challenge": "Wing sweep guard", "response": "up", "accept": ["set", "check"] },
+        { "challenge": "Wing sweep lever", "response": "oversweep, full rearward", "accept": ["set", "check"] },
+        { "challenge": "Speedbrakes", "response": "off", "accept": ["off", "set"], "check": {"var": "spoilers_armed", "op": "eq", "value": false} },
+        { "challenge": "Flaps", "response": "retract", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} }
+      ]
+    },
+    "shutdown": {
+      "title": "shut down",
+      "items": [
+        { "challenge": "Fuel pumps", "response": "toggle off", "accept": ["off", "set"] },
+        { "challenge": "MFD one and two", "response": "power off", "accept": ["off", "set"] },
+        { "challenge": "Throttles", "response": "lift together and move rearward to off, hold until RPMs drop to zero", "accept": ["off", "set"] },
+        { "challenge": "Left and right generators", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "External lights", "response": "off", "accept": ["off", "set"] }
+      ]
+    }
+  }
+}

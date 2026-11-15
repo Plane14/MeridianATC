@@ -1,0 +1,97 @@
+{
+  "_comment": "X-Plane 12 Piper PA-18 Super Cub manual checklists (x-plane.com/support/manuals/), mapped onto the standard names.",
+  "source": "X-Plane 12 Piper PA-18 Super Cub manual, checklists section",
+  "match": [ "pa-18", "pa18", "super cub" ],
+  "checklists": {
+    "after_start": {
+      "title": "cold and dark to engine start",
+      "items": [
+        { "challenge": "Cabin door", "response": "closed, window optional", "accept": ["check", "set"] },
+        { "challenge": "Parking brake", "response": "check on", "accept": ["on", "check"], "check": {"var": "parking_brake", "op": "eq", "value": true}, "note": "The manual notes the lever is unmodelled; a mapped key toggles it." },
+        { "challenge": "Fuel selector", "response": "both", "accept": ["set", "on"], "check": {"var": "fuel_selector", "op": "ne", "value": 0} },
+        { "challenge": "Master battery", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
+        { "challenge": "Mixture", "response": "full rich", "accept": ["set", "check"], "check": {"var": "mixture_pct", "op": "min", "value": 95} },
+        { "challenge": "Carburetor heat", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Throttle", "response": "idle", "accept": ["set", "check"] },
+        { "challenge": "Fuel primer", "response": "three cycles, cold weather only", "accept": ["set", "check"] },
+        { "challenge": "Starter button", "response": "push, push and release to start", "accept": ["set", "on"] },
+        { "challenge": "Fuel quantity", "response": "check", "accept": ["check"] },
+        { "challenge": "Oil pressure", "response": "check, within green arc", "accept": ["check", "green"] },
+        { "challenge": "Ammeter", "response": "check, charging", "accept": ["check"] },
+        { "challenge": "Avionics", "response": "on", "accept": ["on"], "check": {"var": "avionics_master", "op": "eq", "value": true} },
+        { "challenge": "Transponder", "response": "standby", "accept": ["set", "on"] }
+      ]
+    },
+    "taxi": {
+      "title": "before taxi",
+      "items": [
+        { "challenge": "Flight controls", "response": "checked, pitch roll yaw", "accept": ["check"] },
+        { "challenge": "Directional gyro", "response": "set from magnetic compass", "accept": ["set", "check"] },
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} }
+      ]
+    },
+    "before_takeoff": {
+      "title": "run up and takeoff",
+      "items": [
+        { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
+        { "challenge": "Oil temperature and pressure", "response": "check", "accept": ["check", "green"] },
+        { "challenge": "Throttle", "response": "eighteen hundred RPM", "accept": ["set", "check"] },
+        { "challenge": "Magnetos", "response": "test, RPM drop", "accept": ["check"] },
+        { "challenge": "Carburetor heat", "response": "test, RPM drop", "accept": ["check"] },
+        { "challenge": "Ammeter", "response": "check", "accept": ["check"] },
+        { "challenge": "Throttle", "response": "idle", "accept": ["set", "check"] },
+        { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} },
+        { "challenge": "Cabin door and window", "response": "check closed", "accept": ["check", "set"] },
+        { "challenge": "Mixture", "response": "check full rich", "accept": ["check", "set"], "check": {"var": "mixture_pct", "op": "min", "value": 95} },
+        { "challenge": "Carburetor heat", "response": "check off", "accept": ["off", "check"] },
+        { "challenge": "Elevator trim", "response": "set, slightly nose down with flap", "accept": ["set", "check"] },
+        { "challenge": "Flaps", "response": "set, one notch", "accept": ["set", "check"] },
+        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
+        { "challenge": "Magnetos", "response": "both", "accept": ["set", "check"] }
+      ]
+    },
+    "after_takeoff": {
+      "title": "after takeoff",
+      "items": [
+        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
+        { "challenge": "Throttle", "response": "set as required", "accept": ["set", "check"] }
+      ]
+    },
+    "cruise": {
+      "title": "cruise",
+      "items": [
+        { "challenge": "Mixture", "response": "lean as required", "accept": ["set", "check"] },
+        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} }
+      ]
+    },
+    "before_landing": {
+      "title": "before landing",
+      "items": [
+        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
+        { "challenge": "Carburetor heat", "response": "as required", "accept": ["set", "check"] },
+        { "challenge": "Mixture", "response": "full rich", "accept": ["set", "check"], "check": {"var": "mixture_pct", "op": "min", "value": 95} },
+        { "challenge": "Flaps", "response": "as required, full for landing", "accept": ["set", "down"] }
+      ]
+    },
+    "after_landing": {
+      "title": "after landing",
+      "items": [
+        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
+        { "challenge": "Carburetor heat", "response": "off", "accept": ["off", "set"] }
+      ]
+    },
+    "shutdown": {
+      "title": "parking",
+      "items": [
+        { "challenge": "Throttle", "response": "idle", "accept": ["set", "check"] },
+        { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
+        { "challenge": "Transponder", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Mixture", "response": "cut off", "accept": ["off", "set"], "check": {"var": "mixture_pct", "op": "max", "value": 5} },
+        { "challenge": "Fuel selector", "response": "off", "accept": ["off", "set"], "check": {"var": "fuel_selector", "op": "eq", "value": 0} },
+        { "challenge": "Avionics", "response": "off", "accept": ["off"], "check": {"var": "avionics_master", "op": "eq", "value": false} },
+        { "challenge": "Master battery", "response": "off", "accept": ["off"], "check": {"var": "battery_master", "op": "eq", "value": false} }
+      ]
+    }
+  }
+}

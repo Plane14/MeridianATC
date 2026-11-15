@@ -1,0 +1,22 @@
+{
+  "name": "Cirrus SR22",
+  "titleMatches": [ "sr22", "sr-22", "cirrus sr", "sr22t" ],
+  "flightTested": false,
+  "borrowedProfile": false,
+  "canAutofly": true,
+  "performance": {
+    "rotationSpeedKnots": 73,
+    "climbSpeedKnots": 101,
+    "cruiseSpeedKnots": 175,
+    "approachSpeedKnots": 80,
+    "touchdownSpeedKnots": 70,
+    "goAroundSpeedKnots": 90,
+    "landingFlaps": 4,
+    "maxBankDegrees": 30,
+    "climbRateFpm": 1200,
+    "descentRateFpm": 900,
+    "positiveGLimit": 3.8,
+    "negativeGLimit": -1.5
+  },
+  "_source": "X-Plane Cirrus SR22 POH: Vr ~73, Vy ~101, Vso ~60, best glide 88; class-typical approach/touchdown deltas."
+}

@@ -1,0 +1,23 @@
+{
+  "name": "Beechcraft Baron 58",
+  "titleMatches": [ "be58", "baron 58", "baron58", "beechcraft baron", "b58", "g58" ],
+  "flightTested": false,
+  "borrowedProfile": false,
+  "canAutofly": true,
+  "performance": {
+    "rotationSpeedKnots": 85,
+    "climbSpeedKnots": 105,
+    "cruiseSpeedKnots": 185,
+    "approachSpeedKnots": 95,
+    "touchdownSpeedKnots": 80,
+    "goAroundSpeedKnots": 105,
+    "takeoffFlaps": 2,
+    "landingFlaps": 4,
+    "maxBankDegrees": 30,
+    "climbRateFpm": 1700,
+    "descentRateFpm": 800,
+    "positiveGLimit": 3.8,
+    "negativeGLimit": -1.5
+  },
+  "_source": "X-Plane Baron 58 POH: Vr 85, Vx 92, Vy 105, Vso 74, Vs 80, Vfe/Vlo 152, cruise 202 max; takeoffFlaps 2 = approach detent (POH short-field config), landingFlaps 4 = full."
+}

@@ -477,10 +477,12 @@ class _The_phase_machine:
             hdg_err = abs((self.state.runway_heading
                             - (state.heading_true or 0.0) + 540.0)
                            % 360.0 - 180.0)
+            # The correction is applied at every offset: it self-nulls
+            # on the line, and a "near enough" band wider than the
+            # aligned gate would hold a parallel offset for ever
+            # instead of reaching the centreline.
             steer_hdg = (self.state.runway_heading
                          + err["correction_deg"]) % 360.0
-            if abs(err["offset_m"]) < 60.0:
-                steer_hdg = self.state.runway_heading
             d.parking_brake(False)
             self._steer(state, steer_hdg, self.performance.taxi_kt)
             if abs(err["offset_m"]) < 25.0 and hdg_err < 8.0:
@@ -503,14 +505,24 @@ class _The_phase_machine:
             err = auto_nav.align(state.latitude, state.longitude,
                                  self.state.runway_lat, self.state.runway_lon,
                                  self.state.runway_heading)
+            # The centreline is the runway's own line read in the
+            # direction being driven: the correction is applied at
+            # every offset -- it self-nulls on the paint -- so the
+            # backtrack is down the centreline, not a parallel track.
             steer_err = auto_nav.align(
                 state.latitude, state.longitude,
                 self.state.runway_lat, self.state.runway_lon, back_hdg)
             steer_hdg = (back_hdg + steer_err["correction_deg"]) % 360.0
-            if abs(steer_err["offset_m"]) < 60.0:
-                steer_hdg = back_hdg
+            # The end of the drive is a 180 on the pavement that is
+            # left: slow toward it the way a crew does, and slower
+            # still while a big offset is being corrected.
+            to_turn_m = max(0.0, err["along_m"] - self.BACKTRACK_TURN_M)
+            target_kt = min(self.performance.taxi_kt,
+                            max(4.0, 3.0 + to_turn_m * 0.05))
+            if abs(steer_err["offset_m"]) > 20.0:
+                target_kt = min(target_kt, 6.0)
             d.parking_brake(False)
-            self._steer(state, steer_hdg, self.performance.taxi_kt)
+            self._steer(state, steer_hdg, target_kt)
             if err["along_m"] <= self.BACKTRACK_TURN_M:
                 self._goto_sub("turn_out")
                 self._emit("info", "At the departure end: turning round",

@@ -1,0 +1,116 @@
+{
+  "_comment": "X-Plane 12 Airbus A330-300 manual checklists (x-plane.com/support/manuals/), mapped onto the standard names. The manual's cold-and-dark is a subset of the real procedure for the X-Plane model.",
+  "source": "X-Plane 12 Airbus A330-300 manual, checklists section",
+  "match": [ "a330-300", "airbus a330", "a330-343" ],
+  "checklists": {
+    "after_start": {
+      "title": "cold and dark to engine start",
+      "items": [
+        { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
+        { "challenge": "Transponder", "response": "standby", "accept": ["set", "off"] },
+        { "challenge": "Batteries one and two", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
+        { "challenge": "External power", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Beacon", "response": "on", "accept": ["on"], "check": {"var": "beacon_light", "op": "eq", "value": true} },
+        { "challenge": "Nav lights", "response": "on", "accept": ["on"], "check": {"var": "nav_light", "op": "eq", "value": true} },
+        { "challenge": "APU battery and master", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "APU", "response": "start; wait for APU avail", "accept": ["set", "on"] },
+        { "challenge": "APU generator", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "External power", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "ADIRS, IR and ADR one two three", "response": "on, rotaries nav", "accept": ["set", "on"] },
+        { "challenge": "PAX system", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "APU bleed", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "MCDU", "response": "flight plan, cruise flight level and V-speeds entered", "accept": ["set", "check"], "note": "The manual: without calculated V-speeds use the flap-retraction speed for V2, VR as V2 minus 5, V1 as V2 minus 10; takeoff flap 1 or 2." },
+        { "challenge": "Flight control systems", "response": "all on", "accept": ["on", "set"] },
+        { "challenge": "GPWS aural alerts", "response": "all on", "accept": ["on", "set"] },
+        { "challenge": "Hydraulic and fuel pumps", "response": "all on", "accept": ["on", "set"] },
+        { "challenge": "Electrical bus tie", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Engine two", "response": "start rotary to IGN start; engine start switch on; monitor until stabilized", "accept": ["set", "on"] },
+        { "challenge": "Engine one", "response": "start switch on; monitor until stabilized", "accept": ["set", "on"] },
+        { "challenge": "Engine start rotary", "response": "normal", "accept": ["set", "check"] },
+        { "challenge": "Engine generators one and two", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "APU generator and bleed", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Engine bleeds one and two", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Engine packs one and two", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "APU master", "response": "off", "accept": ["off", "set"] }
+      ]
+    },
+    "taxi": {
+      "title": "before taxi",
+      "items": [
+        { "challenge": "Seatbelt sign", "response": "on", "accept": ["on"], "check": {"var": "seatbelt_sign", "op": "eq", "value": true} },
+        { "challenge": "Taxi lights", "response": "taxi", "accept": ["on", "set"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
+        { "challenge": "Transponder", "response": "auto", "accept": ["on", "set"] },
+        { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} },
+        { "challenge": "Flaps", "response": "as required", "accept": ["set", "check"] },
+        { "challenge": "Speedbrakes", "response": "armed", "accept": ["set", "on"], "check": {"var": "spoilers_armed", "op": "eq", "value": true} },
+        { "challenge": "Auto brakes", "response": "max", "accept": ["set", "check"] }
+      ]
+    },
+    "before_takeoff": {
+      "title": "before takeoff",
+      "items": [
+        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
+        { "challenge": "Landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true} },
+        { "challenge": "Taxi lights", "response": "takeoff", "accept": ["set", "on"] },
+        { "challenge": "Strobes", "response": "on", "accept": ["on"], "check": {"var": "strobe_light", "op": "eq", "value": true} }
+      ]
+    },
+    "after_takeoff": {
+      "title": "after takeoff",
+      "items": [
+        { "challenge": "Landing gear", "response": "up", "accept": ["up"], "check": {"var": "gear_down", "op": "eq", "value": false} },
+        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
+        { "challenge": "Thrust", "response": "set as required", "accept": ["set", "check"] },
+        { "challenge": "Speedbrakes", "response": "disarmed", "accept": ["set", "check"], "check": {"var": "spoilers_armed", "op": "eq", "value": false} }
+      ]
+    },
+    "cruise": {
+      "title": "cruise",
+      "items": [
+        { "challenge": "Seatbelt sign", "response": "off", "accept": ["off"], "check": {"var": "seatbelt_sign", "op": "eq", "value": false} },
+        { "challenge": "Landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
+        { "challenge": "Taxi lights", "response": "off", "accept": ["off"], "check": {"var": "taxi_light", "op": "eq", "value": false} },
+        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} }
+      ]
+    },
+    "before_landing": {
+      "title": "before landing",
+      "items": [
+        { "challenge": "Seatbelt sign", "response": "on", "accept": ["on"], "check": {"var": "seatbelt_sign", "op": "eq", "value": true} },
+        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
+        { "challenge": "Landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true} },
+        { "challenge": "Taxi lights", "response": "takeoff", "accept": ["set", "on"] },
+        { "challenge": "Speedbrakes", "response": "armed", "accept": ["set", "on"], "check": {"var": "spoilers_armed", "op": "eq", "value": true} },
+        { "challenge": "Auto brakes", "response": "as required", "accept": ["set", "check"] },
+        { "challenge": "Flaps", "response": "as required", "accept": ["set", "down"] },
+        { "challenge": "Landing gear", "response": "down", "accept": ["down"], "check": {"var": "gear_down", "op": "eq", "value": true} }
+      ]
+    },
+    "after_landing": {
+      "title": "after landing",
+      "items": [
+        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
+        { "challenge": "Speedbrakes", "response": "disarmed", "accept": ["set", "check"], "check": {"var": "spoilers_armed", "op": "eq", "value": false} },
+        { "challenge": "Landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
+        { "challenge": "Taxi lights", "response": "taxi", "accept": ["set", "on"], "check": {"var": "taxi_light", "op": "eq", "value": true} }
+      ]
+    },
+    "shutdown": {
+      "title": "parking",
+      "items": [
+        { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
+        { "challenge": "Seatbelt sign", "response": "off", "accept": ["off"], "check": {"var": "seatbelt_sign", "op": "eq", "value": false} },
+        { "challenge": "Transponder", "response": "standby", "accept": ["set", "off"] },
+        { "challenge": "Engine start switches one and two", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Electrical bus tie", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Hydraulic and fuel pumps", "response": "all off", "accept": ["off", "set"] },
+        { "challenge": "GPWS aural alerts", "response": "all off", "accept": ["off", "set"] },
+        { "challenge": "Flight control systems", "response": "all off", "accept": ["off", "set"] },
+        { "challenge": "PAX system", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "ADIRS", "response": "IR, ADR and rotaries all off", "accept": ["off", "set"] },
+        { "challenge": "External power", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Beacon", "response": "off", "accept": ["off"], "check": {"var": "beacon_light", "op": "eq", "value": false} }
+      ]
+    }
+  }
+}

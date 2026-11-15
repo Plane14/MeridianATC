@@ -13,6 +13,8 @@ import time
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+
 from meridianatc.atc import auto_nav
 from meridianatc.navdata.build import haversine_nm
 
@@ -535,3 +537,40 @@ def test_move_asserts_gear_on_first_write_and_tracks_changes():
     st._move("CS1", {**pos, "on_ground": False, "altitude_ft": 3000.0,
                      "phase": "departed"})
     assert _gear_events(st._dll) == [_EV_GEAR_DOWN, _EV_GEAR_UP]
+
+
+def test_fo_backtracks_down_the_centreline():
+    fo = _fo_for_lineup()
+    fo.session = _fo_session(_path())
+    fo._runway_blocked = Mock(return_value=False)
+    # 600 m down the runway and ~5 m off the centreline: entering the
+    # backtrack and then driving it.
+    cos_lat = math.cos(math.radians(51.15))
+    lon = -0.19 + (600.0 / 111320.0) / cos_lat
+    lat = 51.15 - (5.0 / 111320.0)
+    fo._phase_line_up(_state(lat, lon), 100.0)
+    assert fo.state.sub == "backtrack"
+    fo._steer.assert_not_called()          # the entry tick only turns to it
+    fo._phase_line_up(_state(lat, lon), 101.0)
+    hdg, kt = fo._steer.call_args[0][1:]
+    # The steer carries a correction back toward the line, not a
+    # parallel track at the reciprocal heading.
+    assert hdg != 270.0
+    assert abs((hdg - 270.0 + 540.0) % 360.0 - 180.0) <= 60.0
+    # The turn is a long way off, so it rolls at the type's taxi speed.
+    assert kt == pytest.approx(fo.performance.taxi_kt)
+
+
+def test_fo_backtrack_slowing_for_the_turn():
+    fo = _fo_for_lineup()
+    fo.session = _fo_session(_path())
+    fo._runway_blocked = Mock(return_value=False)
+    fo.state.sub = "backtrack"
+    fo.state.sub_entered_at = time.monotonic()
+    cos_lat = math.cos(math.radians(51.15))
+    # 120 m from the numbers: the walk-up-to-the-180 speed, not taxi.
+    lon = -0.19 + (120.0 / 111320.0) / cos_lat
+    fo._phase_line_up(_state(51.15, lon), 100.0)
+    assert fo.state.sub == "backtrack"
+    _, kt = fo._steer.call_args[0][1:]
+    assert 3.5 <= kt < fo.performance.taxi_kt

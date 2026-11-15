@@ -1,0 +1,112 @@
+{
+  "_comment": "X-Plane 12 Boeing 747-400 manual checklists (x-plane.com/support/manuals/), mapped onto the standard names. The manual notes the checklist applies to the X-Plane model and may not be accurate for the real aircraft.",
+  "source": "X-Plane 12 Boeing 747-400 manual, checklists section",
+  "match": [ "boeing 747-400", "747-400" ],
+  "checklists": {
+    "after_start": {
+      "title": "cold and dark to engine start",
+      "items": [
+        { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
+        { "challenge": "Battery master", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
+        { "challenge": "Standby power", "response": "auto", "accept": ["set", "on"] },
+        { "challenge": "External power", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "APU", "response": "start, then on; wait for APU generator light", "accept": ["set", "on"] },
+        { "challenge": "Bus ties", "response": "auto", "accept": ["set", "on"] },
+        { "challenge": "Generator controls", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Hydraulic pump demands", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Hydraulic engine pumps and utility pumps", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Yaw dampers", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Pack selectors", "response": "normal", "accept": ["set", "check"] },
+        { "challenge": "Pack isolation valves", "response": "open", "accept": ["set", "check"] },
+        { "challenge": "APU bleed", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Engine bleeds", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "APU generators", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "External power", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Fuel pumps", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Fuel crossfeeds", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Hydraulic pump demands", "response": "auto, auto, auto, auxiliary", "accept": ["set", "check"] },
+        { "challenge": "Pack selectors", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Beacon", "response": "both", "accept": ["on", "set"], "check": {"var": "beacon_light", "op": "eq", "value": true} },
+        { "challenge": "Engine four", "response": "start; fuel control on at fifteen percent N-two; repeat engines one through three", "accept": ["set", "on"] },
+        { "challenge": "APU bleed", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "APU", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Pack selectors", "response": "normal", "accept": ["set", "check"] },
+        { "challenge": "Hydraulic pump demands", "response": "auto all", "accept": ["set", "check"] }
+      ]
+    },
+    "taxi": {
+      "title": "before taxi",
+      "items": [
+        { "challenge": "Seatbelt sign", "response": "on", "accept": ["on"], "check": {"var": "seatbelt_sign", "op": "eq", "value": true} },
+        { "challenge": "Elevator trim", "response": "takeoff", "accept": ["set", "check"] },
+        { "challenge": "Flaps", "response": "set, five degrees", "accept": ["set", "check"] },
+        { "challenge": "Flight controls", "response": "checked, pitch roll yaw", "accept": ["check"] },
+        { "challenge": "Taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} }
+      ]
+    },
+    "before_takeoff": {
+      "title": "before takeoff",
+      "items": [
+        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
+        { "challenge": "Transponder", "response": "transponder", "accept": ["on", "set"], "check": {"var": "transponder_state", "op": "in", "value": [3, 4]}, "note": "UNVERIFIED: TRANSPONDER STATE values are program-defined and unmeasured on a live sim." },
+        { "challenge": "Landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true} },
+        { "challenge": "Taxi lights", "response": "off", "accept": ["off"], "check": {"var": "taxi_light", "op": "eq", "value": false} }
+      ]
+    },
+    "after_takeoff": {
+      "title": "after takeoff",
+      "items": [
+        { "challenge": "Landing gear", "response": "up", "accept": ["up"], "check": {"var": "gear_down", "op": "eq", "value": false} },
+        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
+        { "challenge": "Thrust", "response": "set as required", "accept": ["set", "check"] }
+      ]
+    },
+    "cruise": {
+      "title": "cruise",
+      "items": [
+        { "challenge": "Seatbelt sign", "response": "off", "accept": ["off"], "check": {"var": "seatbelt_sign", "op": "eq", "value": false} },
+        { "challenge": "Landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
+        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} }
+      ]
+    },
+    "before_landing": {
+      "title": "before landing",
+      "items": [
+        { "challenge": "Seatbelt sign", "response": "on", "accept": ["on"], "check": {"var": "seatbelt_sign", "op": "eq", "value": true} },
+        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
+        { "challenge": "Landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true} },
+        { "challenge": "Speed brakes", "response": "set as required", "accept": ["set", "check"] },
+        { "challenge": "Flaps", "response": "set as required", "accept": ["set", "down"] },
+        { "challenge": "Landing gear", "response": "down", "accept": ["down"], "check": {"var": "gear_down", "op": "eq", "value": true} }
+      ]
+    },
+    "after_landing": {
+      "title": "after landing",
+      "items": [
+        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
+        { "challenge": "Speed brakes", "response": "retracted", "accept": ["set", "check"], "check": {"var": "spoilers_armed", "op": "eq", "value": false} },
+        { "challenge": "Landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
+        { "challenge": "Taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] }
+      ]
+    },
+    "shutdown": {
+      "title": "parking",
+      "items": [
+        { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
+        { "challenge": "Taxi lights", "response": "off", "accept": ["off"], "check": {"var": "taxi_light", "op": "eq", "value": false} },
+        { "challenge": "Seatbelt sign", "response": "off", "accept": ["off"], "check": {"var": "seatbelt_sign", "op": "eq", "value": false} },
+        { "challenge": "Transponder", "response": "standby", "accept": ["set", "off"] },
+        { "challenge": "Fuel control levers", "response": "down, off", "accept": ["off", "set"] },
+        { "challenge": "External power", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Beacon", "response": "off", "accept": ["off"], "check": {"var": "beacon_light", "op": "eq", "value": false} },
+        { "challenge": "Hydraulic pump demands", "response": "off, all", "accept": ["off", "set"] },
+        { "challenge": "Fuel crossfeeds", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Fuel pumps", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Utility pumps", "response": "off", "accept": ["off", "set"] }
+      ]
+    }
+  }
+}

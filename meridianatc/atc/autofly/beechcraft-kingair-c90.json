@@ -1,0 +1,22 @@
+{
+  "name": "Beechcraft King Air C90B",
+  "titleMatches": [ "be9l", "king air c90", "kingair c90", "c90b", "c90" ],
+  "flightTested": false,
+  "borrowedProfile": false,
+  "canAutofly": true,
+  "performance": {
+    "rotationSpeedKnots": 90,
+    "climbSpeedKnots": 140,
+    "cruiseSpeedKnots": 210,
+    "approachSpeedKnots": 100,
+    "touchdownSpeedKnots": 85,
+    "goAroundSpeedKnots": 100,
+    "landingFlaps": 4,
+    "maxBankDegrees": 25,
+    "climbRateFpm": 1955,
+    "descentRateFpm": 1200,
+    "positiveGLimit": 3.2,
+    "negativeGLimit": -1.3
+  },
+  "_source": "X-Plane King Air C90B POH: rotate at 90+, cruise climb SL-10k 140 KIAS, cruise 215/max 223, Vso 76, Vs 89, ROC 1955 fpm; takeoff flaps up per POH (class fallback)."
+}

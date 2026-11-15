@@ -1,0 +1,22 @@
+{
+  "name": "Cirrus Vision SF50",
+  "titleMatches": [ "sf50", "sf-50", "vision sf", "vision jet", "cirrus vision" ],
+  "flightTested": false,
+  "borrowedProfile": false,
+  "canAutofly": true,
+  "performance": {
+    "rotationSpeedKnots": 90,
+    "climbSpeedKnots": 160,
+    "cruiseSpeedKnots": 240,
+    "approachSpeedKnots": 95,
+    "touchdownSpeedKnots": 87,
+    "goAroundSpeedKnots": 120,
+    "landingFlaps": 4,
+    "maxBankDegrees": 25,
+    "climbRateFpm": 1800,
+    "descentRateFpm": 1500,
+    "positiveGLimit": 3.6,
+    "negativeGLimit": -1.4
+  },
+  "_source": "X-Plane Vision SF50 manual operational speeds: Vr 90, landing (full flap) 87, Vs1 86, Vso 67, Vs 70, Vx 91, Vy 160, Vbg 104, Vfe 170, Vno 300, Vne 320, Vlo 170, Vle 150."
+}
