@@ -202,15 +202,22 @@ class _Where_it_is:
         from .. import aircraft_class
         need_m = aircraft_class.min_runway_ft(
             flight.type_code or "") * 0.3048
+        # The runway's published length where it is published -- entries
+        # beyond it do not exist, and a remaining distance counted from a
+        # made-up figure is a wrong number on the frequency.
+        surface = getattr(self.field, "surfaces", {}).get(
+            flight.runway or self.field.departure_runway)
+        length_m = (surface[2] * self._M_PER_NM
+                    if surface else self.RUNWAY_LENGTH_M)
         legs = (layout.departure(stand, here, threshold, heading,
-                                 self.RUNWAY_LENGTH_M,
+                                 length_m,
                                  avoid=self._avoid_user(), closed=closed,
                                  need_m=need_m)
                 or layout.departure(stand, here, threshold, heading,
-                                    self.RUNWAY_LENGTH_M, closed=closed,
+                                    length_m, closed=closed,
                                     need_m=need_m)
                 or layout.departure(stand, here, threshold, heading,
-                                    self.RUNWAY_LENGTH_M, need_m=need_m))
+                                    length_m, need_m=need_m))
         # Joining the runway anywhere but the threshold is an
         # intersection departure: the taxiway it joins at is the last
         # the route names, and what the tower then says in the
@@ -223,8 +230,7 @@ class _Where_it_is:
                 names = layout.names_along(legs[0].nodes)
                 if names:
                     flight.intersection = names[-1]
-                    flight.remaining_m = max(
-                        0.0, self.RUNWAY_LENGTH_M - along)
+                    flight.remaining_m = max(0.0, length_m - along)
         return legs
 
     def _said_intersection(self, flight: Flight) -> str:
