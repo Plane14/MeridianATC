@@ -87,7 +87,7 @@ MAX_IAS_KT = 120.0             # a light single's VNE is near here; never above
 PATTERN_AGL_FT = 800.0         # the altitude the circuit is flown at
 FINAL_AGL_FT = 150.0           # where the approach becomes the landing
 LANDING_VS_FPM = -300.0        # the descent onto the spot
-APPROACH_FT_PER_NM = 850.0     # an eight-degree approach angle to the spot
+APPROACH_FT_PER_NM = 600.0     # a six-degree approach angle to the spot
 SPOT_NM = 0.03                 # "over the spot": inside this, the landing
 FLARE_AGL_FT = 25.0            # collective comes up under this
 CRUISE_CAP_FT = 6000.0         # a light single does not cruise at 39,000
@@ -484,6 +484,8 @@ class RotorcraftFlight:
     def _goto(self, stage: str) -> None:
         self.state.stage = stage
         self._land_hdg = None
+        self._spot_best_m = 1e9
+        self._side_want_kt = 0.0
         if stage != "landing":
             self._spot_nearest_nm = 99.0
         self.state.stage_entered_at = time.monotonic()
@@ -843,15 +845,18 @@ class RotorcraftFlight:
         reached inside three miles and landed wherever that put it --
         up to three miles short, on whatever was underneath. A
         helicopter approach is an angle to a spot: the circuit height
-        is held until the spot sits on an eight-degree line, the line is
+        is held until the spot sits on a six-degree line, the line is
         flown down to a hover height over it, and the speed comes off
         with the distance so the aircraft arrives at a walk.
         """
         gs = float(getattr(state, "ground_speed_kt", 0.0) or 0.0)
         height = HOVER_AGL_FT + dist * APPROACH_FT_PER_NM
         on_the_line = height < PATTERN_AGL_FT
-        speed = _clamp(12.0 + dist * 110.0, 12.0,
-                       self.state.ias_approach_kt)
+        # The speed a steady one-knot-a-second deceleration arrives at a
+        # walk from: forty-five knots still in hand at two hundred feet,
+        # the corner of the height-velocity curve, and off from there.
+        speed = min(math.sqrt(144.0 + 6600.0 * dist),
+                    self.state.ias_approach_kt)
         # The rate the line asks for at this groundspeed, never more
         # than the profile's descent onto a spot allows near the ground.
         vs = -gs * 101.3 * (APPROACH_FT_PER_NM / 6076.0) \
@@ -896,7 +901,24 @@ class RotorcraftFlight:
         # The flare: the rate comes off under FLARE_AGL_FT so the skids
         # meet the ground rather than the airframe meeting it fast.
         moving = abs(self._forward_kt(state)) > 8.0
-        if moving and agl > 6.0:
+        ahead, right = self._spot_offset_m(state)
+        off = math.hypot(ahead, right)
+        # Stopped short of the spot or carried past it: the last yards
+        # are hover-taxied, nose where it is. Given up -- and the
+        # landing made where the helicopter is -- if the spot is not
+        # coming closer, since a control that answers backwards on this
+        # model would otherwise be chased across the airfield.
+        best = off if moving             else min(getattr(self, "_spot_best_m", off), off)
+        self._spot_best_m = best
+        taxi = 20.0 < off < 600.0 and agl > 6.0 \
+            and self._elapsed() < 120.0 and off < best + 40.0
+        self._side_want_kt = _clamp(right * 0.1, -6.0, 6.0) if taxi else 0.0
+        if taxi:
+            self._fly(state, agl_target=max(HOVER_AGL_FT * 0.5,
+                                            min(agl, HOVER_AGL_FT)),
+                      ias_target=_clamp(ahead * 0.15, -8.0, 15.0),
+                      vs_target=0.0, throttle=THROTTLE_CRUISE)
+        elif moving and agl > 6.0:
             self._fly(state, agl_target=max(HOVER_AGL_FT * 0.5,
                                             min(agl, HOVER_AGL_FT)),
                       ias_target=0.0, vs_target=0.0,
@@ -978,6 +1000,15 @@ class RotorcraftFlight:
             return
         self._throttle(0)
         flare_agl = self._profile.auto_flare_ft or FLARE_AGL_FT
+        # The heights are the type's for its own rate of descent. One
+        # coming down faster than that is given the time instead: two
+        # seconds of flare, and half a second of pull, at the rate it
+        # actually has -- a quarter-second tick at twenty-four feet a
+        # second otherwise spends the whole flare in four passes.
+        sink_fps = max(0.0, -float(
+            getattr(state, "vertical_speed_fpm", 0.0) or 0.0)) / 60.0
+        flare_agl = max(flare_agl, sink_fps * 2.0)
+        pull_agl = max(10.0, sink_fps * 0.5)
         if agl > flare_agl:
             # Preserving the rotor: near-bottom collective, the type's
             # autorotation speed on the cyclic, pedals holding the track
@@ -1021,10 +1052,13 @@ class RotorcraftFlight:
                 pedal = demand * _pedal_dir(self)
                 if not self._send(PEDAL_SET, pedal):
                     self._send(TAIL_ROTOR_SET, pedal)
-        elif agl > 10.0:
+        elif agl > pull_agl:
             # The flare: aft cyclic trades speed for rotor, and the
             # collective starts up to cushion what is left of the descent.
-            self._send(CYCLIC_LONG_SET, -CYCLIC_TRIM_AIRBORNE)
+            # The more speed there is to trade, the more cyclic trades it.
+            ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
+            self._send(CYCLIC_LONG_SET, int(_clamp(
+                -CYCLIC_TRIM_AIRBORNE + 40.0 * ias, 0, CYCLIC_MAX)))
             self._collective(45.0)
         else:
             # The pull: everything the rotor has left, against the last
@@ -1187,10 +1221,17 @@ class RotorcraftFlight:
             slow = ias_target < 30.0
             measured = self._forward_kt(state) if slow else ias
             base = self.state.cyclic_trim
-            if slow:
+            arriving = self.state.stage in ("approach", "landing")
+            fade_kt = max(30.0, self.state.ias_approach_kt)                 if arriving else 30.0
+            if slow or (arriving and ias_target < fade_kt):
                 base = CYCLIC_TRIM_HOVER + (base - CYCLIC_TRIM_HOVER) \
-                    * ias_target / 30.0
+                    * ias_target / fade_kt
             err = ias_target - measured
+            if arriving and err < -4.0:
+                # Faster than the approach has room for: the spot does
+                # not move, so what is over the schedule is taken off
+                # three times as firmly as a cruise speed is chased.
+                err = -4.0 + (err + 4.0) * 3.0
             # A positive axis is aft cyclic -- the convention every
             # other write here already uses (the forward-flight trim is
             # negative, the low-G recovery's aft cyclic positive, and
@@ -1223,6 +1264,15 @@ class RotorcraftFlight:
                 if adapt is not None:
                     adapt.set("cyclic.trim",
                               round(self.state.cyclic_trim, 1))
+            elif not self._use_pids and not slow and abs(err) >= 3.0                     and abs(ias - self.state.last_ias_kt) < 0.15:
+                # Off speed and no longer closing on it: the open-loop
+                # law has no integral, so a model whose cruise cyclic is
+                # not the guessed trim sat a steady twenty knots off its
+                # speed. The trim is walked towards the error instead,
+                # slowly, and only while the speed has stopped moving.
+                self.state.cyclic_trim = _clamp(
+                    self.state.cyclic_trim - _clamp(err, -20.0, 20.0) * 1.5,
+                    -CYCLIC_MAX * 0.8, CYCLIC_MAX * 0.8)
             self._send(CYCLIC_LONG_SET, int(_clamp(axis, -axis_max,
                                                  axis_max)))
         elif not airborne:
@@ -1246,7 +1296,10 @@ class RotorcraftFlight:
             track = getattr(state, "track_true", None)
             if track is not None and gs >= 1.0:
                 sideways = gs * math.sin(math.radians(float(track) - hdg))
-                lat -= int(_clamp(sideways * 200.0, -2000.0, 2000.0))
+            else:
+                sideways = 0.0
+            sideways -= getattr(self, "_side_want_kt", 0.0)
+            lat -= int(_clamp(sideways * 200.0, -2000.0, 2000.0))
         self._send(CYCLIC_LAT_SET, int(_clamp(lat, -axis_max, axis_max)))
 
         # -- pedals: heading -------------------------------------------------
@@ -1360,13 +1413,20 @@ class RotorcraftFlight:
                            "autonomous.rotorcraft.overspeed")
         elif nr_min <= rpm <= nr_max:
             self._nr_warned = ""
-        if self.state.stage == "landing" and agl < 3.0                 and not getattr(state, "on_ground", True):
-            # Effectively landed but not flagged: kill the climb input.
-            # Only at the end of a landing, and only at skid height: the
-            # same cut at fifteen feet took the lift off a helicopter
-            # leaving the ground and dropped an arriving one the rest of
-            # the way.
-            self._collective(min(self.state.coll_trim, 30.0))
+        if self.state.stage == "landing" and agl < 10.0 and abs(vs) < 40.0:
+            # Effectively landed but not flagged -- a model whose height
+            # is read at the mast sits on its skids at a few feet. Known
+            # by having stopped coming down, not by the height: the old
+            # cut at fifteen feet took the lift off a helicopter leaving
+            # the ground and dropped an arriving one the rest of the way.
+            now = time.monotonic()
+            since = getattr(self, "_settled_at", None)
+            if since is None:
+                self._settled_at = now
+            elif now - since > 4.0:
+                self._collective(min(self.state.coll_trim, 30.0))
+        else:
+            self._settled_at = None
 
         # The rotor's load. High G is offloaded on the collective the
         # way the torque is; low G -- the mast-bump edge on a teetering
@@ -1424,6 +1484,18 @@ class RotorcraftFlight:
                 or not self.state.dest_lat:
             return None
         return state.distance_to(self.state.dest_lat, self.state.dest_lon)
+
+    def _spot_offset_m(self, state) -> tuple[float, float]:
+        """How far the spot is ahead of the nose and to its right, in
+        metres; nothing where there is no position to measure from."""
+        dist = self._distance_nm(state)
+        if dist is None:
+            return 0.0, 0.0
+        rel = math.radians(
+            state.bearing_to(self.state.dest_lat, self.state.dest_lon)
+            - float(getattr(state, "heading_true", 0.0) or 0.0))
+        return (dist * 1852.0 * math.cos(rel),
+                dist * 1852.0 * math.sin(rel))
 
     @staticmethod
     def _forward_kt(state) -> float:
