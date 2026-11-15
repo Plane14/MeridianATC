@@ -665,11 +665,14 @@ def plan_departure(layout: GroundLayout, latitude: float, longitude: float,
     # free-space intercept across the grass inside the turn.
     plan.lineup = [layout.to_latlon(*p) for p in legs[1].points]
     # Joining the runway anywhere but the threshold is an intersection
-    # departure: the taxiway it joins at is the last the route uses, and
-    # the pavement still ahead is what the pilot is owed to hear about.
+    # departure: the taxiway it commits on is the edge it steps onto the
+    # pavement with (the route's last name when that edge is unlabeled),
+    # and the pavement still ahead of the line-up is what the pilot is
+    # owed to hear about.
     along = getattr(legs[1], "entry_along_m", None)
+    joined_on = getattr(legs[1], "entry_name", "")
     if along is not None and along > INTERSECTION_M and plan.names:
-        plan.intersection = plan.names[-1]
+        plan.intersection = joined_on or plan.names[-1]
         plan.remaining_m = max(0.0, length_m - along)
     return plan, ""
 

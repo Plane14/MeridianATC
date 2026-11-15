@@ -219,8 +219,9 @@ class _Where_it_is:
                 or layout.departure(stand, here, threshold, heading,
                                     length_m, need_m=need_m))
         # Joining the runway anywhere but the threshold is an
-        # intersection departure: the taxiway it joins at is the last
-        # the route names, and what the tower then says in the
+        # intersection departure: the taxiway it commits on is the edge
+        # it steps onto the pavement with (the route's last name when
+        # that edge is unlabeled), and what the tower then says in the
         # line-up and the takeoff clearance (JO 7110.65 3-7-1).
         flight.intersection = ""
         flight.remaining_m = 0.0
@@ -228,8 +229,10 @@ class _Where_it_is:
             along = getattr(legs[1], "entry_along_m", None)
             if along is not None and along > INTERSECTION_M:
                 names = layout.names_along(legs[0].nodes)
-                if names:
-                    flight.intersection = names[-1]
+                joined_on = getattr(legs[1], "entry_name", "")
+                name = joined_on or (names[-1] if names else "")
+                if name:
+                    flight.intersection = name
                     flight.remaining_m = max(0.0, length_m - along)
         return legs
 

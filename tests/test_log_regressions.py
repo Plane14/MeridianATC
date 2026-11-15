@@ -2044,6 +2044,7 @@ def test_the_taxi_leg_stops_short_of_a_route_that_crosses_the_runway():
     layout.xy = {node: (float(i * 50), across_of[node])
                  for i, node in enumerate(nodes)}
     layout.runway_nodes = {"r0", "r1"}
+    layout.edges = {}
     layout.entries = lambda *a: [(150.0, "f1")]
     layout.nearest_node = lambda *a: "n0"
     layout.route = lambda start, entry, avoid=None: list(nodes)

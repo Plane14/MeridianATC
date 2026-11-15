@@ -728,18 +728,25 @@ class GroundLayout:
         taxi_out = self._taxiing(out, start_xy if stand is None else None,
                                  push=stand is not None)
         line_up = self._taxiing(onto, None, extra=lined, face=heading)
-        # Where the aeroplane first commits to the pavement, in metres
-        # from the threshold: how the clearance knows it has an
-        # intersection departure, and how far it still has to roll
-        # (atc.taxi.TaxiPlan.intersection). It is NOT the priced ``entry``
-        # -- where the route stepped onto the strip earlier to reach it,
-        # the taxiway the aeroplane stood on (the last the route names)
-        # meets the runway at the first on-pavement node, and that is
-        # what the clearance has to name and measure.
-        joined = onto[first_idx] if first_idx < len(onto) else onto[-1]
-        joined_along, _ = self.runway_frame(*self.xy[joined],
-                                            threshold, heading)
-        line_up.entry_along_m = max(0.0, joined_along)
+        # An intersection departure's two facts, and they are NOT the
+        # same place (atc.taxi.TaxiPlan.intersection):
+        #  * the taxiway it joins on -- the edge into the first
+        #    on-pavement node, because a labeled connector past the hold
+        #    is a different name from the taxiway the hold sits on, and
+        #    where the route cut across the strip to get here, it is
+        #    where it stepped on, not the priced ``entry``;
+        #  * the runway it rolls with -- measured from where it lines
+        #    up, ``along`` past the entry, not from wherever it touched
+        #    the pavement: a route that enters far out and runs back
+        #    has the whole runway again at the line-up.
+        line_up.entry_name = ""
+        if 0 < first_idx < len(onto):
+            a, b = onto[first_idx - 1], onto[first_idx]
+            for other, _metres, runway, label in self.edges.get(a, ()):
+                if other == b and label and not runway:
+                    line_up.entry_name = label
+                    break
+        line_up.entry_along_m = max(0.0, along + PAST_ENTRY_M)
         return taxi_out, line_up
 
     def _metres(self, nodes: list[object]) -> float:
