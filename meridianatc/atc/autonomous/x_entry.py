@@ -233,6 +233,10 @@ class _Entry:
         self._taxi_reasks = 0
         self._off_path_since = 0.0
         self._self_plan_at = 0.0
+        # The brake check belongs to a leg's first roll: a new flight
+        # gets the pedal squeeze its taxi deserves.
+        self._brake_checked = False
+        self._brake_check_until = 0.0
         self._seed_control_learning()
 
     def _seed_control_learning(self) -> None:
