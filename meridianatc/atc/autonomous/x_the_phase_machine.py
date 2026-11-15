@@ -1414,6 +1414,28 @@ class _The_phase_machine:
             # taxi-in: a retraction during the rollout is an after-
             # landing item, not something done at a hundred knots.
             gs = state.ground_speed_kt or 0.0
+            from .. import tailwheel
+            tail = tailwheel.is_tailwheel(state)
+            # Keep it on the centreline until slow. The rudder does the
+            # holding at rollout pace while the nosewheel's share fades
+            # out under it -- thrown in whole at rollout speed it is the
+            # swerve a landing is lost to, not saved by. The pedal is
+            # computed before the brakes are pressed: on a taildragger
+            # the same demand steers the inside brake, so it has to
+            # exist first.
+            rudder = 0.0
+            if self.state.runway_heading > 0:
+                rudder = self._ground_directional(
+                    state, self._centreline_heading(state, 6.0), gs,
+                    rate_cap=4.0)
+                d.rudder(rudder)
+                d.steering(rudder * _nws_fade(gs))
+            if tail and gs < 40.0:
+                # The tail comes up with the aeroplane's speed: the
+                # stick stays back as the rollout slows, pinning the
+                # wheel that still steers when the rudder has stopped
+                # answering.
+                d.elevator(0.6)
             if gs > self.performance.taxi_kt + 5.0:
                 # Reverse out to sixty knots where a fast aeroplane has
                 # it -- then the wheel brakes, graduated with speed the
@@ -1431,7 +1453,19 @@ class _The_phase_machine:
                 # are eased while it is in and do the stopping as it
                 # comes out -- graduated with speed the way the
                 # autobrake detents a crew actually selects are.
-                d.brakes(0.4 if gs > 60.0 else 0.7 if gs > 30.0 else 1.0)
+                brake = 0.4 if gs > 60.0 else 0.7 if gs > 30.0 else 1.0
+                if not tail:
+                    d.brakes(brake)
+                else:
+                    # Full pedal on a taildragger at thirty knots is
+                    # the ground loop's invitation: the cap keeps the
+                    # tail down, and the inside wheel takes the
+                    # steering the fading rudder cannot.
+                    brake = min(brake, 0.45)
+                    add_left, add_right = tailwheel.brake_assist(
+                        rudder, gs)
+                    d.brakes_split(min(1.0, brake + add_left),
+                                   min(1.0, brake + add_right))
             else:
                 # Slow enough: brakes off, the boards stowed and
                 # disarmed -- a crew does not taxi to the stand with
@@ -1450,16 +1484,6 @@ class _The_phase_machine:
                 self._transition(AutonomousPhase.TAXI_IN)
                 self._goto_sub("taxi")
                 return
-            # Keep it on the centreline until slow. The rudder does the
-            # holding at rollout pace while the nosewheel's share fades
-            # out under it -- thrown in whole at rollout speed it is the
-            # swerve a landing is lost to, not saved by.
-            if self.state.runway_heading > 0:
-                rudder = self._ground_directional(
-                    state, self._centreline_heading(state, 6.0), gs,
-                    rate_cap=4.0)
-                d.rudder(rudder)
-                d.steering(rudder * _nws_fade(gs))
             return
 
     def _phase_taxi_in(self, state, now: float) -> None:

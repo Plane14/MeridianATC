@@ -472,7 +472,11 @@ class PilotSpeech:
         parts = [body]
         if farewell and self.book.good_day:
             parts.append(self.book.good_day)
-        parts.append(self._sign(aircraft, True))
+        # The pilot abbreviates the callsign only after the station has:
+        # that is the rule (Doc 4444 12.3.1.9), and the latch it hinges
+        # on is ``Aircraft.kept_short``, set the first time the
+        # controller's own side of the exchange went short.
+        parts.append(self._sign(aircraft, aircraft.kept_short))
         return _join(*parts) + "."
 
     # ------------------------------------------------------------------

@@ -130,6 +130,9 @@ for _radio in (1, 2):
 EXTRA = {
     "xp_engine_type": "sim/aircraft/prop/acf_en_type[0]",
     "helicopter": "sim/aircraft2/metadata/is_helicopter",
+    # Conventional gear, for the taxi law: a taildragger taxis and rolls
+    # out differently (meridianatc.atc.tailwheel).
+    "tail_dragger": "sim/aircraft/gear/acf_is_taildragger",
     "xp_transponder": RADIOS + "transponder_mode",
     "ident": "sim/cockpit2/radios/indicators/transponder_id",
     "squawk": RADIOS + "transponder_code",
@@ -405,6 +408,8 @@ class XPlaneSource:
         state.engine_type = {0: 0, 1: 0, 2: 5, 3: 4, 4: 1, 5: 1, 6: 4,
                              7: 1, 8: 5, 9: 5, 10: 5}.get(
             int(values.get("xp_engine_type", -1)), -1)
+        state.tail_dragger = (bool(values["tail_dragger"])
+                              if "tail_dragger" in values else None)
         state.category = "Helicopter" if values.get("helicopter") else "Airplane"
         if state.category == "Helicopter":
             state.engine_type = 3 if state.engine_type == 5 else state.engine_type

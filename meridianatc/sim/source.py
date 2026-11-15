@@ -468,6 +468,10 @@ class SimConnectSource:
         ("GENERAL_ENG_COMBUSTION:1", "engines_running", "bool", "slow"),
         ("BRAKE_PARKING_POSITION", "parking_brake", "bool", "slow"),
         ("GEAR_HANDLE_POSITION", "gear_down", "bool", "slow"),
+        # Conventional or tricycle gear, for the taxi handling the FO
+        # flies (meridianatc.atc.tailwheel). A model that does not answer
+        # it leaves the field None, not False.
+        ("IS_TAIL_DRAGGER", "tail_dragger", "bool", "slow"),
         ("FLAPS_HANDLE_INDEX", "flaps_index", "int", "slow"),
         # For the crew rather than for the controller. Both are standard
         # variables present on nearly every aircraft; one that does not model

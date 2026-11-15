@@ -204,6 +204,7 @@ class Callouts:
         else:
             out += self._takeoff(previous, state, situation)
         out += self._climb(previous, state, situation)
+        out += self._taxi(previous, state, situation)
         out += self._approach(previous, state, situation)
         if situation.rules == "vfr":
             out += self._circuit(previous, state, situation)
@@ -215,6 +216,24 @@ class Callouts:
             return []
         self._said.add(cue)
         return [Call(cue, values, why)]
+
+    def _taxi(self, previous, state, s: Situation) -> list[Call]:
+        """The pedal check a taxi begins with, for the pilot-flown
+        aeroplane: the first roll away from the stand is where the
+        brakes are pressed once, and the monitoring pilot calls the
+        result. The first-officer-flown one does the squeeze itself in
+        ``autonomous.x_taxi`` -- this cue is the same moment called
+        out, for both."""
+        out: list[Call] = []
+        if not state.on_ground or self._landed:
+            return out
+        if s.phase not in (Phase.PUSHBACK, Phase.TAXI_OUT):
+            return out
+        before = previous.ground_speed_kt or 0.0
+        now = state.ground_speed_kt or 0.0
+        if _crossed_up(before, now, 3.0):
+            out += self._once("brake_check")
+        return out
 
     def _height(self, state) -> float:
         agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)

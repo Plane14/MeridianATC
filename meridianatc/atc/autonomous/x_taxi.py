@@ -37,6 +37,13 @@ class _Taxi:
     REASK_AFTER_S = 60.0
     REASK_MAX = 2
 
+    # The pedal check every taxi begins with: once the aeroplane is
+    # rolling, the brakes are squeezed once -- a pedal that answers
+    # nothing is found on the ramp, not at the holding bars.
+    BRAKE_CHECK_KT = 3.0
+    BRAKE_CHECK_S = 1.5
+    BRAKE_CHECK_PRESS = 0.4
+
     def _taxi_along_path(self, state, outbound: bool) -> None:
         """Follow ``session.taxi_path`` at taxi speed, or hold short.
 
@@ -181,7 +188,32 @@ class _Taxi:
                 or self._ground_still(state, time.monotonic()):
             self._stop(state)
         else:
-            self._steer(state, steer["heading"], target_kt)
+            now = time.monotonic()
+            # The brake check rides the steering rather than replacing
+            # it: the pedals are squeezed once as the roll begins, and
+            # the aeroplane keeps tracking the line through it.
+            until = getattr(self, "_brake_check_until", 0.0)
+            if not getattr(self, "_brake_checked", False):
+                if not until and gs >= self.BRAKE_CHECK_KT:
+                    until = self._brake_check_until = now + \
+                        self.BRAKE_CHECK_S
+                if until and now >= until:
+                    self._brake_checked = True
+                    self._brake_check_until = 0.0
+                    until = 0.0
+            desired = steer["heading"]
+            if not rejoining and turn < 20.0 and gs > 4.0:
+                from .. import tailwheel as _tw
+                if _tw.is_tailwheel(state):
+                    # The nose hides the taxiway ahead: a taildragger
+                    # taxis a slow S so the pilot sees past it.
+                    desired = (desired
+                               + _tw.s_turn_offset(now)) % 360.0
+            self._steer(state, desired, target_kt)
+            if until:
+                self.director.throttle(0.0)
+                self.director.brakes_split(self.BRAKE_CHECK_PRESS,
+                                           self.BRAKE_CHECK_PRESS)
 
         # Outbound: stop short of a runway crossing the route was cleared
         # to hold at, and of the split point of a cut taxi.

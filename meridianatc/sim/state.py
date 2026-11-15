@@ -56,6 +56,10 @@ class AircraftState:
     engines_running: bool = False
     parking_brake: bool = False
     gear_down: bool = True
+    # IS TAIL DRAGGER (SimConnect) / acf_is_taildragger (X-Plane). None
+    # means the source never answered, and callers then fall back to the
+    # type code and title (meridianatc.atc.tailwheel.is_tailwheel).
+    tail_dragger: bool | None = None
     flaps_index: int = 0
     # The two switches the crew talk about. Nothing on the radio needs them --
     # a controller never mentions the seatbelt sign -- but the first officer

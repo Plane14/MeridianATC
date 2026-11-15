@@ -2203,6 +2203,7 @@ GROUP_SIDE: dict[str, str] = {
 CALLOUT_WORDS: dict[str, dict[str, str]] = {
     "en": {
         "airspeed_alive": "Airspeed alive.",
+        "brake_check": "Brakes checked.",
         "eighty": "Eighty knots.",
         "one_hundred": "One hundred knots.",
         "v_one": "V one.",
@@ -2239,6 +2240,7 @@ CALLOUT_WORDS: dict[str, dict[str, str]] = {
     },
     "fr": {
         "airspeed_alive": "Badin actif.",
+        "brake_check": "Freins contrôlés.",
         "eighty": "Quatre-vingts nœuds.",
         "one_hundred": "Cent nœuds.",
         "v_one": "V un.",
@@ -2275,6 +2277,7 @@ CALLOUT_WORDS: dict[str, dict[str, str]] = {
     },
     "de": {
         "airspeed_alive": "Fahrt kommt.",
+        "brake_check": "Bremsen geprüft.",
         "eighty": "Achtzig Knoten.",
         "one_hundred": "Hundert Knoten.",
         "v_one": "V eins.",
@@ -2312,6 +2315,7 @@ CALLOUT_WORDS: dict[str, dict[str, str]] = {
     },
     "nl": {
         "airspeed_alive": "Snelheid komt op.",
+        "brake_check": "Remmen gecontroleerd.",
         "eighty": "Tachtig knopen.",
         "one_hundred": "Honderd knopen.",
         "v_one": "V één.",

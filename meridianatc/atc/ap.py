@@ -509,13 +509,27 @@ class FlightDirector:
         the plain ``BRAKES`` event at least presses both together.
         """
         position = max(0.0, min(1.0, position))
-        value = int(round(-16383.0 + position * 32766.0))
-        left = self.send(b"AXIS_LEFT_BRAKE_SET", value)
-        right = self.send(b"AXIS_RIGHT_BRAKE_SET", value)
+        return self.brakes_split(position, position)
+
+    def brakes_split(self, left_pos: float, right_pos: float) -> bool:
+        """The toe brakes, independently -- differential braking.
+
+        0 released .. 1 held hard on each pedal. Equal demands are what
+        :meth:`brakes` already does; the split exists for the work only
+        one wheel can do: a castered tailwheel's tight turn is flown on
+        the inside brake, and a correction on rollout wants one pedal,
+        not both (meridianatc.atc.tailwheel.brake_assist).
+        """
+        left_pos = max(0.0, min(1.0, left_pos))
+        right_pos = max(0.0, min(1.0, right_pos))
+        left = self.send(b"AXIS_LEFT_BRAKE_SET",
+                         int(round(-16383.0 + left_pos * 32766.0)))
+        right = self.send(b"AXIS_RIGHT_BRAKE_SET",
+                          int(round(-16383.0 + right_pos * 32766.0)))
         if not (left or right):
             # No absolute brake axes: a hold can still be asked for by
             # stepping, which is better than rolling through the stop.
-            for _ in range(0 if position < 0.5 else 6):
+            for _ in range(0 if max(left_pos, right_pos) < 0.5 else 6):
                 self.send(b"BRAKES", 0)
         return left or right
 

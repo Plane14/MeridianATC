@@ -594,6 +594,23 @@ class _The_checklist_answered:
         # taildragger on rudder alone and a tricycle gear on STEERING_SET
         # both get their turn.
         d.steering(sent * _nws_fade(gs))
+        # Stick position for the wind, the way the AFH has it held on
+        # the ground: aileron up on the windward wing in a quartering
+        # headwind, everything diving away from a quartering tailwind,
+        # and on a taildragger the elevator back so the tail stays down.
+        # Taxi-speed only: above it the elevator and aileron belong to
+        # the roll, not the wind.
+        tail = False
+        if state.on_ground:
+            from .. import tailwheel
+            tail = tailwheel.is_tailwheel(state)
+            if gs < 25.0:
+                elevator, aileron = tailwheel.taxi_controls(
+                    getattr(state, "ambient_wind_direction", 0.0) or 0.0,
+                    getattr(state, "ambient_wind_velocity", 0.0) or 0.0,
+                    hdg, tail)
+                d.elevator(elevator)
+                d.aileron(aileron)
         # Taxi and rollout speeds are throttle jobs, not AP jobs -- and
         # progressive ones: the further below target, the more asked for,
         # and the lever is walked to the answer at a hand's rate rather
@@ -662,10 +679,18 @@ class _The_checklist_answered:
             # Fast is brought down on the brakes, not coasted out on the
             # idle: a squeeze that grows with how far over the speed is,
             # released again once it is not.
-            if gs > target_kt + 4.0:
-                d.brakes(min(0.5, 0.08 + (gs - target_kt) * 0.03))
+            brake = (min(0.5, 0.08 + (gs - target_kt) * 0.03)
+                     if gs > target_kt + 4.0 else 0.0)
+            # The inside wheel joins the steering where it can help: a
+            # taildragger at taxi speed, whose free-castering tail and
+            # unblown rudder have nothing to give, and the apron pivot
+            # turn either gear flies on the inside brake.
+            if tail or self._turn_commit:
+                add_left, add_right = tailwheel.brake_assist(sent, gs)
+                d.brakes_split(max(brake, add_left),
+                               max(brake, add_right))
             else:
-                d.brakes(0.0)
+                d.brakes(brake)
 
     def _stop(self, state, target_kt: float = 0.0) -> None:
         """Roll out to a stop: idle, braking, controls centred."""

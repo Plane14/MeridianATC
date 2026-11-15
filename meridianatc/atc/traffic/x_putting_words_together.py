@@ -188,7 +188,13 @@ class _Putting_words_together:
             self.field.advisory if position == "CTAF"
             else self.field.afis if position == "INFO" else None)
         station_name = station.callsign_in(flight.language) if station else ""
-        speaker = (flight.aircraft.for_language(flight.language).spoken_short
+        callsign = flight.aircraft.for_language(flight.language)
+        # A pilot's abbreviated callsign is the station's abbreviation
+        # first: Doc 4444 lets it be used only after the aeronautical
+        # station has addressed the aircraft that way, and kept_short is
+        # the latch that records that it has.
+        speaker = ((callsign.spoken_short if flight.aircraft.kept_short
+                    else callsign.spoken_full)
                    if from_pilot else station_name)
         try:
             if from_pilot:
