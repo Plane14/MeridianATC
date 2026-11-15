@@ -213,7 +213,7 @@ class _Departures:
             flight.next_at = now + 4.0
             return
 
-        if phase == "go_around":
+        if phase in ("go_around", "missed_hold"):
             self._after_the_go_around(flight, now)
 
     # Where a departure that has been handed on stops being drawn: far enough

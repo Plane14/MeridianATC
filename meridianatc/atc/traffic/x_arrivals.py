@@ -197,7 +197,7 @@ class _Arrivals:
             flight.done = True
             return
 
-        if phase == "go_around":
+        if phase in ("go_around", "missed_hold"):
             self._after_the_go_around(flight, now)
 
     # How long an arrival stays on its stand before it is taken away.

@@ -436,3 +436,118 @@ def test_an_airliner_uses_the_ramp_when_the_gates_are_full():
     layout = _gate_and_ramp_layout()
     stands = layout.free_stands(True, [], {0})
     assert [s.index for s in stands] == [1]
+
+
+# -- the missed approach's hold -------------------------------------------------
+
+def test_a_missed_ending_in_a_hold_is_held_not_rejoined():
+    from meridianatc.atc.approaches import Approach, FieldApproaches
+    from meridianatc.atc.flying import Command
+    from meridianatc.atc.procedure_legs import ProcedureLeg
+    injector = _injector()
+    injector.field = SimpleNamespace(ident="LPPR", elevation_ft=100.0)
+    injector.random = random.Random(0)
+    known = FieldApproaches("LPPR")
+    legs = (ProcedureLeg(0, "TF", fix_ident="PR001", lat=41.30, lon=-8.70),
+            ProcedureLeg(1, "HM", fix_ident="PR001", lat=41.30, lon=-8.70))
+    known.add_procedure(Approach("ILS", "17", missed_ft=2000.0,
+                                 missed_legs=legs))
+    injector.approach_data = {"LPPR": known}
+    flight = _ifl_flight()
+    injector._carry_out(flight, Command(kind="go_around"), 100.0)
+    assert flight.missed_hold is True
+    assert flight.missed_hold_alt_ft == 2000.0
+
+
+def test_the_missed_hold_orbits_then_comes_back():
+    """A coded hold is orbited a while, then the stream takes it back."""
+    injector = _injector()
+    injector.field = SimpleNamespace(elevation_ft=0.0)
+    injector.random = random.Random(0)
+    flight = _going_around(5.0, 500.0)
+    flight.missed_nav = SimpleNamespace(
+        guidance=lambda f: SimpleNamespace(done=True))
+    flight.missed_hold = True
+    flight.missed_hold_until = 0.0
+    injector._after_the_go_around(flight, 100.0)
+    assert flight.phase == "missed_hold"
+    assert flight.missed_hold_until > 100.0
+    injector._after_the_go_around(flight, flight.missed_hold_until + 1.0)
+    assert flight.phase == "inbound"
+    assert flight.arriving is True
+    assert flight.missed_hold is False
+    assert flight.missed_nav is None
+
+
+def test_a_missed_without_a_hold_rejoins_straight_away():
+    """Legs with no hold terminator go back for another approach at once."""
+    injector = _injector()
+    injector.field = SimpleNamespace(elevation_ft=0.0)
+    injector.random = random.Random(0)
+    flight = _going_around(5.0, 500.0)
+    flight.missed_nav = SimpleNamespace(
+        guidance=lambda f: SimpleNamespace(done=True))
+    flight.missed_hold = False
+    injector._after_the_go_around(flight, 100.0)
+    assert flight.phase == "inbound"
+    assert flight.missed_nav is None
+
+
+# -- the departure entry ---------------------------------------------------------
+
+def _runway_layout():
+    """A strip with a threshold-side entry and a midfield one, the stand
+    beside the midfield and the taxi to the threshold end a long way."""
+    from meridianatc.atc.ground import (
+        GroundLayout, PATH_PARKING, PATH_RUNWAY, PATH_TAXI)
+    points = [
+        (0, 0, 0.0, 60.0),       # 0
+        (0, 0, 200.0, 0.0),      # 1 junction near the threshold
+        (0, 0, 200.0, 60.0),     # 2 taxi node by it
+        (0, 0, 1700.0, 0.0),     # 3 midfield junction
+        (0, 0, 1700.0, 60.0),    # 4 taxi node by the stand
+        (0, 0, 0.0, 0.0),        # 5 runway, threshold end
+        (0, 0, 3500.0, 0.0),     # 6 runway, far end
+        (0, 0, 0.0, -700.0),     # 7 the detour's first leg
+        (0, 0, 1700.0, -700.0),  # 8 the detour's far leg
+    ]
+    parkings = [(8, 0, "", "", 1, 0, 90.0, 20.0, 1700.0, 80.0)]
+    paths = [
+        (PATH_RUNWAY, 0, 0, "", 5, 1, -1),
+        (PATH_RUNWAY, 0, 0, "", 1, 3, -1),
+        (PATH_RUNWAY, 0, 0, "", 3, 6, -1),
+        (PATH_TAXI, 0, 0, "", 2, 1, -1),
+        (PATH_TAXI, 0, 0, "", 4, 3, -1),
+        (PATH_TAXI, 0, 0, "D", 4, 8, -1),
+        (PATH_TAXI, 0, 0, "D", 8, 7, -1),
+        (PATH_TAXI, 0, 0, "D", 7, 0, -1),
+        (PATH_TAXI, 0, 0, "D", 0, 2, -1),
+        (PATH_PARKING, 0, 0, "", 4, 0, -1),
+    ]
+    return GroundLayout("TEST", 51.0, 0.0, points, parkings, paths, ["D"])
+
+
+def test_the_entry_is_the_cheapest_drive_not_the_nearest_threshold():
+    """An entry beside the aeroplane beats the long taxi to the threshold
+    end -- a three-kilometre taxi is the slow way to a short backtrack."""
+    layout = _runway_layout()
+    legs = layout.departure(layout.stands[0], (1700.0, 80.0),
+                            (0.0, 0.0), 90.0, 3500.0)
+    assert legs is not None
+    _taxi_out, line_up = legs
+    runway_nodes = [n for n in line_up.nodes
+                    if n in layout.runway_nodes]
+    assert ("p", 3) in runway_nodes and ("p", 1) not in runway_nodes
+
+
+def test_an_entry_too_short_for_the_takeoff_is_not_used():
+    """The remaining strip past the midfield entry is no departure for a
+    heavy; only the threshold-side entry is asked for then."""
+    layout = _runway_layout()
+    legs = layout.departure(layout.stands[0], (1700.0, 80.0),
+                            (0.0, 0.0), 90.0, 3500.0, need_m=2200.0)
+    assert legs is not None
+    _taxi_out, line_up = legs
+    runway_nodes = [n for n in line_up.nodes
+                    if n in layout.runway_nodes]
+    assert ("p", 1) in runway_nodes

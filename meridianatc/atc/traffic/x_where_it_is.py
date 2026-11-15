@@ -194,13 +194,18 @@ class _Where_it_is:
         here = layout.to_xy(flight.latitude, flight.longitude)
         closed = self._closed_runway_edges(
             flight.runway or self.field.departure_runway)
+        from .. import aircraft_class
+        need_m = aircraft_class.min_runway_ft(
+            flight.type_code or "") * 0.3048
         return (layout.departure(stand, here, threshold, heading,
                                  self.RUNWAY_LENGTH_M,
-                                 avoid=self._avoid_user(), closed=closed)
+                                 avoid=self._avoid_user(), closed=closed,
+                                 need_m=need_m)
                 or layout.departure(stand, here, threshold, heading,
-                                    self.RUNWAY_LENGTH_M, closed=closed)
+                                    self.RUNWAY_LENGTH_M, closed=closed,
+                                    need_m=need_m)
                 or layout.departure(stand, here, threshold, heading,
-                                    self.RUNWAY_LENGTH_M))
+                                    self.RUNWAY_LENGTH_M, need_m=need_m))
 
     # An arrival inside this is close enough that a departure is kept at the
     # holding point rather than put on the runway in front of it. Lining one
@@ -398,9 +403,35 @@ class _Where_it_is:
             if not missed_nav.guidance(flight).done:
                 flight.next_at = now + 3.0
                 return
+            if flight.phase == "missed_hold":
+                # Orbiting the missed's hold fix: kept until the clock
+                # runs out, which is how long the tower takes to work it
+                # back into the arrivals.
+                if now < flight.missed_hold_until:
+                    flight.next_at = now + 3.0
+                    return
+                flight.missed_hold = False
+            elif getattr(flight, "missed_hold", False):
+                # The procedure ends in a hold: the aeroplane keeps the
+                # racetrack a couple of minutes rather than turning
+                # straight back onto final.
+                flight.phase = "missed_hold"
+                flight.missed_hold_until = \
+                    now + self.random.uniform(120.0, 300.0)
+                flight.next_at = now + 3.0
+                return
             flight.missed_nav = None
             # The missed is flown: back into the stream for another
             # approach rather than round the circuit again.
+            flight.phase = "inbound"
+            flight.arriving = True
+            flight.step = 0
+            flight.next_at = now + 5.0
+            return
+        if flight.phase == "missed_hold":
+            # A hold left over with no navigator (cleared in between):
+            # back to the arrivals it goes.
+            flight.missed_hold = False
             flight.phase = "inbound"
             flight.arriving = True
             flight.step = 0

@@ -337,9 +337,12 @@ class _Taxi:
                 (getattr(self.session, "departure_runway", ""),
                  getattr(self.session, "arrival_runway", ""), runway),
                 weather=self._field_weather(airport))
+            from .. import aircraft_class
+            need_m = aircraft_class.min_runway_ft(
+                getattr(state, "type_code", "") or "") * 0.3048
             plan, _why = taxiplan.plan_departure(
                 layout, state.latitude, state.longitude, runway, lines,
-                busy=busy)
+                busy=busy, need_m=need_m)
         except Exception:
             log.debug("self-planned taxi at %s raised", airport.ident,
                       exc_info=True)

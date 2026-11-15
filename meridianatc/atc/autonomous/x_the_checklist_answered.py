@@ -87,6 +87,15 @@ class _The_checklist_answered:
             # A toggle event has no "on": asked again it would flip the
             # switch back off. One ask per item is all it gets.
             return True
+        if check.var == "parking_brake" \
+                and ((state.ground_speed_kt or 0.0) > 5.0
+                     or not getattr(state, "on_ground", True)):
+            # The brake is never set while the aeroplane is rolling or
+            # flying: an item answered here fought the roll's release
+            # every tick, power against the park brake for the whole
+            # strip. The answer reports what is; the switch is the
+            # phase machine's own.
+            return True
         asked = self._switch_for(state, check.var, expected)
         if asked:
             self._checklist_sent.add(check.var)

@@ -582,7 +582,8 @@ def busy_runways(layout: GroundLayout | None, navdb, ident: str,
 def plan_departure(layout: GroundLayout, latitude: float, longitude: float,
                    runway: str, lines: list[RunwayLine],
                    avoid: set[object] = frozenset(),
-                   busy: set[str] = frozenset()
+                   busy: set[str] = frozenset(),
+                   need_m: float = 0.0
                    ) -> tuple[TaxiPlan | None, str]:
     """From where the aeroplane is to the holding point of ``runway``.
 
@@ -613,18 +614,21 @@ def plan_departure(layout: GroundLayout, latitude: float, longitude: float,
     closed_along = closed_runway_edges(layout, lines, along=in_use) \
         if closed else set()
     legs = layout.departure(stand, (x, z), threshold, heading, length_m,
-                            closed=closed)
+                            closed=closed, need_m=need_m)
     if legs is None and closed_along != closed:
         legs = layout.departure(stand, (x, z), threshold, heading, length_m,
-                                closed=closed_along)
+                                closed=closed_along, need_m=need_m)
     if legs is None and closed:
-        legs = layout.departure(stand, (x, z), threshold, heading, length_m)
+        legs = layout.departure(stand, (x, z), threshold, heading, length_m,
+                              need_m=need_m)
     if avoid and legs is not None:
         around = layout.departure(stand, (x, z), threshold, heading,
-                                  length_m, avoid=set(avoid), closed=closed)
+                                  length_m, avoid=set(avoid), closed=closed,
+                                  need_m=need_m)
         if around is None and closed:
             around = layout.departure(stand, (x, z), threshold, heading,
-                                      length_m, avoid=set(avoid))
+                                      length_m, avoid=set(avoid),
+                                      need_m=need_m)
         # Round somebody only by a way a controller would give. Avoiding an
         # aeroplane stopped at the entry found a two-kilometre backtrack from
         # the far end of the runway; the ordinary route, with them gone by

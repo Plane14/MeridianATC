@@ -73,7 +73,14 @@ HOLD_OFF_CENTRELINE_M = 45.0
 # A taxiway joining the runway further than this from the threshold is an
 # intersection departure. Allowed -- it is what happens -- but the one nearest
 # the end is always preferred.
-ENTRY_SEARCH_M = 900.0
+# The drive onto the runway ends this far past the entry node -- far
+# enough for the aeroplane to be on the centreline pointing down it.
+PAST_ENTRY_M = 40.0
+# What the drive on the pavement itself costs per metre, and the 180 at
+# the departure end: the way an entry is priced against the next one
+# down the strip. The taxi leg's own pace is TAXI_MS, below.
+BACKTRACK_MS = 5.0
+TURN_S = 45.0
 
 # Taxi speeds, in metres a second. A straight is taken at twenty knots, a
 # corner at ten, and a pushback at a walking pace. They were fifteen and seven,
@@ -630,25 +637,37 @@ class GroundLayout:
     def departure(self, stand: Stand | None, start_xy: tuple[float, float],
                   threshold: tuple[float, float], heading: float,
                   length_m: float, avoid: set[object] | None = None,
-                  closed: set[tuple[object, object]] | None = None
+                  closed: set[tuple[object, object]] | None = None,
+                  need_m: float = 0.0
                   ) -> tuple[Taxiing, Taxiing] | None:
         """From a stand (or wherever it is) to the holding point, and from
         there onto the runway.
 
         Two legs, because they are two clearances: taxi to the holding point,
         and then -- later, when the tower says so -- line up.
+
+        The entry is the cheapest of them in time -- taxi on its taxiways
+        at taxi pace, then whatever of the runway it has to drive to the
+        threshold at backtrack pace, plus the turn-round -- among the ones
+        whose runway left still flies the takeoff (``need_m``, the type's
+        takeoff-distance figure; zero asks only for somewhere to roll).
+        An intersection entry near the aeroplane then beats the long taxi
+        to full length, where before the entry nearest the threshold won
+        whatever the drive to it cost -- which, when the only way to it
+        was the strip itself, was the whole runway, backtracked.
         """
-        entries = [(along, node) for along, node in
-                   self.entries(threshold, heading, length_m)
-                   if along <= ENTRY_SEARCH_M] or \
-            self.entries(threshold, heading, length_m)[:1]
+        found = self.entries(threshold, heading, length_m)
+        entries = [(along, node) for along, node in found
+                   if length_m - along - PAST_ENTRY_M >= need_m] \
+            or found[:1]
         if stand is not None:
             start = ("k", stand.index)
         else:
             start = self.nearest_node(*start_xy)
         if start is None:
             return None
-        for _along, entry in entries:
+        best = None
+        for along, entry in entries:
             nodes = (self.route(start, entry, avoid, closed=closed)
                      if closed else self.route(start, entry, avoid))
             if len(nodes) < 2:
@@ -684,18 +703,35 @@ class GroundLayout:
                 continue
             out = nodes[:hold_at + 1]
             onto = nodes[hold_at:]
-            # Line up pointing down the runway a little past the entry, on
-            # the centreline, rather than stopping sideways across it.
-            ex, ez = self.xy[entry]
-            along, _ = self.runway_frame(ex, ez, threshold, heading)
-            rad = math.radians(heading)
-            lined = (threshold[0] + (along + 40.0) * math.sin(rad),
-                     threshold[1] + (along + 40.0) * math.cos(rad))
-            taxi_out = self._taxiing(out, start_xy if stand is None else None,
-                                     push=stand is not None)
-            line_up = self._taxiing(onto, None, extra=lined, face=heading)
-            return taxi_out, line_up
-        return None
+            # The entry's price is the whole drive: taxi at taxi pace to
+            # the hold, then the strip it commits to -- the pavement leg,
+            # the drive back to the threshold from wherever it enters,
+            # and the turn-round at the end -- all at backtrack pace.
+            cost = (self._metres(out) / TAXI_MS
+                    + (self._metres(onto) + along + PAST_ENTRY_M)
+                    / BACKTRACK_MS
+                    + TURN_S)
+            if best is None or cost < best[0]:
+                best = (cost, out, onto, along, entry)
+        if best is None:
+            return None
+        _cost, out, onto, along, entry = best
+        # Line up pointing down the runway a little past the entry, on
+        # the centreline, rather than stopping sideways across it.
+        ex, ez = self.xy[entry]
+        rad = math.radians(heading)
+        lined = (threshold[0] + (along + PAST_ENTRY_M) * math.sin(rad),
+                 threshold[1] + (along + PAST_ENTRY_M) * math.cos(rad))
+        taxi_out = self._taxiing(out, start_xy if stand is None else None,
+                                 push=stand is not None)
+        line_up = self._taxiing(onto, None, extra=lined, face=heading)
+        return taxi_out, line_up
+
+    def _metres(self, nodes: list[object]) -> float:
+        """Ground length of a node sequence in the layout's metres."""
+        pairs = zip(nodes, nodes[1:], strict=False)
+        return sum(math.dist(self.xy[a], self.xy[b])
+                   for a, b in pairs if a in self.xy and b in self.xy)
 
     def vacate(self, x: float, z: float, heading: float,
                threshold: tuple[float, float], runway_heading: float,

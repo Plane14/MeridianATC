@@ -288,6 +288,12 @@ class Flight:
     # which keeps the old circuit -- and None again once it is flown,
     # when the flight comes back for another approach.
     missed_nav: object | None = None
+    # A missed that ends in a coded hold is held, not flown through: the
+    # fix's racetrack is orbited until this clock runs out, at the
+    # procedure's altitude -- then the stream takes it back in.
+    missed_hold: bool = False
+    missed_hold_until: float = 0.0
+    missed_hold_alt_ft: float = 0.0
     # Told to hurry and by when that expires: a higher climb/roll speed
     # and shorter pauses until then, 0 if it was never told.
     expedite_until: float = 0.0
@@ -558,6 +564,9 @@ _POSITION_OF_PHASE: dict[str, str] = {
     "downwind": "TWR",
     "base": "TWR",
     "go_around": "TWR",
+    # And the hold the published missed ends in -- still the tower's
+    # aeroplane, orbiting until it is worked back in.
+    "missed_hold": "TWR",
 }
 
 # The legs of a circuit, which are flown rather than timed.

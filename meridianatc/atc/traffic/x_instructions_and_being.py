@@ -116,6 +116,7 @@ class _Instructions_and_being:
             flight.assigned_heading = None
             flight.assigned_altitude_ft = None
             flight.assigned_speed_kt = None
+            flight.missed_hold = False
             flight.missed_nav = self._missed_for(flight)
             flight.next_at = now + self.random.uniform(20.0, 35.0)
         elif kind == "expedite":
@@ -194,5 +195,16 @@ class _Instructions_and_being:
                 or self.field.elevation_ft
                 + flight.performance.pattern_agl_ft),
             fallback_speed_kt=flight.performance.climb_kt)
-        return nav if nav.active else None
+        if not nav.active:
+            return None
+        # A missed that ends in a coded hold is a hold, not a rejoin:
+        # the aeroplane keeps the fix's racetrack at the procedure's
+        # altitude until it is worked back into the stream.
+        last = approach.missed_legs[-1]
+        flight.missed_hold = last.path in ("HA", "HF", "HM")
+        flight.missed_hold_alt_ft = (
+            approach.missed_ft
+            or self.field.elevation_ft + flight.performance.pattern_agl_ft)
+        flight.missed_hold_until = 0.0
+        return nav
 

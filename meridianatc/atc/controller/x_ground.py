@@ -216,9 +216,15 @@ class _Ground:
                 occupied=occupied, taken=taken,
                 runway=session.arrival_runway or session.touchdown_runway,
                 busy=busy, min_radius_m=min_radius)
+        # An entry is only a way in if the runway left past it still flies
+        # the takeoff: the type's own distance figure decides that.
+        need_m = 0.0
+        if getattr(state, "type_code", ""):
+            need_m = aircraft_class.min_runway_ft(state.type_code) * 0.3048
         return taxiplan.plan_departure(
             layout, state.latitude, state.longitude, session.departure_runway,
-            lines, avoid=taxiplan.avoid_near(layout, occupied), busy=busy)
+            lines, avoid=taxiplan.avoid_near(layout, occupied), busy=busy,
+            need_m=need_m)
 
     def _safely_plan(self, session, station, state, *, inbound: bool,
                      weather=None):

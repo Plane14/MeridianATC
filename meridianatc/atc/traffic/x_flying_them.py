@@ -218,6 +218,20 @@ class _Flying_them:
                     if guide.speed_kt:
                         target.speed_kt = guide.speed_kt
                     target.intent = "missed approach"
+        elif phase == "missed_hold":
+            # Orbiting the missed's hold fix: the navigator's own
+            # racetrack, looped so it is flown round and round until the
+            # tower's clock lets it back into the arrivals.
+            nav = getattr(flight, "missed_nav", None)
+            bare = list(getattr(nav, "_bare", None) or [])
+            from ..auto_nav import path_steering
+            steer = path_steering(
+                flight.latitude, flight.longitude,
+                bare + bare[:4] if len(bare) > 1 else bare) if bare else None
+            target.heading = (steer or {}).get("heading") or heading
+            target.altitude_ft = flight.missed_hold_alt_ft
+            target.speed_kt = performance.climb_kt * 0.9
+            target.intent = "holding on the missed approach"
         elif phase == "joining":
             target.heading = self._bearing_to_join(flight, heading)
             target.speed_kt = performance.cruise_kt * 0.85
