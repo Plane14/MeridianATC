@@ -10,6 +10,7 @@ The 12.1.1+ Web API (8086) is deliberately not needed by this link.
 from __future__ import annotations
 
 import contextlib
+import logging
 import math
 import socket
 import struct
@@ -25,6 +26,8 @@ FT = 3.280839895
 KT = 1.943844492
 LB = 2.204622622
 RADIOS = "sim/cockpit2/radios/actuators/"
+
+log = logging.getLogger(__name__)
 
 # attribute: (dataref, multiplier); booleans retain their dataclass type.
 DATAREFS = {
@@ -199,6 +202,13 @@ for _engine in range(16):
         f"sim/aircraft/prop/acf_min_pitch[{_engine}]"
     EXTRA[f"acf_max_pitch{_engine}"] = \
         f"sim/aircraft/prop/acf_max_pitch[{_engine}]"
+    # What the software governor in xpcontrols runs against while the
+    # prop override is latched: the prop's own speed and the design
+    # point a full lever asks for.
+    EXTRA[f"prop_rpm{_engine}"] = \
+        f"sim/cockpit2/engine/indicators/prop_speed_rpm[{_engine}]"
+    EXTRA[f"acf_des_rpm{_engine}"] = \
+        f"sim/aircraft/prop/acf_des_rpm_prp[{_engine}]"
 for _tank in range(9):
     EXTRA[f"tank{_tank}"] = f"sim/flightmodel/weight/m_fuel[{_tank}]"
     EXTRA[f"tank_ratio{_tank}"] = f"sim/aircraft/overflow/acf_tank_rat[{_tank}]"
@@ -546,6 +556,10 @@ class XPlaneSource:
                     self._relocated_until = now + 2.0
             self._last_geo = (state.latitude, state.longitude, now)
         state.relocated = now < self._relocated_until
+        # The prop governor's tick: the override the lever writes latch
+        # carries no RPM limiting, so the controls walk the blade angle
+        # toward the lever's commanded RPM every read.
+        self._controls.govern_props()
         return state
 
     def read_now(self, attribute):
@@ -694,6 +708,35 @@ class XPlaneSource:
         except Exception:
             return None
         return list(entries) if entries else None
+
+    def load_fms_plan(self, route) -> bool:
+        """The route into the simulator's own FMS, over the UDP channel.
+
+        X-Plane 12.06 and later take an ``FPLN`` datagram carrying a
+        v1100-format flight plan -- the exact text
+        ``XPLMLoadFMSFlightPlan`` would take, procedures and all -- so
+        the box ends up flying what the engine thinks was filed. Older
+        builds silently drop the packet, which is a polite no. The
+        plugin's next status read carries the new entries back, which
+        is the verification this write cannot otherwise have.
+        """
+        try:
+            from ..atc.route import to_fms
+
+            text = to_fms(route)
+        except Exception:
+            log.debug("the .fms text could not be built", exc_info=True)
+            return False
+        if not text or not self.connected:
+            return False
+        payload = text.encode("utf-8", "replace")
+        # The reference client pads the plan to 1400 bytes; a longer one
+        # is sent whole and its own datagram length ends it.
+        try:
+            self._packet(b"FPLN\0" + payload.ljust(max(1400, len(payload))))
+            return True
+        except OSError:
+            return False
 
     def fuel_tanks(self):
         if not self.connected:

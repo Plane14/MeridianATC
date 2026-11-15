@@ -318,8 +318,11 @@ def test_lever_writes_reach_the_engines_use_path(xp):
     eventually(lambda: wrote(eng + "ENGN_thro_use[0]", .75)
                and wrote(eng + "ENGN_thro_use[1]", .75)
                and wrote(eng + "ENGN_mixt[0]", .9)
-               # Lever forward is fine pitch: the range's low stop.
-               and wrote(eng + "POINT_pitch_deg_use[0]", 8.0))
+               # Lever forward seeds the governor's blade angle on
+               # the coarse side of fine -- the loop walks it to the
+               # lever's RPM from there, never the bare minimum stop.
+               and wrote(eng + "POINT_pitch_deg_use[0]",
+                         8 + 37 * 0.15))
     # The levers still move -- the cockpit's handle and the engine's
     # ear are written together.
     act = "sim/cockpit2/engine/actuators/"
@@ -340,8 +343,63 @@ def test_lever_writes_reach_the_engines_use_path(xp):
         peer.missing.add(f"sim/aircraft/prop/acf_max_pitch[{i}]")
         source._values.pop(f"acf_min_pitch{i}", None)
         source._values.pop(f"acf_max_pitch{i}", None)
+    # Re-seeded from scratch, the half lever's seed is the fallback
+    # range's same coarse-side angle.
+    source._controls._prop_deg.clear()
     assert source.set_variable("GENERAL ENG PROPELLER LEVER POSITION:1", 50)
-    eventually(lambda: wrote(eng + "POINT_pitch_deg_use[0]", 26.5))
+    eventually(lambda: wrote(eng + "POINT_pitch_deg_use[0]",
+                             8 + 37 * (0.15 + 0.55 * 0.5)))
+
+
+def test_the_software_governor_holds_the_levers_rpm(xp):
+    # The override carries no governor: the lever asks an RPM and the
+    # loop walks the blade angle to it. The parked Baron's 3000-plus
+    # RPM was the fixed angle left at the fine stop under power.
+    peer, source = xp
+    for i in range(16):
+        peer.values[f"sim/aircraft/prop/acf_min_pitch[{i}]"] = 8.0
+        peer.values[f"sim/aircraft/prop/acf_max_pitch[{i}]"] = 45.0
+        peer.values[f"sim/aircraft/prop/acf_des_rpm_prp[{i}]"] = 2700.0
+        peer.values[
+            f"sim/cockpit2/engine/indicators/prop_speed_rpm[{i}]"] = 800.0
+    eventually(lambda: source._values.get("acf_des_rpm0") == 2700.0
+               and source._values.get("prop_rpm0") == 800.0)
+    assert source.set_variable(
+        "GENERAL ENG PROPELLER LEVER POSITION:1", 100)
+    eng = "sim/flightmodel/engine/"
+
+    def last():
+        return [v for p, v in peer.writes
+                if p == eng + "POINT_pitch_deg_use[0]"][-1]
+
+    eventually(lambda: any(p == eng + "POINT_pitch_deg_use[0]"
+                           for p, _v in peer.writes))
+    seed = source._controls._prop_deg[0]
+    # 800 RPM against a 2700 ask: the angle fines up, the only way a
+    # governor adds RPM.
+    for _ in range(40):
+        source._controls.govern_props()
+    assert source._controls._prop_deg[0] < seed
+    assert source._controls._prop_deg[0] == pytest.approx(8.0)
+    # 3000 on the clock -- the overspeed the fixed angle drew -- and
+    # it coarsens back past the seed instead.
+    peer.values[
+        "sim/cockpit2/engine/indicators/prop_speed_rpm[0]"] = 3000.0
+    eventually(lambda: source._values.get("prop_rpm0") == 3000.0)
+    for _ in range(60):
+        source._controls.govern_props()
+    assert source._controls._prop_deg[0] > seed
+    # Lever back is the feather ask: the angle winds the whole way to
+    # the coarse stop and stays there.
+    assert source.set_variable(
+        "GENERAL ENG PROPELLER LEVER POSITION:1", 0)
+    for _ in range(120):
+        source._controls.govern_props()
+    assert source._controls._prop_deg[0] == pytest.approx(45.0)
+    # The handoff's release stands the governor down with the override.
+    source._send(b"RELEASE_OVERRIDES", 0)
+    assert not source._controls._prop_lever
+    assert not source._controls._prop_deg
 
 
 def test_steering_scales_by_nosewheel_authority(xp):

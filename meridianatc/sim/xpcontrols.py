@@ -151,6 +151,12 @@ class XPlaneControls:
         self.source = source
         self.pending = {}
         self.autothrottle = None
+        # The prop lever's commanded ratio and the blade angle the
+        # software governor is currently holding per engine -- the
+        # loop in ``govern_props`` owns them while the prop override
+        # is latched.
+        self._prop_lever = {}
+        self._prop_deg = {}
 
     def clear(self):
         self.pending.clear()
@@ -161,6 +167,8 @@ class XPlaneControls:
         """Hand every overridden channel back to the pilot's hardware."""
         for flag in OVERRIDES:
             self.source._dref(OVR + flag, 0)
+        self._prop_lever.clear()
+        self._prop_deg.clear()
 
     def _release_stick_overrides(self):
         """Hand back the yoke, pedals, tiller and toe brakes only.
@@ -191,15 +199,84 @@ class XPlaneControls:
             return 8.0, 45.0
         return float(lo), float(hi)
 
+    def _pitch_seed(self, index, ratio):
+        """The blade angle the governor starts a lever's demand from:
+        coarse side of fine, so a demand the loop has not yet wound
+        under-revs rather than over-revs."""
+        lo, hi = self._pitch_range(index)
+        return lo + (hi - lo) * (0.15 + 0.55 * max(0.0, 1.0 - ratio))
+
     def _pitch_use(self, index, ratio, lever=True):
         """The blade angle the engine reads under the prop override.
 
-        A prop lever is an RPM lever: forward asks fine pitch, back
-        asks coarse. A collective is a blade-angle lever: up asks more
-        pitch. The governor's own stops are the scale."""
-        lo, hi = self._pitch_range(index)
-        deg = hi - ratio * (hi - lo) if lever else lo + ratio * (hi - lo)
-        return self.source._dref(f"{PITCH_USE}[{index}]", deg)
+        A collective is a blade-angle lever -- up asks more pitch, and
+        the write lands raw. A prop lever is an RPM lever, and the
+        override carries none of the governor that normally answers
+        it: ``govern_props`` walks this angle toward the lever's
+        commanded RPM every read, so what is written here is only the
+        seed the loop takes over from -- writing the governor's
+        minimum stop directly was the parked Baron's 3000-plus RPM.
+        """
+        if not lever:
+            lo, hi = self._pitch_range(index)
+            deg = lo + ratio * (hi - lo)
+            return self.source._dref(f"{PITCH_USE}[{index}]", deg)
+        self._prop_lever[index] = ratio
+        if index not in self._prop_deg:
+            self._prop_deg[index] = self._pitch_seed(index, ratio)
+        return self.source._dref(f"{PITCH_USE}[{index}]",
+                                 self._prop_deg[index])
+
+    # The governor's slew limits: fast enough to take a lever from
+    # flight-idle to takeoff inside a couple of seconds, slow enough
+    # that one tick's RPM readback does not ring through the next.
+    _GOV_GAIN = 0.004          # degrees of pitch per RPM of error per step
+    _GOV_STEP = 0.6            # degrees per step at most
+    _GOV_DEADBAND = 25.0       # RPM close enough to commanded
+    _GOV_MIN_RPM = 200.0       # below this the engine is not turning yet
+    _GOV_RATED_RPM = 2700.0    # prop design point when acf does not publish one
+
+    def govern_props(self):
+        """One step of the prop governor the override replaced.
+
+        ``override_prop_pitch`` hands the engines a raw blade angle
+        with nothing behind it: a fixed angle overspeeds at power and
+        lugs in the descent. The lever asks an RPM -- full lever is
+        the prop's design point -- and this walks the angle the way
+        the real governor does until the prop is there. It runs from
+        the source's ``read``, which is the flight model's own tick,
+        and only on engines a prop lever has ever been written for:
+        a collective's blade-angle writes are already direct control
+        and keep them.
+        """
+        if not self._prop_lever:
+            return
+        with self.source._lock:
+            values = dict(self.source._values)
+        for index, ratio in list(self._prop_lever.items()):
+            deg = self._prop_deg.get(index)
+            if deg is None:
+                deg = self._prop_deg[index] = self._pitch_seed(index, ratio)
+            rpm = values.get(f"prop_rpm{index}")
+            if rpm is None or rpm < self._GOV_MIN_RPM:
+                # Not turning: a stopped or starting engine wants the
+                # seed's fine pitch, not a governor winding to the stop.
+                deg = self._prop_deg[index] = self._pitch_seed(index, ratio)
+                self.source._dref(f"{PITCH_USE}[{index}]", deg)
+                continue
+            design = values.get(f"acf_des_rpm{index}") \
+                or self._GOV_RATED_RPM
+            err = ratio * design - rpm
+            if abs(err) <= self._GOV_DEADBAND:
+                continue
+            lo, hi = self._pitch_range(index)
+            step = max(-self._GOV_STEP, min(self._GOV_STEP,
+                                          err * self._GOV_GAIN))
+            # Under speed the angle fines, over speed it coarsens.
+            deg = max(lo, min(hi, deg - step))
+            if deg != self._prop_deg[index]:
+                self._prop_deg[index] = deg
+                self.source._dref(f"{PITCH_USE}[{index}]", deg)
 
     def _pitch_use_all(self, ratio, lever=False):
         return all(self._pitch_use(i, ratio, lever) for i in range(16))

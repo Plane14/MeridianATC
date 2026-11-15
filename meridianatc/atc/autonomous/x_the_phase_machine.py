@@ -518,6 +518,20 @@ class _The_phase_machine:
                 return
 
         elif sub == "backtrack":
+            # Somebody turning onto the strip while the aeroplane is
+            # driving it is met head-on at taxi speed, not at takeoff
+            # speed -- which does not make it survivable, only slower.
+            # The backtrack holds where it is and the tower hears why.
+            blocked = self._runway_blocked()
+            if blocked != getattr(self, "_backtrack_blocked", False):
+                self._backtrack_blocked = blocked
+                if blocked:
+                    self._emit("info",
+                               "Runway occupied: holding on the strip",
+                               "autonomous.backtrack.blocked")
+            if blocked:
+                self._stop(state)
+                return
             # Down the runway toward the departure end, pointed at it:
             # the centreline at the reciprocal heading, until the
             # threshold end is near enough to turn round on.
