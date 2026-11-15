@@ -185,6 +185,18 @@ class _Running_them:
             # is the one place nobody may wait, so whatever of ours is in the
             # way goes -- never the pilot, never somebody else's aeroplane.
             blocker = self._in_the_way(flight, x, z)
+            if blocker == "you":
+                # Nose to nose with the pilot: it is ours that moves, and the
+                # way it can is the way it came -- off the runway by the
+                # first exit behind it, or towed when the pavement offers
+                # none. A live one goes back to the feed instead.
+                if getattr(flight, "_vacated_for_user", False):
+                    self._take_off_the_runway(flight, now)
+                elif self._vacate_the_runway(flight, now):
+                    flight._vacated_for_user = True
+                else:
+                    self._take_off_the_runway(flight, now)
+                return
             if isinstance(blocker, Flight) and not blocker.observed \
                     and blocker.ground_speed_kt <= 1.0:
                 log.info("%s is stuck on the runway behind %s; %s is taken "
@@ -222,6 +234,79 @@ class _Running_them:
         # drove across in front of a departure on its takeoff roll.
         return abs(across) <= self.ON_RUNWAY_NM and \
             -0.15 <= along <= RUNWAY_LENGTH_NM
+
+    def _vacate_the_runway(self, flight: Flight, now: float) -> bool:
+        """Send ours off the runway the way it came, to a stand.
+
+        The resolution for the one deadlock the usual answer cannot touch:
+        a departure nose to nose with the pilot on the strip cannot be taken
+        away (the pilot sees an aeroplane, not a gap) and cannot go forward
+        (the pilot is there). What a tower does is vacate it -- turn round,
+        off at the first exit behind, and back to a stand. False when the
+        layout offers no way to do it.
+        """
+        layout = self.ground
+        runway = self._runway_xy(
+            flight.runway or self.field.departure_runway
+            or self.field.arrival_runway)
+        if layout is None or runway is None:
+            return False
+        threshold, heading = runway
+        stand = self._free_stand(airliner=flight.operator is not None
+                                 or flight.ifr,
+                                 gate=self._wants_gate(flight))
+        if stand is None:
+            return False
+        x, z = layout.to_xy(flight.latitude, flight.longitude)
+        closed = self._closed_runway_edges(
+            flight.runway or self.field.departure_runway)
+        taxi = None
+        for avoid in (self._avoid_user() | self._avoid_standing(flight),
+                      self._avoid_user(), set()):
+            taxi = layout.vacate(x, z, flight.heading, threshold, heading,
+                                 self.RUNWAY_LENGTH_M, stand, avoid=avoid,
+                                 closed=closed, behind_first=True)
+            if taxi is not None:
+                break
+        if taxi is None and closed:
+            for avoid in (self._avoid_user() | self._avoid_standing(flight),
+                          self._avoid_user(), set()):
+                taxi = layout.vacate(x, z, flight.heading, threshold,
+                                     heading, self.RUNWAY_LENGTH_M, stand,
+                                     avoid=avoid, behind_first=True)
+                if taxi is not None:
+                    break
+        if taxi is None:
+            return False
+        log.info("%s vacates the runway behind the pilot, to stand %s",
+                 flight.written, stand.number)
+        flight.on_layout = True
+        flight.arriving = True
+        flight.stand = stand.index
+        flight.planned_stand = None
+        flight.line_up = None
+        flight.taxi = taxi
+        flight.phase = "taxi_in"
+        flight.doing = None
+        flight.commands = [c for c in flight.commands
+                           if c.kind not in ("line_up", "takeoff")]
+        return True
+
+    def _take_off_the_runway(self, flight: Flight, now: float) -> None:
+        """The last resort for one stuck on the runway with the pilot: off
+        it goes, however that has to happen. A live one is handed back to
+        the feed -- the real aeroplane is wherever it is -- and an invented
+        one is towed away, the runway being the one place nobody may wait.
+        """
+        if flight.source == "live" or flight.observed:
+            log.info("%s is stuck on the runway behind the pilot; handed "
+                     "back to the feed", flight.written)
+            self._unadopt(flight, now)
+            return
+        log.info("%s is stuck on the runway behind the pilot; %s is taken "
+                 "away", flight.written, flight.written)
+        flight.done = True
+        self._release_all(flight)
 
     def _taxi_blocked(self, flight: Flight, x: float, z: float,
                       moving: float, now: float) -> str:

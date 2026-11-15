@@ -737,7 +737,8 @@ class GroundLayout:
                threshold: tuple[float, float], runway_heading: float,
                length_m: float, stand: Stand,
                avoid: set[object] | None = None,
-               closed: set[tuple[object, object]] | None = None
+               closed: set[tuple[object, object]] | None = None,
+               behind_first: bool = False
                ) -> Taxiing | None:
         """Off the runway at the first exit ahead, and on to a stand."""
         along_here, _ = self.runway_frame(x, z, threshold, runway_heading)
@@ -745,9 +746,12 @@ class GroundLayout:
         ahead = [(along, node) for along, node in entries
                  if along >= along_here + 20.0]
         # The first one ahead, or -- at the end of the runway -- the last one
-        # behind, which is a turn round and a backtrack.
-        order = ahead + sorted([item for item in entries if item not in ahead],
-                               key=lambda item: -item[0])
+        # behind, which is a turn round and a backtrack. ``behind_first``
+        # asks for that order the other way round: with the runway blocked
+        # ahead, the exit to take is the nearest one already passed.
+        behind = sorted([item for item in entries if item not in ahead],
+                        key=lambda item: -item[0])
+        order = (behind + ahead) if behind_first else (ahead + behind)
         goal = ("k", stand.index)
         for _along, exit_node in order:
             nodes = (self.route(exit_node, goal, avoid, closed=closed)

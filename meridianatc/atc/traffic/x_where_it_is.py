@@ -8,6 +8,7 @@ from ._shared import (
     DESTINATION_AIRPORTS,
     GLIDE_FT_PER_NM,
     INITIAL_CLIMB_FT,
+    ROLLING_KT,
     RUNWAY_ROLL_S,
     Flight,
     _runway_key,
@@ -370,6 +371,19 @@ class _Where_it_is:
             return
 
         if self.runway_occupied(now, ignore=flight, runway=flight.runway):
+            user = self.user
+            if (user is not None and user.on_ground
+                    and user.ground_speed_kt < ROLLING_KT
+                    and self._user_on_runway(
+                        flight.runway or self.field.departure_runway)):
+                # The pilot is on the strip and not rolling: crossing it,
+                # backtracking along it, turning round at the far end. A
+                # "line up and wait" may only be issued behind somebody
+                # leaving by the far end -- the pilot's way out is back
+                # past whoever would line up, and the two of them meet
+                # nose to nose on the pavement.
+                flight.next_at = now + self.random.uniform(6.0, 14.0)
+                return
             # Somebody is rolling, and will be gone in half a minute. That is
             # what lining up and waiting is for -- for one aeroplane. A runway
             # with three aeroplanes lined up on it is not a runway, and it was
