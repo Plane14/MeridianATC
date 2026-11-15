@@ -407,11 +407,29 @@ class FrenchPhraseology:
     # tower
     # ------------------------------------------------------------------
 
+    def _runway_at(self, runway: str, intersection: str) -> str:
+        """"piste deux trois" -- "piste deux trois à l'intersection
+        alpha" quand le départ se fait d'une intersection. UNVERIFIED:
+        la forme française du nommage d'intersection."""
+        if not intersection:
+            return f"piste {self.rwy(runway)}"
+        return f"piste {self.rwy(runway)} à l'intersection {intersection}"
+
+    def _remaining(self, remaining_m: float) -> str:
+        """La distance restante annoncée pour un départ d'intersection.
+        UNVERIFIED: forme calquée sur "reste X mètres"."""
+        if remaining_m <= 0.0:
+            return ""
+        metres = int(remaining_m // 10) * 10
+        return f"reste {self.d(metres)} mètres"
+
     def line_up_and_wait(self, aircraft: Aircraft, runway: str, *,
                          reason: str = "", station: str = "",
-                         abbreviated: bool = True) -> str:
+                         abbreviated: bool = True,
+                         intersection: str = "") -> str:
         parts = [self.addressed(aircraft, station, abbreviated),
-                 f"piste {self.rwy(runway)}", "alignez-vous et attendez"]
+                 self._runway_at(runway, intersection),
+                 "alignez-vous et attendez"]
         if reason:
             parts.append(reason)
         return _join(*parts) + "."
@@ -422,6 +440,7 @@ class FrenchPhraseology:
         abbreviated: bool = True, traffic: str = "",
         caution: str = "",
         immediate: bool = False,
+        intersection: str = "", remaining_m: float = 0.0,
     ) -> str:
         parts = [self.addressed(aircraft, station, abbreviated)]
         if traffic:
@@ -430,7 +449,11 @@ class FrenchPhraseology:
             parts.append(self.wind(weather))
         if caution:
             parts.append(caution)
-        parts.append(f"piste {self.rwy(runway)}")
+        parts.append(self._runway_at(runway, intersection))
+        if intersection:
+            remaining = self._remaining(remaining_m)
+            if remaining:
+                parts.append(remaining)
         if after_departure:
             parts.append(after_departure)
         # UNVERIFIED: "décollage immédiat".

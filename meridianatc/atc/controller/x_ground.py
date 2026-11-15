@@ -296,6 +296,14 @@ class _Ground:
         session.taxi_crossings = list(plan.crossings) if plan else []
         session.taxi_stand = (plan.stand.number
                               if plan and plan.stand is not None else None)
+        # Where the route joins the runway somewhere but the threshold,
+        # the takeoff clearance owes the pilot the taxiway's name (JO
+        # 7110.65 3-7-1) -- and the intersection stays named until a new
+        # route says otherwise.
+        session.departure_intersection = (plan.intersection
+                                          if plan is not None else "")
+        session.departure_remaining_m = (plan.remaining_m
+                                         if plan is not None else 0.0)
         # A new route's crossings are all still to be made, whatever the old
         # one had cleared.
         session.crossing_index = 0

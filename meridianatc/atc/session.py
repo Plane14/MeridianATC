@@ -470,6 +470,12 @@ class FlightSession:
     # onto the centreline, from the same plan (TaxiPlan.lineup): what
     # "line up and wait" is flown along, where there is a real route.
     lineup_path: list[tuple[float, float]] = field(default_factory=list)
+    # An intersection departure (TaxiPlan.intersection): the taxiway the
+    # aeroplane joins the runway at and the pavement still ahead of it.
+    # The takeoff clearance names the first and offers the second (JO
+    # 7110.65 3-7-1); both empty/zero for a full-length departure.
+    departure_intersection: str = ""
+    departure_remaining_m: float = 0.0
     # Each runway the route crosses is a clearance of its own, taken one at
     # a time in the order they are met: ``crossing_index`` is how far down
     # the list the aircraft has got, and ``crossing_granted`` the one it is

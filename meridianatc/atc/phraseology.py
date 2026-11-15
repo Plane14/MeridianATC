@@ -622,13 +622,41 @@ class Phraseology:
     # tower
     # ------------------------------------------------------------------
 
+    def _runway_at(self, runway: str, intersection: str) -> str:
+        """"runway two three" -- or "runway two three at taxiway oscar"
+        when the clearance is from an intersection (JO 7110.65 3-7-1:
+        the taxiway is named in the line-up and the takeoff clearance
+        alike, because a pilot rolling from the wrong entry is the
+        incident the rule was written against)."""
+        if not intersection:
+            return f"runway {self.rwy(runway)}"
+        return f"runway {self.rwy(runway)} at taxiway {intersection}"
+
+    def _remaining(self, remaining_m: float) -> str:
+        """The distance an intersection departure has ahead of it.
+
+        AIM 4-3-10.3: the controller issues the measured distance to the
+        runway end rounded DOWN to the nearest 50 feet, to any pilot who
+        requests it and to military aircraft -- a sim pilot cannot ask,
+        so it is given with the clearance. Feet in the US, metres where
+        declared distances are.
+        """
+        if remaining_m <= 0.0:
+            return ""
+        if self.dialect == "faa":
+            feet = int(remaining_m * 3.28084 // 50) * 50
+            return f"runway remaining {self.d(feet)} feet"
+        metres = int(remaining_m // 10) * 10
+        return f"runway remaining {self.d(metres)} metres"
+
     def line_up_and_wait(
         self, aircraft: Aircraft, runway: str, *, reason: str = "",
         station: str = "", abbreviated: bool = True,
+        intersection: str = "",
     ) -> str:
         """"Line up and wait" replaced "position and hold" in the US in 2010."""
         parts = [self.addressed(aircraft, station, abbreviated),
-                 f"runway {self.rwy(runway)}", "line up and wait"]
+                 self._runway_at(runway, intersection), "line up and wait"]
         if reason:
             parts.append(reason)
         return _join(*parts) + "."
@@ -645,6 +673,8 @@ class Phraseology:
         traffic: str = "",
         caution: str = "",
         immediate: bool = False,
+        intersection: str = "",
+        remaining_m: float = 0.0,
     ) -> str:
         parts = [self.addressed(aircraft, station, abbreviated)]
         if traffic:
@@ -653,7 +683,11 @@ class Phraseology:
             parts.append(self.wind(weather))
         if caution:
             parts.append(caution)
-        parts.append(f"runway {self.rwy(runway)}")
+        parts.append(self._runway_at(runway, intersection))
+        if intersection:
+            remaining = self._remaining(remaining_m)
+            if remaining:
+                parts.append(remaining)
         if after_departure:
             parts.append(after_departure)
         # ICAO Doc 4444 chapter 12: "cleared for immediate take-off". The

@@ -120,9 +120,13 @@ def readback(instruction: Instruction, aircraft: Aircraft,
             return speech.cross_runway(aircraft,
                                        str(values.get("runway", "")))
         if kind == "line_up_and_wait":
-            return speech.line_up(aircraft, str(values.get("runway", "")))
+            return speech.line_up(
+                aircraft, str(values.get("runway", "")),
+                intersection=str(values.get("intersection", "")))
         if kind == "takeoff_clearance":
-            return speech.takeoff(aircraft, str(values.get("runway", "")))
+            return speech.takeoff(
+                aircraft, str(values.get("runway", "")),
+                intersection=str(values.get("intersection", "")))
         if kind == "landing_clearance":
             return speech.land(aircraft, str(values.get("runway", "")))
         if kind == "go_around":

@@ -47,11 +47,15 @@ def restate(instruction, p, aircraft: Aircraft) -> str:
             return p.handoff(aircraft, str(values.get("station", "")),
                              float(values["frequency"]))
         if kind == "takeoff_clearance" and "runway" in values:
-            return p.cleared_for_takeoff(aircraft, str(values["runway"]))
+            return p.cleared_for_takeoff(
+                aircraft, str(values["runway"]),
+                intersection=str(values.get("intersection", "")))
         if kind == "landing_clearance" and "runway" in values:
             return p.cleared_to_land(aircraft, str(values["runway"]))
         if kind == "line_up_and_wait" and "runway" in values:
-            return p.line_up_and_wait(aircraft, str(values["runway"]))
+            return p.line_up_and_wait(
+                aircraft, str(values["runway"]),
+                intersection=str(values.get("intersection", "")))
         if kind == "approach_clearance" and "runway" in values:
             return p.cleared_approach(
                 aircraft, p.approach_name(values.get("approach", "ILS")),

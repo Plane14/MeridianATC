@@ -41,7 +41,7 @@ import re
 from dataclasses import dataclass, field
 
 from ..navdata.db import normalize_runway
-from .ground import GroundLayout, Stand
+from .ground import INTERSECTION_M, GroundLayout, Stand
 
 # How far outside a stand's own radius the aeroplane's reference point can be
 # and still be on that stand. The simulator's position is the aeroplane's
@@ -153,6 +153,13 @@ class TaxiPlan:
     # instead is the corner across the infield a hold like A3 hangs in
     # front of it. Empty for a taxi in or an invented route.
     lineup: list[tuple[float, float]] = field(default_factory=list)
+    # An intersection departure (ground.INTERSECTION_M past the
+    # threshold): the taxiway the entry joins the runway at, and the
+    # runway still ahead of it in metres. Empty and zero when the plan
+    # is to the full length -- the clearance only names the taxiway
+    # when the aeroplane is not using it all (JO 7110.65 3-7-1).
+    intersection: str = ""
+    remaining_m: float = 0.0
 
     @property
     def hold_short(self) -> str:
@@ -657,6 +664,13 @@ def plan_departure(layout: GroundLayout, latitude: float, longitude: float,
     # kept for the FO's "line up and wait" so it does not steer the
     # free-space intercept across the grass inside the turn.
     plan.lineup = [layout.to_latlon(*p) for p in legs[1].points]
+    # Joining the runway anywhere but the threshold is an intersection
+    # departure: the taxiway it joins at is the last the route uses, and
+    # the pavement still ahead is what the pilot is owed to hear about.
+    along = getattr(legs[1], "entry_along_m", None)
+    if along is not None and along > INTERSECTION_M and plan.names:
+        plan.intersection = plan.names[-1]
+        plan.remaining_m = max(0.0, length_m - along)
     return plan, ""
 
 

@@ -264,6 +264,11 @@ class Flight:
     # be given, and where (layout metres) it was told to hold short.
     taxi_rest: list = field(default_factory=list)
     taxi_split_xy: tuple | None = None
+    # An intersection departure (ground.INTERSECTION_M): the taxiway the
+    # entry joins the runway at and the runway still ahead of it, set by
+    # the departure plan. The tower names the first in the clearance.
+    intersection: str = ""
+    remaining_m: float = 0.0
     hex: str = ""
     lead_distance_nm: float = 0.0
     lead_at: tuple | None = None   # (lat, lon) of the real one now

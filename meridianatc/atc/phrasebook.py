@@ -122,7 +122,8 @@ PHRASE_KEYS: tuple[str, ...] = (
     "continue_via", "continue_taxi", "give_way", "then_continue",
     "pushback_approved", "report_ready_to_taxi",
     # tower
-    "runway_is", "line_up_and_wait", "cleared_takeoff", "cleared_to_land",
+    "runway_is", "runway_at", "runway_remaining",
+    "line_up_and_wait", "cleared_takeoff", "cleared_to_land",
     "cleared_option", "go_around", "continue_approach", "number", "follow",
     "enter_pattern", "report", "extend_downwind", "i_will_call_your_base",
     "cleared_low_approach",
@@ -573,11 +574,20 @@ class LocalisedPhraseology:
     # tower
     # ------------------------------------------------------------------
 
+    def _runway_at(self, runway: str, intersection: str) -> str:
+        """The runway named for a clearance -- with the taxiway it is
+        entered from when the departure is an intersection one."""
+        if not intersection:
+            return self._("runway_is").format(runway=self.rwy(runway))
+        return self._("runway_at").format(runway=self.rwy(runway),
+                                         taxiway=intersection)
+
     def line_up_and_wait(self, aircraft: Aircraft, runway: str, *,
                          reason: str = "", station: str = "",
-                         abbreviated: bool = True) -> str:
+                         abbreviated: bool = True,
+                         intersection: str = "") -> str:
         parts = [self.addressed(aircraft, station, abbreviated),
-                 self._("runway_is").format(runway=self.rwy(runway)),
+                 self._runway_at(runway, intersection),
                  self._("line_up_and_wait")]
         if reason:
             parts.append(reason)
@@ -589,6 +599,7 @@ class LocalisedPhraseology:
         abbreviated: bool = True, traffic: str = "",
         caution: str = "",
         immediate: bool = False,
+        intersection: str = "", remaining_m: float = 0.0,
     ) -> str:
         parts = [self.addressed(aircraft, station, abbreviated)]
         if traffic:
@@ -597,7 +608,10 @@ class LocalisedPhraseology:
             parts.append(self.wind(weather))
         if caution:
             parts.append(caution)
-        parts.append(self._("runway_is").format(runway=self.rwy(runway)))
+        parts.append(self._runway_at(runway, intersection))
+        if intersection and remaining_m > 0.0:
+            parts.append(self._("runway_remaining").format(
+                metres=self.d(int(remaining_m // 10) * 10)))
         if after_departure:
             parts.append(after_departure)
         parts.append(self._("cleared_immediate_takeoff") if immediate

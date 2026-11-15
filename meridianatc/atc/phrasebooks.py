@@ -136,6 +136,8 @@ SPANISH = Phrasebook(
         "report_ready_to_taxi": "notifique listo para rodar",
         # tower
         "runway_is": "pista {runway}",
+        "runway_at": "pista {runway} en {taxiway}",
+        "runway_remaining": "restan {metres} metros",
         "line_up_and_wait": "alinéese y espere",
         "cleared_takeoff": "autorizado a despegar",
         "cleared_to_land": "autorizado a aterrizar",
@@ -496,6 +498,8 @@ GERMAN = Phrasebook(
         "report_ready_to_taxi": "melden Sie rollbereit",
         # tower
         "runway_is": "Piste {runway}",
+        "runway_at": "Piste {runway} an {taxiway}",
+        "runway_remaining": "verbleibend {metres} Meter",
         "line_up_and_wait": "reihen Sie sich ein und warten",
         "cleared_takeoff": "Start frei",
         "cleared_to_land": "Landung frei",
@@ -854,6 +858,8 @@ ITALIAN = Phrasebook(
         "report_ready_to_taxi": "riporti pronto al rullaggio",
         # tower
         "runway_is": "pista {runway}",
+        "runway_at": "pista {runway} al raccordo {taxiway}",
+        "runway_remaining": "restano {metres} metri",
         "line_up_and_wait": "si allinei e attenda",
         "cleared_takeoff": "autorizzato al decollo",
         "cleared_to_land": "autorizzato all'atterraggio",
@@ -1212,6 +1218,8 @@ PORTUGUESE = Phrasebook(
         "report_ready_to_taxi": "reporte pronto para taxiar",
         # tower
         "runway_is": "pista {runway}",
+        "runway_at": "pista {runway} na interseção {taxiway}",
+        "runway_remaining": "restam {metres} metros",
         "line_up_and_wait": "alinhe e aguarde",
         "cleared_takeoff": "autorizado a descolar",
         "cleared_to_land": "autorizado a aterrar",

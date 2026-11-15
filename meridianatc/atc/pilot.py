@@ -109,6 +109,11 @@ class PilotBook:
     vfr_release_via: str = "via {point}"
     vfr_release_ceiling: str = "not above {altitude}"
     departure_frequency: str = "departure frequency {frequency}"
+    # The taxiway an intersection departure joins (AIM 4-3-10): said in
+    # the ready call ("ready for departure at taxiway alpha") and read
+    # back with the line-up and takeoff clearances. UNVERIFIED in every
+    # language but English.
+    at_intersection: str = "at taxiway {taxiway}"
 
 
 ENGLISH = PilotBook(
@@ -148,6 +153,7 @@ ENGLISH = PilotBook(
     request_transition="request transition",
     request_flight_following="request flight following",
     ready_for_departure_plain="ready for departure",
+    at_intersection="at taxiway {taxiway}",
 )
 
 FRENCH = PilotBook(
@@ -193,6 +199,7 @@ FRENCH = PilotBook(
     request_transition="demande la traversée",
     request_flight_following="demande le service d'information de vol",
     ready_for_departure_plain="prêt au départ",
+    at_intersection="à l'intersection {taxiway}",
     pattern_entry="{leg} main {direction} piste {runway}",
     on_leg="en {leg}",
     runway_vacated="piste dégagée",
@@ -245,6 +252,7 @@ SPANISH = PilotBook(
     request_transition="solicito el tránsito",
     request_flight_following="solicito servicio de información",
     ready_for_departure_plain="listo para salida",
+    at_intersection="en {taxiway}",
     pattern_entry="{leg} por la {direction} pista {runway}",
     on_leg="en {leg}",
     following="número dos, detrás de {traffic}",
@@ -296,6 +304,7 @@ GERMAN = PilotBook(
     request_transition="erbitte den Durchflug",
     request_flight_following="erbitte Fluginformationsdienst",
     ready_for_departure_plain="startbereit",
+    at_intersection="an {taxiway}",
     pattern_entry="{leg} {direction} Piste {runway}",
     on_leg="im {leg}",
     following="Nummer zwei, hinter {traffic}",
@@ -347,6 +356,7 @@ ITALIAN = PilotBook(
     request_transition="chiedo il transito",
     request_flight_following="chiedo servizio informazioni",
     ready_for_departure_plain="pronti al decollo",
+    at_intersection="al raccordo {taxiway}",
     pattern_entry="{leg} {direction} pista {runway}",
     on_leg="in {leg}",
     following="numero due, dietro {traffic}",
@@ -398,6 +408,7 @@ PORTUGUESE = PilotBook(
     request_transition="peço o trânsito",
     request_flight_following="peço serviço de informação",
     ready_for_departure_plain="prontos para descolar",
+    at_intersection="na interseção {taxiway}",
     pattern_entry="{leg} pela {direction} pista {runway}",
     on_leg="na {leg}",
     following="número dois, atrás de {traffic}",
@@ -538,8 +549,15 @@ class PilotSpeech:
             runway=self.p.rwy(runway)))
 
     def ready_for_departure(self, aircraft: Aircraft, runway: str,
-                            station: str = "") -> str:
+                            station: str = "", intersection: str = "") -> str:
+        """"Ready for departure at taxiway alpha": a pilot calling for
+        the runway off an intersection says where the aeroplane is,
+        because the tower cannot always see the point it is standing at
+        (AIM 4-3-10)."""
         body = self.book.ready_for_departure.format(runway=self.p.rwy(runway))
+        if intersection:
+            body += ", " + self.book.at_intersection.format(
+                taxiway=intersection)
         return (self.call(aircraft, station, body, greeting=True) if station
                 else self.report(aircraft, body))
 
@@ -652,13 +670,21 @@ class PilotSpeech:
         return self.report(
             aircraft, self.book.cross_runway.format(runway=self.p.rwy(runway)))
 
-    def line_up(self, aircraft: Aircraft, runway: str) -> str:
-        return self.report(
-            aircraft, self.book.line_up.format(runway=self.p.rwy(runway)))
+    def line_up(self, aircraft: Aircraft, runway: str,
+                intersection: str = "") -> str:
+        body = self.book.line_up.format(runway=self.p.rwy(runway))
+        if intersection:
+            body += ", " + self.book.at_intersection.format(
+                taxiway=intersection)
+        return self.report(aircraft, body)
 
-    def takeoff(self, aircraft: Aircraft, runway: str) -> str:
-        return self.report(
-            aircraft, self.book.takeoff.format(runway=self.p.rwy(runway)))
+    def takeoff(self, aircraft: Aircraft, runway: str,
+                intersection: str = "") -> str:
+        body = self.book.takeoff.format(runway=self.p.rwy(runway))
+        if intersection:
+            body += ", " + self.book.at_intersection.format(
+                taxiway=intersection)
+        return self.report(aircraft, body)
 
     def land(self, aircraft: Aircraft, runway: str) -> str:
         return self.report(

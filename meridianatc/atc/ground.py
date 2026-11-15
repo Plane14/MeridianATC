@@ -72,7 +72,9 @@ HOLD_OFF_CENTRELINE_M = 45.0
 
 # A taxiway joining the runway further than this from the threshold is an
 # intersection departure. Allowed -- it is what happens -- but the one nearest
-# the end is always preferred.
+# the end is always preferred, and a clearance from anywhere else names the
+# taxiway it joins at (FAA JO 7110.65 3-7-1).
+INTERSECTION_M = 60.0
 # The drive onto the runway ends this far past the entry node -- far
 # enough for the aeroplane to be on the centreline pointing down it.
 PAST_ENTRY_M = 40.0
@@ -725,6 +727,10 @@ class GroundLayout:
         taxi_out = self._taxiing(out, start_xy if stand is None else None,
                                  push=stand is not None)
         line_up = self._taxiing(onto, None, extra=lined, face=heading)
+        # Where the entry meets the runway, in metres from the threshold:
+        # how the clearance knows it has an intersection departure, and how
+        # far the aeroplane still has to roll (atc.taxi.TaxiPlan.intersection).
+        line_up.entry_along_m = along
         return taxi_out, line_up
 
     def _metres(self, nodes: list[object]) -> float:

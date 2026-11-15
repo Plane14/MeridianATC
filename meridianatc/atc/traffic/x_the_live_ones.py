@@ -690,8 +690,11 @@ class _The_live_ones:
             self._exchange(
                 flight, now, "TWR",
                 controller=lambda c, a, s: c.line_up_and_wait(
-                    a, runway_out, reason=reason, station=s),
-                pilot_back=lambda p, a, s: p.line_up(a, runway_out),
+                    a, runway_out, reason=reason, station=s,
+                    intersection=self._said_intersection(flight)),
+                pilot_back=lambda p, a, s: p.line_up(
+                    a, runway_out,
+                    intersection=self._said_intersection(flight)),
             )
             return
 
@@ -702,8 +705,12 @@ class _The_live_ones:
             self._exchange(
                 flight, now, "TWR",
                 controller=lambda c, a, s: c.cleared_for_takeoff(
-                    a, runway_out, self.field.weather, station=s),
-                pilot_back=lambda p, a, s: p.takeoff(a, runway_out),
+                    a, runway_out, self.field.weather, station=s,
+                    intersection=self._said_intersection(flight),
+                    remaining_m=flight.remaining_m),
+                pilot_back=lambda p, a, s: p.takeoff(
+                    a, runway_out,
+                    intersection=self._said_intersection(flight)),
             )
             return
 

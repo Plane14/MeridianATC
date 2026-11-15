@@ -8,6 +8,7 @@ from ._shared import (
     final_for,
     language_of,
     runway_length_nm,
+    say_words,
     sid_first_fix,
     station_key,
     time,
@@ -271,17 +272,26 @@ class _Working_the_user:
 
                 reason = landing_traffic(landing.describe(language_of(p)),
                                          language_of(p))
+            # Lining up off an intersection, the taxiway is named too --
+            # 7110.65 3-7-1 wants it in both the line-up and the takeoff
+            # clearance, because a pilot who rolls from the wrong entry
+            # is the incident the rule is written against.
+            intersection = (say_words(
+                station.ident, [session.departure_intersection])[0]
+                if session.departure_intersection else "")
             text = p.line_up_and_wait(
                 session.aircraft, runway, reason=reason,
                 station=self._station_name(station, p)
                 if not session.established_with(station) else "",
                 abbreviated=session.established_with(station),
+                intersection=intersection,
             )
             session.lined_up = True
             session.allow_runway(runway)
             instruction = session.remember(
                 Instruction("line_up_and_wait", station_key(station), text,
-                            {"runway": runway})
+                            {"runway": runway,
+                             "intersection": intersection})
             )
             return Reply(text, station, instruction=instruction)
 
@@ -318,6 +328,9 @@ class _Working_the_user:
                          arrival=soon[0].written or None,
                          arrival_nm=round(soon[0].distance_nm, 1),
                          observed=soon[0].contact.observed)
+            intersection = (say_words(
+                station.ident, [session.departure_intersection])[0]
+                if session.departure_intersection else "")
             text = p.cleared_for_takeoff(
                 session.aircraft, runway, weather,
                 caution=self._caution(session, weather, p,
@@ -327,6 +340,8 @@ class _Working_the_user:
                 after_departure=self._after_takeoff(session, airport, runway, p),
                 abbreviated=session.established_with(station),
                 traffic=traffic, immediate=bool(soon),
+                intersection=intersection,
+                remaining_m=session.departure_remaining_m,
             )
         session.held_for_landing = ""
         session.cleared_takeoff = True
@@ -336,7 +351,11 @@ class _Working_the_user:
         session.note_clearance_wind(weather)
         instruction = session.remember(
             Instruction("takeoff_clearance", station_key(station), text,
-                        {"runway": runway})
+                        {"runway": runway,
+                         "intersection": (say_words(
+                             station.ident,
+                             [session.departure_intersection])[0]
+                             if session.departure_intersection else "")})
         )
         return Reply(text, station, instruction=instruction)
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ..ground import INTERSECTION_M
+from ..taxi import say_words
 from ._shared import (
     _CIRCUIT_PHASES,
     CIRCUIT_UPWIND_NM,
@@ -200,7 +202,7 @@ class _Where_it_is:
         from .. import aircraft_class
         need_m = aircraft_class.min_runway_ft(
             flight.type_code or "") * 0.3048
-        return (layout.departure(stand, here, threshold, heading,
+        legs = (layout.departure(stand, here, threshold, heading,
                                  self.RUNWAY_LENGTH_M,
                                  avoid=self._avoid_user(), closed=closed,
                                  need_m=need_m)
@@ -209,6 +211,28 @@ class _Where_it_is:
                                     need_m=need_m)
                 or layout.departure(stand, here, threshold, heading,
                                     self.RUNWAY_LENGTH_M, need_m=need_m))
+        # Joining the runway anywhere but the threshold is an
+        # intersection departure: the taxiway it joins at is the last
+        # the route names, and what the tower then says in the
+        # line-up and the takeoff clearance (JO 7110.65 3-7-1).
+        flight.intersection = ""
+        flight.remaining_m = 0.0
+        if legs is not None:
+            along = getattr(legs[1], "entry_along_m", None)
+            if along is not None and along > INTERSECTION_M:
+                names = layout.names_along(legs[0].nodes)
+                if names:
+                    flight.intersection = names[-1]
+                    flight.remaining_m = max(
+                        0.0, self.RUNWAY_LENGTH_M - along)
+        return legs
+
+    def _said_intersection(self, flight: Flight) -> str:
+        """The taxiway an intersection departure joins, said the way it
+        is read back ("A" as alpha, not a raw map label)."""
+        if not flight.intersection:
+            return ""
+        return say_words(self.field.ident, [flight.intersection])[0]
 
     # An arrival inside this is close enough that a departure is kept at the
     # holding point rather than put on the runway in front of it. Lining one
@@ -397,15 +421,19 @@ class _Where_it_is:
                 self._exchange(
                     flight, now, "TWR",
                     controller=lambda c, a, s: c.line_up_and_wait(
-                        a, flight.runway, reason=reason, station=s),
-                    pilot_back=lambda p, a, s: p.line_up(a, flight.runway),
+                        a, flight.runway, reason=reason, station=s,
+                        intersection=self._said_intersection(flight)),
+                    pilot_back=lambda p, a, s: p.line_up(
+                        a, flight.runway,
+                        intersection=self._said_intersection(flight)),
                     command=("line_up", {"runway": flight.runway}),
                 )
             flight.next_at = now + self.random.uniform(6.0, 14.0)
             return
 
         def taking_the_runway(p, a, s):
-            return p.line_up(a, flight.runway)
+            return p.line_up(a, flight.runway,
+                             intersection=self._said_intersection(flight))
         if flight.pattern_work:
             self._exchange(
                 flight, now, "TWR",
@@ -420,8 +448,12 @@ class _Where_it_is:
             self._exchange(
                 flight, now, "TWR",
                 controller=lambda c, a, s: c.cleared_for_takeoff(
-                    a, flight.runway, self.field.weather, station=s),
-                pilot_back=lambda p, a, s: p.takeoff(a, flight.runway),
+                    a, flight.runway, self.field.weather, station=s,
+                    intersection=self._said_intersection(flight),
+                    remaining_m=flight.remaining_m),
+                pilot_back=lambda p, a, s: p.takeoff(
+                    a, flight.runway,
+                    intersection=self._said_intersection(flight)),
                 announce=taking_the_runway,
                 command=("takeoff", {"runway": flight.runway}),
             )

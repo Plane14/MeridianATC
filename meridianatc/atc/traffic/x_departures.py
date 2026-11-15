@@ -150,7 +150,8 @@ class _Departures:
             if not (self.uncontrolled and self.field.afis is not None):
                 self._say(flight, now, "TWR", from_pilot=True,
                           make=lambda p, a, s: p.ready_for_departure(
-                              a, flight.runway, s))
+                              a, flight.runway, s,
+                              intersection=self._said_intersection(flight)))
             flight.phase = "waiting"
             flight.next_at = now + self.random.uniform(4.0, 12.0)
             return
