@@ -473,9 +473,11 @@ class XPlaneSource:
         # single reads engine one's gauges and a twin the hotter of two.
         count = max(1, min(8, int(state.engine_count or 0)))
         if not bool(values.get("cht_is_c", 1)):
-            _to_c = lambda t: (t - 32.0) * 5.0 / 9.0
+            def _to_c(t):
+                return (t - 32.0) * 5.0 / 9.0
         else:
-            _to_c = lambda t: t
+            def _to_c(t):
+                return t
         if "cht0" in values:
             state.eng_cht_c = max(_to_c(values.get(f"cht{i}", 0.0))
                                   for i in range(count))
@@ -483,9 +485,11 @@ class XPlaneSource:
         if red > 0.0:
             state.eng_cht_limit_c = _to_c(red)
         if not bool(values.get("oil_is_c", 1)):
-            _to_c = lambda t: (t - 32.0) * 5.0 / 9.0
+            def _to_c(t):
+                return (t - 32.0) * 5.0 / 9.0
         else:
-            _to_c = lambda t: t
+            def _to_c(t):
+                return t
         if "oil0" in values:
             state.eng_oil_temp_c = max(_to_c(values.get(f"oil{i}", 0.0))
                                      for i in range(count))

@@ -9,7 +9,6 @@ actually moves the aeroplane.
 """
 import socket
 import struct
-import sys
 import time
 
 HOST, PORT = "127.0.0.1", 49000
@@ -41,7 +40,7 @@ def main():
         while time.time() < end:
             try:
                 data, _ = sock.recvfrom(2048)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             if len(data) < 13 or data[:4] != b"RREF":
                 continue
@@ -112,8 +111,7 @@ def main():
     print("  sent")
 
     print("== unsubscribe ==")
-    for i, path in enumerate(list(subs.items())):
-        idx, p = path
+    for idx, p in list(subs.items()):
         packet(b"RREF\0" + struct.pack("<ii400s", 0, idx, p.encode("ascii")))
 
 

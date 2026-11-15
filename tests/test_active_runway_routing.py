@@ -14,10 +14,10 @@ from types import SimpleNamespace
 
 from meridianatc.atc import autofly, flying
 from meridianatc.atc.ground import (
-    GroundLayout,
     PATH_PARKING,
     PATH_RUNWAY,
     PATH_TAXI,
+    GroundLayout,
 )
 from meridianatc.atc.taxi import (
     RunwayLine,
@@ -103,11 +103,11 @@ def test_closed_route_crosses_on_where_the_clearance_allows():
     nodes = layout.route(("p", 0), ("p", 7), closed=along)
     assert nodes[-1] == ("p", 7)
     assert ("p", 9) in nodes
-    assert not set(zip(nodes, nodes[1:])) & along
+    assert not set(zip(nodes, nodes[1:], strict=False)) & along
     # Closing the crossings too keeps it off the pavement entirely.
     nodes = layout.route(("p", 0), ("p", 7),
                          closed=along | crossing)
-    assert nodes == [] or not set(zip(nodes, nodes[1:])) \
+    assert nodes == [] or not set(zip(nodes, nodes[1:], strict=False)) \
         & (along | crossing)
 
 

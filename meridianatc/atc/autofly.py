@@ -232,10 +232,8 @@ def _adapted(patch: dict, prof: dict, base: Performance,
     knots = {"rotate_kt", "climb_kt", "cruise_kt", "approach_kt",
              "touchdown_kt", "goaround_kt"}
     for name, value in declared.items():
-        if name in knots and isinstance(value, (int, float)) and value > 0:
-            patch[name] = float(value)
-        elif name == "descend_fpm" and isinstance(value, (int, float)) \
-                and value > 0:
+        if (name in knots or name == "descend_fpm") \
+                and isinstance(value, (int, float)) and value > 0:
             patch[name] = float(value)
     for name in knots & set(patch):
         if name not in declared:

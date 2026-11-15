@@ -154,22 +154,41 @@ class _The_cleared_approach:
         """The vertical speed the three-degree path asks for here."""
         return self._three_degree_vs(
             state, recipe.threshold_lat, recipe.threshold_lon,
-            recipe.field_elev_ft)
+            recipe.field_elev_ft, recipe.final_course)
 
     def _three_degree_vs(self, state, thr_lat: float, thr_lon: float,
-                         elev_ft: float) -> float:
+                         elev_ft: float, course: float = -1.0) -> float:
         """The vertical speed that holds a three-degree path to a
         threshold: the path's own sink at this groundspeed, corrected by
         where the aeroplane sits against it. Shared by every final that
         has no glideslope needle -- the computed procedures and the
-        visual alike -- so none of them descends by the clock alone."""
-        distance = state.distance_to(thr_lat, thr_lon) \
-            if getattr(state, "has_position", False) else None
+        visual alike -- so none of them descends by the clock alone.
+
+        ``course`` is the final's true course where it is known: the
+        distance is then measured along it, so an aeroplane past the
+        threshold is over the runway, not a growing distance from a
+        point behind it that the path would have it climb away from.
+        """
+        distance = None
+        if getattr(state, "has_position", False):
+            distance = state.distance_to(thr_lat, thr_lon)
+            if course >= 0.0:
+                distance = max(0.0, -auto_nav.align(
+                    state.latitude, state.longitude, thr_lat, thr_lon,
+                    course)["along_m"] / 1852.0)
         desired = (elev_ft + approach_flight.TCH_FT
                    + max(0.0, distance if distance is not None else 10.0)
                    * approach_flight.FT_PER_NM)
         alt = state.altitude_ft or 0.0
         vs = approach_flight.sink_fpm(state.ground_speed_kt or 0.0)
+        if alt < desired - 60.0:
+            # Under the path: no descent until it is met. The loop's
+            # proportional answer only shallowed the sink, and its
+            # integrator wound up through the wait and carried the
+            # aeroplane over the top of the path once it arrived.
+            if self._use_pids:
+                self._pid("vertical").reset()
+            return 200.0 if alt < desired - 150.0 else 50.0
         if self._use_pids:
             # The path error to a sink correction on top of the profile's
             # own figure: above the path the loop deepens the descent,
@@ -193,7 +212,8 @@ class _The_cleared_approach:
     def _fly_path_vertical(self, state, recipe) -> None:
         """Vertical speed and speed for a mode that owns the lateral."""
         self._apply_flight_director(
-            state, vs_fpm=self._path_vertical(state, recipe),
+            state, altitude=self._final_alt_bug(recipe.field_elev_ft),
+            vs_fpm=self._path_vertical(state, recipe),
             speed_kt=self._vapp(state))
 
     def _fly_computed(self, state, recipe) -> None:
@@ -216,8 +236,10 @@ class _The_cleared_approach:
         heading = steer.get("heading")
         if heading is None:
             heading = recipe.final_course
+        heading = self._into_wind(state, heading)
         self._apply_flight_director(
-            state, vs_fpm=self._path_vertical(state, recipe),
+            state, altitude=self._final_alt_bug(recipe.field_elev_ft),
+            vs_fpm=self._path_vertical(state, recipe),
             heading=self._magnetic(heading, state),
             speed_kt=self._vapp(state))
 
@@ -239,18 +261,22 @@ class _The_cleared_approach:
         if getattr(state, "has_position", False):
             gate = project(self.state.runway_lat, self.state.runway_lon,
                            (rwy_hdg + 180.0) % 360.0, 10.0)
-            far = project(self.state.runway_lat, self.state.runway_lon,
-                          rwy_hdg, approach_flight.PAST_THRESHOLD_NM)
+            far = project(
+                self.state.runway_lat, self.state.runway_lon, rwy_hdg,
+                max(approach_flight.PAST_THRESHOLD_NM,
+                    (self.state.runway_length_ft or 0.0) / 6076.0))
             steer = auto_nav.path_steering(
                 state.latitude, state.longitude, [gate, far],
                 lookahead_m=self._final_lookahead_m(state))
             if steer and steer.get("heading") is not None:
-                heading = self._magnetic(steer["heading"], state)
+                heading = self._magnetic(
+                    self._into_wind(state, steer["heading"]), state)
         self._apply_flight_director(
             state,
+            altitude=self._final_alt_bug(self._field_elevation(state)),
             vs_fpm=self._three_degree_vs(
                 state, self.state.runway_lat, self.state.runway_lon,
-                self._field_elevation(state)),
+                self._field_elevation(state), rwy_hdg),
             heading=heading,
             speed_kt=self._vapp(state) or self.performance.approach_kt)
         return True
@@ -306,4 +332,159 @@ class _The_cleared_approach:
             return rwy
         cut = max(-max_cut_deg, min(max_cut_deg, offset * 0.3))
         return (rwy - cut) % 360.0
+
+    def _into_wind(self, state, course_true: float) -> float:
+        """The heading that makes a course good: the course, plus the
+        crab the aeroplane is wearing.
+
+        The path steering answers with a direction to travel, and a
+        heading bug set to it travels somewhere else in a crosswind --
+        the aeroplane settles parallel to the final, downwind of it by
+        the lookahead times the drift, and a ten-knot crosswind is the
+        runway missed by a quarter mile. The drift is read off the
+        difference between where the nose points and where the
+        aeroplane goes, smoothed: the track is a slow figure.
+        """
+        track = getattr(state, "track_true", None)
+        gs = state.ground_speed_kt or 0.0
+        if not track or state.on_ground is not False or gs < 40.0:
+            self._crab_deg = 0.0
+            return course_true % 360.0
+        raw = ((state.heading_true or 0.0) - track + 540.0) % 360.0 - 180.0
+        raw = max(-30.0, min(30.0, raw))
+        held = getattr(self, "_crab_deg", 0.0)
+        self._crab_deg = held + (raw - held) * 0.15
+        return (course_true + self._crab_deg) % 360.0
+
+    def _final_frame(self, state, recipe):
+        """(threshold lat, lon, course, field elevation) of the final
+        being flown, or None where neither the recipe nor the runway
+        says."""
+        if recipe is not None and recipe.final_course > 0                 and (recipe.threshold_lat or recipe.threshold_lon):
+            return (recipe.threshold_lat, recipe.threshold_lon,
+                    recipe.final_course, recipe.field_elev_ft)
+        if self.state.runway_heading <= 0:
+            self._find_runway(state)
+        if self.state.runway_heading <= 0:
+            return None
+        return (self.state.runway_lat, self.state.runway_lon,
+                self.state.runway_heading, self._field_elevation(state))
+
+    def _join_final(self, state, recipe) -> bool:
+        """Fly the aeroplane to where a final can be flown from; True
+        while that is what this tick did.
+
+        The final's guidance -- needles, computed path or the visual's
+        centreline -- assumes an aeroplane out on the approach side and
+        pointed roughly at the runway. One that is not -- upwind of the
+        field after a missed approach, abeam it, arriving from behind
+        it -- was steered at the runway anyway and let down toward a
+        threshold it was flying away from. Such an aeroplane holds its
+        altitude and positions first: on the controller's vector where
+        one is assigned, otherwise round a circuit of its own --
+        downwind, base, final -- the way it would be flown by hand.
+        """
+        frame = self._final_frame(state, recipe)
+        if frame is None or not getattr(state, "has_position", False):
+            self._rejoin_path = None
+            return False
+        t_lat, t_lon, course, elev = frame
+        where = auto_nav.align(state.latitude, state.longitude,
+                               t_lat, t_lon, course)
+        out = -where["along_m"] / 1852.0
+        side = where["offset_m"] / 1852.0
+        track = getattr(state, "track_true", None)             or state.heading_true or 0.0
+        off_course = abs((course - track + 540.0) % 360.0 - 180.0)
+        length_nm = (self.state.runway_length_ft or 0.0) / 6076.0
+        on_final = abs(side) <= max(0.0, out) + 0.5 and off_course <= 100.0
+        # Out on the approach side inside the cone -- or already down the
+        # last of it and over the runway itself, where the final's own
+        # gates (and the go-around) own what happens next.
+        if on_final and (out >= 0.7 or (out > -max(length_nm, 0.5)
+                                        and off_course <= 45.0
+                                        and abs(side) <= 0.3)):
+            self._rejoin_path = None
+            return False
+
+        light = self.performance.cruise_kt < 140.0
+        fast = self.performance.cruise_kt >= 230.0
+        pattern_ft = elev + (1000.0 if light else 1500.0)
+        speed = (self._vapp(state) or self.performance.approach_kt) + 10.0
+        assigned = self.session.assigned_heading
+        if assigned is not None and assigned > 0:
+            # Being vectored: the controller owns the heading and the
+            # altitude until the final is there to be joined.
+            target = max(self.session.assigned_altitude_ft or 0.0,
+                         pattern_ft)
+            self._rejoin_path = None
+            self._hold_level(state, target, assigned, speed)
+            return True
+
+        if not getattr(self, "_rejoin_path", None):
+            width = 1.0 if light else 2.0 if not fast else 2.5
+            # The base leg sits where the three-degree path passes
+            # through the circuit's height, so the final begins on it.
+            base = 3.0 if light else 5.0 if not fast else 6.0
+            way = -1.0 if (self.session.pattern_direction
+                           or "left") == "left" else 1.0
+            if self.session.ifr or abs(side) > 0.3:
+                # The side it is already on, unless it sits on the
+                # centreline: then the circuit direction decides.
+                way = (1.0 if side > 0 else -1.0)                     if abs(side) > 0.3 else way
+            point = approach_flight.frame_point
+            path = []
+            if out < base:
+                if out < 0.0:
+                    path.append(point(t_lat, t_lon, course, 0.0,
+                                      way * width))
+                path.append(point(t_lat, t_lon, course, base, way * width))
+                path.append(point(t_lat, t_lon, course, base, 0.0))
+            else:
+                path.append(point(t_lat, t_lon, course,
+                                  min(out, 10.0), 0.0))
+            path.append((t_lat, t_lon))
+            self._rejoin_path = path
+            self._emit("info", "Positioning for the final",
+                       "autonomous.rejoin_final")
+        # One fix at a time, in order: the legs double back on each
+        # other, and "the nearest leg" of a circuit is the wrong one for
+        # half of it.
+        path = self._rejoin_path
+        reach = 0.3 if light else 0.6 if not fast else 1.0
+        while len(path) > 1 and state.distance_to(*path[0]) < reach:
+            path.pop(0)
+        heading = auto_nav.bearing_deg(state.latitude, state.longitude,
+                                       *path[0])
+        self._hold_level(
+            state, max(pattern_ft, min(state.altitude_ft or 0.0,
+                                       self.state.missed_alt_ft
+                                       or pattern_ft)),
+            self._magnetic(self._into_wind(state, heading), state), speed)
+        return True
+
+    def _hold_level(self, state, target_ft: float, heading: float,
+                    speed_kt: float) -> None:
+        """A heading, a speed and an altitude held or eased onto."""
+        d = self.director
+        d.localizer(False)
+        if self.state.ap_apr_mode:
+            d.approach(False)
+            self.state.ap_apr_mode = False
+        alt = state.altitude_ft or 0.0
+        vs = 0.0
+        if alt > target_ft + 100.0:
+            vs = -500.0
+        elif alt < target_ft - 100.0:
+            vs = 500.0
+        self._apply_flight_director(
+            state, altitude=int(target_ft), vs_fpm=vs, heading=heading,
+            speed_kt=speed_kt)
+
+    @staticmethod
+    def _final_alt_bug(elev_ft: float) -> float:
+        """Where the altitude selector sits while a path is flown down:
+        under the aeroplane, at the field. Left at the altitude the
+        final was joined from, the autopilot's capture holds the
+        aeroplane there and the path's vertical speed is never flown."""
+        return max(1.0, float(int(max(0.0, elev_ft) / 100.0) * 100))
 

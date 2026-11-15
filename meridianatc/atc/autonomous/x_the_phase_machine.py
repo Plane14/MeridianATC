@@ -1009,6 +1009,14 @@ class _The_phase_machine:
         recipe = self._approach_recipe(state)
         self._maybe_tune_nav(state, recipe, now)
 
+        # Not yet where a final can be flown from: position for it,
+        # level, before anything descends toward the runway.
+        if not self.state.circling and self._join_final(state, recipe):
+            self.state.stabilized = False
+            if now - self.state.phase_entered_at > self.APPROACH_TIMEOUT:
+                self._set_error("Approach timed out")
+            return
+
         flown = False
         if recipe is not None and recipe.family != "visual":
             flown = self._fly_recipe(state, recipe, now)
@@ -1159,8 +1167,14 @@ class _The_phase_machine:
                     # ground steering does -- a few degrees a second of
                     # yaw answered against the authority this model has
                     # shown, not a bare proportional pedal.
+                    # The crab is kept until the power comes off and
+                    # kicked out below it: squared up at sixty feet the
+                    # aeroplane drifts downwind for the whole flare.
+                    want = self._centreline_heading(state, 3.0)
+                    if agl > idle_ft:
+                        want = self._into_wind(state, want)
                     d.rudder(self._ground_directional(
-                        state, self._centreline_heading(state, 3.0),
+                        state, want,
                         state.ground_speed_kt
                         or (state.indicated_airspeed_kt or 0.0),
                         rate_cap=4.0))

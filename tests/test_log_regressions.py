@@ -1719,7 +1719,6 @@ def test_a_confirm_that_arrives_late_is_dropped_not_said():
     confirming the numbers now would be an exchange late, so the line
     is dropped rather than spoken."""
     import threading
-    import time as _time
 
     from meridianatc.atc import crew as crew_mod
     from meridianatc.atc.session import Instruction

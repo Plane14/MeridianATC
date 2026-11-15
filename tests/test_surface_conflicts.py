@@ -192,7 +192,10 @@ def test_taxi_watch_calls_for_moving_traffic_in_window():
 
 def _fo(**attrs):
     from meridianatc.atc.autonomous import (
-        AutonomousFlight, AutonomousPhase, AutonomousState)
+        AutonomousFlight,
+        AutonomousPhase,
+        AutonomousState,
+    )
     fo = AutonomousFlight.__new__(AutonomousFlight)
     fo.state = AutonomousState()
     fo.state.phase = AutonomousPhase.TAXI_OUT
@@ -486,8 +489,7 @@ def _pose(**kw):
 
 
 def _gear_events(dll):
-    from meridianatc.integrations.aitraffic import (
-        _EV_GEAR_DOWN, _EV_GEAR_UP)
+    from meridianatc.integrations.aitraffic import _EV_GEAR_DOWN, _EV_GEAR_UP
     return [c.args[2] for c in dll.TransmitClientEvent.call_args_list
             if c.args[2] in (_EV_GEAR_DOWN, _EV_GEAR_UP)]
 

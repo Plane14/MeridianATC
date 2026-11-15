@@ -52,6 +52,7 @@ from ...navdata.db import (
     transition_level,
     vfr_region,
 )
+from .. import flows as flowmod
 from .. import speech as sp
 from ..approaches import (
     VISUAL,
@@ -75,7 +76,6 @@ from ..climb import (
 )
 from ..enroute import is_oceanic
 from ..final import final_for
-from .. import flows as flowmod
 from ..intents import _REPORT_WORD, Intent, ParsedIntent
 from ..phraseology import Phraseology, Weather, _join, language_of
 from ..procedures import heard as procedure_heard

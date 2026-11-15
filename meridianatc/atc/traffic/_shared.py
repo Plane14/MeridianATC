@@ -49,7 +49,7 @@ from ...navdata.db import (
 )
 from .. import circuit as circuitry
 from .. import fleet as fleets
-from .. import flows as flowmod
+from .. import flows as flowmod  # noqa: F401  (re-exported)
 from .. import ground as groundwork
 from .. import live as livemod
 from .. import perftable

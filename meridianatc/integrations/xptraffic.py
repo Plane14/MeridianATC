@@ -6,6 +6,7 @@ the plugin's ``drawn`` list admits an invented aircraft to the frequency.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import math
@@ -375,10 +376,8 @@ class XPlaneTraffic:
             now = time.monotonic()
             asked, text = self._metars.get(station, (float("-inf"), None))
             if now - asked >= ask_older_s:
-                try:
+                with contextlib.suppress(ValueError, TypeError, OverflowError):
                     self._send({"v": 1, "t": "metar", "icao": station})
-                except (ValueError, TypeError, OverflowError):
-                    pass
                 self._metars[station] = (now, text)
             return text
 

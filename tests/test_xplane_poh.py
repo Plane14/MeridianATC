@@ -10,15 +10,14 @@ placed traffic.
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from meridianatc.atc import autofly, checklist_files
 from meridianatc.atc.flying import AIRLINER, LIGHT
 from meridianatc.atc.vspeeds import rotate_kt
-
 
 # The X-Plane 12 hangar, a title fragment the simulator reports, the
 # checklist class it files as, and the rotation the POH gives it.
@@ -84,8 +83,8 @@ def test_native_rotation_figures_in_the_vspeed_table(code, rotate):
 
 
 def test_placed_traffic_taxis_at_the_types_own_speed():
-    from meridianatc.atc.traffic.x_the_field import _The_field
     from meridianatc.atc.traffic._shared import Flight
+    from meridianatc.atc.traffic.x_the_field import _The_field
 
     field = _The_field.__new__(_The_field)
     field.field = SimpleNamespace(latitude=51.15, longitude=-0.19,

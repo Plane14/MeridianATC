@@ -178,7 +178,10 @@ class _Instructions_and_being:
         if approach is None:
             return None
         from ..procedure_legs import (
-            ProcedureNavigator, ProcedureTransition, TerminalProcedure)
+            ProcedureNavigator,
+            ProcedureTransition,
+            TerminalProcedure,
+        )
 
         procedure = TerminalProcedure(
             name=f"{approach.name} missed approach", kind="sid")

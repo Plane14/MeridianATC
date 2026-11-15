@@ -183,6 +183,13 @@ class _Circling:
                 to_go_m = state.distance_to(
                     self.state.runway_lat, self.state.runway_lon) * 1852.0
                 aligned = aligned and abs(offset) < max(25.0, to_go_m * 0.05)
+                # And near the path down to it: far above a three-degree
+                # slope this close in is a dive at the runway or a
+                # landing halfway along it, whatever the needles of the
+                # moment read.
+                above = (state.altitude_ft or 0.0)                     - self._field_elevation(state)
+                on_path = approach_flight.TCH_FT                     + to_go_m / 1852.0 * approach_flight.FT_PER_NM
+                aligned = aligned and above < on_path * 1.4 + 250.0
         bank_max = self.performance.max_bank_deg or 25.0
         if vs < 1000.0 and abs(ias - target) < 12.0 \
                 and bank < bank_max and aligned:
@@ -255,6 +262,18 @@ class _Circling:
                 airport=getattr(self.session, "destination", None)
                 or getattr(self.session, "departure", None)):
             return True
+        # Still in the air with the touchdown zone behind: the runway
+        # left is not enough to land on. A third of it gone and the
+        # wheels not yet in the flare is a go-around, not a long float
+        # toward the far fence.
+        if 60.0 < agl < 500.0 and self.state.runway_heading > 0                 and (self.state.runway_length_ft or 0.0) > 0.0                 and getattr(state, "has_position", False)                 and state.on_ground is False:
+            where = auto_nav.align(
+                state.latitude, state.longitude, self.state.runway_lat,
+                self.state.runway_lon, self.state.runway_heading)
+            length_m = self.state.runway_length_ft * 0.3048
+            if (length_m / 3.0 < where["along_m"] < length_m
+                    and abs(where["offset_m"]) < 300.0):
+                return True
         # Never stabilized by the flare's gate is a go-around however
         # the numbers looked on the way down.
         if 0.0 < agl < 200.0 and not self.state.stabilized:

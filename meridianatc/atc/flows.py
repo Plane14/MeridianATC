@@ -168,26 +168,24 @@ class Flow:
                       if str(code).upper() in ("BKN", "OVC", "VV")]
             if layers and min(layers) < self.ceiling_ft:
                 return False
-        if self.visibility_sm is not None and weather is not None:
-            if float(getattr(weather, "visibility_sm", 10.0) or 10.0) \
-                    < self.visibility_sm:
-                return False
-        if self.times and minute_utc is not None:
-            if not any((start <= minute_utc <= end) if start <= end
-                       else (minute_utc >= start or minute_utc <= end)
-                       for start, end in self.times):
-                return False
-        return True
+        if self.visibility_sm is not None and weather is not None \
+                and float(getattr(weather, "visibility_sm", 10.0) or 10.0) \
+                < self.visibility_sm:
+            return False
+        return not (
+            self.times and minute_utc is not None
+            and not any((start <= minute_utc <= end) if start <= end
+                        else (minute_utc >= start or minute_utc <= end)
+                        for start, end in self.times))
 
     def ends(self, departing: bool) -> list[str]:
         """Every runway end the flow has working this direction, in order."""
         seen, found = set(), []
         for use in self.runways:
-            if (departing and use.departures) \
-                    or (not departing and use.arrivals):
-                if use.end not in seen:
-                    seen.add(use.end)
-                    found.append(use.end)
+            if (use.departures if departing else use.arrivals) \
+                    and use.end not in seen:
+                seen.add(use.end)
+                found.append(use.end)
         return found
 
     def assign(self, departing: bool, xp_class: str = "",
@@ -202,10 +200,7 @@ class Flow:
         """
         role = [u for u in self.runways
                 if (u.departures if departing else u.arrivals)]
-        if xp_class:
-            served = [u for u in role if u.serves(xp_class)]
-        else:
-            served = role
+        served = [u for u in role if u.serves(xp_class)] if xp_class else role
         if course is not None:
             for use in served:
                 if use.covers(course, departing):
