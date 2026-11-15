@@ -71,6 +71,9 @@ class _The_loop:
         # one-second mode selections, and its touchdown report edges off
         # the air->ground change wherever it happens.
         self._monitor_load(state, now)
+        # A flap stage the speed gate refused is selected as soon as the
+        # aeroplane has slowed to it.
+        self._configure_owed(state)
         # The stall watch runs on the same cadence: a trigger held past
         # a gust hands the axes to the recovery, which flies them every
         # tick until the wing is flying again -- no mode selection waits

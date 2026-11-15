@@ -202,6 +202,7 @@ class _Shared_helpers:
         if vs_fpm:
             vs_fpm = max(lim["vs_dn_fpm"], min(float(vs_fpm),
                                              lim["vs_up_fpm"]))
+            vs_fpm = self._climb_within_speed(state, vs_fpm, lim)
             # The bug is slewed to the demand, not stepped: the AP's
             # pitch answer follows a ramp instead of a stair.
             vs_fpm = self._vs_slew(state, vs_fpm, now)
@@ -236,6 +237,42 @@ class _Shared_helpers:
                                       AutonomousPhase.DESCENT) \
                     and abs(vs_fpm) < 1:
                 d.level_change(False)
+
+    def _climb_within_speed(self, state, vs_fpm: float, lim) -> float:
+        """A climb rate the aeroplane has the airspeed for.
+
+        A vertical-speed mode holds its rate and lets the speed pay for
+        it: hot, heavy or high, the book rate is more than the engine
+        has, the airspeed bleeds a knot at a time and the autopilot
+        pitches up after it into the stall. A crew watches the speed
+        and gives the rate away first -- all of it by fifteen per cent
+        over the stall, and below that the nose comes down for speed.
+        """
+        if vs_fpm <= 0.0 or getattr(state, "on_ground", False):
+            return vs_fpm
+        ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
+        # Clean, it is the clean stall that counts; a model that
+        # publishes neither is given its approach speed's (1.3 Vs0).
+        stall = float(lim.get("stall_kt") or 0.0)
+        if getattr(self, "_flaps_asked", 0.0) <= 0.0:
+            stall = float(getattr(state, "design_vs1_kt", 0.0) or stall)
+        if stall <= 0.0:
+            stall = float(self.performance.approach_kt or 0.0) / 1.3
+        if ias <= 0.0 or stall <= 0.0:
+            return vs_fpm
+        floor = stall * 1.15
+        margin = max(8.0, stall * 0.15)
+        if ias >= floor + margin:
+            self._climb_speed_warned = False
+            return vs_fpm
+        if not getattr(self, "_climb_speed_warned", False):
+            self._climb_speed_warned = True
+            self._emit("info",
+                       f"Climb rate reduced: {ias:.0f} kt is close to "
+                       "the stall", "autonomous.limits.climb_speed")
+        if ias <= floor:
+            return -300.0
+        return max(100.0, vs_fpm * (ias - floor) / margin)
 
     def _manage_throttle(self, state, target_kt: float) -> None:
         """The FO's own throttle, for the aeroplanes with no autothrottle.

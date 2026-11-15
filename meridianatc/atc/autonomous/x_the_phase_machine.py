@@ -720,10 +720,21 @@ class _The_phase_machine:
                 pull = min(pull, 0.05)
             # The load watch's ceiling: a rotation that would pull past
             # the limit pulls to it instead.
+            ias = state.indicated_airspeed_kt or 0.0
+            v1 = self.state.v1_kt or (self.state.rotate_speed_kt - 10.0)
+            late = elapsed > 8.0
+            if late and ias >= v1:
+                # Past V1 and slow to unstick: the stop is no longer on
+                # the runway that is left, so the takeoff is continued --
+                # a firmer pull as the speed builds, the way a heavy or
+                # nose-heavy aeroplane is flown off, not a high-speed
+                # abort into the overrun.
+                pull = max(pull, min(0.65, 0.35 + 0.03 * (elapsed - 8.0)))
             d.elevator(self._g_pull_cap(state, pull))
             d.takeoff_power()
-            if elapsed > 8.0:
-                # Rotated and still on the ground: the model is not
+            if late and (ias < v1 or elapsed > 25.0):
+                # Rotated and still on the ground with the speed gone
+                # (or nothing answering at all): the model is not
                 # flying itself off; lower the nose and reject rather
                 # than porpoise down the runway.
                 d.elevator(0.0)

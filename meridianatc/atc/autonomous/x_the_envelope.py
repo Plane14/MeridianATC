@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ._shared import AutonomousPhase
+
 
 class _The_envelope:
     # -- the envelope ------------------------------------------------------
@@ -144,9 +146,36 @@ class _The_envelope:
         while past the flap speed must not be held as an extension.
         """
         retracting = fraction <= getattr(self, "_flaps_asked", 0.0)
-        self._flaps_asked = fraction
         if retracting or self._flaps_allowed(state):
+            self._flaps_asked = fraction
+            self._flaps_owed = None
             self.director.flaps(fraction)
+        else:
+            # Refused for speed: the stage is owed, not done. It is
+            # selected the moment the aeroplane is slow enough for it
+            # (see _configure_owed) -- a schedule that ticked the stage
+            # off here flew the rest of the descent, and sometimes the
+            # final, with the flap it never got.
+            self._flaps_owed = fraction
+
+    def _configure_owed(self, state) -> None:
+        """Select the flap a speed gate refused earlier, now the speed
+        allows it. Run every tick. (The gear is asked again by the
+        approach itself until the model says it is down.)"""
+        if getattr(state, "on_ground", False) \
+                or self.state.phase not in (AutonomousPhase.DESCENT,
+                                            AutonomousPhase.APPROACH,
+                                            AutonomousPhase.LANDING):
+            self._flaps_owed = None
+            return
+        owed = getattr(self, "_flaps_owed", None)
+        ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
+        if owed is not None \
+                and ias <= self._limits(state)["flap_max_kt"]:
+            self._flaps_owed = None
+            if owed > getattr(self, "_flaps_asked", 0.0):
+                self._flaps_asked = owed
+                self.director.flaps(owed)
 
     def _lever_position(self, state) -> float:
         """Where the levers are, 0..1, as the sim last reported them."""

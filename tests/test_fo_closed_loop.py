@@ -198,3 +198,39 @@ def test_a_vector_is_flown_level_until_the_final_is_there(monkeypatch):
     _fly_final(fo, plant, monkeypatch, seconds=60.0)
     assert plant.alt == pytest.approx(1500.0, abs=60.0)
     assert abs((plant.hdg - 270.0 + 540.0) % 360.0 - 180.0) < 10.0
+
+
+def test_a_climb_gives_its_rate_away_before_the_airspeed():
+    # A vertical-speed climb the engine cannot pay for bleeds airspeed
+    # into the stall; the FO asks for less rate, then for the nose down.
+    plant = _start(5.0, 3000.0)
+    fo = _fo(plant)
+    lim = {"stall_kt": 50.0}
+    state = plant.state()
+    fo._flaps_asked = 0.5
+    state.indicated_airspeed_kt = 90.0
+    assert fo._climb_within_speed(state, 700.0, lim) == 700.0
+    state.indicated_airspeed_kt = 61.5
+    assert 100.0 <= fo._climb_within_speed(state, 700.0, lim) < 700.0
+    state.indicated_airspeed_kt = 55.0
+    assert fo._climb_within_speed(state, 700.0, lim) < 0.0
+    # A descent is never touched.
+    assert fo._climb_within_speed(state, -500.0, lim) == -500.0
+
+
+def test_a_flap_stage_refused_for_speed_is_selected_once_slow_enough():
+    from meridianatc.atc.autonomous import AutonomousPhase
+    plant = _start(5.0, 3000.0)
+    fo = _fo(plant)
+    fo.state.phase = AutonomousPhase.DESCENT
+    fo._flaps_asked = 0.0
+    state = plant.state()
+    fast = fo._limits(state)["flap_max_kt"] + 20.0
+    state.indicated_airspeed_kt = fast
+    fo._set_flaps(state, 0.5)
+    assert plant.flaps == 0.0 and fo._flaps_owed == 0.5
+    fo._configure_owed(state)
+    assert plant.flaps == 0.0
+    state.indicated_airspeed_kt = fast - 40.0
+    fo._configure_owed(state)
+    assert plant.flaps > 0.0 and fo._flaps_owed is None
