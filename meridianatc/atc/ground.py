@@ -714,10 +714,11 @@ class GroundLayout:
                     / BACKTRACK_MS
                     + TURN_S)
             if best is None or cost < best[0]:
-                best = (cost, out, onto, along, entry)
+                best = (cost, out, onto, along, entry,
+                        first_on - hold_at)
         if best is None:
             return None
-        _cost, out, onto, along, entry = best
+        _cost, out, onto, along, entry, first_idx = best
         # Line up pointing down the runway a little past the entry, on
         # the centreline, rather than stopping sideways across it.
         ex, ez = self.xy[entry]
@@ -727,10 +728,18 @@ class GroundLayout:
         taxi_out = self._taxiing(out, start_xy if stand is None else None,
                                  push=stand is not None)
         line_up = self._taxiing(onto, None, extra=lined, face=heading)
-        # Where the entry meets the runway, in metres from the threshold:
-        # how the clearance knows it has an intersection departure, and how
-        # far the aeroplane still has to roll (atc.taxi.TaxiPlan.intersection).
-        line_up.entry_along_m = along
+        # Where the aeroplane first commits to the pavement, in metres
+        # from the threshold: how the clearance knows it has an
+        # intersection departure, and how far it still has to roll
+        # (atc.taxi.TaxiPlan.intersection). It is NOT the priced ``entry``
+        # -- where the route stepped onto the strip earlier to reach it,
+        # the taxiway the aeroplane stood on (the last the route names)
+        # meets the runway at the first on-pavement node, and that is
+        # what the clearance has to name and measure.
+        joined = onto[first_idx] if first_idx < len(onto) else onto[-1]
+        joined_along, _ = self.runway_frame(*self.xy[joined],
+                                            threshold, heading)
+        line_up.entry_along_m = max(0.0, joined_along)
         return taxi_out, line_up
 
     def _metres(self, nodes: list[object]) -> float:
