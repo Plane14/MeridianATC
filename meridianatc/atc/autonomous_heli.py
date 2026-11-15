@@ -33,6 +33,7 @@ one. ``logs`` and the ``autonomous.*`` events say what was tried.
 from __future__ import annotations
 
 import logging
+import math
 import time
 from dataclasses import dataclass
 
@@ -86,6 +87,8 @@ MAX_IAS_KT = 120.0             # a light single's VNE is near here; never above
 PATTERN_AGL_FT = 800.0         # the altitude the circuit is flown at
 FINAL_AGL_FT = 150.0           # where the approach becomes the landing
 LANDING_VS_FPM = -300.0        # the descent onto the spot
+APPROACH_FT_PER_NM = 850.0     # an eight-degree approach angle to the spot
+SPOT_NM = 0.03                 # "over the spot": inside this, the landing
 FLARE_AGL_FT = 25.0            # collective comes up under this
 CRUISE_CAP_FT = 6000.0         # a light single does not cruise at 39,000
 START_TIMEOUT_S = 240.0        # spool-up on a cold turbine is slow
@@ -100,9 +103,9 @@ COLL_KP_PER_FT = 0.12          # per cent collective per foot of error
 COLL_KD_PER_FPM = 0.04         # per cent collective per fpm of sink/climb
 COLL_TRIM_PCT = 55.0           # the hover collective, guessed then adapted
 COLL_ADAPT = 0.002             # how fast the trim learns, per second
-# Cyclic longitudinal: axis units per knot of airspeed error. The SIGN is
-# UNVERIFIED -- which way the axis pitches the model -- so the constant is
-# written once, here, and flipped if a flight shows it backwards.
+# Cyclic longitudinal: axis units per knot of airspeed error. Positive
+# axis is aft cyclic (nose up), as on the elevator; on MSFS the axis
+# sign is UNVERIFIED against a live model.
 CYCLIC_KT_PER_AXIS = 30.0
 CYCLIC_MAX = 6000              # about a third of full deflection
 # Pedals/steering: axis units per degree of heading error.
@@ -480,6 +483,9 @@ class RotorcraftFlight:
 
     def _goto(self, stage: str) -> None:
         self.state.stage = stage
+        self._land_hdg = None
+        if stage != "landing":
+            self._spot_nearest_nm = 99.0
         self.state.stage_entered_at = time.monotonic()
         for pid in getattr(self, "_pids", {}).values():
             pid.reset()
@@ -752,9 +758,9 @@ class RotorcraftFlight:
             self._checklist("after_takeoff")
             self._goto("climb")
         elif self._elapsed() > 90.0:
-            # Never rotated: something the controller cannot see. Say so
-            # rather than charge into the climb.
-            self.owner._set_error("rotorcraft transition timed out")
+            # Never made the transition: something the controller
+            # cannot see.
+            self._overdue(state, "transition", "climb")
 
     def _climb(self, state) -> None:
         self._fly(state, agl_target=None,
@@ -766,7 +772,7 @@ class RotorcraftFlight:
                 and abs(getattr(state, "vertical_speed_fpm", 0.0) or 0.0) < 200:
             self._goto("cruise")
         elif self._elapsed() > 900.0:
-            self.owner._set_error("rotorcraft climb timed out")
+            self._overdue(state, "climb", "cruise")
 
     def _cruise(self, state) -> None:
         self._checklist("cruise")
@@ -794,11 +800,16 @@ class RotorcraftFlight:
             self._checklist("approach")
             self._goto("approach")
         elif self._elapsed() > 900.0:
-            self.owner._set_error("rotorcraft descent timed out")
+            self._overdue(state, "descent", "approach")
 
     def _approach(self, state) -> None:
         agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)
         ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
+        dist = self._distance_nm(state)
+        if dist is not None:
+            self._approach_to_the_spot(state, agl, dist)
+            return
+        # No position to fly to: the height is all there is to go by.
         # Down the profile's approach: slow to approach speed first, then
         # descend into the hover over the spot.
         if ias > self.state.ias_approach_kt + 5.0 or agl > FINAL_AGL_FT + 100:
@@ -824,6 +835,40 @@ class RotorcraftFlight:
             self._checklist("before_landing")
             self._goto("landing")
 
+    def _approach_to_the_spot(self, state, agl: float,
+                              dist: float) -> None:
+        """The approach flown to a place, not to a height.
+
+        The old approach came down as soon as the circuit height was
+        reached inside three miles and landed wherever that put it --
+        up to three miles short, on whatever was underneath. A
+        helicopter approach is an angle to a spot: the circuit height
+        is held until the spot sits on an eight-degree line, the line is
+        flown down to a hover height over it, and the speed comes off
+        with the distance so the aircraft arrives at a walk.
+        """
+        gs = float(getattr(state, "ground_speed_kt", 0.0) or 0.0)
+        height = HOVER_AGL_FT + dist * APPROACH_FT_PER_NM
+        on_the_line = height < PATTERN_AGL_FT
+        speed = _clamp(12.0 + dist * 110.0, 12.0,
+                       self.state.ias_approach_kt)
+        # The rate the line asks for at this groundspeed, never more
+        # than the profile's descent onto a spot allows near the ground.
+        vs = -gs * 101.3 * (APPROACH_FT_PER_NM / 6076.0) \
+            if on_the_line else 0.0
+        self._fly(state, agl_target=min(PATTERN_AGL_FT, height),
+                  ias_target=speed, vs_target=max(vs, -700.0),
+                  throttle=THROTTLE_CRUISE)
+        nearest = min(getattr(self, "_spot_nearest_nm", dist), dist)
+        self._spot_nearest_nm = nearest
+        over = dist <= SPOT_NM and gs < 25.0
+        # Gone past it low and slow: the landing is made here, a few
+        # yards on, not after a pedal turn back at hover height.
+        past = dist > nearest + 0.02 and nearest < 0.15 and agl < 150.0
+        if over or past:
+            self._checklist("before_landing")
+            self._goto("landing")
+
     def _landing(self, state) -> None:
         agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)
         if getattr(state, "on_ground", False):
@@ -839,15 +884,50 @@ class RotorcraftFlight:
             self._checklist("after_landing")
             self._goto("shutdown")
             return
+        # The heading the landing began on is the one it is finished
+        # on: a bearing to a spot that is under the aircraft swings
+        # through every point of the compass.
+        if getattr(self, "_land_hdg", None) is None:
+            self._land_hdg = float(
+                getattr(state, "heading_true", 0.0) or 0.0) or 360.0
+        # A helicopter is put down from a hover, not flown on at
+        # approach speed: the forward speed comes off first, at hover
+        # height, and only a helicopter that has stopped is let down.
         # The flare: the rate comes off under FLARE_AGL_FT so the skids
         # meet the ground rather than the airframe meeting it fast.
-        vs_target = (self._profile.landing_vs_fpm if agl > FLARE_AGL_FT
-                     else -120.0)
-        self._fly(state, agl_target=0.0,
-                  ias_target=max(self.state.ias_approach_kt - 15.0, 35.0),
-                  vs_target=vs_target, throttle=THROTTLE_CRUISE)
+        moving = abs(self._forward_kt(state)) > 8.0
+        if moving and agl > 6.0:
+            self._fly(state, agl_target=max(HOVER_AGL_FT * 0.5,
+                                            min(agl, HOVER_AGL_FT)),
+                      ias_target=0.0, vs_target=0.0,
+                      throttle=THROTTLE_CRUISE)
+        else:
+            vs_target = (self._profile.landing_vs_fpm
+                         if agl > FLARE_AGL_FT else -120.0)
+            self._fly(state, agl_target=0.0, ias_target=0.0,
+                      vs_target=vs_target, throttle=THROTTLE_CRUISE)
         if self._elapsed() > 300.0:
-            self.owner._set_error("rotorcraft landing timed out")
+            self._overdue(state, "landing", "")
+
+    def _overdue(self, state, what: str, onward: str) -> None:
+        """A stage that ran out of clock.
+
+        On the ground that is an error and the flight stops. In the air
+        it cannot be: the error state takes the FO's hands off the
+        controls, and a helicopter nobody is flying does not stay
+        upright. Airborne, the clock is said once and the flight goes on
+        to the stage that follows -- or keeps flying the one it is in.
+        """
+        if getattr(state, "on_ground", True):
+            self.owner._set_error(f"rotorcraft {what} timed out")
+            return
+        if getattr(self, "_overdue_said", "") != what:
+            self._overdue_said = what
+            self._emit("warning",
+                       f"Rotorcraft {what} is taking longer than planned; "
+                       "continuing", "autonomous.rotorcraft.overdue")
+        if onward:
+            self._goto(onward)
 
     # -- the failure ---------------------------------------------------------
 
@@ -919,10 +999,10 @@ class RotorcraftFlight:
             auto_kt = self._profile.auto_kt or self.state.ias_approach_kt
             err = auto_kt - ias
             if self._use_pids:
-                axis = CYCLIC_TRIM_AIRBORNE + self._pid("cyclic") \
+                axis = CYCLIC_TRIM_AIRBORNE - self._pid("cyclic") \
                     .update(err, measurement=ias)
             else:
-                axis = CYCLIC_TRIM_AIRBORNE + CYCLIC_KT_PER_AXIS * err
+                axis = CYCLIC_TRIM_AIRBORNE - CYCLIC_KT_PER_AXIS * err
             self._send(CYCLIC_LONG_SET,
                        int(_clamp(axis, -CYCLIC_MAX, CYCLIC_MAX)))
             self._send(CYCLIC_LAT_SET, self._lateral_trim_axis(state))
@@ -953,7 +1033,7 @@ class RotorcraftFlight:
             self._send(CYCLIC_LONG_SET, 0)
             self._send(CYCLIC_LAT_SET, 0)
         if self._elapsed() > 300.0:
-            self.owner._set_error("rotorcraft autorotation timed out")
+            self._overdue(state, "autorotation", "")
 
     # -- shutdown -----------------------------------------------------------
 
@@ -1098,16 +1178,36 @@ class RotorcraftFlight:
             # back from.
             ias_target = min(float(ias_target),
                              self._profile.max_ias_kt * 0.95)
-            err = ias_target - ias
+            # Under thirty knots the pitot is not an instrument: the
+            # speed that is flown is the one over the ground along the
+            # nose, signed, so a helicopter drifting backwards is
+            # answered with forward cyclic and not more aft. The trim
+            # the loop works round fades from the forward-flight figure
+            # to the hover's with the speed asked for.
+            slow = ias_target < 30.0
+            measured = self._forward_kt(state) if slow else ias
+            base = self.state.cyclic_trim
+            if slow:
+                base = CYCLIC_TRIM_HOVER + (base - CYCLIC_TRIM_HOVER) \
+                    * ias_target / 30.0
+            err = ias_target - measured
+            # A positive axis is aft cyclic -- the convention every
+            # other write here already uses (the forward-flight trim is
+            # negative, the low-G recovery's aft cyclic positive, and
+            # the X-Plane bridge lands the axis on the yoke's pitch
+            # ratio, where positive is nose up). Too slow is therefore
+            # answered with a *negative* correction: the law used to add
+            # it, which pulled the nose up on a helicopter that was
+            # already slow and pushed it down on one that was fast.
             if self._use_pids:
-                axis = self.state.cyclic_trim + self._pid("cyclic") \
-                    .update(err, measurement=ias)
+                axis = base - self._pid("cyclic") \
+                    .update(err, measurement=measured)
             else:
-                axis = self.state.cyclic_trim + CYCLIC_KT_PER_AXIS * err
+                axis = base - CYCLIC_KT_PER_AXIS * err
             # A helicopter cannot climb vertically forever: bleed speed
             # protection -- if the collective is asking hard and the speed
             # is low, lower the nose rather than stall in the H-V curve.
-            if ias < 45.0 and agl > 200.0:
+            if ias < 45.0 and agl > 200.0 and not slow:
                 axis -= 1500
             # On speed and steady, the axis being commanded is the
             # forward-flight cyclic this model wants -- the trim the
@@ -1115,7 +1215,7 @@ class RotorcraftFlight:
             # figure was. Never while the bleed-speed deduction is in
             # the axis: it would teach the trim the H-V protection's
             # nose-down instead of the cruise figure.
-            if abs(err) < 3.0 and abs(vs) < 200.0 \
+            if abs(err) < 3.0 and abs(vs) < 200.0 and not slow \
                     and not (ias < 45.0 and agl > 200.0):
                 self.state.cyclic_trim += (axis
                                            - self.state.cyclic_trim) * 0.05
@@ -1138,6 +1238,15 @@ class RotorcraftFlight:
                 float(getattr(state, "heading_true", 0.0) or 0.0),
                 float(getattr(state, "track_true", 0.0) or 0.0))
             lat += int(_clamp(drift * 150.0, -2000.0, 2000.0))
+        elif airborne and self.state.stage in ("approach", "landing"):
+            # At a hover the same answer is to the sideways speed
+            # itself: drifting right over the ground is met with left
+            # cyclic, the sign the forward-flight correction above uses.
+            gs = float(getattr(state, "ground_speed_kt", 0.0) or 0.0)
+            track = getattr(state, "track_true", None)
+            if track is not None and gs >= 1.0:
+                sideways = gs * math.sin(math.radians(float(track) - hdg))
+                lat -= int(_clamp(sideways * 200.0, -2000.0, 2000.0))
         self._send(CYCLIC_LAT_SET, int(_clamp(lat, -axis_max, axis_max)))
 
         # -- pedals: heading -------------------------------------------------
@@ -1203,7 +1312,8 @@ class RotorcraftFlight:
             # the rotor's stored speed is spent at the flare, not here.
             self._collective(min(100.0, self.state.coll_trim + 15.0))
         if ias > self._profile.max_ias_kt and not autorotating:
-            self._send(CYCLIC_LONG_SET, CYCLIC_MAX)   # nose down, UNVERIFIED sign
+            # Aft cyclic, nose up: the speed comes off.
+            self._send(CYCLIC_LONG_SET, CYCLIC_MAX)
         torque = float(getattr(state, "eng_torque_pct", 0.0) or 0.0)
         # The variable is documented as a percent but some models publish
         # torque in foot-pounds on the same scale; a figure far past the
@@ -1250,8 +1360,12 @@ class RotorcraftFlight:
                            "autonomous.rotorcraft.overspeed")
         elif nr_min <= rpm <= nr_max:
             self._nr_warned = ""
-        if agl < 15.0 and not getattr(state, "on_ground", True):
+        if self.state.stage == "landing" and agl < 3.0                 and not getattr(state, "on_ground", True):
             # Effectively landed but not flagged: kill the climb input.
+            # Only at the end of a landing, and only at skid height: the
+            # same cut at fifteen feet took the lift off a helicopter
+            # leaving the ground and dropped an arriving one the rest of
+            # the way.
             self._collective(min(self.state.coll_trim, 30.0))
 
         # The rotor's load. High G is offloaded on the collective the
@@ -1311,11 +1425,25 @@ class RotorcraftFlight:
             return None
         return state.distance_to(self.state.dest_lat, self.state.dest_lon)
 
+    @staticmethod
+    def _forward_kt(state) -> float:
+        """Speed over the ground along the nose, signed: the figure a
+        hover is flown on, where the pitot reads nothing useful."""
+        gs = float(getattr(state, "ground_speed_kt", 0.0) or 0.0)
+        hdg = float(getattr(state, "heading_true", 0.0) or 0.0)
+        track = getattr(state, "track_true", None)
+        if track is None or gs < 1.0:
+            return gs
+        return gs * math.cos(math.radians(float(track) - hdg))
+
     def _desired_track(self, state) -> float:
         """Where to point, in degrees true: the controller's heading, else
         the destination. An assigned heading is spoken magnetic, and the
         pedal loop steers ``heading_true`` -- without the conversion the
         pedals hold a heading off by the local variation."""
+        if self.state.stage == "landing" \
+                and getattr(self, "_land_hdg", None) is not None:
+            return self._land_hdg
         assigned = getattr(self.session, "assigned_heading", None)
         if assigned:
             if getattr(state, "has_position", False):
