@@ -686,7 +686,10 @@ class _The_checklist_answered:
             # unblown rudder have nothing to give, and the apron pivot
             # turn either gear flies on the inside brake.
             if tail or self._turn_commit:
-                add_left, add_right = tailwheel.brake_assist(sent, gs)
+                # The law's demand, not ``sent``: a model whose pedal
+                # axis answers backwards still wants the inside wheel
+                # for the turn it is making, not the wire's sign.
+                add_left, add_right = tailwheel.brake_assist(rudder, gs)
                 d.brakes_split(max(brake, add_left),
                                max(brake, add_right))
             else:

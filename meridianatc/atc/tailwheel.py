@@ -31,16 +31,22 @@ import math
 # so the sim's own flag wins whenever it reports one.
 TAILWHEEL_TYPES = frozenset({
     "J3", "PA11", "PA12", "PA14", "PA15", "PA16", "PA18", "PA20",
-    "PA22", "PA25",
+    "PA25",
     "C120", "C140", "C170", "C180", "C185", "C195",
-    "DC3", "DC4", "DC6", "DC7",
+    # The DC-4 onward is nosewheel; only the DC-3 sits on its tail.
+    "DC3",
     "AN2", "DHC2", "DHC3",
-    "T6", "P38", "P40", "P47", "P51", "B17", "B24", "B25",
+    # P-38 and B-24 are tricycle; the rest of the fighters and both
+    # other bombers are conventional.
+    "T6", "P40", "P47", "P51", "B17", "B25",
     "BL8", "CH7A", "CH7B", "PTS1", "PTS2", "EXTR", "EDGE", "MX2",
     "SU26", "SU29", "SU31", "YAK52", "YAK55",
     "ST75", "DH82", "STIL", "L5", "L6", "L8", "L13", "L19",
-    "SYMP", "RV8", "RV10", "RV12", "RV14",
-    "Z42", "Z43", "DR40",
+    # Van's "A"-suffixed kits and the RV-10/12 are nosewheel; the
+    # RV-7/8/14 tailwheel models are the conventional ones.
+    "RV7", "RV8", "RV14",
+    # PA-22 Tri-Pacer, DR40, Z-42/43 and SYMP are all nosewheel
+    # despite sitting next to tailwheel families.
 })
 
 # Title words a type code does not cover: restored warbirds, kitplanes,
@@ -130,11 +136,13 @@ DIFF_BRAKE_MAX = 0.45
 def brake_assist(demand: float, gs_kt: float) -> tuple[float, float]:
     """The (left, right) brake a steering demand wants added.
 
-    ``demand`` is the signed pedal already sent, -1..+1 (+ = right).
-    A taildragger's answer to a turn it cannot steer into is the inside
-    wheel braked: at walking pace the castered tailwheel gives nothing
-    and the rudder has no airflow, so the tight apron turn is flown on
-    the pedals' tops. The assist fades with groundspeed and is gone by
+    ``demand`` is the law's signed steering ask, -1..+1 (+ = right) --
+    the value before ``_pedal_dir``, so an inverted-axis model still
+    brakes the wheel the turn wants. A taildragger's answer to a turn
+    it cannot steer into is the inside wheel braked: at walking pace
+    the castered tailwheel gives nothing and the rudder has no
+    airflow, so the tight apron turn is flown on the pedals' tops.
+    The assist fades with groundspeed and is gone by
     DIFF_BRAKE_MAX_KT, where standing on a brake would lift the tail.
     """
     if gs_kt >= DIFF_BRAKE_MAX_KT:
@@ -146,7 +154,7 @@ def brake_assist(demand: float, gs_kt: float) -> tuple[float, float]:
     if gs_kt > DIFF_BRAKE_FULL_KT:
         span = DIFF_BRAKE_MAX_KT - DIFF_BRAKE_FULL_KT
         amount *= max(0.0, 1.0 - (gs_kt - DIFF_BRAKE_FULL_KT) / span)
-    return (amount, 0.0) if demand > 0.0 else (0.0, amount)
+    return (0.0, amount) if demand > 0.0 else (amount, 0.0)
 
 
 # The weave a taildragger taxis: a slow S so the pilot can see past the
