@@ -350,6 +350,7 @@ class _Taxi:
         if plan is None or len(plan.points or ()) < 2:
             return False
         self.session.taxi_path = list(plan.points)
+        self.session.lineup_path = list(getattr(plan, "lineup", ()))
         self.session.taxi_crossings = list(plan.crossings)
         self.session.crossing_index = 0
         self.session.crossing_granted = ""

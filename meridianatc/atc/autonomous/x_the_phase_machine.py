@@ -468,12 +468,6 @@ class _The_phase_machine:
             err = auto_nav.align(state.latitude, state.longitude,
                                  self.state.runway_lat, self.state.runway_lon,
                                  self.state.runway_heading)
-            if err["along_m"] > self.BACKTRACK_MIN_M:
-                # Joined the runway far from the departure end: the way
-                # to the threshold is along the pavement itself. Enter
-                # facing the way back, drive it, turn round at the end.
-                self._goto_sub("backtrack")
-                return
             hdg_err = abs((self.state.runway_heading
                             - (state.heading_true or 0.0) + 540.0)
                            % 360.0 - 180.0)
@@ -483,6 +477,32 @@ class _The_phase_machine:
             # instead of reaching the centreline.
             steer_hdg = (self.state.runway_heading
                          + err["correction_deg"]) % 360.0
+            # Where the taxi plan walked to the bars over a connector,
+            # the same plan knows the paved way in: the holding point's
+            # own taxiway onto the runway, not the straight intercept to
+            # the extended centreline, which cuts the connector's inside
+            # corner across the infield -- how the Baron left A3 on the
+            # grass. Until that path's end is reached (it finishes on
+            # the centreline just past the entry) the aeroplane is still
+            # on the connector, and neither the intercept below nor a
+            # backtrack's reciprocal heading is the way there.
+            lineup = list(getattr(self.session, "lineup_path", None) or [])
+            on_path = False
+            if len(lineup) >= 2:
+                paved = auto_nav.path_steering(
+                    state.latitude, state.longitude, lineup,
+                    lookahead_m=30.0)
+                if paved is not None \
+                        and paved.get("heading") is not None \
+                        and not paved.get("done"):
+                    steer_hdg = paved["heading"]
+                    on_path = True
+            if not on_path and err["along_m"] > self.BACKTRACK_MIN_M:
+                # Joined the runway far from the departure end: the way
+                # to the threshold is along the pavement itself. Enter
+                # facing the way back, drive it, turn round at the end.
+                self._goto_sub("backtrack")
+                return
             d.parking_brake(False)
             self._steer(state, steer_hdg, self.performance.taxi_kt)
             if abs(err["offset_m"]) < 25.0 and hdg_err < 8.0:

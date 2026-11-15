@@ -320,6 +320,42 @@ def test_fo_realigns_when_nudged_off_the_centreline():
     assert fo.state.aligned is False
 
 
+def test_fo_lines_up_on_the_connector_not_across_the_infield():
+    """LPPR's A3: the hold sits well past the threshold, so a straight
+    intercept to the centreline is the backtrack's reciprocal through
+    the grass. The planner's paved connector path is the way on; the FO
+    follows it instead of entering the backtrack off the pavement."""
+    fo = _fo_for_lineup()
+    fo._runway_blocked = Mock(return_value=False)
+    # A connector from a hold south of the strip, bending north onto it,
+    # ~280 m along from the threshold.
+    lineup = [(51.1496, -0.1862), (51.1499, -0.1858), (51.1501, -0.1855)]
+    fo.session = _fo_session(_path(), lineup_path=lineup)
+    fo.state.sub_entered_at = time.monotonic()
+    state = _state(*lineup[0], heading_true=90.0)
+    fo._phase_line_up(state, 100.0)
+    # Not the backtrack: the paved way on is still under the wheels.
+    assert fo.state.sub == "align"
+    fo._steer.assert_called()
+    paved = auto_nav.path_steering(state.latitude, state.longitude,
+                                   lineup, lookahead_m=30.0)
+    assert fo._steer.call_args[0][1] == pytest.approx(paved["heading"],
+                                                    abs=1.0)
+
+
+def test_fo_backtracks_without_a_paved_lineup_path():
+    """Same geometry with no connector route to offer: the far-along
+    entry onto an eastbound strip is a backtrack, as before."""
+    fo = _fo_for_lineup()
+    fo._runway_blocked = Mock(return_value=False)
+    fo.session = _fo_session(_path())
+    fo.state.sub_entered_at = time.monotonic()
+    state = _state(51.1496, -0.1862, heading_true=90.0)
+    fo._phase_line_up(state, 100.0)
+    assert fo.state.sub == "backtrack"
+    fo._steer.assert_not_called()
+
+
 def test_fo_wait_clearance_holds_and_never_errors():
     fo = _fo()
     from meridianatc.atc.autonomous import AutonomousPhase

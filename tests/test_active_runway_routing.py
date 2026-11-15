@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from meridianatc.atc import autofly, flying
 from meridianatc.atc.ground import (
     PATH_PARKING,
@@ -160,6 +162,27 @@ def test_plan_departure_backtracks_when_the_runway_is_the_way():
     assert plan is not None, why
     # With no way round, the runway it is departing from is the route.
     assert plan.nodes
+
+
+def test_plan_departure_carries_the_paved_way_onto_the_runway():
+    """The line-up leg the planner already walked: hold -> connector ->
+    the centreline just past the entry. Dropping it is what left the
+    FO steering a straight intercept to the centreline across the
+    infield at Porto's A3 -- on the grass where a paved way exists."""
+    layout = _field_layout()
+    line = _runway_line()
+    lat, lon = layout.to_latlon(-200.0, 60.0)
+    plan, why = plan_departure(layout, lat, lon, "27", [line],
+                               busy={"09", "27"})
+    assert plan is not None, why
+    assert len(plan.lineup) >= 2
+    # It picks up where the taxi route leaves off: the holding point.
+    assert plan.lineup[0] == pytest.approx(plan.points[-1])
+    # And it ends on the centreline just past the entry -- on the
+    # pavement, not on the grass beside it.
+    end_x, end_z = layout.to_xy(*plan.lineup[-1])
+    along, across = layout.runway_frame(end_x, end_z, (0.0, 0.0), 270.0)
+    assert across == pytest.approx(0.0, abs=2.0)
 
 
 # -- the borrowed profile -------------------------------------------------

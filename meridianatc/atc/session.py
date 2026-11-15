@@ -466,6 +466,10 @@ class FlightSession:
     taxi_nodes: list = field(default_factory=list)
     taxi_path: list[tuple[float, float]] = field(default_factory=list)
     taxi_crossings: list[str] = field(default_factory=list)
+    # The holding point's paved way onto the runway and just past it
+    # onto the centreline, from the same plan (TaxiPlan.lineup): what
+    # "line up and wait" is flown along, where there is a real route.
+    lineup_path: list[tuple[float, float]] = field(default_factory=list)
     # Each runway the route crosses is a clearance of its own, taken one at
     # a time in the order they are met: ``crossing_index`` is how far down
     # the list the aircraft has got, and ``crossing_granted`` the one it is

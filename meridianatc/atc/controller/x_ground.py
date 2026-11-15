@@ -292,6 +292,7 @@ class _Ground:
         said next use the one that was given."""
         session.taxi_nodes = list(plan.nodes) if plan else []
         session.taxi_path = list(plan.points) if plan else []
+        session.lineup_path = list(getattr(plan, "lineup", ())) if plan else []
         session.taxi_crossings = list(plan.crossings) if plan else []
         session.taxi_stand = (plan.stand.number
                               if plan and plan.stand is not None else None)

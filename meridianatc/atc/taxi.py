@@ -145,6 +145,14 @@ class TaxiPlan:
     # The route cut at MAX_TAXIWAYS (split_route): where the aeroplane is
     # held short, as (latitude, longitude), for the rest to be given there.
     split_at: tuple[float, float] | None = None
+    # The second leg GroundLayout.departure computes: from the route's
+    # last node -- the holding point -- along the connector onto the
+    # runway and a little past it onto the centreline, as (latitude,
+    # longitude). Given to the aeroplane only when the tower says line
+    # up: steering the straight intercept to the extended centreline
+    # instead is the corner across the infield a hold like A3 hangs in
+    # front of it. Empty for a taxi in or an invented route.
+    lineup: list[tuple[float, float]] = field(default_factory=list)
 
     @property
     def hold_short(self) -> str:
@@ -644,6 +652,11 @@ def plan_departure(layout: GroundLayout, latitude: float, longitude: float,
                        if normalize_runway(runway) in line.ends), ())
     plan = _plan(layout, nodes, taxi_out.points, lines,
                  {runway, *reciprocal}, inbound=False)
+    # The line-up leg the planner already walked: the holding point's
+    # connector onto the runway and the centreline just past the entry,
+    # kept for the FO's "line up and wait" so it does not steer the
+    # free-space intercept across the grass inside the turn.
+    plan.lineup = [layout.to_latlon(*p) for p in legs[1].points]
     return plan, ""
 
 
