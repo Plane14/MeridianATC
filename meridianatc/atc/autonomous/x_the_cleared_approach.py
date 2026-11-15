@@ -4,6 +4,7 @@ from ._shared import (
     approach_flight,
     auto_nav,
     log,
+    project,
     sqlite3,
 )
 
@@ -151,11 +152,22 @@ class _The_cleared_approach:
 
     def _path_vertical(self, state, recipe) -> float:
         """The vertical speed the three-degree path asks for here."""
-        distance = state.distance_to(recipe.threshold_lat,
-                                     recipe.threshold_lon) \
+        return self._three_degree_vs(
+            state, recipe.threshold_lat, recipe.threshold_lon,
+            recipe.field_elev_ft)
+
+    def _three_degree_vs(self, state, thr_lat: float, thr_lon: float,
+                         elev_ft: float) -> float:
+        """The vertical speed that holds a three-degree path to a
+        threshold: the path's own sink at this groundspeed, corrected by
+        where the aeroplane sits against it. Shared by every final that
+        has no glideslope needle -- the computed procedures and the
+        visual alike -- so none of them descends by the clock alone."""
+        distance = state.distance_to(thr_lat, thr_lon) \
             if getattr(state, "has_position", False) else None
-        desired = approach_flight.profile_alt(
-            recipe, distance if distance is not None else 10.0)
+        desired = (elev_ft + approach_flight.TCH_FT
+                   + max(0.0, distance if distance is not None else 10.0)
+                   * approach_flight.FT_PER_NM)
         alt = state.altitude_ft or 0.0
         vs = approach_flight.sink_fpm(state.ground_speed_kt or 0.0)
         if self._use_pids:
@@ -199,7 +211,8 @@ class _The_cleared_approach:
             self.state.ap_apr_mode = False
         steer = auto_nav.path_steering(
             state.latitude, state.longitude, approach_flight.legs(recipe),
-            lookahead_m=2500.0)
+            lookahead_m=max(400.0, min(2500.0, 926.0 * state.distance_to(
+                recipe.threshold_lat, recipe.threshold_lon))))
         heading = steer.get("heading")
         if heading is None:
             heading = recipe.final_course
@@ -207,4 +220,90 @@ class _The_cleared_approach:
             state, vs_fpm=self._path_vertical(state, recipe),
             heading=self._magnetic(heading, state),
             speed_kt=self._vapp(state))
+
+    def _fly_visual_final(self, state) -> bool:
+        """The final with no procedure behind it: the extended centreline
+        tracked like a procedure leg and the three-degree path held by
+        reference to the distance still to run. False where the runway
+        is not known -- there is nothing to aim at.
+
+        The descent used to be the path's sink rate flown from wherever
+        the aeroplane happened to be: begun low, it met the ground short
+        of the runway at exactly three degrees."""
+        if self.state.runway_heading <= 0:
+            self._find_runway(state)
+        if self.state.runway_heading <= 0:
+            return False
+        rwy_hdg = self.state.runway_heading
+        heading = self._magnetic(rwy_hdg, state)
+        if getattr(state, "has_position", False):
+            gate = project(self.state.runway_lat, self.state.runway_lon,
+                           (rwy_hdg + 180.0) % 360.0, 10.0)
+            far = project(self.state.runway_lat, self.state.runway_lon,
+                          rwy_hdg, approach_flight.PAST_THRESHOLD_NM)
+            steer = auto_nav.path_steering(
+                state.latitude, state.longitude, [gate, far],
+                lookahead_m=self._final_lookahead_m(state))
+            if steer and steer.get("heading") is not None:
+                heading = self._magnetic(steer["heading"], state)
+        self._apply_flight_director(
+            state,
+            vs_fpm=self._three_degree_vs(
+                state, self.state.runway_lat, self.state.runway_lon,
+                self._field_elevation(state)),
+            heading=heading,
+            speed_kt=self._vapp(state) or self.performance.approach_kt)
+        return True
+
+    def _final_lookahead_m(self, state) -> float:
+        """How far ahead the final's steering point sits: long out on the
+        approach, drawn in close to the runway so the last mile is flown
+        on the centreline rather than toward a point beyond it."""
+        if not getattr(state, "has_position", False) \
+                or self.state.runway_heading <= 0:
+            return 2000.0
+        to_go_m = state.distance_to(self.state.runway_lat,
+                                    self.state.runway_lon) * 1852.0
+        return max(400.0, min(2500.0, to_go_m * 0.5))
+
+    def _fly_short_final(self, state, now: float) -> None:
+        """Below five hundred feet and cleared to land: the same guidance
+        the approach flew, carried to the flare."""
+        d = self.director
+        recipe = self._approach_recipe(state)
+        if recipe is not None and recipe.family != "visual"                 and not recipe.circling                 and self._fly_recipe(state, recipe, now):
+            return
+        has_ils = getattr(state, "nav1_has_localizer", False) and             getattr(state, "nav1_has_glideslope", False)
+        if has_ils and self.session.ifr:
+            d.approach(True)
+            self.state.ap_apr_mode = True
+            vapp = self._vapp(state) or self.performance.approach_kt
+            d.speed(vapp)
+            d.airspeed_hold(True)
+            self.state.ap_speed_mode = True
+            self._manage_throttle(state, vapp)
+            return
+        self._fly_visual_final(state)
+
+    def _centreline_offset_m(self, state) -> float | None:
+        """Metres right of the landing runway's centreline, or None where
+        the runway or the position is not known."""
+        if self.state.runway_heading <= 0                 or not getattr(state, "has_position", False):
+            return None
+        return auto_nav.align(
+            state.latitude, state.longitude, self.state.runway_lat,
+            self.state.runway_lon, self.state.runway_heading)["offset_m"]
+
+    def _centreline_heading(self, state, max_cut_deg: float) -> float:
+        """The true heading that holds the runway and closes on its
+        centreline: the runway's own, cut toward the line by a degree
+        for every few metres off it, capped -- a heading hold alone
+        keeps the aeroplane parallel to the runway, which is how a
+        rollout ends in the grass beside it."""
+        rwy = self.state.runway_heading
+        offset = self._centreline_offset_m(state)
+        if offset is None or abs(offset) < 1.0:
+            return rwy
+        cut = max(-max_cut_deg, min(max_cut_deg, offset * 0.3))
+        return (rwy - cut) % 360.0
 

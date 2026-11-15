@@ -57,6 +57,9 @@ FAMILIES = {
 
 # Feet per nautical mile on a three-degree path -- auto_nav.glide's figure.
 FT_PER_NM = 318.0
+# The height the path crosses the threshold at: the fifty feet every
+# glide path is drawn through, not the pavement itself.
+TCH_FT = 50.0
 # Where the computed final starts when no published FAF altitude is known:
 # five miles is the middle of a non-precision final.
 DEFAULT_FAF_NM = 5.0
@@ -331,7 +334,8 @@ def legs(recipe: ApproachRecipe) -> list[tuple[float, float]]:
 
 def profile_alt(recipe: ApproachRecipe, distance_nm: float) -> float:
     """Where the three-degree path is, that far from the threshold."""
-    return recipe.field_elev_ft + max(0.0, distance_nm) * FT_PER_NM
+    return (recipe.field_elev_ft + TCH_FT
+            + max(0.0, distance_nm) * FT_PER_NM)
 
 
 def sink_fpm(groundspeed_kt: float) -> float:
@@ -386,6 +390,9 @@ def circle_legs(recipe: ApproachRecipe, navdb, state) -> list | None:
 
 __all__ = [
     "FAMILIES",
+    "FT_PER_NM",
+    "PAST_THRESHOLD_NM",
+    "TCH_FT",
     "ApproachRecipe",
     "Navaid",
     "circle_legs",

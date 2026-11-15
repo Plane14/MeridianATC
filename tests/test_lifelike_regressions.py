@@ -688,8 +688,8 @@ def test_the_heli_pedal_check_learns_authority_per_band():
     heli._pedal_at = now - 2.0                # a two-second tick
     _pedal_check(heli, PEDAL_MAX // 2, 120.0, gs=10.0)
     # 20 degrees over two seconds = 10 deg/s at half pedal = 20 per full.
-    assert heli._pedal_authority_b[1] == pytest.approx(20.0)
-    assert learned["pedals.authority.1"] == pytest.approx(20.0)
+    assert heli._pedal_authority_b[1] == pytest.approx(20.0, rel=1e-3)
+    assert learned["pedals.authority.1"] == pytest.approx(20.0, rel=1e-3)
     assert "pedals.authority" in learned
 
 

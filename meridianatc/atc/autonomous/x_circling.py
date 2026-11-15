@@ -174,6 +174,15 @@ class _Circling:
                        - (state.heading_true or 0.0) + 540.0)
                       % 360.0 - 180.0)
             aligned = err < 15.0
+            # On the runway's line, not merely pointing its way: within
+            # a twentieth of the distance still to run (about three
+            # degrees of the extended centreline), never tighter than a
+            # runway's half width.
+            offset = self._centreline_offset_m(state)
+            if offset is not None and getattr(state, "has_position", False):
+                to_go_m = state.distance_to(
+                    self.state.runway_lat, self.state.runway_lon) * 1852.0
+                aligned = aligned and abs(offset) < max(25.0, to_go_m * 0.05)
         bank_max = self.performance.max_bank_deg or 25.0
         if vs < 1000.0 and abs(ias - target) < 12.0 \
                 and bank < bank_max and aligned:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from ._shared import AutonomousPhase
 from ..powerplant import cooling_for, limits_for
+from ._shared import AutonomousPhase
 
 
 class _The_engines:

@@ -7,7 +7,6 @@ from ._shared import (
     auto_nav,
     capabilities,
     fly,
-    project,
 )
 
 
@@ -1032,33 +1031,7 @@ class _The_phase_machine:
                 # runway's heading parallel past the field -- and fly a
                 # three-degree path down, groundspeed-scaled the way the
                 # VNAV number is made.
-                if self.state.runway_heading <= 0:
-                    self._find_runway(state)
-                if self.state.runway_heading > 0:
-                    agl = state.altitude_agl_ft or 0.0
-                    gs = state.ground_speed_kt or self._vapp(state) or 120.0
-                    vs = -max(300.0, min(1200.0, gs * 5.3)) \
-                        if agl > 400.0 else -250.0
-                    heading = self._magnetic(self.state.runway_heading,
-                                             state)
-                    if getattr(state, "has_position", False):
-                        faf = project(self.state.runway_lat,
-                                      self.state.runway_lon,
-                                      (self.state.runway_heading + 180.0)
-                                      % 360.0, 10.0)
-                        steer = auto_nav.path_steering(
-                            state.latitude, state.longitude,
-                            [faf, (self.state.runway_lat,
-                                   self.state.runway_lon)],
-                            lookahead_m=2000.0)
-                        if steer and steer.get("heading") is not None:
-                            heading = self._magnetic(steer["heading"],
-                                                     state)
-                    self._apply_flight_director(
-                        state, vs_fpm=vs,
-                        heading=heading,
-                        speed_kt=self.state.vapp_kt
-                        or self.performance.approach_kt)
+                self._fly_visual_final(state)
 
         # Stabilized approach: the numbers a crew actually checks.
         self._check_stabilized(state)
@@ -1115,6 +1088,10 @@ class _The_phase_machine:
                 # touch-and-go would read it as a fifteen-second float
                 # the moment the next pass sank under sixty feet.
                 self.state.flare_at = 0.0
+                self._flare_lever = None
+                d.throttle_idle()
+                d.throttle(0.0)
+                self._last_lever = 0.0
                 self._goto_sub("rollout")
                 return
             agl = state.altitude_agl_ft or 0.0
@@ -1123,12 +1100,27 @@ class _The_phase_machine:
             if agl < 60.0:
                 if not self.state.flare_at:
                     self.state.flare_at = now
+                    self._flare_lever = None
                     d.approach(False)
                     d.autopilot(False)
                     self.state.ap_master = False
-                d.throttle_idle()
-                d.throttle(0.0)
-                self._last_lever = 0.0
+                # The power comes off through the flare, closed by the
+                # height a pilot of this class has it closed -- chopped
+                # at sixty feet it is a light single dropping the last
+                # of its speed onto the runway.
+                idle_ft = 30.0 if self.performance.cruise_kt >= 230.0                     else 20.0
+                if agl <= idle_ft:
+                    lever = 0.0
+                else:
+                    held = getattr(self, "_flare_lever", None)
+                    if held is None:
+                        held = self._flare_lever = min(
+                            0.6, self._last_lever or 0.0)
+                    lever = held * (agl - idle_ft) / (60.0 - idle_ft)
+                if lever <= 0.0:
+                    d.throttle_idle()
+                d.throttle(lever)
+                self._last_lever = lever
                 sink = abs(state.vertical_speed_fpm or 0.0)
                 self._flare_sink = sink
                 if self._use_pids:
@@ -1168,7 +1160,7 @@ class _The_phase_machine:
                     # yaw answered against the authority this model has
                     # shown, not a bare proportional pedal.
                     d.rudder(self._ground_directional(
-                        state, self.state.runway_heading,
+                        state, self._centreline_heading(state, 3.0),
                         state.ground_speed_kt
                         or (state.indicated_airspeed_kt or 0.0),
                         rate_cap=4.0))
@@ -1185,17 +1177,15 @@ class _The_phase_machine:
                 # the lever keeps enough power to carry the glide to the
                 # flare height -- a closed throttle at four hundred feet
                 # is a landing short, not a flare.
-                vapp = self.state.vapp_kt or self.performance.approach_kt
-                if getattr(state, "autothrottle", False):
-                    d.airspeed_hold(True)
-                    self.state.ap_speed_mode = True
-                    d.speed(vapp)
-                else:
-                    d.throttle(0.30)
-                    self._last_lever = 0.30
-                d.approach(True)
-                if self.state.runway_heading <= 0:
-                    self._find_runway(state)
+                # The guidance that brought it here keeps flying it:
+                # the heading and the sink are still steered to the
+                # centreline and the path, and the lever still answers
+                # the speed -- bugs frozen at five hundred feet drift
+                # off the runway on the first gust.
+                self._fly_short_final(state, now)
+                if self._should_go_around(state):
+                    self._start_go_around(state)
+                    return
             if now - self.state.phase_entered_at > self.LANDING_TIMEOUT:
                 self._start_go_around(state)
             return
@@ -1265,7 +1255,8 @@ class _The_phase_machine:
             # swerve a landing is lost to, not saved by.
             if self.state.runway_heading > 0:
                 rudder = self._ground_directional(
-                    state, self.state.runway_heading, gs, rate_cap=4.0)
+                    state, self._centreline_heading(state, 6.0), gs,
+                    rate_cap=4.0)
                 d.rudder(rudder)
                 d.steering(rudder * _nws_fade(gs))
             return
