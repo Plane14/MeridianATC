@@ -95,6 +95,7 @@ class _The_other_aeroplanes:
         # at startup: turning the frequency quiet has to take effect now, not
         # on the next run.
         self.traffic.density = self.config.traffic.density
+        self.traffic.expedite = getattr(self.config.traffic, "expedite", True)
         self.brain.traffic = self.traffic
 
         # The aeroplanes somebody else put in the simulator, before anything

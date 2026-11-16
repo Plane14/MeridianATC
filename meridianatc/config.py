@@ -1278,8 +1278,11 @@ class TrafficConfig:
 
 describe(
     TrafficConfig,
+    # The simulator's side of the traffic is built on or off at startup,
+    # and switched off mid-flight the aeroplanes stood where they were for
+    # the controller to go on sequencing against: it takes a restart.
     enabled=Setting("traffic", "traffic", label="set.traffic_on",
-                    help="set.traffic_why"),
+                    help="set.traffic_why", restart=True),
     invented=Setting("traffic", "traffic", label="set.invented_on",
                      help="set.invented_why"),
     from_simulator=Setting("traffic", "traffic"),

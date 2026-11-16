@@ -1556,7 +1556,7 @@ class LocalisedPhraseology:
         parts = [aircraft.spoken(True), self._("radar_service_terminated")]
         if squawk_vfr:
             parts.append(self._("squawk").format(
-                code=self.d(self.book.vfr_squawk)))
+                code=self.d(self.vfr_squawk)))
         if next_station and next_freq:
             parts.append(self._("contact").format(
                 station=next_station, frequency=self.freq(next_freq)))
@@ -1592,7 +1592,7 @@ class LocalisedPhraseology:
 
     def ifr_cancelled(self, aircraft: Aircraft) -> str:
         return _join(aircraft.spoken(True), self._("ifr_cancellation_received"),
-                     self._("squawk").format(code=self.d(self.book.vfr_squawk)),
+                     self._("squawk").format(code=self.d(self.vfr_squawk)),
                      self._("frequency_change_approved")) + "."
 
     # ------------------------------------------------------------------
