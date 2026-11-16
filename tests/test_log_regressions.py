@@ -1066,6 +1066,35 @@ def test_a_flight_filed_ifr_asks_for_ifr_whatever_the_sky():
     assert flight._ifr_required(SimpleNamespace()) is False
 
 
+def test_a_sim_sourced_sky_still_files_ifr_on_an_imc_metar():
+    """A VFR light aeroplane under a real-world overcast files IFR --
+    the METAR's ceiling is the paperwork even when the merged weather
+    is sim-sourced and its ceiling field is blanked."""
+    flight = _flier()
+    flight._aircraft_class = "piston_single"
+    flight._is_helicopter = False
+    flight._request_ifr = True
+    flight.session.ifr = False
+    flight.session.departure = SimpleNamespace(
+        ident="LPPR", lat=41.24, lon=-8.67)
+    flight.session.destination = SimpleNamespace(
+        ident="LPPT", lat=38.7, lon=-9.1)
+    # Sim-sourced merged weather: ceiling list still carries the
+    # METAR's OVC004 -- the filing must read it, not the blanked
+    # ceiling field.
+    wx = SimpleNamespace(raw="METAR", source="sim LPPR",
+                         clouds=[("OVC", 400)], visibility_sm=10.0)
+    flight.brain = SimpleNamespace(
+        weather_for=lambda ident: wx,
+        region_for=lambda ident: "icao",
+        realism=SimpleNamespace(special_vfr=True))
+    flight._get_current_airport = lambda: flight.session.departure
+    assert flight._ifr_required(SimpleNamespace()) is True
+    # And a real METAR clear sky still goes VFR.
+    wx.clouds = []
+    assert flight._ifr_required(SimpleNamespace()) is False
+
+
 def test_a_vfr_leg_flown_into_cloud_files_ifr():
     """A stay in the cloud on a VFR leg is the pop-up pickup's ask."""
     from meridianatc.atc.autonomous import AutonomousPhase

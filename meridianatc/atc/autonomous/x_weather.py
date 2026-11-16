@@ -525,13 +525,25 @@ class _Weather:
             if weather is None or not getattr(weather, "raw", ""):
                 continue
             try:
-                from ..svfr import conditions
+                from ..svfr import _VMC, _VMC_DEFAULT, visibility_m
                 region = (region_for(airport.ident)
                           if region_for is not None else "icao")
-                if not conditions(
-                        weather, region,
-                        float(getattr(airport, "lat", 0.0) or 0.0),
-                        float(getattr(airport, "lon", 0.0) or 0.0)).vmc:
+                vmc_ceiling, vmc_visibility = _VMC.get(
+                    region, _VMC_DEFAULT)
+                # The filing's ceiling is the observation's, not the
+                # simulator's sky: ``ceiling_ft`` blanks the layers
+                # when the merged weather is sim-sourced because the
+                # *release* is judged against the sky the plane flies
+                # in -- but the filing is paperwork, and the paperwork
+                # is the METAR. A field reporting OVC004 files IFR even
+                # if someone painted the sim's sky clear.
+                ceiling = min(
+                    (float(h) for cover, h in
+                     getattr(weather, "clouds", None) or []
+                     if cover in ("BKN", "OVC", "VV")),
+                    default=float("inf"))
+                if ceiling < vmc_ceiling \
+                        or visibility_m(weather) < vmc_visibility:
                     return False
             except Exception:
                 log.debug("VMC check for %s failed",
