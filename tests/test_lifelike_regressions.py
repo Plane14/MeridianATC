@@ -625,6 +625,22 @@ def test_the_descent_still_descends_past_the_band_and_climbs_on_a_reclear():
     assert fo._apply_flight_director.call_args.kwargs["vs_fpm"] > 0.0
 
 
+def test_the_capture_band_converges_on_the_bug_not_its_edge():
+    """Nine thousand two hundred on a nine-thousand bug: still coming
+    down, gently. A hard stop at the band's edge parks the aeroplane
+    two hundred feet over its level -- the hover that keeps the
+    verify-altitude calls coming."""
+    fo, state = _descending_fo(9200.0)
+    fo._phase_descent(state, 100.0)
+    vs = fo._apply_flight_director.call_args.kwargs["vs_fpm"]
+    assert -300.0 <= vs < 0.0
+
+    fo, state = _descending_fo(9050.0)
+    fo._phase_descent(state, 100.0)
+    vs = fo._apply_flight_director.call_args.kwargs["vs_fpm"]
+    assert -300.0 <= vs < 0.0
+
+
 def _arrival_watch(monkeypatch, altitude_ft: float):
     """An approach position vectoring an arrival onto a seven-mile final
     for runway 21 -- the flight sits on the extended centreline at

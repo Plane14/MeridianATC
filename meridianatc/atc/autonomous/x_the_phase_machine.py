@@ -1229,18 +1229,22 @@ class _The_phase_machine:
             assigned_hdg = self.session.assigned_heading
             # A re-clearance to a higher level while descending is a
             # climb, whatever the phase is named: an aeroplane does not
-            # descend through an assigned level that sits above it. The
-            # level it is already at is held, not hunted -- descending
-            # to a hundred feet under the bug and then climbing back at
-            # descent speed is the porpoise the verify-altitude calls
-            # were about.
+            # descend through an assigned level that sits above it. A
+            # hard level-off band is what it is not: stopping two
+            # hundred and fifty feet early leaves the aeroplane parked
+            # above the bug, right where the deviation watch lives, and
+            # the verify-altitude calls start again. Inside the band the
+            # rate is proportional to the error, so the level is
+            # captured on the bug rather than at its edge -- and a
+            # porpoise has nothing to swing about.
             alt = state.altitude_ft or 0.0
-            if alt > target + 250.0:
+            err = alt - target
+            if err > 250.0:
                 vs = -descent_fpm
-            elif alt < target - 250.0:
+            elif err < -250.0:
                 vs = self.performance.climb_fpm
             else:
-                vs = 0.0
+                vs = max(-300.0, min(300.0, -err * 4.0))
             self._apply_flight_director(state, altitude=target,
                                         vs_fpm=vs,
                                         heading=assigned_hdg if assigned_hdg is not None else -1.0,
