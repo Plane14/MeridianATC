@@ -318,6 +318,10 @@ class FlightSession:
     # route, and whether it was asked about it; when the last shortcut was
     # given.
     route_direct: str = ""
+    # ... and where on the route that fix sits: a route that names a fix
+    # twice resolves the ident to its first occurrence, which is not the
+    # one the direct was issued for.
+    route_direct_index: int = -1
     # The approach to expect, chosen once (ControllerBrain.approach_choice)
     # and the (field, runway, request) it was chosen for.
     approach_choice: object = None

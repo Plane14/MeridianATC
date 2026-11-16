@@ -408,10 +408,12 @@ class ArrivalWatch:
             last = route.fixes[-1]
             to_go = progress.to_go_nm + haversine_nm(
                 last.lat, last.lon, destination.lat, destination.lon)
-            direct = route.fix(getattr(session, "route_direct", "") or "")
-            if direct is not None:
+            i = route.fix_index(getattr(session, "route_direct", "") or "",
+                                hint=getattr(session, "route_direct_index",
+                                             -1))
+            if i >= 0:
                 # Sent direct: the legs cut short are not still to fly.
-                i = route.fixes.index(direct)
+                direct = route.fixes[i]
                 to_go = (state.distance_to(direct.lat, direct.lon)
                          + route._along(i, len(route.fixes) - 1)
                          + haversine_nm(last.lat, last.lon,

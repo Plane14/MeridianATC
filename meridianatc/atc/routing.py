@@ -101,10 +101,14 @@ class RouteWatch:
     def _follow_amendments(self, session, route, progress, state) -> None:
         """A direct ends at its fix, a deviation back on the route."""
         if session.route_direct:
-            fix = route.fix(session.route_direct)
-            if fix is None or progress.leg > route.fixes.index(fix) \
+            i = route.fix_index(
+                session.route_direct,
+                hint=getattr(session, "route_direct_index", -1))
+            fix = route.fixes[i] if i >= 0 else None
+            if fix is None or progress.leg > i \
                     or state.distance_to(fix.lat, fix.lon) < DIRECT_REACHED_NM:
                 session.route_direct = ""
+                session.route_direct_index = -1
         # Approved while still on the route: over only once the flight has
         # been away from it and come back.
         off = abs(progress.cross_track_nm)
@@ -225,13 +229,14 @@ class RouteWatch:
                 break
             saves = along - direct
             if saves >= SHORTCUT_SAVES_NM and (best is None or saves > best[0]):
-                best = (saves, fix, direct)
+                best = (saves, j, fix, direct)
         if best is None:
             return None
-        saves, fix, direct = best
+        saves, index, fix, direct = best
         session.advise_once(key)
         session.shortcut_at = now
         session.route_direct = fix.ident
+        session.route_direct_index = index
         decision("route", event="shortcut", station=station.callsign,
                  fix=fix.ident, saves_nm=round(saves, 1),
                  direct_nm=round(direct, 1), from_leg=progress.leg_name)

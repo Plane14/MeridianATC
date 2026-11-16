@@ -1659,12 +1659,15 @@ def test_a_direct_is_flown_to_its_fix_and_on_along_the_route(monkeypatch):
     assert fo.state.direct_fix == "DDDDD"
     assert abs(_bug(fo) - 90.0) < 1.0
 
-    # The last fix before the field: the route is NAV's again.
+    # The last fix before the field: the direct still holds, on to the
+    # field itself -- the FMS's active leg is still the cut one, so NAV
+    # is not handed back while the aeroplane is enroute.
     state.longitude = -7.0
     fo._dir.heading.reset_mock()
     fo._fly_direct(state)
-    assert fo.state.direct_fix == ""
-    fo._dir.heading.assert_not_called()
+    assert fo.state.direct_fix == "DDDDD"
+    assert fo.state.direct_index == len(fo.brain.route.fixes)
+    assert abs(_bug(fo) - 90.0) < 1.0
 
 
 def test_a_direct_ends_where_the_arrival_or_the_ground_begins(monkeypatch):
@@ -1723,5 +1726,119 @@ def test_the_towers_orbit_is_flown_level_all_the_way_round(monkeypatch):
 
 def test_an_orbit_is_not_begun_on_short_final(monkeypatch):
     fo, state = _orbiting_fo(monkeypatch, agl=300.0)
+    assert not fo._fly_orbit(state)
+    fo._hold_level.assert_not_called()
+
+
+def test_a_direct_through_a_fix_the_route_names_twice(monkeypatch):
+    """On AAAAA-BBBBB-CCCCC-BBBBB-DDDDD the second BBBBB used to advance
+    from the first: reaching it picked CCCCC again, and the aeroplane
+    flew the middle of the route for ever."""
+    from meridianatc.atc.route import Route, RouteFix
+    from meridianatc.navdata import magvar
+    monkeypatch.setattr(magvar, "variation", lambda lat, lon: 0.0)
+    fo, state = _enroute_fo([])
+    fo._dir = Mock()
+    fo.sim = fo._dir.sim
+    fixes = [RouteFix("AAAAA", 40.0, -8.0),
+             RouteFix("BBBBB", 40.5, -7.5),
+             RouteFix("CCCCC", 40.0, -7.0),
+             RouteFix("BBBBB", 40.5, -6.5),
+             RouteFix("DDDDD", 40.0, -6.0),
+             RouteFix("LPZZ", 40.0, -5.5, kind="apt")]
+    fo.brain.route = Route(fixes=fixes)
+    fo.session.route_direct = ""
+    fo.session.assigned_heading = None
+    fo.session.hold = None
+
+    fo.session.route_direct = "AAAAA"
+    state.longitude = -8.4
+    fo._fly_direct(state)
+    assert fo.state.direct_fix == "AAAAA"
+    assert abs(_bug(fo) - 90.0) < 1.0
+
+    # Fix to fix along the route: the second BBBBB is fixes[3], reached
+    # after CCCCC.
+    for lat, lon, ident, index in ((40.0, -8.0, "BBBBB", 1),
+                                   (40.5, -7.5, "CCCCC", 2),
+                                   (40.0, -7.0, "BBBBB", 3)):
+        state.latitude, state.longitude = lat, lon
+        fo._fly_direct(state)
+        assert fo.state.direct_fix == ident
+        assert fo.state.direct_index == index
+
+    # At the second BBBBB the next leg is BBBBB-DDDDD -- not a return to
+    # CCCCC, which resolving the ident again would pick.
+    state.latitude, state.longitude = 40.5, -6.5
+    fo._fly_direct(state)
+    assert fo.state.direct_fix == "DDDDD"
+    assert fo.state.direct_index == 4
+    assert 90.0 < _bug(fo) < 180.0
+
+
+def test_a_direct_to_the_last_fix_keeps_the_field_ahead(monkeypatch):
+    """Reaching the last fix before the field used to hand NAV back to
+    an FMS whose active leg was still the cut one: the aeroplane turned
+    back round the legs the direct skipped. The field is the target
+    until the approach, a STAR or a vector takes it."""
+    fo, state = _direct_fo(monkeypatch)
+    fo.session.destination = SimpleNamespace(
+        ident="LPZZ", lat=40.0, lon=-6.5, elev_ft=0.0)
+
+    fo.session.route_direct = "CCCCC"
+    fo._fly_direct(state)
+    state.longitude = -7.5
+    fo.session.route_direct = ""
+    fo._fly_direct(state)
+    assert fo.state.direct_fix == "DDDDD"
+
+    # Over DDDDD, forty miles from the field, the direct still holds:
+    # the bug stays on the field's bearing through every cycle after.
+    state.longitude = -7.0
+    fo._fly_direct(state)
+    assert fo.state.direct_index == len(fo.brain.route.fixes)
+    assert abs(_bug(fo) - 90.0) < 2.0
+    for _ in range(3):
+        fo._dir.heading.reset_mock()
+        fo._fly_direct(state)
+        assert abs(_bug(fo) - 90.0) < 1.0
+        fo._dir.nav.assert_not_called()
+
+    # The approach is where it ends.
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo.state.phase = AutonomousPhase.APPROACH
+    fo._dir.heading.reset_mock()
+    fo._fly_direct(state)
+    assert fo.state.direct_index == -1
+    assert fo.state.direct_fix == ""
+    fo._dir.heading.assert_not_called()
+
+
+def test_a_diversion_drops_the_old_fields_orbit(monkeypatch):
+    """A mayday mid-orbit used to keep the orbit: entering the new
+    field's approach resumed the old tower's turn at the old height."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo, state = _orbiting_fo(monkeypatch)
+    assert fo._fly_orbit(state)
+    # Ninety degrees round at the altitude it began.
+    state.track_true = state.heading_true = 270.0
+    fo._fly_orbit(state)
+    assert fo.state.orbit_turned > 0.0
+
+    fo.use_route = None
+    fo.state.phase = AutonomousPhase.APPROACH
+    fo.session.destination = SimpleNamespace(
+        ident="LPSO", lat=41.0, lon=-7.0, elev_ft=0.0)
+    fo._route_diversion()
+
+    assert fo.session.orbiting == ""
+    assert fo.session.orbit_track == -1.0
+    assert fo.session.orbit_turned == 0.0
+    assert fo.state.orbit_alt_ft == 0.0
+    assert fo.state.orbit_track == -1.0
+    assert fo.state.orbit_turned == 0.0
+    assert fo.state.phase == AutonomousPhase.DESCENT
+    # And the new field's approach flies no orbit at all.
+    fo._hold_level.reset_mock()
     assert not fo._fly_orbit(state)
     fo._hold_level.assert_not_called()

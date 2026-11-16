@@ -393,6 +393,20 @@ class _Weather:
         session.cleared_landing = False
         session.going_around = False
         session.arrival_runway = ""
+        # The tower's orbit was spacing at the old field: the emergency
+        # arrival at the new one does not resume it, at the height it
+        # began or the turn it had left. The direct to a fix on the old
+        # route is not the new route's either.
+        session.orbiting = ""
+        session.orbit_track = -1.0
+        session.orbit_turned = 0.0
+        session.route_direct = ""
+        session.route_direct_index = -1
+        self.state.orbit_alt_ft = 0.0
+        self.state.orbit_track = -1.0
+        self.state.orbit_turned = 0.0
+        self._end_direct()
+        self.state.direct_cleared = ""
         if self.state.phase in (AutonomousPhase.CLIMB,
                                 AutonomousPhase.CRUISE,
                                 AutonomousPhase.DESCENT,

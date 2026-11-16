@@ -296,6 +296,31 @@ class Route:
         ident = (ident or "").strip().upper()
         return next((f for f in self.fixes if f.ident.upper() == ident), None)
 
+    def fix_index(self, ident: str, hint: int = -1, after: int = 0) -> int:
+        """The place ``ident`` is at on the route, or -1 when it is not.
+
+        ``fix`` answers the first occurrence, which on a route that visits
+        a fix twice -- an out-and-back leg, a STAR that rejoins the airway
+        it left -- is not where the flight is going. ``hint`` is a known
+        answer (the index kept when the fix was cleared to): honoured while
+        it still names the ident. ``after`` scopes the search to the part
+        of the route still ahead -- the leg the aeroplane is on or about
+        to fly -- before the whole list is tried, so "direct BBBBB" means
+        the BBBBB still to come, not the one behind.
+        """
+        ident = (ident or "").strip().upper()
+        fixes = self.fixes
+        if ident and 0 <= hint < len(fixes) \
+                and fixes[hint].ident.upper() == ident:
+            return hint
+        for i in range(max(0, after), len(fixes)):
+            if fixes[i].ident.upper() == ident:
+                return i
+        for i in range(min(max(0, after), len(fixes))):
+            if fixes[i].ident.upper() == ident:
+                return i
+        return -1
+
     def points(self) -> list[tuple[float, float]]:
         return [(f.lat, f.lon) for f in self.fixes]
 

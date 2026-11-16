@@ -190,11 +190,16 @@ class AutonomousState:
     hold_nearest_nm: float = 0.0
     # "Proceed direct": the fix being flown to, the clearance it came
     # from as last seen (so the same fix cleared again is a new one),
-    # and the nearest it has been. Kept past the cleared fix, one fix
+    # its place on the route -- an ident a route names twice resolves to
+    # the first occurrence, which is not the one a later leg is flown to
+    # -- and the nearest it has been. Kept past the cleared fix, one fix
     # after another: the simulator's FMS was never told of the shortcut
-    # and its active leg is still the one that was cut.
+    # and its active leg is still the one that was cut. An index of
+    # len(route.fixes) is the field itself, the target once the route's
+    # last fix is reached.
     direct_fix: str = ""
     direct_cleared: str = ""
+    direct_index: int = -1
     direct_nearest_nm: float = 0.0
     # The tower's orbit: the altitude it is flown at, the track last
     # seen and how far round the aeroplane has turned by its own count.

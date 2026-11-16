@@ -860,7 +860,43 @@ class _Shared_helpers:
 
     def _end_direct(self) -> None:
         st = self.state
-        st.direct_fix, st.direct_nearest_nm = "", 0.0
+        st.direct_fix, st.direct_index = "", -1
+        st.direct_nearest_nm = 0.0
+
+    def _direct_index(self, route, ident: str, session, state) -> int:
+        """Where on the route a freshly cleared direct fix is.
+
+        The index the granter kept when it named the fix answers a route
+        that visits it twice; without one, the first occurrence still
+        ahead of the aeroplane does -- resolved inside the part of the
+        route not yet flown, so "direct BBBBB" means the BBBBB to come
+        and never the one behind.
+        """
+        hint = getattr(session, "route_direct_index", -1)
+        after = 0
+        progress = getattr(getattr(self, "brain", None),
+                           "route_progress", None)
+        if progress is None and getattr(state, "has_position", False):
+            try:
+                progress = route.progress(
+                    state.latitude, state.longitude,
+                    float(getattr(state, "ground_speed_kt", 0.0) or 0.0))
+            except Exception:
+                progress = None
+        if progress is not None:
+            # The leg's index is the fix it runs to: the first point
+            # still ahead.
+            after = max(0, int(progress.leg))
+        return route.fix_index(ident, hint=hint, after=after)
+
+    def _direct_destination(self, route, session):
+        """Where the last leg of a direct points once the fixes run out:
+        the field -- the session's airport, or the plan's last point."""
+        dest = getattr(session, "destination", None)
+        if dest is not None and getattr(dest, "lat", None) is not None \
+                and getattr(dest, "lon", None) is not None:
+            return dest
+        return route.fixes[-1] if route.fixes else None
 
     def _fly_direct(self, state) -> None:
         """Fly the "proceed direct" the controller gave: straight to
@@ -871,9 +907,13 @@ class _Shared_helpers:
         longer expected the flight to be on. The simulator's FMS is
         never told, so NAV handed back at the fix would turn for the
         waypoint behind; the rest of the route is flown from here fix
-        to fix, until the arrival procedure or the approach takes the
-        aeroplane. A vector or a hold given meanwhile is flown instead
-        and the route picked up again after it.
+        to fix -- kept as an index, so a fix the route names twice is
+        the occurrence the direct meant -- until the arrival procedure
+        or the approach takes the aeroplane. Past the last fix the field
+        itself is the target: handing NAV back still legs-deep in the
+        shortcut would fly the legs it cut. A vector or a hold given
+        meanwhile is flown instead and the route picked up again after
+        it.
         """
         st = self.state
         session = getattr(self, "session", None)
@@ -886,13 +926,12 @@ class _Shared_helpers:
             st.direct_cleared = ""
             return
         if cleared and cleared != st.direct_cleared:
-            st.direct_fix, st.direct_nearest_nm = cleared, 0.0
+            st.direct_index = self._direct_index(route, cleared,
+                                                 session, state)
+            st.direct_fix = cleared if st.direct_index >= 0 else ""
+            st.direct_nearest_nm = 0.0
         st.direct_cleared = cleared
-        if not st.direct_fix:
-            return
-        fix = route.fix(st.direct_fix)
-        if fix is None:
-            self._end_direct()
+        if st.direct_index < 0:
             return
         if not cleared and getattr(st, "star_nav", None) is not None:
             # Past the shortcut and on the arrival: the procedure's.
@@ -903,20 +942,41 @@ class _Shared_helpers:
 
         from ...navdata.build import bearing_deg, haversine_nm
 
-        distance = haversine_nm(state.latitude, state.longitude,
-                                fix.lat, fix.lon)
-        nearest = st.direct_nearest_nm or distance
-        st.direct_nearest_nm = min(nearest, distance)
-        passed = (st.direct_nearest_nm <= self.DIRECT_PASSED_NM
-                  and distance > st.direct_nearest_nm + 0.5)
-        if distance <= self.DIRECT_REACHED_NM or passed:
-            after = route.fixes[route.fixes.index(fix) + 1:]
-            fix = next((f for f in after if not f.is_marker), None)
-            if fix is None:
-                # The route's last fix: the field is the descent's.
+        if st.direct_index >= len(route.fixes):
+            # Beyond the route's last fix the direct still holds: the
+            # descent would re-engage NAV on the leg the shortcut left,
+            # and the aeroplane would turn back round the legs it cut.
+            fix = self._direct_destination(route, session)
+        else:
+            i = route.fix_index(st.direct_fix, hint=st.direct_index)
+            if i < 0:
+                # A new plan without the fix ends the direct.
                 self._end_direct()
                 return
-            st.direct_fix, st.direct_nearest_nm = fix.ident.upper(), 0.0
+            st.direct_index = i
+            fix = route.fixes[i]
+            distance = haversine_nm(state.latitude, state.longitude,
+                                    fix.lat, fix.lon)
+            nearest = st.direct_nearest_nm or distance
+            st.direct_nearest_nm = min(nearest, distance)
+            passed = (st.direct_nearest_nm <= self.DIRECT_PASSED_NM
+                      and distance > st.direct_nearest_nm + 0.5)
+            if distance <= self.DIRECT_REACHED_NM or passed:
+                nxt = next((j for j in range(i + 1, len(route.fixes))
+                            if not route.fixes[j].is_marker), None)
+                if nxt is not None:
+                    st.direct_fix = route.fixes[nxt].ident.upper()
+                st.direct_index = nxt if nxt is not None \
+                    else len(route.fixes)
+                st.direct_nearest_nm = 0.0
+                if nxt is not None:
+                    fix = route.fixes[nxt]
+                else:
+                    # The route's last fix: on to the field itself.
+                    fix = self._direct_destination(route, session)
+        if fix is None:
+            self._end_direct()
+            return
         self.director.heading(self._magnetic(
             bearing_deg(state.latitude, state.longitude, fix.lat, fix.lon),
             state))
