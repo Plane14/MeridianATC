@@ -100,6 +100,7 @@ class _Clearance_delivery:
                 return sent
             reason = self._stuck_on_the_stand()
             if reason:
+                session.tell_to_wait(hold=True)
                 return Reply(p.hold_position(aircraft) + f" You are {reason}.",
                              station)
             return Reply(p.pushback_approved(aircraft), station,

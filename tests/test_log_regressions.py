@@ -2238,3 +2238,123 @@ def test_a_waited_ready_call_is_asked_again_on_the_crews_clock():
     flight.state.last_radio_at = 1000.0 - READY_REASK_S - 1.0
     flight._work_the_calls(state, flight.session, 1000.0)
     flight._fo_say.assert_called_once_with("ready")
+
+
+def test_told_to_wait_silences_every_ask():
+    """A "standby" is the flight's to wait out, whatever it was asking
+    for: the callback is owed to the flight, not chased by it."""
+    from meridianatc.atc.autonomous.x_the_radios import READY_REASK_S
+    from meridianatc.atc.session import Phase
+    flight = _ready_flight("HOLDING_SHORT", lined_up=False,
+                           phase=Phase.HOLDING_SHORT,
+                           told_to_wait_at=1000.0 - 10.0)
+    state = SimpleNamespace(on_ground=True, ground_speed_kt=0.0)
+    flight.state.last_radio_at = 0.0
+    flight._work_the_calls(state, flight.session, 1000.0)
+    flight._fo_say.assert_not_called()
+    # The wait runs from the telling, not the asking: patience spent,
+    # the call is made again.
+    flight.session.told_to_wait_at = 1000.0 - READY_REASK_S - 1.0
+    flight._work_the_calls(state, flight.session, 1000.0)
+    flight._fo_say.assert_called_once_with("ready")
+
+
+def test_a_hold_position_stops_the_taxi_where_it_is():
+    """"Hold position" is a stop where you are, not a hold at the
+    route's end."""
+    from meridianatc.atc.autonomous import (
+        AutonomousFlight,
+        AutonomousState,
+    )
+    flight = AutonomousFlight.__new__(AutonomousFlight)
+    flight.state = AutonomousState()
+    flight.sim = object()
+    flight._dir = Mock()
+    flight._dir.sim = flight.sim
+    flight._clearance_strobes = Mock()
+    flight._stop = Mock()
+    flight._steer = Mock(
+        side_effect=AssertionError("steered on a hold position"))
+    flight.session = SimpleNamespace(
+        hold_position=True, taxi_path=[(0.0, 0.0), (0.01, 0.01)])
+    state = SimpleNamespace(taxi_light=True, ground_speed_kt=8.0)
+    flight._taxi_along_path(state, outbound=True)
+    flight._stop.assert_called_once_with(state)
+
+
+def _roll_flight(**session_kw):
+    """A flight in the takeoff phase, its heavy machinery stubbed."""
+    from meridianatc.atc.autonomous import (
+        AutonomousFlight,
+        AutonomousPhase,
+        AutonomousState,
+    )
+    flight = AutonomousFlight.__new__(AutonomousFlight)
+    flight.state = AutonomousState()
+    flight.state.phase = AutonomousPhase.TAKEOFF
+    flight.state.sub = "wait_clearance"
+    flight.state.sub_entered_at = 0.0
+    flight.state.runway_heading = 170.0
+    flight.state.runway_lat = 41.24
+    flight.state.runway_lon = -8.68
+    flight.state.runway_width_ft = 148.0
+    flight.state.vr_kt = 90.0
+    flight.state.aligned = True
+    flight._speeds = None
+    flight.sim = object()
+    flight._dir = Mock()
+    flight._dir.sim = flight.sim
+    flight._perf = SimpleNamespace(
+        rotate_kt=90.0, takeoff_kt_s=3.0, taxi_kt=15.0)
+    flight.TAKEOFF_TIMEOUT = 240.0
+    flight._compute_speeds = Mock()
+    flight._set_takeoff_power = Mock()
+    flight._ground_directional = Mock(return_value=0.0)
+    flight._engines_out = Mock(return_value=(False, ""))
+    flight._runway_blocked = Mock(return_value=False)
+    flight._sub_age = Mock(return_value=2.0)
+    flight._goto_sub = Mock()
+    flight._transition = Mock()
+    flight._stop = Mock()
+    flight._emit = Mock()
+    session_kw.setdefault("cleared_takeoff", True)
+    session_kw.setdefault("pending", None)
+    flight.session = SimpleNamespace(**session_kw)
+    return flight
+
+
+def test_the_roll_waits_for_the_readback():
+    """The clearance is answered before the power comes up -- the
+    crew does not roll on words it has not acknowledged."""
+    from meridianatc.atc.session import Instruction
+    owed = Instruction("takeoff_clearance", "LPPR:TWR", "cleared for takeoff",
+                       {"runway": "17"})
+    flight = _roll_flight(pending=owed)
+    state = SimpleNamespace(on_ground=True, ground_speed_kt=0.0,
+                            indicated_airspeed_kt=0.0, parking_brake=True)
+    flight._phase_takeoff(state, 1000.0)
+    flight._goto_sub.assert_not_called()
+    # Read back, the roll is free to start.
+    owed.read_back = True
+    flight._phase_takeoff(state, 1000.0)
+    flight._goto_sub.assert_called_once_with("roll")
+
+
+def test_the_roll_tracks_the_centreline(monkeypatch):
+    """Runway heading alone would hold a lineup's offset the whole
+    roll: the correction steers it back to the paint, gently."""
+    import meridianatc.atc.auto_nav as auto_nav
+    flight = _roll_flight()
+    flight.state.sub = "roll"
+    flight.state.sub_entered_at = 998.0
+    monkeypatch.setattr(
+        auto_nav, "align",
+        lambda *a, **k: {"offset_m": -6.0, "along_m": 200.0,
+                         "correction_deg": 3.5})
+    state = SimpleNamespace(
+        on_ground=True, ground_speed_kt=30.0, indicated_airspeed_kt=30.0,
+        parking_brake=False, latitude=41.235, longitude=-8.679,
+        heading_true=170.0)
+    flight._phase_takeoff(state, 1000.0)
+    args, kwargs = flight._ground_directional.call_args
+    assert abs(args[1] - 173.5) < 1e-6

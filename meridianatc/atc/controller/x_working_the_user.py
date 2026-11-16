@@ -262,6 +262,7 @@ class _Working_the_user:
             if session.lined_up or session.held_for_landing:
                 # Already on the runway and still waiting. Asking again does
                 # not make the aeroplane in front of you land any sooner.
+                session.tell_to_wait(hold=True)
                 return Reply(p.hold_position(session.aircraft), station)
             if not blocked and self.realism.conditional_clearances:
                 return self._held_for_landing(session, station, p, runway,

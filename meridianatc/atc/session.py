@@ -74,6 +74,15 @@ READBACK_REPEAT_S = 40.0
 # third time for a readback of something they never received helps nobody.
 PROMPTS_BEFORE_REISSUE = 2
 
+# The instruction kinds that release a standing "hold position": the
+# movement the hold was waiting for. A hold, a sequence number or an
+# advisory is not one of them.
+_RELEASES_HOLD = frozenset({
+    "taxi", "taxi_in", "line_up_and_wait", "takeoff_clearance",
+    "landing_clearance", "transition", "ifr_clearance", "vfr_release",
+    "go_around", "expedite_vacate",
+})
+
 # How many wrong readbacks are corrected item by item before the controller
 # gives up on the item and re-reads the instruction in full. It never gives up
 # on the readback itself: an instruction that has not been read back correctly
@@ -445,6 +454,14 @@ class FlightSession:
     # stands the aeroplane is being told the runway wants it moving, and
     # the crew taxis it briskly rather than at the book's figure.
     expedite_until: float = 0.0
+    # The last "standby"/"hold position" this flight was given
+    # (time.monotonic): a crew told to wait does not keep asking -- the
+    # controller has it on the list and calls back.
+    told_to_wait_at: float = 0.0
+    # A literal "hold position" still standing: the aeroplane stops
+    # where it is until the next movement instruction -- a taxi route,
+    # a crossing grant, a line-up or a takeoff clearance -- releases it.
+    hold_position: bool = False
     # The wind the last takeoff/landing clearance carried, as
     # (direction, kt, gust kt): the baseline a wind check is issued from.
     wind_at_clearance: tuple = ()
@@ -629,6 +646,10 @@ class FlightSession:
         if instruction.kind in ("ifr_clearance", "vfr_release") \
                 and instruction.text:
             self.last_clearance = instruction.text
+        if instruction.kind in _RELEASES_HOLD:
+            # The next movement instruction is the release a "hold
+            # position" waits for; a wind check or a handoff is not.
+            self.hold_position = False
         if instruction.readback_required:
             self.pending = instruction
             # A link is up and this is the authority's instruction: it is
@@ -698,6 +719,7 @@ class FlightSession:
         """Record a crossing clearance: that runway is the allowed one
         until the aircraft is off it again."""
         self.crossing_granted = str(runway or "")
+        self.hold_position = False
         self.allow_runway(runway)
 
     def spend_crossing(self) -> str:
@@ -713,6 +735,15 @@ class FlightSession:
         self.allow_runway("")
         self.hold_short_of = self.pending_crossing()
         return crossed
+
+    def tell_to_wait(self, hold: bool = False) -> None:
+        """The controller's answer was to wait -- "standby", or a
+        literal "hold position". A crew told either one waits for the
+        callback instead of asking again; a crew told the second one
+        also stops the aeroplane where it is."""
+        self.told_to_wait_at = time.monotonic()
+        if hold:
+            self.hold_position = True
 
     def advise_once(self, key: str) -> bool:
         """True the first time an advisory is due, False every time after."""

@@ -706,6 +706,15 @@ class _The_phase_machine:
                     # not now -- wait for it again rather than roll over
                     # whoever arrived in between.
                     return
+                pending = getattr(self.session, "pending", None)
+                if pending is not None and pending.readback_required \
+                        and not pending.read_back:
+                    # The clearance is answered before the power comes
+                    # up: the readback is the proof the words were
+                    # heard to the end, and a crew does not roll
+                    # mid-sentence on a clearance it has not
+                    # acknowledged.
+                    return
                 if self.state.runway_heading > 0 \
                         and not self.state.aligned:
                     # Cleared but never made the lineup: the roll starts
@@ -769,8 +778,22 @@ class _The_phase_machine:
             # answers its rudder differently was weaving under a fixed
             # gain.
             gs = state.ground_speed_kt or ias
+            keep_hdg = self.state.runway_heading
+            if self.state.runway_heading > 0 and self.state.runway_lat:
+                # Track the paint, not just the heading: a lineup can
+                # finish a few metres off the line and runway heading
+                # alone would hold that offset for the whole roll.
+                # The correction is the centreline's own, capped
+                # gentle -- a swerve at speed is the accident a
+                # takeoff roll is lost to, not a slow rejoin.
+                cl = auto_nav.align(
+                    state.latitude, state.longitude,
+                    self.state.runway_lat, self.state.runway_lon,
+                    self.state.runway_heading, lookahead_m=200.0)
+                keep_hdg = (self.state.runway_heading + min(
+                    8.0, max(-8.0, cl["correction_deg"]))) % 360.0
             keep = self._ground_directional(
-                state, self.state.runway_heading, gs, rate_cap=5.0)
+                state, keep_hdg, gs, rate_cap=5.0)
             d.rudder(keep)
             d.steering(keep * _nws_fade(gs))
             rotate_at = (self.state.vr_kt

@@ -488,6 +488,13 @@ class _The_radios:
         else:
             return
         tried = getattr(self, "_call_tried_at", 0.0)
+        if now - getattr(session, "told_to_wait_at", 0.0) < READY_REASK_S:
+            # The last word the frequency had for this flight was
+            # "standby"/"hold position": it is on the list and the
+            # callback is owed to it. A crew that keeps asking anyway
+            # is the one that gets the second telling-off, whatever
+            # the ask was for.
+            return
         # A ready call answered with "standby"/"hold position" is asked
         # again a minute and a half on, not on the next quiet patch: the
         # tower knows the aeroplane is there, and the crew that waits a

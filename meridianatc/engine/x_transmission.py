@@ -438,6 +438,7 @@ class _Transmission:
             decision("congestion", station=station.callsign, said="standby",
                      held=(reply.instruction.kind
                            if reply.instruction is not None else "answer"))
+            session.tell_to_wait()
             reply = Reply(p.standby(session.aircraft), station)
 
         if reply.speak:

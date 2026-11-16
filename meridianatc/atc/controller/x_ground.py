@@ -60,6 +60,7 @@ class _Ground:
             # would be an instruction it cannot follow.
             reason = self._stuck_on_the_stand()
             if reason:
+                session.tell_to_wait(hold=True)
                 return Reply(p.hold_position(aircraft) + f" You are {reason}.",
                              station)
 
@@ -324,6 +325,7 @@ class _Ground:
             # invented one would have been kept for the whole taxi.
             decision("taxi_route", airport=station.ident, runway=runway,
                      source="waiting", why="the taxiways are still being read")
+            session.tell_to_wait()
             return Reply(p.standby(session.aircraft), station)
         self._keep_taxi(session, plan)
         hold_at = ""
@@ -386,6 +388,7 @@ class _Ground:
         if plan is None and self._layout_pending(station.ident):
             decision("taxi_route", airport=station.ident, inbound=True,
                      source="waiting", why="the taxiways are still being read")
+            session.tell_to_wait()
             return Reply(p.standby(session.aircraft), station)
         self._keep_taxi(session, plan)
         hold_short = ""

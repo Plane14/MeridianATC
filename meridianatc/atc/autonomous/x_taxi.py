@@ -62,6 +62,13 @@ class _Taxi:
         # A runway crossed on the way, granted or simply met, is strobes
         # on until the far side is behind it.
         self._clearance_strobes(state)
+        if getattr(self.session, "hold_position", False):
+            # "Hold position" is a stop where you are, not a hold at the
+            # route's end: the brakes go on until the next movement
+            # instruction -- a new route, a crossing grant, a line-up
+            # or the takeoff word -- releases it.
+            self._stop(state)
+            return
         if not path or len(path) < 2:
             self._taxi_without_path(state, outbound)
             return

@@ -172,6 +172,7 @@ class SurfaceWatch:
                 and self._aligned(runway, self.magnetic_heading(state))):
             key = f"incursion:{self.navdb.runway_strip(airport.ident, runway)}"
             if session.advise_once(key):
+                session.tell_to_wait(hold=True)
                 return Reply(p.hold_position_incursion(aircraft, runway), station)
 
         return None
@@ -316,6 +317,7 @@ class CrossingWatch:
             if session.advise_once(key):
                 decision("runway_crossing", airport=ident,
                          event="incursion", runway=under)
+                session.tell_to_wait(hold=True)
                 return Reply(
                     p.hold_position_incursion(session.aircraft,
                                               under or pending),
