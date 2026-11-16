@@ -613,13 +613,6 @@ class _The_checklist_answered:
                     hdg, tail)
                 d.elevator(elevator)
                 d.aileron(aileron)
-            else:
-                # Above taxi pace the stick stops flying the wind: a
-                # position frozen on the last slow tick becomes a takeoff
-                # roll made with the elevator forward or a wing held
-                # down. Neutral until the rotation wants it.
-                d.elevator(0.0)
-                d.aileron(0.0)
         # Taxi and rollout speeds are throttle jobs, not AP jobs -- and
         # progressive ones: the further below target, the more asked for,
         # and the lever is walked to the answer at a hand's rate rather
