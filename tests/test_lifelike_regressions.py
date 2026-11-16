@@ -556,6 +556,75 @@ def test_the_fo_begins_its_own_descent_at_the_top_of_descent():
     assert fo.state.phase == AutonomousPhase.DESCENT
 
 
+def _descending_fo(altitude_ft: float):
+    """A descent-phase FO already at its last assigned level: vectored
+    for the approach at nine thousand, with no lower clearance yet."""
+    from meridianatc.atc.autonomous import (
+        AutonomousFlight,
+        AutonomousPhase,
+        AutonomousState,
+    )
+    from meridianatc.atc.session import Phase
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.state = AutonomousState()
+    fo.state.phase = AutonomousPhase.DESCENT
+    fo.state.tod_nm = 40.0
+    fo.state.phase_entered_at = 100.0
+    fo.DESAT_TIMEOUT = 600.0
+    fo._dir = Mock()
+    fo.sim = fo._dir.sim
+    fo.get_state = lambda: None
+    fo.on_event = lambda *a, **kw: None
+    fo.brain = SimpleNamespace(
+        route=None, terminal_procedures={}, route_progress=None,
+        fms_idents=())
+    fo.session = SimpleNamespace(
+        phase=Phase.DESCENT, assigned_altitude_ft=9000.0,
+        assigned_heading=32.0, assigned_speed_kt=None,
+        descend_via="", destination=SimpleNamespace(
+            lat=41.0, lon=-8.0, elev_ft=0.0))
+    fo._run_checklist_for_phase = Mock()
+    fo._descent_floor = Mock(return_value=1800.0)
+    fo._route_level = Mock(return_value=(0.0, ""))
+    fo._distance_to_destination_nm = Mock(return_value=40.0)
+    fo._field_elevation = Mock(return_value=0.0)
+    fo._star_nav = Mock(return_value=None)
+    fo._approach_recipe = Mock(return_value=None)
+    fo._maybe_tune_nav = Mock()
+    fo._transition = Mock()
+    fo._set_error = Mock()
+    fo._apply_flight_director = Mock()
+    state = SimpleNamespace(
+        has_position=True, latitude=40.9, longitude=-8.0,
+        altitude_ft=altitude_ft, altitude_agl_ft=altitude_ft,
+        ground_speed_kt=180.0, heading_true=32.0, autopilot=True,
+        vertical_speed_fpm=0.0, typical_descent_fpm=800.0,
+        gear_down=None, flaps_index=0.0,
+        on_ground=False, engines_running=True)
+    return fo, state
+
+
+def test_a_level_the_flight_is_already_at_is_held_not_hunted():
+    """Assigned nine thousand and flying at it: the descent phase holds
+    the level rather than dipping a hundred feet under and climbing back
+    at descent speed -- the porpoise that read as "climbing close to
+    stall"."""
+    fo, state = _descending_fo(9000.0)
+    fo._phase_descent(state, 100.0)
+    assert fo._apply_flight_director.call_args.kwargs["vs_fpm"] == 0.0
+    assert fo._apply_flight_director.call_args.kwargs["altitude"] == 9000.0
+
+
+def test_the_descent_still_descends_past_the_band_and_climbs_on_a_reclear():
+    fo, state = _descending_fo(9500.0)
+    fo._phase_descent(state, 100.0)
+    assert fo._apply_flight_director.call_args.kwargs["vs_fpm"] < 0.0
+
+    fo, state = _descending_fo(8600.0)
+    fo._phase_descent(state, 100.0)
+    assert fo._apply_flight_director.call_args.kwargs["vs_fpm"] > 0.0
+
+
 def test_the_assigned_speed_is_flown_to_the_final_segment():
     """"Maintain one-seventy to the marker" is obeyed while the final is
     still far; inside it, the flare's own speed is the one flown."""

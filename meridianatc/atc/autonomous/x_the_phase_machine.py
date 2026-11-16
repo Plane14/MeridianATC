@@ -1083,10 +1083,13 @@ class _The_phase_machine:
                 elif filed > target + 500.0:
                     self.session.cruise_altitude_ft = int(filed)
                     target = filed
-            if target and abs(alt - target) > 300.0:
+            if target and abs(alt - target) > 200.0:
                 # A step clearance answered level is not answered at
                 # all: the bug moves and the aeroplane climbs or
-                # descends to it, FLCH where the model has one.
+                # descends to it, FLCH where the model has one. The band
+                # is the deviation watch's own two hundred feet: a drift
+                # the controller would call "verify altitude" on is one
+                # the aeroplane corrects first.
                 vs = (self.performance.climb_fpm if alt < target
                       else -self.performance.descend_fpm)
                 self._apply_flight_director(
@@ -1203,10 +1206,18 @@ class _The_phase_machine:
             assigned_hdg = self.session.assigned_heading
             # A re-clearance to a higher level while descending is a
             # climb, whatever the phase is named: an aeroplane does not
-            # descend through an assigned level that sits above it.
-            vs = (-descent_fpm
-                  if (state.altitude_ft or 0.0) > target - 100.0
-                  else self.performance.climb_fpm)
+            # descend through an assigned level that sits above it. The
+            # level it is already at is held, not hunted -- descending
+            # to a hundred feet under the bug and then climbing back at
+            # descent speed is the porpoise the verify-altitude calls
+            # were about.
+            alt = state.altitude_ft or 0.0
+            if alt > target + 250.0:
+                vs = -descent_fpm
+            elif alt < target - 250.0:
+                vs = self.performance.climb_fpm
+            else:
+                vs = 0.0
             self._apply_flight_director(state, altitude=target,
                                         vs_fpm=vs,
                                         heading=assigned_hdg if assigned_hdg is not None else -1.0,
