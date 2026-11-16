@@ -63,9 +63,18 @@ class _Aeroplanes_somebody_else:
                       if f.observed and f.source == "live"}
                      | {one.callsign for one in self._parked_observed.values()
                         if one.live})
-        seen = [one for one in self._rejoin_the_feed(seen or (), now)
+        seen = self._rejoin_the_feed(seen or (), now)
+        # The same real aeroplane reported by the feed AND the simulator in
+        # one pass -- FSLTL injects real flights under their real callsigns:
+        # the feed's copy is the one that matters, and a strip each is two
+        # aeroplanes with one callsign for a tick.
+        live_seen = {(one.callsign or "").strip().upper()
+                     for one in seen
+                     if getattr(one, "source", "") == "live"}
+        seen = [one for one in seen
                 if getattr(one, "source", "") == "live"
-                or (one.callsign or "").strip().upper() not in live_ours]
+                or (one.callsign or "").strip().upper()
+                not in live_ours | live_seen]
         # A copy of ours just given back to the feed is no longer ours.
         ours -= {f.written.upper() for f in self.flights
                  if f.done and not f.observed}
@@ -109,8 +118,13 @@ class _Aeroplanes_somebody_else:
             and not self._is_user(one)
             and haversine_nm(self.field.latitude, self.field.longitude,
                              one.latitude, one.longitude) < PARKED_RANGE_NM]
-        self._parked_seen = [(one.latitude, one.longitude) for one in standing]
-        self._note_parked(standing, known, now)
+        # Rebuilt only on a real read: a dropped poll or a lost position
+        # would otherwise clear the books for a tick and let a spawn sit
+        # on top of a parked aeroplane that is still there.
+        if self._observed_read:
+            self._parked_seen = [(one.latitude, one.longitude)
+                                 for one in standing]
+            self._note_parked(standing, known, now)
 
         # Nearest first, so a field with more aeroplanes on it than can be
         # worked keeps the ones that are about to use the runway.

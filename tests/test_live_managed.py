@@ -22,6 +22,7 @@ def _injector(**over):
     injector._parked_since = {}
     injector._live_flew = set()
     injector._live_moving = set()
+    injector._live_stands = {}
     injector._used_callsigns = set()
     injector.flights = []
     injector.statics = []

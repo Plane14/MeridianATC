@@ -41,6 +41,12 @@ class _The_field:
             self._taken_over.clear()
             self._flown_for.clear()
             self._parked_since.clear()
+            # The roll-in holds carry the old field's stands; kept across
+            # the change, a held aeroplane would be walked to a stand in
+            # the old layout's coordinates.
+            self._live_stands.clear()
+            self._live_moving.clear()
+            self.live_snapped.clear()
             self.flights.clear()
             self._asked_for.clear()
             self._reserved.clear()

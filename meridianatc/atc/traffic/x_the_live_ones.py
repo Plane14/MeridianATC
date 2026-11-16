@@ -198,10 +198,15 @@ class _The_live_ones:
             decision("live_traffic", event="rolled onto a stand",
                      callsign=one.callsign, stand=stand.index)
         stand = held["stand"]
-        # Heard stopping, then moving again: its next flight.
+        # Heard stopping, then moving again: its next flight. And a real
+        # aeroplane that leaves the stand's reach without stopping was
+        # never parking here -- it taxied past, or turned away: the drawn
+        # copy is let go where it is rather than walked to a stand the
+        # real one is not at, which for 45 minutes was the oddity.
         if one.ground_speed_kt < livemod.MOVING_KT:
             held["stopped"] = True
-        elif held["stopped"] or now - held["since"] > LIVE_PARKED_S:
+        elif (held["stopped"] or now - held["since"] > LIVE_PARKED_S
+                or self._stand_left(held["stand"], one)):
             del self._live_stands[one.object_id]
             self._live_moving.add(one.object_id)
             return None
@@ -226,6 +231,12 @@ class _The_live_ones:
                        heading=heading,
                        ground_speed_kt=LIVE_ROLL_MS / 0.514444,
                        altitude_ft=self.field.elevation_ft)
+
+    def _stand_left(self, stand, one) -> bool:
+        """The real aeroplane is outside the stand's capture reach -- gone
+        somewhere else rather than parking on it."""
+        x, z = self.ground.to_xy(one.latitude, one.longitude)
+        return math.hypot(stand.x - x, stand.z - z) > LIVE_STAND_M
 
     def _stand_ahead(self, one):
         """A free stand within LIVE_STAND_M, ahead of the aeroplane."""
@@ -967,6 +978,8 @@ class _The_live_ones:
         is parked, where the real one already is (_rejoin_the_feed)."""
         self._taken_over.add(flight.observed_id)
         self._flown_for[flight.observed_id] = flight
+        self._live_stands.pop(flight.observed_id, None)
+        self._release_held(flight)
         flight.observed = False
         flight.source = "taken over"
         flight.arriving = True
@@ -1037,9 +1050,15 @@ class _The_live_ones:
                 return False
             x, z = layout.to_xy(one.latitude, one.longitude)
             stand = layout.stand_at(x, z)
-            if (one.ground_speed_kt < TAXIING_KT
-                    and one.hex not in self._live_flew and stand is not None):
-                return False                # parked: not the tower's yet
+            if one.ground_speed_kt < TAXIING_KT:
+                # Standing still is nobody's to fly: parked on a stand or
+                # stopped in a queue, it is adopted when the real one
+                # moves. Adopted while parked, an arrival that had
+                # already reached its stand was taxied on to a different
+                # one, and a dormant aeroplane departed and re-adopted
+                # every time ours finished -- the same real callsign
+                # forever leaving.
+                return False
             if arriving:
                 stand = self._free_stand(
                     airliner=flight.operator is not None or flight.ifr,
@@ -1053,6 +1072,7 @@ class _The_live_ones:
         # Committed. Ours now, the feed's copy suppressed.
         self._taken_over.add(flight.observed_id)
         self._flown_for[flight.observed_id] = flight
+        self._live_stands.pop(flight.observed_id, None)
         self._release_held(flight)
         flight.observed = False
         flight.step = 0
@@ -1133,6 +1153,7 @@ class _The_live_ones:
         self._taken_over.discard(object_id)
         self._flown_for.pop(object_id, None)
         self._parked_since.pop(object_id, None)
+        self._live_stands.pop(object_id, None)
         self._release_all(flight)
         flight.observed = True
         flight.airborne_model = False
