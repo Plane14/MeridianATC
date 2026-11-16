@@ -52,6 +52,13 @@ _VOLUNTEERED = frozenset({
 # same beat the cabin's own answers leave (crew.ANSWER_DELAY_S).
 UNKEY_BEAT_S = 1.2
 
+# How long a crew waits before asking "ready for departure" again. The
+# tower has the flight on its list the moment the first call lands, and
+# the answer -- "standby", "hold position", the clearance itself -- is
+# what comes back, not a second ask. A minute and a half is the interval
+# a patient crew leaves before reminding the tower it is still there.
+READY_REASK_S = 90.0
+
 # The calls keyed on top of that beat rather than behind it: a go-around
 # is what the tower is already listening for, and a call that urgent is
 # late exactly the length of the pause a slower one would leave.
@@ -447,6 +454,12 @@ class _The_radios:
             if session.lined_up or session.cleared_takeoff \
                     or session.phase in (Phase.LINED_UP, Phase.TAKEOFF):
                 return
+            if getattr(session, "held_for_landing", ""):
+                # Held at the bars for the arrival on final: told to
+                # wait, and a pilot told to wait does not ask again --
+                # the release comes to the flight, not the other way
+                # round.
+                return
             if (state.ground_speed_kt or 0.0) > 1.0:
                 # Ready-for-departure is called from a stopped aeroplane.
                 return
@@ -455,6 +468,12 @@ class _The_radios:
             if session.cleared_takeoff or self.state.rejected \
                     or self.state.sub not in ("set", "wait_clearance"):
                 return
+            if getattr(session, "held_for_landing", ""):
+                # Lined up behind the landing traffic -- the wait is
+                # already instructed, so the call is not repeated; the
+                # tower's release watch clears the flight when the
+                # runway frees.
+                return
             if (state.ground_speed_kt or 0.0) > 1.0:
                 return
             # Lined up and still not released: the call that says so.
@@ -462,7 +481,12 @@ class _The_radios:
         else:
             return
         tried = getattr(self, "_call_tried_at", 0.0)
-        if now - max(self.state.last_radio_at, tried) < 25.0 \
+        # A ready call answered with "standby"/"hold position" is asked
+        # again a minute and a half on, not on the next quiet patch: the
+        # tower knows the aeroplane is there, and the crew that waits a
+        # stretch is the one that does not get a second telling-off.
+        interval = READY_REASK_S if kind == "ready" else 25.0
+        if now - max(self.state.last_radio_at, tried) < interval \
                 or not self._unkeyed():
             return
         self._call_tried_at = now

@@ -2180,3 +2180,61 @@ def test_the_taxi_leg_stops_short_of_a_route_that_crosses_the_runway():
     assert not set(taxi_out.nodes) & layout.runway_nodes
     # The runway traversal belongs to the second clearance.
     assert "r0" in line_up.nodes and "f1" in line_up.nodes
+
+
+def _ready_flight(phase_name, **session_kw):
+    """A flight at the hold asking the tower for its release."""
+    from meridianatc.atc.autonomous import (
+        AutonomousFlight,
+        AutonomousPhase,
+        AutonomousState,
+    )
+    from meridianatc.atc.session import Phase
+    flight = AutonomousFlight.__new__(AutonomousFlight)
+    flight.state = AutonomousState()
+    flight.state.phase = getattr(AutonomousPhase, phase_name)
+    flight.state.sub = "wait_clearance"
+    flight.state.last_radio_at = 0.0
+    kw = dict(phase=Phase.TAKEOFF, lined_up=True, cleared_takeoff=False,
+              ifr=True, clearance_issued=True, held_for_landing="")
+    kw.update(session_kw)
+    flight.session = SimpleNamespace(**kw)
+    flight._call_tried_at = 0.0
+    flight._unkeyed = lambda: True
+    flight._fo_say = Mock(return_value=True)
+    return flight
+
+
+def test_a_departure_held_for_landing_does_not_ask_again():
+    """Told to wait for the arrival, the crew waits: the release comes
+    to the flight, it is not asked for."""
+    from meridianatc.atc.session import Phase
+    flight = _ready_flight("HOLDING_SHORT",
+                           held_for_landing="AIB123",
+                           phase=Phase.HOLDING_SHORT, lined_up=False)
+    state = SimpleNamespace(on_ground=True, ground_speed_kt=0.0)
+    flight._work_the_calls(state, flight.session, 1000.0)
+    flight._fo_say.assert_not_called()
+    # And the same from the runway: lined up behind the landing
+    # traffic, the wait is instructed.
+    flight = _ready_flight("LINE_UP", held_for_landing="AIB123")
+    flight._work_the_calls(state, flight.session, 1000.0)
+    flight._fo_say.assert_not_called()
+
+
+def test_a_waited_ready_call_is_asked_again_on_the_crews_clock():
+    """Not told to wait, the call is remade -- but on a crew's patience,
+    not the twenty-five second beat."""
+    from meridianatc.atc.autonomous.x_the_radios import READY_REASK_S
+    from meridianatc.atc.session import Phase
+    flight = _ready_flight("HOLDING_SHORT", lined_up=False,
+                           phase=Phase.HOLDING_SHORT)
+    state = SimpleNamespace(on_ground=True, ground_speed_kt=0.0)
+    # Twenty-five seconds of quiet is not a reason to ask again.
+    flight.state.last_radio_at = 1000.0 - 30.0
+    flight._work_the_calls(state, flight.session, 1000.0)
+    flight._fo_say.assert_not_called()
+    # The crew's interval is.
+    flight.state.last_radio_at = 1000.0 - READY_REASK_S - 1.0
+    flight._work_the_calls(state, flight.session, 1000.0)
+    flight._fo_say.assert_called_once_with("ready")
