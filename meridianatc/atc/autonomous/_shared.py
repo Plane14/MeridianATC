@@ -285,6 +285,10 @@ class AutonomousState:
     windshear_since: float = 0.0
     weather_gas: int = 0
     weather_ga_active: bool = False
+    # The pop-up IFR pickup: when the sim first reported the aeroplane
+    # in cloud on a VFR leg -- a wisp of cloud does not file anything,
+    # a stay in it does.
+    imc_since: float = 0.0
     # The engine watch (x_the_engines): a limit exceedance already said
     # once, and whether the carburetted engine's heat is a lever the FO
     # put on itself -- the flag that lets it come off when the sky dries.

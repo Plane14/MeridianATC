@@ -1066,6 +1066,72 @@ def test_a_flight_filed_ifr_asks_for_ifr_whatever_the_sky():
     assert flight._ifr_required(SimpleNamespace()) is False
 
 
+def test_a_vfr_leg_flown_into_cloud_files_ifr():
+    """A stay in the cloud on a VFR leg is the pop-up pickup's ask."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _flier()
+    flight._is_helicopter = False
+    flight._heli = None
+    flight._request_ifr = True
+    flight._weather_reactions = True
+    flight.config = SimpleNamespace(
+        flight=SimpleNamespace(ifr=False))
+    flight.state.phase = AutonomousPhase.CRUISE
+    flight.session.ifr = False
+    flight.session.pattern_work = False
+    flight.session.destination = SimpleNamespace(ident="LPPT")
+    flight.session.clearance_issued = False
+    state = SimpleNamespace(on_ground=False, ambient_in_cloud=True)
+    flight._watch_ifr_pickup(state, 10.0)
+    assert flight.session.ifr is False       # a wisp files nothing
+    flight._watch_ifr_pickup(state, 40.0)    # 30 s in it does
+    assert flight.session.ifr is True
+    assert flight.config.flight.ifr is True  # filed, like preflight's
+    flight._emit.assert_called_once()
+    # Out of cloud before the clock, nothing is filed.
+    flight.session.ifr = False
+    flight.config.flight.ifr = False
+    flight.state.imc_since = 0.0
+    flight._watch_ifr_pickup(
+        SimpleNamespace(on_ground=False, ambient_in_cloud=False), 50.0)
+    flight._watch_ifr_pickup(state, 90.0)    # back in: the clock re-arms
+    assert flight.session.ifr is False
+    flight._watch_ifr_pickup(state, 116.0)   # and a stay still files it
+    assert flight.session.ifr is True
+
+
+def test_an_airborne_clearance_ask_is_the_pop_up_pickup():
+    """Radar answers an airborne "request IFR clearance" by clearing it."""
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.db import Station
+    brain = _ground_brain()
+    station = Station("LPPT", "APP", 120.5, "Lisboa Approach")
+    session = FlightSession(Aircraft(parse_callsign("N123")),
+                            destination=SimpleNamespace(
+                                ident="LPPT", spoken="Portela"))
+    session.ifr = False
+    session.cruise_altitude_ft = 8000
+    state = SimpleNamespace(on_ground=False, altitude_ft=5500.0)
+    reply = brain._issue_ifr_pickup(
+        session, station, brain.for_station(station), state)
+    assert session.ifr is True
+    assert session.clearance_issued is True
+    assert session.squawk
+    assert "squawk" in reply.text.lower()
+    # Above the filed cruise the level it is at is what is kept.
+    assert session.pending.values["altitude_ft"] == 8000
+    state.altitude_ft = 9000.0
+    session2 = FlightSession(Aircraft(parse_callsign("N456")),
+                             destination=SimpleNamespace(
+                                 ident="LPPT", spoken="Portela"))
+    session2.cruise_altitude_ft = 8000
+    brain._issue_ifr_pickup(
+        session2, station, brain.for_station(station), state)
+    assert session2.pending.values["altitude_ft"] == 9000
+
+
 def test_taxi_power_walks_up_from_idle_never_slammed():
     """Out of the stand the lever is eased open, not thrown to a number."""
     flight = _flier()

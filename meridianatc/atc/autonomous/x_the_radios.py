@@ -396,7 +396,22 @@ class _The_radios:
         request and not a stream.
         """
         phase = self.state.phase
-        if phase == AutonomousPhase.TAXI_OUT:
+        if not getattr(state, "on_ground", False) \
+                and getattr(session, "ifr", False) \
+                and not getattr(session, "clearance_issued", False):
+            # An IFR leg airborne that never collected a clearance is
+            # owed the pop-up pickup -- the leg that filed IFR into
+            # cloud on the way, or the one engaged in the air before
+            # its clearance ever was. Asked for until somebody issues
+            # it; on a frequency that clears nobody the call is the
+            # pilot's announcement, made once and not repeated.
+            station = getattr(session, "current_station", None)
+            if getattr(self, "_pickup_announced", False) and (
+                    station is None
+                    or not self.brain.issues_clearances(station)):
+                return
+            kind = "clearance"
+        elif phase == AutonomousPhase.TAXI_OUT:
             reask = getattr(self, "_taxi_reask", False)
             if not reask and not getattr(self, "_held_at_split", False) and (
                     session.phase in (Phase.HOLDING_SHORT,
@@ -451,11 +466,15 @@ class _The_radios:
                 or not self._unkeyed():
             return
         self._call_tried_at = now
-        if self._fo_say(kind) and kind == "taxi":
+        if not self._fo_say(kind):
+            return
+        if kind == "taxi":
             # The taxi call went out: on an unanswered frequency it is
             # the announcement, not something to keep asking for.
             self._taxi_announced = True
             self._taxi_reask = False
+        elif kind == "clearance":
+            self._pickup_announced = True
 
     def _check_in_once(self, state, session, now: float) -> None:
         """The first call on a new airborne station: the level, and

@@ -31,6 +31,51 @@ class _Weather:
         self._watch_icing(state, now)
         self._watch_turbulence(state, now)
         self._watch_density_altitude(state)
+        self._watch_ifr_pickup(state, now)
+
+    def _watch_ifr_pickup(self, state, now: float) -> None:
+        """A VFR leg flown into cloud files IFR, the pop-up pickup.
+
+        The sim's word is the honest one: ``ambient_in_cloud`` is the
+        sky the aeroplane is actually in, not the METAR it was filed
+        against. A wisp of cloud is not a reason to change the flight's
+        rules -- the clock must see a stay in it -- but a leg flown into
+        sustained IMC on a VFR filing is a flight that needs a clearance,
+        so the FO files it: ``session.ifr`` flips, and the ask goes out
+        on the frequency the way the ground one did (``_work_the_calls``
+        makes the call until somebody issues it, or announces it once
+        where nobody can). A helicopter, a circuit flight, a leg with
+        nowhere to be cleared to, and the pilot's "VFR only" preference
+        are all left alone.
+        """
+        session = self.session
+        if (session is None or self._is_helicopter or self._heli is not None
+                or not self._request_ifr
+                or getattr(session, "ifr", False)
+                or getattr(session, "pattern_work", False)
+                or getattr(session, "destination", None) is None
+                or getattr(state, "on_ground", True)
+                or self.state.phase not in (AutonomousPhase.CLIMB,
+                                            AutonomousPhase.CRUISE,
+                                            AutonomousPhase.DESCENT)):
+            self.state.imc_since = 0.0
+            return
+        if not getattr(state, "ambient_in_cloud", False):
+            self.state.imc_since = 0.0
+            return
+        if not self.state.imc_since:
+            self.state.imc_since = now
+            return
+        if now - self.state.imc_since < 25.0:
+            return
+        session.ifr = True
+        flight_cfg = getattr(getattr(self, "config", None), "flight", None)
+        if flight_cfg is not None:
+            # The flight is filed IFR from here: the settings screen
+            # should say so, the way the preflight filing writes back.
+            flight_cfg.ifr = True
+        self._emit("info", "In cloud on a VFR leg: picking up IFR",
+                   "autonomous.weather.ifr_pickup")
 
     def _watch_density_altitude(self, state) -> None:
         """The hot-and-high briefing, before the takeoff it matters to.

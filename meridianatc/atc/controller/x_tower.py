@@ -98,6 +98,12 @@ class _Tower:
         # pilot was told the tower was "expecting ready for departure".
         if parsed.intent is Intent.REQUEST_CLEARANCE:
             if airborne:
+                # An airborne ask is the pop-up IFR pickup, which is a
+                # radar position's to issue -- ground hands the same
+                # call up the same way.
+                sent = self._send_on(session, station, p, "DEP", "APP")
+                if sent is not None:
+                    return sent
                 return Reply(p.already_airborne(aircraft), station)
             sent = self._send_on(session, station, p, "DEL", "GND")
             if sent is not None:

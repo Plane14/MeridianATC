@@ -46,6 +46,11 @@ class _Radar_positions_departure:
 
         if parsed.intent in self._SURFACE_ONLY:
             if _airborne(state):
+                if parsed.intent is Intent.REQUEST_CLEARANCE:
+                    # A clearance asked in the air is the pop-up pickup:
+                    # the VFR flight that needs to be IFR gets it here.
+                    return self._issue_ifr_pickup(
+                        session, station, p, state)
                 return Reply(p.already_airborne(aircraft), station)
             sent = self._send_on(session, station, p, "TWR", "GND", "DEL")
             if sent is not None:
@@ -501,6 +506,45 @@ class _Radar_positions_departure:
         instruction = session.remember(
             Instruction("flight_following", station_key(station), text,
                         {"squawk": session.squawk}))
+        return Reply(text, station, instruction=instruction)
+
+    def _issue_ifr_pickup(self, session, station, p, state) -> Reply:
+        """An airborne VFR flight asking for IFR: the pop-up pickup.
+
+        The ask is the filing: the flight is IFR from the moment the
+        clearance is issued, identified, cleared to its destination
+        direct, and held at the level it filed -- or the one it is at,
+        a pickup is never a descent to the paperwork. Squawk and level
+        are readback items, the way the ground clearance's are.
+        """
+        aircraft = session.aircraft
+        session.ifr = True
+        session.squawk = squawk_for(session, station.ident)
+        current = float(getattr(state, "altitude_ft", 0.0) or 0.0)
+        cruise = session.cruise_altitude_ft or self._default_cruise(session)
+        level = max(cruise, round(current / 100.0) * 100.0)
+        transition = self._transition_altitude(
+            self.navdb.airport(station.ident))
+        destination = session.destination
+        dest_name = (
+            destination.spoken if destination
+            else (session.destination_input or p.UNKNOWN_DESTINATION)
+        )
+        via = "via direct" if p.dialect == "faa" else "direct"
+        clause = (f"cleared to {dest_name} {via}, "
+                  f"maintain {p.alt(level, transition)}")
+        session.establish(station)
+        session.clearance_issued = True
+        session.radar_service = station_key(station)
+        text = (p.radar_contact(
+                    aircraft, self._station_name(station, p),
+                    instruction=clause, abbreviated=False)
+                + " " + p.squawk(aircraft, session.squawk))
+        instruction = session.remember(
+            Instruction("ifr_clearance", station_key(station), text,
+                        {"altitude_ft": int(level),
+                         "squawk": session.squawk},
+                        required_items={"altitude_ft", "squawk"}))
         return Reply(text, station, instruction=instruction)
 
     def _issue_approach(self, session, station, weather, p, state,
