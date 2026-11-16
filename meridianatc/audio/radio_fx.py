@@ -51,7 +51,13 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
-from scipy import signal as sps
+
+try:
+    from scipy import signal as sps
+except ImportError:
+    # Test-only environments skip the audio engines' deps; any code path that
+    # actually renders audio still fails loudly at the call site.
+    sps = None
 
 from .samples import pcm, rate
 
