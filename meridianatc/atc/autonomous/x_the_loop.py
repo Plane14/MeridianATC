@@ -122,6 +122,7 @@ class _The_loop:
                 self.state.still_since = now
 
         self._execute_phase(state, now)
+        self._fly_direct(state)
         self._fly_hold(state, now)
         self._fly_avoidance(state)
 

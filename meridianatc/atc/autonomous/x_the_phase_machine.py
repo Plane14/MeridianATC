@@ -1299,6 +1299,12 @@ class _The_phase_machine:
             self._fly_go_around(state, now)
             return
 
+        if self._fly_orbit(state):
+            # Round the orbit the tower gave: nothing of the final is
+            # flown, or judged, until the aeroplane is back on it.
+            self.state.stabilized = False
+            return
+
         self._configure_final(state)
 
         # Below ten thousand the landing light is on -- the checklist

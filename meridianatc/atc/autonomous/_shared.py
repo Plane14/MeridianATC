@@ -188,6 +188,19 @@ class AutonomousState:
     hold_leg: str = ""
     hold_leg_at: float = 0.0
     hold_nearest_nm: float = 0.0
+    # "Proceed direct": the fix being flown to, the clearance it came
+    # from as last seen (so the same fix cleared again is a new one),
+    # and the nearest it has been. Kept past the cleared fix, one fix
+    # after another: the simulator's FMS was never told of the shortcut
+    # and its active leg is still the one that was cut.
+    direct_fix: str = ""
+    direct_cleared: str = ""
+    direct_nearest_nm: float = 0.0
+    # The tower's orbit: the altitude it is flown at, the track last
+    # seen and how far round the aeroplane has turned by its own count.
+    orbit_alt_ft: float = 0.0
+    orbit_track: float = -1.0
+    orbit_turned: float = 0.0
     # The cleared approach as a flyable recipe (approach_flight.resolve),
     # resolved once and kept until the field or the runway changes; whether
     # NAV1 has been tuned to its navaid yet, when that was last tried, and
