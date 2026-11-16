@@ -1024,8 +1024,10 @@ class LiveTrafficConfig:
     # most (adsb.fi), and 6 s is what LocalTC asks at. Never less than 6.
     poll_s: float = 6.0
     # Round the pilot. One request covers the area; 250 nm is the most the
-    # sources serve.
-    radius_nm: float = 60.0
+    # sources serve. 0 -- the default -- is traffic.radius_nm, so the feed
+    # hears as far out as the aeroplanes are drawn; another number here
+    # asks the sources for a radius of their own.
+    radius_nm: float = 0.0
     # A local readsb's aircraft.json (http://<pi>:8080/data/aircraft.json),
     # asked after the public sources; {lat} {lon} {nm} filled in if present.
     own_url: str = ""
@@ -1064,7 +1066,7 @@ describe(
                     **_LIVE),
     poll_s=Setting(min=6, max=60, unit="s", restart=True, advanced=True,
                    **_LIVE),
-    radius_nm=Setting(min=5, max=250, unit="nm", restart=True,
+    radius_nm=Setting(min=0, max=250, unit="nm", restart=True,
                       advanced=True, **_LIVE),
     own_url=Setting(restart=True, advanced=True, **_LIVE),
     routes=Setting(restart=True, advanced=True, **_LIVE),

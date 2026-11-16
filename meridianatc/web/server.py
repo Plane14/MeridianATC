@@ -1446,11 +1446,19 @@ def _apply_settings(engine: Engine, payload: dict) -> set[str]:
     # should have to restart to turn the radio effects off or the volume down.
     if "audio.volume" in changed:
         engine.player.volume = engine.config.audio.volume
-    if "traffic.radius_nm" in changed and getattr(engine, "simwatch", None) \
-            is not None:
-        # Only the next read has to hear about it.
-        engine.simwatch.radius_m = int(
-            engine.config.traffic.radius_nm * 1852.0)
+    if changed & {"traffic.radius_nm", "traffic.live.radius_nm"}:
+        live = engine.config.traffic.live
+        if getattr(engine, "simwatch", None) is not None:
+            # Only the next read has to hear about it.
+            engine.simwatch.radius_m = int(
+                engine.config.traffic.radius_nm * 1852.0)
+        if getattr(engine, "live_feed", None) is not None:
+            # Same for the feed's next poll: its own radius where one is
+            # set, else the traffic radius it follows.
+            radius = (live.radius_nm or engine.config.traffic.radius_nm
+                      or 5.0)
+            engine.live_feed.feed.radius_nm = \
+                min(max(float(radius), 5.0), 250.0)
     if "voice.hq_model" in changed:
         _switch_clone_model(engine)
     if "traffic.handling.gsx_vehicles" in changed:

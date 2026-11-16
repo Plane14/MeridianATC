@@ -64,7 +64,10 @@ class _The_real_aeroplanes:
         from ..paths import data_dir
 
         feed = adsb.Feed(sources=adsb.sources_for(live.own_url),
-                         radius_nm=live.radius_nm)
+                         # The traffic radius unless the feed has been given
+                         # one of its own.
+                         radius_nm=(live.radius_nm
+                                    or self.config.traffic.radius_nm))
         book = (adsb.FlightBook(data_dir() / "adsb_cache.json")
                 if live.routes else None)
         self.live_feed = adsb.LiveFeedThread(feed, book, self._live_centre,

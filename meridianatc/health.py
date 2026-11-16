@@ -459,7 +459,8 @@ def _live_traffic(config: Config) -> Check:
         return Check("live_traffic", "Live traffic", "off", "switched off")
     asked = "adsb.lol, adsb.fi" + (", your own receiver" if live.own_url
                                    else "")
-    detail = (f"{asked}: only your position and a {live.radius_nm:.0f} nm "
+    detail = (f"{asked}: only your position and a "
+              f"{(live.radius_nm or config.traffic.radius_nm):.0f} nm "
               f"radius are sent, every {max(live.poll_s, 6.0):.0f} s")
     if live.routes:
         detail += "; adsbdb.com is asked the callsigns heard"

@@ -77,7 +77,9 @@ def dry_run(config, navdb, ident: str, seconds: float, *,
         return []
     live = config.traffic.live
     feed = adsb.Feed(sources=adsb.sources_for(live.own_url), fetch=fetch,
-                     radius_nm=live.radius_nm, clock=clock, wall=clock)
+                     radius_nm=(live.radius_nm
+                                or config.traffic.radius_nm),
+                     clock=clock, wall=clock)
     book = adsb.FlightBook(None, fetch=fetch, clock=clock) if live.routes else None
     thread = adsb.LiveFeedThread(feed, book, lambda: (field.lat, field.lon),
                                  poll_s=live.poll_s, wall=clock)
