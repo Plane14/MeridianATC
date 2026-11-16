@@ -528,10 +528,6 @@ class _The_other_aeroplanes:
         self._traffic_queue = [c for c in self._traffic_queue
                                if not c.flight.done
                                and (self.simtraffic.drawing or c.flight.observed)]
-        for flight in dropped:
-            # One the simulator never made never gets its notice either:
-            # without the pop its callsign sits in _spawned forever.
-            self._spawned.pop(flight.written, None)
         for flight in confirmed:
             runway = self._spawned.pop(flight.written, None)
             if runway is None:

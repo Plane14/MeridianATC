@@ -2216,7 +2216,7 @@ def _standby_station(engine: Engine) -> str:
     name = ""
     try:
         near = engine.navdb.all_stations_near(state.latitude, state.longitude,
-                                              max_nm=STATION_RANGE_NM)
+                                              max_nm=STATION_REACH_NM)
         matching = [s for s in near if same_channel(s.mhz, mhz)]
         if matching:
             name = min(matching, key=lambda s: s.distance_nm).callsign

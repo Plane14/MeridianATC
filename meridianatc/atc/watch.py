@@ -581,6 +581,9 @@ class DeviationAssistWatch:
         session.aircraft.language = language_of(p)
         for kind in off:
             since, last, said = self._seen.get(kind, [now, 0.0, 0])
+            if now - since < self.SETTLE_S:
+                self._seen[kind] = [since, last, said]
+                continue
             if now - last < self.REMIND_S:
                 self._seen[kind] = [since, last, said]
                 continue

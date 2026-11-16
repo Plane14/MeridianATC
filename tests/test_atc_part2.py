@@ -524,6 +524,9 @@ def test_deviation_watch_escalates_to_an_offer():
                           latitude=40.0, longitude=-75.0)
 
     first = watch.look(session, station, state)
+    assert first is None          # still inside the settle window
+    watch._seen["altitude"][0] -= watch.SETTLE_S + 1.0
+    first = watch.look(session, station, state)
     assert first is not None and "verify" in first.text.lower()
     assert not session.assistance_offered()
     # The same call a minute later, then the offer.
