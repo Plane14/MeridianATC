@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+from ..audio.voices import in_language
 from ._shared import (
     PROFILE_ATIS,
     PROFILE_HF,
@@ -7,6 +10,7 @@ from ._shared import (
     Station,
     VoicesMissing,
     as_written,
+    interphone,
     log,
     time,
 )
@@ -101,6 +105,64 @@ class _Speaking:
         self.player.play(
             transmission.audio, transmission.sample_rate, label=station.callsign
         )
+
+    def _speak_first_officer(self, text: str, language: str = "en") -> None:
+        """Put the first officer's own transmission on the air.
+
+        The call itself goes through :meth:`handle_text` so the controller
+        reads and answers it; this is the voice of it -- the aeroplane
+        keyed, heard at full strength the way a transmission on one's own
+        radio is. The person is the intercom's: the pinned or cast seat
+        voice, written back into ``crew._cast`` so a call on the radio and
+        an answer on the flight deck still sound like the same colleague.
+        Submitted before the controller is asked, so it reaches the
+        player ahead of whatever the answer will be.
+        """
+        # The last guard, the same one the controller's voice has: a dead
+        # radio carries nobody's words.
+        if not self.radio_powered or self.synth is None:
+            return
+        crew = self.crew
+        session = self.session
+        aircraft = getattr(session, "aircraft", None)
+        callsign = getattr(aircraft, "written", "") \
+            or getattr(crew, "_callsign", "") or "first_officer"
+        seat = interphone.FIRST_OFFICER
+        # In the crew's own language the seat's pin or its cast leads; in a
+        # second one the same person where a model has them -- the same
+        # rule the intercom lines follow, so nobody sounds like a stranger
+        # the moment they touch the radio.
+        own = language == getattr(crew, "_language", language)
+        cast = getattr(crew, "_cast", {}).get(seat, "")
+        if own:
+            voice_key = crew._voice_for(seat) or cast
+            accent = crew._accent()
+        else:
+            voice_key = in_language(cast, language) or crew._voice_for(seat)
+            accent = language
+        spoken = self.spoken_form(text)
+        radio_fx = self.config.audio.radio_effects
+        def render():
+            return self.synth.speak(
+                spoken,
+                # Keyed on the callsign and the PILOT position, the way the
+                # traffic's crews are cast -- it is a pilot on a frequency,
+                # not a position the facility works.
+                facility=callsign, position="PILOT", ident=callsign,
+                language=language, signal_quality=1.0, radio=radio_fx,
+                gender=crew._gender_for(seat), voice_key=voice_key,
+                accent=accent)
+        def done(transmission, error):
+            # Keep the cast: whichever voice the draw settled on is the
+            # first officer's for the rest of the flight, intercom and
+            # radio alike.
+            if error is None and transmission is not None \
+                    and getattr(transmission, "voice_key", "") and own:
+                crew._cast[seat] = transmission.voice_key
+            self._spoken(transmission, error,
+                         SimpleNamespace(callsign=callsign))
+        self._radio_renders += 1
+        self.synth.render_soon(render, on_done=done, priority=0)
 
     def play_atis(self, airport_ident: str | None = None,
                   language: str | None = None) -> AtisReport | None:

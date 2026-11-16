@@ -850,12 +850,20 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         return "", "which"
 
     def first_officer_transmits(self, text: str) -> None:
-        """The first officer's call on the frequency: shown as theirs, and
-        through the ordinary path so the controller checks it."""
+        """The first officer's call on the frequency: shown as theirs,
+        keyed in their voice, and through the ordinary path so the
+        controller checks it."""
         station = self.station or self._current_station()
         spoken = self._language_for(station.ident if station else "",
                                     self.last_language)
         self.emit("pilot", text, "First officer")
+        try:
+            # First: the render lands ahead of the answer handle_text is
+            # about to ask for, so the frequency hears the call before the
+            # reply to it.
+            self._speak_first_officer(text, spoken)
+        except Exception:
+            log.debug("the first officer's voice failed", exc_info=True)
         try:
             self.handle_text(text, spoken, speaker="first_officer")
         except Exception:
