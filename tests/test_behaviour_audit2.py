@@ -26,6 +26,9 @@ def test_the_checklist_wants_the_vfr_code_the_controller_says():
     assert _crew("RJTT", "1400")._reference("$squawk") == "1400"
     assert _crew("EGLL", "7000")._reference("$squawk") == "7000"
     assert _crew("KJFK", "1200")._reference("$squawk") == "1200"
+    # A pinned region is wording: the code stays the field's.
+    pinned = SimpleNamespace(pinned=True, region="icao")
+    assert _crew("RJTT", "1400", pinned)._reference("$squawk") == "1400"
     # A discrete code is still the one to set.
     assert _crew("CYVR", "4521")._reference("$squawk") == "4521"
 

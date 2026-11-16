@@ -2814,10 +2814,8 @@ class CrewDirector:
                 return code
             # Nothing assigned: the VFR code the controller would say
             # here -- the field's own (1200 in Canada or Australia, which
-            # are not FAA wording), unless the region is pinned.
-            profile = self._profile()
-            if getattr(profile, "pinned", False):
-                return "1200" if profile.region == "faa" else "7000"
+            # are not FAA wording). A pinned region changes the wording,
+            # not the code the session and the controller hold.
             from ..navdata.db import vfr_squawk_code
             return vfr_squawk_code(self._field_ident() or "")
         if name == "$qnh":
