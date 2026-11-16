@@ -460,6 +460,13 @@ class _The_radios:
                 # the release comes to the flight, not the other way
                 # round.
                 return
+            if (getattr(session, "pending_crossing", lambda: "")()
+                    or getattr(session, "crossing_granted", "")):
+                # The route's next pavement is a runway it is cleared to
+                # cross, not the one it is leaving from: "ready for
+                # departure" is called from the departure runway's own
+                # bars, past every crossing on the way.
+                return
             if (state.ground_speed_kt or 0.0) > 1.0:
                 # Ready-for-departure is called from a stopped aeroplane.
                 return
