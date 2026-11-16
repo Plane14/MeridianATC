@@ -127,7 +127,7 @@ class _The_cleared_approach:
             # The needles own the flight path, not the levers: approach
             # mode with no speed answer is a decelerating aeroplane on
             # the glide, whatever the descent left the throttle at.
-            speed = self._vapp(state)
+            speed = self._approach_speed(state)
             if speed:
                 d.speed(speed)
                 d.airspeed_hold(True)
@@ -149,6 +149,28 @@ class _The_cleared_approach:
             self._fly_computed(state, recipe)
             return True
         return False
+
+    def _approach_speed(self, state) -> float:
+        """The speed the approach is flown at: the controller's where
+        one was given and the runway is not yet close, else Vapp.
+
+        "Maintain one-seventy to the marker" is read as keeping it to
+        the final segment: inside four miles, or below fifteen hundred
+        feet, the checklist's own speed is what the flare is built on
+        and an assignment made before the final was joined is not the
+        number it is flown at.
+        """
+        vapp = self._vapp(state) or self.performance.approach_kt
+        assigned = float(self.session.assigned_speed_kt or 0.0)
+        if assigned <= 0.0:
+            return vapp
+        agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)
+        if 0.0 < agl < 1500.0:
+            return vapp
+        distance = self._distance_to_destination_nm(state)
+        if distance is not None and distance < 4.0:
+            return vapp
+        return assigned
 
     def _path_vertical(self, state, recipe) -> float:
         """The vertical speed the three-degree path asks for here."""
@@ -214,7 +236,7 @@ class _The_cleared_approach:
         self._apply_flight_director(
             state, altitude=self._final_alt_bug(recipe.field_elev_ft),
             vs_fpm=self._path_vertical(state, recipe),
-            speed_kt=self._vapp(state))
+            speed_kt=self._approach_speed(state))
 
     def _fly_computed(self, state, recipe) -> None:
         """The computed final: path steering for the lateral, the
@@ -241,7 +263,7 @@ class _The_cleared_approach:
             state, altitude=self._final_alt_bug(recipe.field_elev_ft),
             vs_fpm=self._path_vertical(state, recipe),
             heading=self._magnetic(heading, state),
-            speed_kt=self._vapp(state))
+            speed_kt=self._approach_speed(state))
 
     def _fly_visual_final(self, state) -> bool:
         """The final with no procedure behind it: the extended centreline
@@ -278,7 +300,7 @@ class _The_cleared_approach:
                 state, self.state.runway_lat, self.state.runway_lon,
                 self._field_elevation(state), rwy_hdg),
             heading=heading,
-            speed_kt=self._vapp(state) or self.performance.approach_kt)
+            speed_kt=self._approach_speed(state))
         return True
 
     def _final_lookahead_m(self, state) -> float:
@@ -409,7 +431,7 @@ class _The_cleared_approach:
         light = self.performance.cruise_kt < 140.0
         fast = self.performance.cruise_kt >= 230.0
         pattern_ft = elev + (1000.0 if light else 1500.0)
-        speed = (self._vapp(state) or self.performance.approach_kt) + 10.0
+        speed = self._approach_speed(state) + 10.0
         assigned = self.session.assigned_heading
         if assigned is not None and assigned > 0:
             # Being vectored: the controller owns the heading and the

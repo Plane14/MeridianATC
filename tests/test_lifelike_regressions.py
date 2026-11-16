@@ -495,6 +495,97 @@ def test_the_fms_loaded_sid_is_the_one_cleared():
     assert brain._fms_sid(airport, "36") == ""
 
 
+def _cruising_fo(distance_nm: float):
+    """A cruise-phase FO on a quiet frequency, ``distance_nm`` out from
+    a sea-level destination at ten thousand feet."""
+    from meridianatc.atc.autonomous import (
+        AutonomousFlight,
+        AutonomousPhase,
+        AutonomousState,
+    )
+    from meridianatc.atc.session import Phase
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.state = AutonomousState()
+    fo.state.checklists_completed = {"cruise"}
+    fo.state.phase = AutonomousPhase.CRUISE
+    fo._dir = Mock()
+    fo.sim = fo._dir.sim  # the property remakes _dir if sim differs
+    fo.get_state = lambda: None  # performance falls back to the class table
+    fo.on_event = lambda *a, **kw: None
+    fo.brain = SimpleNamespace(
+        route=None, terminal_procedures={}, route_progress=None,
+        fms_idents=())
+    fo.session = SimpleNamespace(
+        phase=Phase.ENROUTE, assigned_altitude_ft=0.0,
+        assigned_heading=None, assigned_speed_kt=None,
+        departure=None, departure_runway="", arrival_runway="",
+        sid="", descend_via="", cruise_altitude_ft=10000.0,
+        destination=SimpleNamespace(lat=41.0, lon=-8.0, elev_ft=0.0))
+    state = SimpleNamespace(
+        has_position=True, latitude=40.9, longitude=-8.0,
+        altitude_ft=10000.0, altitude_agl_ft=9900.0,
+        ground_speed_kt=200.0, heading_true=180.0, autopilot=True,
+        vertical_speed_fpm=0.0, estimated_cruise_kt=0.0,
+        barber_pole_kt=0.0, climb_kt=0.0,
+        on_ground=False, engines_running=True,
+        distance_to=lambda lat, lon: distance_nm)
+    return fo, state
+
+
+def test_the_fo_begins_its_own_descent_at_the_top_of_descent():
+    """On a frequency that never says "descend", the aeroplane still gets
+    down: the cruise's own three-degree point is where the phase is
+    entered, not somewhere over the top of the field."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    from meridianatc.atc.session import Phase
+    # 10 000 ft AGL is about 31 nm of path: inside it, down it goes.
+    fo, state = _cruising_fo(20.0)
+    fo._phase_cruise(state, 100.0)
+    assert fo.state.phase == AutonomousPhase.DESCENT
+
+    # Well outside it, the cruise is kept.
+    fo, state = _cruising_fo(80.0)
+    fo._phase_cruise(state, 100.0)
+    assert fo.state.phase == AutonomousPhase.CRUISE
+
+    # A controller's word still comes first: phase DESCENT on the
+    # session is honoured before the FO's own arithmetic is even read.
+    fo, state = _cruising_fo(80.0)
+    fo.session.phase = Phase.DESCENT
+    fo._phase_cruise(state, 100.0)
+    assert fo.state.phase == AutonomousPhase.DESCENT
+
+
+def test_the_assigned_speed_is_flown_to_the_final_segment():
+    """"Maintain one-seventy to the marker" is obeyed while the final is
+    still far; inside it, the flare's own speed is the one flown."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.state = AutonomousState()
+    fo.get_state = lambda: None
+    fo._weather_reactions = False  # Vapp is the book figure, no gust additive
+    fo.session = SimpleNamespace(
+        assigned_speed_kt=170.0,
+        destination=SimpleNamespace(lat=41.0, lon=-8.0, elev_ft=0.0))
+    fo.state.vapp_kt = 120.0
+
+    def far_state(agl, nm):
+        return SimpleNamespace(
+            altitude_agl_ft=agl, has_position=True,
+            latitude=40.9, longitude=-8.0,
+            distance_to=lambda lat, lon: nm)
+
+    # Eight miles out: the assignment is the speed.
+    assert fo._approach_speed(far_state(3000.0, 8.0)) == 170.0
+    # Inside four miles the flare's speed takes over.
+    assert fo._approach_speed(far_state(3000.0, 3.0)) == 120.0
+    # Low is close, wherever the map puts it.
+    assert fo._approach_speed(far_state(1200.0, 8.0)) == 120.0
+    # Nothing assigned: the checklist's figure.
+    fo.session.assigned_speed_kt = None
+    assert fo._approach_speed(far_state(3000.0, 8.0)) == 120.0
+
+
 # -- the rejected takeoff ------------------------------------------------------
 
 def _stopped_departure():

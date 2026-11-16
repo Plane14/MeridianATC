@@ -1108,6 +1108,21 @@ class _The_phase_machine:
             self._transition(AutonomousPhase.DESCENT)
         elif self.session.phase == Phase.APPROACH:
             self._transition(AutonomousPhase.APPROACH)
+        else:
+            # Nobody is coming to say "descend" on a quiet frequency, so
+            # the aeroplane starts down at its own top of descent: the
+            # three-degree path the descent plans from, computed here
+            # the same way. An assigned level still stands -- the
+            # descent's target is that level, so a controller keeping
+            # the flight high only moves where it levels, not whether
+            # the phase runs.
+            if not self.state.tod_nm:
+                self._plan_tod(state)
+            distance = self._distance_to_destination_nm(state)
+            if distance is not None and self.state.tod_nm > 0.0 \
+                    and distance <= self.state.tod_nm:
+                self._transition(AutonomousPhase.DESCENT)
+                return
 
     def _phase_descent(self, state, now: float) -> None:
         """Descend: TOD planning, configuration, approach capture."""
