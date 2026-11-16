@@ -446,6 +446,55 @@ def test_strobes_follow_the_clearance_and_the_crossing():
     assert calls[-1] is False
 
 
+def test_the_fms_loaded_sid_is_the_one_cleared():
+    """A SID typed into the sim's FMS -- never read by a plan MeridianATC
+    loaded -- is the departure the clearance names, where a silent plan
+    would have been cleared "radar vectors"."""
+    from meridianatc.atc.controller import ControllerBrain
+    from meridianatc.atc.phraseology import Phraseology
+    from meridianatc.atc.procedure_legs import (
+        AirportProcedures,
+        ProcedureLeg,
+        ProcedureTransition,
+        TerminalProcedure,
+    )
+    brain = ControllerBrain(Mock(), Phraseology())
+    legs = tuple(ProcedureLeg(index=i, path="TF", fix_ident=f)
+                 for i, f in enumerate(("KUBIR", "ROUSY")))
+    procs = AirportProcedures(
+        ident="KAAA",
+        departures={
+            "ROUS1L": TerminalProcedure(
+                name="ROUS1L", kind="sid",
+                transitions=[ProcedureTransition(runway="36", legs=legs)]),
+            "OTHER1": TerminalProcedure(
+                name="OTHER1", kind="sid",
+                transitions=[ProcedureTransition(
+                    runway="36",
+                    legs=(ProcedureLeg(index=0, path="TF",
+                                       fix_ident="NOSIG"),))]),
+        })
+    brain.terminal_procedures["KAAA"] = procs
+    airport = SimpleNamespace(ident="KAAA")
+
+    # The loaded legs walk the transition in order: it is ROUS1L.
+    brain.fms_idents = ("KAAA", "KUBIR", "ROUSY", "BOS")
+    assert brain._fms_sid(airport, "36") == "ROUS1L"
+
+    # A transition whose whole procedure is the one fix the box shows
+    # still names it -- its only leg is the match.
+    brain.fms_idents = ("KAAA", "NOSIG", "BOS")
+    assert brain._fms_sid(airport, "36") == "OTHER1"
+
+    # Legs in the wrong order walk nothing.
+    brain.fms_idents = ("KAAA", "ROUSY", "KUBIR", "BOS")
+    assert brain._fms_sid(airport, "36") == ""
+
+    # Nothing loaded, nothing invented.
+    brain.fms_idents = ()
+    assert brain._fms_sid(airport, "36") == ""
+
+
 # -- the rejected takeoff ------------------------------------------------------
 
 def _stopped_departure():

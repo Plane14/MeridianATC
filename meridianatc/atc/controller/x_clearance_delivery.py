@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .. import procedure_legs
 from ._shared import (
     Any,
     Instruction,
@@ -139,12 +140,14 @@ class _Clearance_delivery:
 
         # No open dataset publishes SIDs, so the clearance is issued with
         # radar vectors, which is correct phraseology in its own right --
-        # unless the flight plan names one for the runway in use, which is
-        # what a controller would clear.
+        # unless the flight plan names one for the runway in use, or the
+        # box's own legs walk one, which is what a controller would clear.
         sid = self._planned_sid(airport, weather)
         runway = self._departure_runway(airport, weather) if airport else ""
         worked = self.realism.ifr_departure
         if worked:
+            if not sid:
+                sid = self._fms_sid(airport, runway)
             initial, expect_minutes = self._departure_altitudes(
                 session, airport, sid, runway, cruise)
             sid = self._sid_for_runway(airport, sid, runway, weather)
@@ -221,7 +224,13 @@ class _Clearance_delivery:
 
     def _plan_idents(self) -> list[str]:
         idents = [f.ident for f in getattr(self.route, "fixes", ()) or ()]
-        return idents or [getattr(f, "ident", "") for f in self.plan_fixes]
+        base = idents or [getattr(f, "ident", "") for f in self.plan_fixes]
+        # What the sim's own FMS has loaded corroborates: the procedure a
+        # name resolves to is the same either way, but the box's fixes are
+        # sometimes the ones a six-letter designator was named after.
+        seen = set(base)
+        return base + [i for i in self.fms_idents or ()
+                       if i and i not in seen]
 
     def _departure_altitudes(self, session, airport, sid: str, runway: str,
                              cruise: float) -> tuple[int, int]:
@@ -250,6 +259,64 @@ class _Clearance_delivery:
                                and route.top_of_climb.time_s else
                                "route" if route else "rate"))
         return initial, minutes
+
+    def _fms_sid(self, airport, runway: str) -> str:
+        """The SID the box has loaded, when the plan never said one.
+
+        A procedure typed into the FMS never reaches ``plan_runways`` --
+        it is fed by plans MeridianATC itself read -- but X-Plane's
+        plugin ships the loaded legs' idents, and the field's decoded
+        procedures say which SID's transition walks them. The leading
+        legs of the loaded plan matching one departure's transition in
+        order is the SID the pilot briefed, and the one "as filed"
+        clears by name.
+        """
+        if airport is None:
+            return ""
+        procs = getattr(self, "terminal_procedures", {}).get(airport.ident)
+        idents = [i for i in (self.fms_idents or ()) if i]
+        if procs is None or not idents:
+            return ""
+        origin = getattr(airport, "ident", "") or ""
+        # The loaded plan's leading idents are the departure's: the field
+        # itself first, then the procedure's fixes. A short head is
+        # plenty -- a SID's own fixes all sit at the front.
+        head = [i for i in idents if i != origin][:8]
+        if not head:
+            return ""
+        best, best_key = "", None
+        for name, proc in procs.departures.items():
+            trans = procedure_legs._transition_for(
+                proc, "sid", runway, "", head)
+            if trans is None:
+                continue
+            fixes = [leg.fix_ident.upper() for leg in trans.legs
+                     if leg.fix_ident]
+            if not fixes:
+                continue
+            at = 0
+            hits = 0
+            first_at = -1
+            for fix in fixes:
+                for i in range(at, len(head)):
+                    if head[i] == fix:
+                        hits += 1
+                        if first_at < 0:
+                            first_at = i
+                        at = i + 1
+                        break
+            # Two fixes walking in order, or the only fix a short
+            # transition has: anything less is a shared waypoint's luck.
+            if hits < min(2, len(fixes)):
+                continue
+            key = (hits, -first_at)
+            if best_key is None or key > best_key:
+                best, best_key = name, key
+        if best:
+            decision("sid", airport=getattr(airport, "ident", ""),
+                     cleared=best, runway=runway,
+                     why="the FMS's loaded legs walk its transition")
+        return best
 
     def _sid_for_runway(self, airport, sid: str, runway: str, weather) -> str:
         """The plan's SID while its runway is the one in use; said why not.
