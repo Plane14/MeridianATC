@@ -823,14 +823,23 @@ class GroundLayout:
         return None
 
     def to_stand(self, x: float, z: float, stand: Stand,
+                 avoid: set[object] | None = None,
                  closed: set[tuple[object, object]] | None = None
                  ) -> Taxiing | None:
         start = self.nearest_node(x, z)
-        if start is None:
-            return None
-        nodes = (self.route(start, ("k", stand.index), closed=closed)
-                 if closed
-                 else self.route(start, ("k", stand.index)))
+        if start is None or (avoid and start in avoid):
+            # The nearest node is on ground that is being kept out of:
+            # the route begins on the next nearest that is not.
+            candidates = [node for node in self.xy
+                          if node[0] == "p" and node in self.edges
+                          and node not in self.runway_nodes
+                          and (not avoid or node not in avoid)]
+            if not candidates:
+                return None
+            start = min(candidates, key=lambda n: math.dist(
+                self.xy[n], (x, z)))
+        nodes = self.route(start, ("k", stand.index), avoid,
+                           closed=closed)
         if len(nodes) < 2:
             return None
         return self._taxiing(nodes, (x, z))

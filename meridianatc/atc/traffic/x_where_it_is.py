@@ -186,9 +186,13 @@ class _Where_it_is:
             mark("stand", str(stand.number), lat, lon)
         return path, waypoints
 
-    def _plan_departure(self, flight: Flight):
+    def _plan_departure(self, flight: Flight, extra_avoid=None):
         """The way from where it is to the holding point, and onto the
-        runway: two legs, because they are two clearances."""
+        runway: two legs, because they are two clearances.
+
+        ``extra_avoid`` is more ground to keep out of the way -- the
+        stretch a give-way reroute is staying off, which every fallback
+        has to keep to or the new way meets the same nose."""
         runway = self._runway_xy(flight.runway)
         if runway is None:
             return None
@@ -196,6 +200,10 @@ class _Where_it_is:
         layout = self.ground
         stand = (layout.stands[flight.stand] if flight.stand is not None
                  else None)
+        if extra_avoid is not None:
+            # A reroute starts where the aeroplane sits, not on the stand
+            # it left -- and there is no pushback left to drive.
+            stand = None
         here = layout.to_xy(flight.latitude, flight.longitude)
         closed = self._closed_runway_edges(
             flight.runway or self.field.departure_runway)
@@ -209,15 +217,18 @@ class _Where_it_is:
             flight.runway or self.field.departure_runway)
         length_m = (surface[2] * self._M_PER_NM
                     if surface else self.RUNWAY_LENGTH_M)
+        extra = set(extra_avoid or ())
         legs = (layout.departure(stand, here, threshold, heading,
                                  length_m,
-                                 avoid=self._avoid_user(), closed=closed,
-                                 need_m=need_m)
+                                 avoid=self._avoid_user() | extra,
+                                 closed=closed, need_m=need_m)
                 or layout.departure(stand, here, threshold, heading,
-                                    length_m, closed=closed,
+                                    length_m, avoid=extra or None,
+                                    closed=closed,
                                     need_m=need_m)
                 or layout.departure(stand, here, threshold, heading,
-                                    length_m, need_m=need_m))
+                                    length_m, avoid=extra or None,
+                                    need_m=need_m))
         # Joining the runway anywhere but the threshold is an
         # intersection departure: the taxiway it commits on is the edge
         # it steps onto the pavement with (the route's last name when

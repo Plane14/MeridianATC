@@ -117,6 +117,14 @@ class _Running_them:
         for who, ox, oz in others:
             if math.hypot(ox - x, oz - z) < 1.0:
                 continue
+            if (isinstance(who, Flight)
+                    and getattr(who, "taxi", None) is not None
+                    and getattr(who, "ground_speed_kt", 0.0) < 1.0
+                    and getattr(who, "_giving_way", "") == flight.written):
+                # Stopped and already giving way to this one: it is the
+                # give-way, not the obstacle -- the other side of a head-on
+                # is met by creeping past it, the way real aircraft do.
+                continue
             # The pilot gets more room than the traffic gives itself: their
             # aeroplane may be anything, parked a little off the stand mark.
             room = (self.USER_CLEARANCE_M if who == "you"
@@ -160,7 +168,9 @@ class _Running_them:
     # than this to the route ahead is in the way.
     TAXI_CORRIDOR_M = 28.0
     # Two aeroplanes each waiting for the other this long are not going to
-    # sort it out between themselves.
+    # sort it out between themselves: the loser is routed round the meeting.
+    # A second wait beyond that without a way round is what the tow is for.
+    GIVE_WAY_S = 20.0
     DEADLOCK_S = 60.0
     STUCK_ON_RUNWAY_S = 30.0
 
@@ -169,22 +179,23 @@ class _Running_them:
 
         The route check stops a ground controller sending them at each
         other, but an aeroplane that has just landed and one pushing back can
-        still meet. After a minute nose to nose the one that matters less --
-        a departure gives way to an arrival that has to get off the runway --
-        is taken away. Not what a real airport would do; what a real airport
-        would do is tow it, and there is no tug to call.
+        still meet. Given long enough nose to nose the one that matters less
+        -- a departure gives way to an arrival that has to get off the
+        runway -- is sent round another way; only where the field has no
+        other way is it taken away, there being no tug to call.
         """
         taxi = flight.taxi
         if taxi is None or taxi.blocked_since is None:
             return
         layout = self.ground
         x, z = layout.to_xy(flight.latitude, flight.longitude)
+        blocker = self._in_the_way(flight, x, z)
+        on_runway = self._on_runway_itself(flight)
         if (now - taxi.blocked_since >= self.STUCK_ON_RUNWAY_S
-                and self._on_runway_itself(flight)):
+                and on_runway):
             # Stuck on the runway behind somebody standing still. The runway
             # is the one place nobody may wait, so whatever of ours is in the
             # way goes -- never the pilot, never somebody else's aeroplane.
-            blocker = self._in_the_way(flight, x, z)
             if blocker == "you":
                 # Nose to nose with the pilot: it is ours that moves, and the
                 # way it can is the way it came -- off the runway by the
@@ -205,22 +216,118 @@ class _Running_them:
                 blocker.done = True
                 self._release_all(blocker)
                 return
-        if now - taxi.blocked_since < self.DEADLOCK_S:
+        if now - taxi.blocked_since < self.GIVE_WAY_S:
             return
-        other = self._in_the_way(flight, x, z)
-        if not isinstance(other, Flight) or other.taxi is None \
-                or other.taxi.blocked_since is None:
+        if not on_runway:
+            if blocker == "you":
+                # Face to face with the pilot on a taxiway: the give-way is
+                # ours to make, and the way it can be made is round another
+                # way -- the same vacate as off a runway, without the
+                # runway. Where the field has no other way it keeps waiting.
+                self._replan_round(flight, self._pilot_avoid())
+                return
+            oncoming = self._head_on_ahead(flight)
+            if oncoming is not None:
+                # Held back for one coming the other way that is taking too
+                # long about it: route round the meeting where the field
+                # has one.
+                self._replan_round(flight, self._contested_avoid(
+                    flight, oncoming))
+                return
+        if not isinstance(blocker, Flight) or blocker.taxi is None \
+                or blocker.taxi.blocked_since is None:
             return
-        ox, oz = layout.to_xy(other.latitude, other.longitude)
-        if self._in_the_way(other, ox, oz) is not flight:
+        ox, oz = layout.to_xy(blocker.latitude, blocker.longitude)
+        if self._in_the_way(blocker, ox, oz) is not flight:
             return
-        loser = other if (flight.arriving and not other.arriving) else flight
+        loser = blocker if (flight.arriving and not blocker.arriving) \
+            else flight
         if loser.observed:
             loser = flight
+        winner = flight if loser is blocker else blocker
+        if not on_runway and self._replan_round(
+                loser, self._contested_avoid(loser, winner)):
+            return
+        if now - taxi.blocked_since < self.DEADLOCK_S:
+            return
         log.info("%s and %s are nose to nose; %s is taken away",
-                 flight.written, other.written, loser.written)
+                 flight.written, blocker.written, loser.written)
         loser.done = True
         self._release_all(loser)
+
+    def _pilot_avoid(self) -> set:
+        """The taxi nodes beside the pilot, wide enough that a way round is
+        genuinely a way round rather than a second meeting."""
+        layout = self.ground
+        user = self.user
+        if layout is None or user is None or not user.has_position:
+            return set()
+        ux, uz = layout.to_xy(user.latitude, user.longitude)
+        return {node for node, (nx, nz) in layout.xy.items()
+                if math.hypot(nx - ux, nz - uz)
+                < self.USER_CLEARANCE_M + 45.0}
+
+    def _contested_avoid(self, flight: Flight, other: Flight) -> set:
+        """Ground to keep out of while routing round a head-on: the stretch
+        the two routes share reversed, plus a bubble round the other
+        aeroplane wherever it is."""
+        avoid: set = set()
+        layout = self.ground
+        if flight.taxi is not None and other.taxi is not None:
+            reversed_mine = {(b, a) for a, b in
+                             flight.taxi.remaining_edges()}
+            for a, b in other.taxi.remaining_edges() & reversed_mine:
+                avoid.update((a, b))
+        if layout is not None:
+            ox, oz = layout.to_xy(other.latitude, other.longitude)
+            avoid |= {node for node, (nx, nz) in layout.xy.items()
+                      if math.hypot(nx - ox, nz - oz) < self.TAXI_LOOK_M}
+        return avoid
+
+    def _replan_round(self, flight: Flight, avoid: set) -> bool:
+        """A fresh way from where it is to where it was going, kept off the
+        ground in ``avoid``. False where the field has none -- and the
+        caller's fallback then stands. An aeroplane committed to the
+        runway is never rerouted: the strip has its own machinery.
+        """
+        layout = self.ground
+        if (layout is None or flight.taxi is None
+                or flight.taxi is flight.line_up):
+            return False
+        x, z = layout.to_xy(flight.latitude, flight.longitude)
+        if flight.arriving:
+            stand = (layout.stands[flight.stand]
+                     if flight.stand is not None
+                     and 0 <= flight.stand < len(layout.stands) else None)
+            if stand is None:
+                return False
+            closed = self._closed_runway_edges(
+                flight.runway or self.field.arrival_runway)
+            taxi = None
+            for extra in (avoid | self._avoid_user()
+                          | self._avoid_standing(flight),
+                          avoid | self._avoid_user(), avoid):
+                taxi = layout.to_stand(x, z, stand, avoid=extra or None,
+                                       closed=closed)
+                if taxi is not None:
+                    break
+            if taxi is None and closed:
+                for extra in (avoid | self._avoid_user(), avoid):
+                    taxi = layout.to_stand(x, z, stand, avoid=extra or None)
+                    if taxi is not None:
+                        break
+            if taxi is None:
+                return False
+            flight.taxi = taxi
+        else:
+            legs = self._plan_departure(flight, extra_avoid=avoid)
+            if legs is None:
+                return False
+            flight.taxi, flight.line_up = legs
+            flight.planned = None
+        flight._giving_way = ""
+        log.info("%s gives way and is routed round", flight.written)
+        return True
 
     def _on_runway_itself(self, flight: Flight) -> bool:
         end = self._threshold(flight.runway or self.field.arrival_runway)
@@ -308,10 +415,63 @@ class _Running_them:
         flight.done = True
         self._release_all(flight)
 
+    def _head_on_ahead(self, flight: Flight) -> Flight | None:
+        """Somebody else coming the other way along what is left of this
+        route, or None.
+
+        Two routes that use the same stretch of ground in opposite
+        directions meet nose to nose; one of the pair has to wait, and a
+        ground controller decides which before they are face to face. A
+        route already committed to the runway is exempt -- the strip has
+        its own machinery.
+        """
+        taxi = flight.taxi
+        if taxi is None or taxi is flight.line_up:
+            return None
+        reversed_mine = {(b, a) for a, b in taxi.remaining_edges()}
+        if not reversed_mine:
+            return None
+        for other in self.flights:
+            if other is flight or other.done or other.observed \
+                    or other.taxi is None or other.taxi.done:
+                continue
+            # The one that already yields to us does not get our yield back.
+            if getattr(other, "_giving_way", "") == flight.written:
+                continue
+            if not (other.taxi.remaining_edges() & reversed_mine):
+                continue
+            if self._yields_to(flight, other):
+                return other
+        return None
+
+    @staticmethod
+    def _yields_to(flight: Flight, other: Flight) -> bool:
+        """Who waits when two routes meet head on.
+
+        A departure waits for an arrival -- the arrival has a runway's
+        worth of momentum behind it and a stand in front, same rule the
+        deadlock breaker uses. Between two of the same kind the callsign
+        picks one for good: both sides work the same answer out, and it
+        cannot flip halfway through the meeting.
+        """
+        if flight.arriving != other.arriving:
+            return not flight.arriving
+        return flight.written > other.written
+
     def _taxi_blocked(self, flight: Flight, x: float, z: float,
                       moving: float, now: float) -> str:
         """Why this aeroplane may not move just now, or "" if it may."""
         layout = self.ground
+        # Somebody coming the other way along what is left of the route:
+        # sorted out early, before anyone is inside anyone's windscreen.
+        oncoming = self._head_on_ahead(flight)
+        if oncoming is not None:
+            # Give way where we are, early: the junctions a wait of ours
+            # would hold are the junctions the other one needs through.
+            flight._giving_way = oncoming.written
+            self._release_all(flight)
+            return "holding for traffic"
+        flight._giving_way = ""
         # Anybody ahead: the pilot, another of ours, somebody else's.
         if self._in_the_way(flight, x, z) is not None:
             return "holding for traffic"
