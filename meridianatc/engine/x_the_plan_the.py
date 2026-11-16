@@ -112,6 +112,17 @@ class _The_plan_the:
             # Re-adopting it as a new flight would restart a session in
             # the middle of the taxi it is already on.
             return
+        flight = self.config.flight
+        if route.origin:
+            flight.departure = route.origin
+        if route.destination:
+            # The box's own word for where the flight is going: the
+            # session's destination -- the clearance's "cleared to" --
+            # is built from the flight setting, so a sim plan adopted
+            # without this sync is announced as the last field filed.
+            flight.destination = route.destination
+        if route.cruise_ft:
+            flight.cruise_altitude_ft = route.cruise_ft
         self.use_route(route)
         if self.session is not None:
             self.begin_session()

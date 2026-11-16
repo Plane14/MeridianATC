@@ -161,6 +161,9 @@ def _engine(route=None):
     eng.use_route = eng.used.append
     eng.begin_session = lambda: setattr(eng, "begun", eng.begun + 1)
     eng.emit = lambda *a, **k: None
+    eng.config = SimpleNamespace(
+        flight=SimpleNamespace(departure="", destination="",
+                               cruise_altitude_ft=0))
     # The navdata's airport lookup: LPPR/LECO/LEVX are fields, the
     # enroute idents are not.
     eng.navdb = SimpleNamespace(
@@ -225,6 +228,25 @@ def test_untyped_ends_still_name_the_destination():
     eng._use_fms_plan(entries)
     assert eng.used[0].origin == "LPPR"
     assert eng.used[0].destination == "LEVX"
+
+
+def test_an_adopted_plan_moves_the_filed_destination():
+    """The LEVX case: the box's plan ends at Vigo while the flight was
+    filed to A Coruna. The adopted route's destination is the flight's
+    word for where it is going -- the clearance's \"cleared to\" is
+    built from it, not from the stale setting."""
+    eng = _engine(_route())
+    eng._sim_plan_fp = ()
+    eng.config.flight.destination = "LECO"
+    entries = [{"id": "LPPR", "t": 1, "lat": 41.24, "lon": -8.68,
+                "alt": 0},
+               {"id": "BEKIN", "t": 512, "lat": 42.0, "lon": -8.6,
+                "alt": 0},
+               {"id": "LEVX", "t": 1, "lat": 42.23, "lon": -8.63,
+                "alt": 0}]
+    eng._use_fms_plan(entries)
+    assert eng.config.flight.destination == "LEVX"
+    assert eng.config.flight.departure == "LPPR"
 
 
 def test_the_msfs_upload_echo_is_skipped(tmp_path):
