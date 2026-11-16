@@ -128,9 +128,14 @@ class _Circling:
         """The lowest level the descent may level at: pattern height."""
         elev = self._field_elevation(state)
         # A safe floor for the descent itself: pattern height over the
-        # field. Anything lower is the approach phase's job, once it has
-        # the runway in sight or the needles captured.
-        return elev + 3000.0
+        # field -- or the level the plan's own profile bottoms at where
+        # it files one, so "descend via the STAR" that ends at seven
+        # thousand is not walked below it. Anything lower than either
+        # is the approach phase's job, once it has the runway in sight
+        # or the needles captured.
+        route = getattr(getattr(self, "brain", None), "route", None)
+        filed_floor = float(getattr(route, "arrival_floor_ft", 0.0) or 0.0)
+        return max(elev + 3000.0, filed_floor)
 
     def _configure_final(self, state) -> None:
         """The approach configuration, by distance to the threshold."""

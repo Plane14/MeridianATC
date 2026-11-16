@@ -116,6 +116,14 @@ class _Chain_flights_unchanged:
         elif self.state.aircraft_type in fly._LIGHT_TYPES:
             cruise_ft = min(cruise_ft, 12000)
 
+        # The distance ladder is a wish, not a ceiling: an aeroplane
+        # that declares one in its performance profile never files
+        # above it -- the plan is what the flight is actually flown to.
+        ceiling = float(getattr(self.performance, "ceiling_ft", 0.0)
+                        or 0.0)
+        if ceiling:
+            cruise_ft = min(cruise_ft, int(ceiling))
+
         return {
             "origin": origin.ident,
             "destination": destination.ident,

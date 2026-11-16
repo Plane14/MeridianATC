@@ -66,6 +66,49 @@ TAILWHEEL_TITLE_FRAGMENTS = (
 )
 
 
+# ICAO type designators of free-castering nosewheel types: the wheel
+# trails, it does not steer, and at taxi pace the aeroplane's only real
+# steering is the inside brake. The Cirrus POH's braking section says it
+# the way every handbook does: rudder plus the minimum differential
+# braking the turn needs. UNVERIFIED: the table is the types commonly
+# delivered that way (Cirrus, the Grumman-American AA line, the
+# Skycatcher, the Katana, the Columbias, the Ercoupe), not a spec.
+CASTORING_TYPES = frozenset({
+    "SR20", "SR22", "SR22T",
+    "AA1", "AA1A", "AA1B", "AA1C", "AA5", "AA5A", "AA5B",
+    "C162", "DA20", "COL3", "COL4", "MCR4", "ERCO",
+})
+
+# Title words the type table misses: the Cirrus family's renames and the
+# Grumman line's model names (Yankee, Traveler, Cheetah, Tiger).
+CASTORING_TITLE_FRAGMENTS = (
+    "cirrus", "yankee", "traveler", "cheetah", "tiger", "ag-5",
+    "skycatcher", "katana", "ercoupe", "columbia",
+    "castering", "castoring", "free castering",
+)
+
+
+def is_castoring(state) -> bool:
+    """Whether this aeroplane's nosewheel swivels instead of steers.
+
+    A sim flag (``state.castoring_wheel``) wins where a source reports
+    one; else the type table and the title answer. A taildragger is not
+    counted -- its castoring tailwheel already has the conventional-gear
+    rules above, so that check comes first.
+    """
+    if is_tailwheel(state):
+        return False
+    seen = getattr(state, "castoring_wheel", None)
+    if seen is not None:
+        return bool(seen)
+    code = (getattr(state, "type_code", "") or "").strip().upper()
+    if code in CASTORING_TYPES:
+        return True
+    title = (getattr(state, "title", "") or "").lower()
+    return any(fragment in title
+               for fragment in CASTORING_TITLE_FRAGMENTS)
+
+
 def is_tailwheel(state) -> bool:
     """Whether this aeroplane sits on its tail.
 

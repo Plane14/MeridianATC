@@ -60,6 +60,12 @@ class AircraftState:
     # means the source never answered, and callers then fall back to the
     # type code and title (meridianatc.atc.tailwheel.is_tailwheel).
     tail_dragger: bool | None = None
+    # Free-castoring nosewheel (Cirrus, Grumman AA, ...): the wheel
+    # trails, it does not steer, and the aeroplane turns on its brakes.
+    # X-Plane answers via acf_nw_steerdeg1 == 0; SimConnect exposes no
+    # flag, so None there and callers fall back to the type table
+    # (meridianatc.atc.tailwheel.is_castoring).
+    castoring_wheel: bool | None = None
     flaps_index: int = 0
     # The two switches the crew talk about. Nothing on the radio needs them --
     # a controller never mentions the seatbelt sign -- but the first officer

@@ -601,9 +601,11 @@ class _The_checklist_answered:
         # Taxi-speed only: above it the elevator and aileron belong to
         # the roll, not the wind.
         tail = False
+        castor = False
         if state.on_ground:
             from .. import tailwheel
             tail = tailwheel.is_tailwheel(state)
+            castor = tailwheel.is_castoring(state)
             if gs < 25.0:
                 elevator, aileron = tailwheel.taxi_controls(
                     getattr(state, "ambient_wind_direction", 0.0) or 0.0,
@@ -683,9 +685,12 @@ class _The_checklist_answered:
                      if gs > target_kt + 4.0 else 0.0)
             # The inside wheel joins the steering where it can help: a
             # taildragger at taxi speed, whose free-castering tail and
-            # unblown rudder have nothing to give, and the apron pivot
-            # turn either gear flies on the inside brake.
-            if tail or self._turn_commit:
+            # unblown rudder have nothing to give; a castoring-nosewheel
+            # aeroplane, whose tiller never steers at all -- the Cirrus
+            # POH's "minimum differential braking" is the whole answer
+            # below rudder authority; and the apron pivot turn either
+            # gear flies on the inside brake.
+            if tail or castor or self._turn_commit:
                 # The law's demand, not ``sent``: a model whose pedal
                 # axis answers backwards still wants the inside wheel
                 # for the turn it is making, not the wire's sign.

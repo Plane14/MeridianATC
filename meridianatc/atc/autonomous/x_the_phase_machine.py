@@ -961,6 +961,13 @@ class _The_phase_machine:
             # Engaged in the air with no level anywhere: a crew levels
             # where it is, it does not climb at a zero bug for an hour.
             target = alt
+        # The filed profile's next crossing level caps the climb the
+        # way the paperwork means it: a plan that files a fix below the
+        # cruise is crossed there, not stepped over, and the level-off
+        # at it is the plan flown rather than a missed bug.
+        filed, _stage = self._route_level(state)
+        if filed and alt < filed < target:
+            target = filed
         # A clearance below is answered by coming down, not by climbing
         # away until the clock runs out.
         vs = self.performance.climb_fpm
@@ -1033,6 +1040,13 @@ class _The_phase_machine:
             self.director.airspeed_hold(True)
             target = self._altitude_target(state)
             alt = state.altitude_ft or 0.0
+            # A filed step: a plan that crosses its next fix at another
+            # level moves the bug the way a clearance would. Only a
+            # cruise-stage fix moves it -- a descent-stage fix is the
+            # descent phase's number, not this one's.
+            filed, stage = self._route_level(state)
+            if filed and stage != "DSC" and abs(filed - target) > 500.0:
+                target = filed
             if target and abs(alt - target) > 300.0:
                 # A step clearance answered level is not answered at
                 # all: the bug moves and the aeroplane climbs or
@@ -1063,6 +1077,12 @@ class _The_phase_machine:
         """Descend: TOD planning, configuration, approach capture."""
         self._run_checklist_for_phase("descent")
         target = self.session.assigned_altitude_ft or self._descent_floor(state)
+        # The filed profile's next crossing level is a floor too: a
+        # plan that files a fix at twelve thousand is not descended
+        # through it, whatever pattern height says the floor is.
+        filed, _stage = self._route_level(state)
+        if filed and target < filed < (state.altitude_ft or 0.0):
+            target = filed
 
         # Top of descent: planned once from the distance to the field,
         # ~318 ft per NM on a three-degree path plus the height to lose.
@@ -1416,6 +1436,7 @@ class _The_phase_machine:
             gs = state.ground_speed_kt or 0.0
             from .. import tailwheel
             tail = tailwheel.is_tailwheel(state)
+            castor = tailwheel.is_castoring(state)
             # Keep it on the centreline until slow. The rudder does the
             # holding at rollout pace while the nosewheel's share fades
             # out under it -- thrown in whole at rollout speed it is the
@@ -1454,14 +1475,15 @@ class _The_phase_machine:
                 # comes out -- graduated with speed the way the
                 # autobrake detents a crew actually selects are.
                 brake = 0.4 if gs > 60.0 else 0.7 if gs > 30.0 else 1.0
-                if not tail:
+                if not tail and not castor:
                     d.brakes(brake)
                 else:
                     # Full pedal on a taildragger at thirty knots is
                     # the ground loop's invitation: the cap keeps the
-                    # tail down, and the inside wheel takes the
-                    # steering the fading rudder cannot.
-                    brake = min(brake, 0.45)
+                    # tail down. On either castoring gear the inside
+                    # wheel takes the steering the fading rudder --
+                    # and a wheel that never steered -- cannot.
+                    brake = min(brake, 0.45) if tail else brake
                     add_left, add_right = tailwheel.brake_assist(
                         rudder, gs)
                     d.brakes_split(min(1.0, brake + add_left),

@@ -410,6 +410,10 @@ class XPlaneSource:
             int(values.get("xp_engine_type", -1)), -1)
         state.tail_dragger = (bool(values["tail_dragger"])
                               if "tail_dragger" in values else None)
+        # acf_nw_steerdeg1 is the deflection the gear steers by; a model
+        # that reports ~0 has a free-castoring wheel the brakes steer.
+        state.castoring_wheel = (float(values["steer_deg"]) < 0.5
+                                 if "steer_deg" in values else None)
         state.category = "Helicopter" if values.get("helicopter") else "Airplane"
         if state.category == "Helicopter":
             state.engine_type = 3 if state.engine_type == 5 else state.engine_type

@@ -103,10 +103,49 @@ class _Shared_helpers:
         return target
 
     def _altitude_target(self, state) -> float:
-        """The level to fly now: what ATC last assigned, else the plan's."""
+        """The level to fly now: what ATC last assigned, else the plan's.
+
+        Order matters: a clearance beats the filed figure, and the
+        route's own cruise -- what the paperwork actually filed, kept
+        by ``use_route`` -- answers where neither the session's fields
+        nor a controller has one, so a SimBrief-level plan is flown to
+        its filed level rather than the pre-flight guess the session
+        was seated with.
+        """
+        route = getattr(getattr(self, "brain", None), "route", None)
+        filed = float(getattr(route, "cruise_ft", 0.0) or 0.0)
         return (self.session.assigned_altitude_ft
                 or self.session.cruise_altitude_ft
+                or filed
                 or self.session.initial_altitude_ft or 0.0)
+
+    def _route_level(self, state) -> tuple[float, str]:
+        """(level, stage) the plan's next fix is filed at, else 0.
+
+        A flight plan's vertical profile is a chain of crossing levels:
+        the first fix still ahead of the aeroplane that files one is the
+        one that constrains it. Markers file nothing by design, and a
+        route that levels nothing answers 0 -- unchanged behaviour --
+        rather than a constraint made up.
+        """
+        brain = getattr(self, "brain", None)
+        route = getattr(brain, "route", None)
+        if route is None:
+            return 0.0, ""
+        progress = getattr(brain, "route_progress", None)
+        if progress is None and getattr(state, "has_position", False):
+            try:
+                progress = route.progress(
+                    state.latitude, state.longitude,
+                    float(getattr(state, "ground_speed_kt", 0.0) or 0.0))
+            except Exception:
+                progress = None
+        if progress is None:
+            return 0.0, ""
+        for fix in route.fixes[progress.leg:]:
+            if not fix.is_marker and fix.alt_ft > 0:
+                return float(fix.alt_ft), fix.stage or ""
+        return 0.0, ""
 
     def _penetration_kt(self, state) -> float:
         """The speed rough air is ridden out at: a margin off the red
