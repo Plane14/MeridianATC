@@ -126,3 +126,21 @@ def test_a_short_approach_read_back_tightens_the_base_turn():
     assert flight.tight_base
     assert tower._base_nm(flight) < normal - 0.5
     assert tower._base_nm(flight) > tower._stable_by_nm(flight)
+
+
+def test_a_speed_resume_in_progress_does_not_swallow_the_headings_release():
+    """With "resume normal speed" still being read back the conflict's
+    books were closed and the avoiding vector never lifted."""
+    mine = _flight("AAA1", -8.0, 90.0)
+    mine.assigned_heading = 120.0
+    mine._avoid_key = "BBB2"
+    mine._avoid_from = None
+    tower = _Tower([mine])
+    busy = [True]
+    tower._already_told = lambda flight, kind: kind == "resume" and busy[0]
+    tower._watch_conflict(mine, 100.0)
+    assert mine._avoid_key == "BBB2" and not tower.said
+    busy[0] = False
+    tower._watch_conflict(mine, 101.0)
+    assert tower.said == [("resume", {"only": "heading"})]
+    assert mine._avoid_key == ""

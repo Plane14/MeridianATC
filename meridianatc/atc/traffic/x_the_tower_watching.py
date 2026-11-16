@@ -151,13 +151,17 @@ class _The_tower_watching:
             left = getattr(flight, "_avoid_from", None)
             if left is not None and self._still_meets(flight, avoiding, left):
                 return
+            if flight.assigned_heading is not None                     and self._already_told(flight, "resume"):
+                # A "resume normal speed" still being read back is not
+                # the heading's release: asked again when it is done,
+                # or the vector would stand with nobody left to lift it.
+                return
             flight._avoid_key = ""
             flight._avoid_from = None
             # Sent back to its own navigation once -- where the vector
             # is still the one it is flying; a phase that has since
             # taken the heading away has nothing to be released from.
-            if flight.assigned_heading is not None \
-                    and not self._already_told(flight, "resume"):
+            if flight.assigned_heading is not None:
                 self._exchange(
                     flight, now, flight.position,
                     controller=lambda c, a, s: c.resume_own_navigation(a),
