@@ -447,6 +447,43 @@ _VFR_REGION_BY_PREFIX: tuple[tuple[tuple[str, ...], str], ...] = (
 DEFAULT_VFR_REGION = "icao"
 
 
+# The VFR conspicuity squawk: the code a VFR flight shows before a
+# controller gives it a discrete one. Regional, and keyed on the ICAO
+# prefix like the tables above -- finer than ``vfr_region`` because the
+# code follows each state's published allocation, not its phraseology
+# family:
+#
+#   1200   North America and the southern-hemisphere states that copy
+#          its rule: the US (K/PA/PH/PG/TJ), Canada (C*), Mexico (MM),
+#          Australia (Y*) and New Zealand's fixed wing (NZ*) all show
+#          1200 (14 CFR AIM 4-1-20; AIP Canada ENR 1.6; AIP Australia
+#          ENR 1.6; AIP NZ ENR 1.6-5).
+#   1400   Japan: the VFR code for flight at or above 10,000 ft, used
+#          here at all levels -- the lower-level codes are ATC-assigned
+#          and this module has no block to give out.
+#   7000   The ICAO-recommended conspicuity code: the whole of Europe,
+#          the UK and most of Asia, Africa and the Middle East.
+_VFR_SQUAWK_BY_PREFIX: tuple[tuple[tuple[str, ...], str], ...] = (
+    (_FAA_PREFIXES, "1200"),
+    (("C",), "1200"),
+    (("MM",), "1200"),
+    (("Y",), "1200"),
+    (("NZ",), "1200"),
+    (("RJ", "RO"), "1400"),
+)
+
+
+def vfr_squawk_code(ident: str) -> str:
+    """The field's VFR conspicuity code: 1200, 1400 or the ICAO 7000."""
+    code = (ident or "").upper()
+    if not code:
+        return "7000"
+    for prefixes, squawk in _VFR_SQUAWK_BY_PREFIX:
+        if code.startswith(prefixes):
+            return squawk
+    return "7000"
+
+
 def vfr_region(ident: str) -> str:
     """``faa``, ``uk``, ``fr``, ``de``, ``metric``, or ``icao`` for
     everywhere else."""

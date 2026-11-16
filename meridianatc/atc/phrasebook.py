@@ -1339,11 +1339,17 @@ class LocalisedPhraseology:
 
     @property
     def vfr_squawk(self) -> str:
+        """The conspicuity code, which is regional -- 1200, 1400 or the
+        ICAO 7000 -- decided by the field's ident, not the book's
+        default (see ``navdata.db.vfr_squawk_code``)."""
+        if self.channels:
+            from ..navdata.db import vfr_squawk_code
+            return vfr_squawk_code(self.channels)
         return self.book.vfr_squawk
 
     def squawk_vfr(self, aircraft: Aircraft, frequency_change: bool = False) -> str:
         parts = [aircraft.spoken(True), self._("squawk").format(
-            code=self.d(f"{int(self.book.vfr_squawk):04d}"))]
+            code=self.d(f"{int(self.vfr_squawk):04d}"))]
         if frequency_change:
             parts.append(self._("frequency_change_approved"))
         return _join(*parts) + "."

@@ -178,6 +178,12 @@ class _Session:
             ifr_setting=flight.ifr,
             profile=profile,
         )
+        # A VFR flight sets its region's conspicuity code at power-up --
+        # 1200 across North America/Australia/NZ, 1400 in Japan, the
+        # ICAO 7000 anywhere else (navdata.db.vfr_squawk_code).
+        from ..navdata.db import vfr_squawk_code
+        session.squawk = vfr_squawk_code(
+            getattr(departure, "ident", "") or "")
         session.phase = Phase.PREFLIGHT if self.state.on_ground else Phase.ENROUTE
         self.session = session
 

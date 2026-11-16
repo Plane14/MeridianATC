@@ -1185,10 +1185,15 @@ class FrenchPhraseology:
 
     @property
     def vfr_squawk(self) -> str:
+        # Le code de visibilité VFR est régional comme partout: 1200 en
+        # Amérique du Nord/Australie/NZ, 1400 au Japon, 7000 ailleurs.
+        if self.channels:
+            from ..navdata.db import vfr_squawk_code
+            return vfr_squawk_code(self.channels)
         return VFR_SQUAWK_EUROPE
 
     def squawk_vfr(self, aircraft: Aircraft, frequency_change: bool = False) -> str:
-        parts = [aircraft.spoken(True), f"transpondeur {fr.squawk(VFR_SQUAWK_EUROPE)}"]
+        parts = [aircraft.spoken(True), f"transpondeur {fr.squawk(self.vfr_squawk)}"]
         if frequency_change:
             parts.append("changement de fréquence approuvé")
         return _join(*parts) + "."

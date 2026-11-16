@@ -1721,7 +1721,13 @@ class Phraseology:
 
     @property
     def vfr_squawk(self) -> str:
-        """The conspicuity code, which is regional: 1200 in the US, 7000 in Europe."""
+        """The conspicuity code, which is regional: 1200 across North
+        America, Australia and New Zealand, 1400 in Japan, the ICAO 7000
+        everywhere else. The field's own ident says which; a phraseology
+        built without one (tests) keeps the dialect's default."""
+        if self.channels:
+            from ..navdata.db import vfr_squawk_code
+            return vfr_squawk_code(self.channels)
         return "1200" if self.dialect == "faa" else "7000"
 
     def squawk_vfr(self, aircraft: Aircraft, frequency_change: bool = False) -> str:
