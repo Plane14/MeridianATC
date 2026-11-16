@@ -62,6 +62,122 @@ class _The_tower_watching:
                 self._watch_downwind(flight, now)
             elif flight.phase in ("takeoff", "landed"):
                 self._watch_the_roll(flight, now)
+            if not flight.on_ground and flight.phase != "takeoff":
+                self._watch_conflict(flight, now)
+
+    # How far ahead the tower looks for two aeroplanes meeting in the
+    # air, and how close counts as a conflict: the figures a short-term
+    # conflict alert works to, scaled to a tower's patch rather than a
+    # centre's.
+    CONFLICT_LOOKAHEAD_S = 75.0
+    CONFLICT_NM = 1.0
+    CONFLICT_FT = 600.0
+    AVOID_TURN_DEG = 40.0
+
+    def _conflict(self, flight: Flight, other_lat: float, other_lon: float,
+                  other_alt: float, other_hdg: float,
+                  other_gs: float) -> tuple | None:
+        """(miss_nm, seconds, vertical_gap_ft) where this flight and the
+        other come closest -- None where the meeting is already past or
+        no conflict is predicted."""
+        from ..trafficinfo import closest_approach
+
+        try:
+            miss, t, vgap = closest_approach(
+                flight.latitude, flight.longitude,
+                float(flight.altitude_ft or 0.0),
+                float(flight.heading or 0.0),
+                float(flight.ground_speed_kt or 0.0),
+                other_lat, other_lon, float(other_alt or 0.0),
+                float(other_hdg or 0.0), float(other_gs or 0.0),
+                horizon_s=self.CONFLICT_LOOKAHEAD_S)
+        except Exception:
+            return None
+        if t <= 0.0:
+            # The closest point is behind them: they are opening.
+            return None
+        if miss < self.CONFLICT_NM and vgap < self.CONFLICT_FT:
+            return miss, t, vgap
+        return None
+
+    def _watch_conflict(self, flight: Flight, now: float) -> None:
+        """Look a minute ahead and move this aeroplane before a merge,
+        the way a conflict alert moves a controller.
+
+        A tower does not wait for two returns to touch: it sees the
+        tracks meeting and turns one of them while there is still time
+        for the turn to matter. The look is pointed at everything
+        airborne in the picture -- the person flying, the simulator's
+        own aeroplanes, and the program's -- but the turn goes only to
+        the aeroplane under this controller, which is the one that can
+        be told. A flight on short final is never the one turned: it
+        has its own answers, and the conflict is the other aircraft's
+        to resolve anyway.
+        """
+        user = self.user
+        threat = None
+        for other in self.flights:
+            if other is flight or other.done or other.on_ground:
+                continue
+            hit = self._conflict(flight, other.latitude, other.longitude,
+                                 other.altitude_ft, other.heading,
+                                 other.ground_speed_kt)
+            if hit is not None:
+                threat = (other, hit)
+                break
+        if threat is None and user is not None and user.has_position \
+                and not user.on_ground:
+            hit = self._conflict(flight, user.latitude, user.longitude,
+                                 user.altitude_ft, user.heading,
+                                 user.ground_speed_kt)
+            if hit is not None:
+                threat = (user, hit)
+
+        if threat is None:
+            # Nothing predicted: a flight still flying an avoidance
+            # heading the threat has passed is sent back to its own
+            # navigation once, not left on the vector for ever.
+            if getattr(flight, "_avoid_key", ""):
+                flight._avoid_key = ""
+                if not self._already_told(flight, "resume"):
+                    self._exchange(
+                        flight, now, flight.position,
+                        controller=lambda c, a, s: c.resume_own_navigation(a),
+                        pilot_back=lambda p, a, s: p.wilco(a),
+                        command=("resume", {}))
+            return
+
+        other, _hit = threat
+        key = getattr(other, "written", "") or "user"
+        if getattr(flight, "_avoid_key", "") == key \
+                or self._already_told(flight, "heading"):
+            return
+        # The final's own machinery owns the approach: a conflict on it
+        # is a go-around or the other aircraft's turn, not a vector off
+        # the centreline at a mile.
+        if flight.phase == "final":
+            return
+        o_lat, o_lon = other.latitude, other.longitude
+        bearing = self._bearing(flight.latitude, flight.longitude,
+                              o_lat, o_lon)
+        off = (bearing - flight.heading + 540.0) % 360.0 - 180.0
+        # Head-on is a right turn -- the rules of the air's answer, and
+        # the one that does not turn the pair into each other; anything
+        # else is a turn away from the side the threat is on.
+        side = 1.0 if off <= 0.0 else -1.0
+        hdg = (flight.heading + side * self.AVOID_TURN_DEG) % 360.0
+        direction = "right" if side > 0 else "left"
+        flight._avoid_key = key
+        self._exchange(
+            flight, now, flight.position,
+            controller=lambda c, a, s: c.turn_heading(a, hdg, direction),
+            pilot_back=lambda p, a, s: p.heading(a, hdg),
+            command=("heading", {"heading": hdg, "turn": direction}))
+
+    @staticmethod
+    def _bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        from ...navdata.build import bearing_deg
+        return bearing_deg(lat1, lon1, lat2, lon2)
 
     # A stable approach, the crew's own gate: inside this distance it is on
     # the centreline to within this, and pointing down the runway to within

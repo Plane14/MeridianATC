@@ -74,6 +74,9 @@ class _The_loop:
         # A flap stage the speed gate refused is selected as soon as the
         # aeroplane has slowed to it.
         self._configure_owed(state)
+        # See-and-avoid rides the same watch: a meeting a minute out is
+        # a turn made now, not a go-around made at the merge.
+        self._watch_traffic(state, now)
         # The stall watch runs on the same cadence: a trigger held past
         # a gust hands the axes to the recovery, which flies them every
         # tick until the wing is flying again -- no mode selection waits

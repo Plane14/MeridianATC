@@ -159,6 +159,47 @@ def relative(own_lat: float, own_lon: float, own_alt: float, own_track: float,
     return Relative(oclock, distance, height, motion, factor)
 
 
+def closest_approach(own_lat: float, own_lon: float, own_alt_ft: float,
+                     own_track: float, own_speed_kt: float,
+                     lat: float, lon: float, alt_ft: float,
+                     heading: float, speed_kt: float, *,
+                     own_vs_fpm: float = 0.0, vs_fpm: float = 0.0,
+                     horizon_s: float = 120.0) -> tuple[float, float, float]:
+    """Where two aeroplanes come closest, if both keep flying as they are.
+
+    Returns ``(miss_nm, seconds_to_it, vertical_gap_ft)``: the horizontal
+    distance at the closest point of approach, how far ahead that point
+    is, and how far apart they are in height when they reach it --
+    straight-line extrapolation, the same arithmetic a conflict probe
+    uses for the near term. Over the minute or two it is asked to look
+    ahead, real tracks change little enough that the flat answer is the
+    honest one.
+
+    ``seconds_to_it`` of zero means the closest point is now or behind:
+    the pair is already opening, whatever the distance reads.
+    """
+    distance = haversine_nm(own_lat, own_lon, lat, lon)
+    bearing = bearing_deg(own_lat, own_lon, lat, lon)
+    rx = distance * math.sin(math.radians(bearing))
+    ry = distance * math.cos(math.radians(bearing))
+    # Relative velocity in nautical miles a second: their track minus
+    # ours, in the same flat frame as the position.
+    vx = (speed_kt * math.sin(math.radians(heading))
+          - own_speed_kt * math.sin(math.radians(own_track))) / 3600.0
+    vy = (speed_kt * math.cos(math.radians(heading))
+          - own_speed_kt * math.cos(math.radians(own_track))) / 3600.0
+    speed2 = vx * vx + vy * vy
+    if speed2 <= 1e-12:
+        # Stationary relative motion: the distance is what it is.
+        t = 0.0
+    else:
+        t = max(0.0, min(horizon_s, -(rx * vx + ry * vy) / speed2))
+    miss = math.hypot(rx + vx * t, ry + vy * t)
+    vertical = abs((alt_ft + vs_fpm * t / 60.0)
+                   - (own_alt_ft + own_vs_fpm * t / 60.0))
+    return miss, t, vertical
+
+
 # ----------------------------------------------------------------------
 # cautions
 # ----------------------------------------------------------------------
@@ -336,5 +377,6 @@ class TrafficWatch:
         return Reply(text, station, instruction=instruction)
 
 
-__all__ = ["Contact", "Relative", "TrafficWatch", "caution", "from_flight",
-           "from_seen", "needs_wake_caution", "relative", "runway_wet"]
+__all__ = ["Contact", "Relative", "TrafficWatch", "caution",
+           "closest_approach", "from_flight", "from_seen",
+           "needs_wake_caution", "relative", "runway_wet"]

@@ -229,6 +229,13 @@ class _Shared_helpers:
         lim = self._limits(state)
         if altitude:
             d.altitude(self._safe_altitude(state, altitude, lim))
+        if self.state.avoid_until > time.monotonic() \
+                and self.state.avoid_heading >= 0.0:
+            # See-and-avoid outranks the phase's own steering -- and an
+            # assigned one -- for the seconds the threat is ahead: the
+            # avoidance heading is what is flown, and the clearance is
+            # picked back up when the meeting is past.
+            heading = self.state.avoid_heading
         if heading >= 0.0:
             d.heading(heading)
             self.state.ap_hdg_mode = True
@@ -623,4 +630,90 @@ class _Shared_helpers:
         except Exception:
             log.debug("the runway occupancy check failed", exc_info=True)
             return False
+
+    # How far ahead the FO looks for somebody in the way, how close a
+    # meeting counts as a conflict, and the turn made about it -- the
+    # see-and-avoid a crew owes the aeroplane nobody is separating it
+    # from. The figures are a crew's, not a centre's: it is the pilot's
+    # own eyes and the few seconds a turn still changes something.
+    TRAFFIC_LOOKAHEAD_S = 45.0
+    TRAFFIC_CONFLICT_NM = 0.6
+    TRAFFIC_CONFLICT_FT = 400.0
+    TRAFFIC_AVOID_TURN_DEG = 30.0
+    TRAFFIC_AVOID_S = 30.0
+
+    def _watch_traffic(self, state, now: float) -> None:
+        """See and avoid: look ahead for a meeting nobody has called.
+
+        The phases it runs in are the enroute ones: the final has its
+        own answers -- sequencing, and the go-around for somebody on
+        the runway -- and the surface has the give-way. Out here the
+        answer is the one the rules of the air give a pilot: a meeting
+        is turned away from, head-on to the right, and the route is
+        picked up again once the other aeroplane is opening.
+        """
+        if self.state.phase not in (AutonomousPhase.CLIMB,
+                                    AutonomousPhase.CRUISE,
+                                    AutonomousPhase.DESCENT):
+            return
+        if not getattr(state, "has_position", False) or state.on_ground:
+            return
+        track = getattr(state, "track_true", None) \
+            or getattr(state, "heading_true", None) or 0.0
+        if not track:
+            return
+        own_speed = float(getattr(state, "ground_speed_kt", 0.0) or 0.0)
+        if own_speed < 40.0:
+            return
+
+        from ...navdata.build import bearing_deg
+        from ..trafficinfo import closest_approach
+
+        threat = None
+        for contact in self._surface_contacts():
+            if contact.on_ground:
+                continue
+            try:
+                miss, t, vgap = closest_approach(
+                    state.latitude, state.longitude,
+                    float(state.altitude_ft or 0.0), track, own_speed,
+                    contact.latitude, contact.longitude,
+                    float(contact.altitude_ft or 0.0),
+                    float(contact.heading or 0.0),
+                    float(contact.ground_speed_kt or 0.0),
+                    own_vs_fpm=float(
+                        getattr(state, "vertical_speed_fpm", 0.0) or 0.0),
+                    vs_fpm=float(contact.vertical_rate_fpm or 0.0),
+                    horizon_s=self.TRAFFIC_LOOKAHEAD_S)
+            except Exception:
+                continue
+            if t > 0.0 and miss < self.TRAFFIC_CONFLICT_NM \
+                    and vgap < self.TRAFFIC_CONFLICT_FT:
+                threat = contact
+                break
+
+        if threat is None:
+            if self.state.avoid_key:
+                # The meeting is past: back on the route's own heading.
+                self.state.avoid_key = ""
+                self.state.avoid_heading = -1.0
+                self.state.avoid_until = 0.0
+            return
+
+        key = threat.written or "traffic"
+        bearing = bearing_deg(state.latitude, state.longitude,
+                              threat.latitude, threat.longitude)
+        off = (bearing - track + 540.0) % 360.0 - 180.0
+        # Head-on is a right turn -- the rules of the air's answer;
+        # anything else is a turn away from the side it is on.
+        side = 1.0 if off <= 0.0 else -1.0
+        self.state.avoid_heading = (track + side
+                                    * self.TRAFFIC_AVOID_TURN_DEG) % 360.0
+        self.state.avoid_until = now + self.TRAFFIC_AVOID_S
+        if key != self.state.avoid_key:
+            self.state.avoid_key = key
+            self._emit(
+                "info",
+                f"Traffic {key}: turning {('right' if side > 0 else 'left')}"
+                " to avoid", "autonomous.traffic_avoid")
 

@@ -586,6 +586,94 @@ def test_the_assigned_speed_is_flown_to_the_final_segment():
     assert fo._approach_speed(far_state(3000.0, 8.0)) == 120.0
 
 
+def test_the_closest_approach_arithmetic():
+    """The conflict probe's straight-line look ahead: head-on merges,
+    in-trail does not, an opening pair is already past."""
+    from meridianatc.atc.trafficinfo import closest_approach
+    # Head-on, same height, ~2.5nm out at 200kt each: they meet in ~23s.
+    miss, t, vgap = closest_approach(
+        40.0, -8.0, 3000.0, 90.0, 200.0,
+        40.0, -7.95, 3000.0, 270.0, 200.0)
+    assert miss < 0.05
+    assert 15.0 < t < 30.0
+    assert vgap == 0.0
+    # Same heading in trail 3nm ahead, same speed: never merges.
+    miss, t, _ = closest_approach(
+        40.0, -8.0, 3000.0, 90.0, 200.0,
+        40.0, -7.95, 3000.0, 90.0, 200.0)
+    assert t == 0.0
+    # Head-on but a thousand feet apart and staying there: lateral merge,
+    # no vertical conflict.
+    miss, t, vgap = closest_approach(
+        40.0, -8.0, 3000.0, 90.0, 200.0,
+        40.0, -7.95, 4200.0, 270.0, 200.0)
+    assert miss < 0.05 and vgap == 1200.0
+    # Already behind and opening: the closest point is now.
+    miss, t, _ = closest_approach(
+        40.0, -8.0, 3000.0, 90.0, 200.0,
+        40.0, -8.05, 3000.0, 270.0, 200.0)
+    assert t == 0.0
+
+
+def _enroute_fo(contacts):
+    """A cruise FO with a traffic picture, for the see-and-avoid watch."""
+    from meridianatc.atc.autonomous import (
+        AutonomousFlight,
+        AutonomousPhase,
+        AutonomousState,
+    )
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.state = AutonomousState()
+    fo.state.phase = AutonomousPhase.CRUISE
+    fo.on_event = lambda *a, **kw: None
+    fo.brain = SimpleNamespace(contacts=lambda: contacts)
+    fo.session = SimpleNamespace(
+        departure=None, destination=None)
+    state = SimpleNamespace(
+        has_position=True, latitude=40.0, longitude=-8.0,
+        altitude_ft=3000.0, track_true=90.0, heading_true=90.0,
+        ground_speed_kt=200.0, vertical_speed_fpm=0.0,
+        on_ground=False)
+    return fo, state
+
+
+def test_the_fo_turns_away_from_a_meeting_in_the_air():
+    """A conflict a minute out gets a see-and-avoid turn; a passed one
+    gets the route's heading back."""
+    from meridianatc.atc.trafficinfo import Contact
+    # Head-on at the same height, meeting in ~45s.
+    head_on = Contact(
+        written="CS-XXX", type_code="C172", latitude=40.0, longitude=-7.94,
+        altitude_ft=3000.0, heading=270.0, ground_speed_kt=200.0)
+    fo, state = _enroute_fo([head_on])
+    fo._watch_traffic(state, 100.0)
+    # Head-on turns right, and the deviation is armed.
+    assert fo.state.avoid_key == "CS-XXX"
+    assert abs(fo.state.avoid_heading - 120.0) < 0.5
+    assert fo.state.avoid_until == 130.0
+
+    # A contact 1200ft up merging laterally is no see-and-avoid case.
+    high = Contact(
+        written="CS-YYY", type_code="C172", latitude=40.0, longitude=-7.94,
+        altitude_ft=4300.0, heading=270.0, ground_speed_kt=200.0)
+    fo, state = _enroute_fo([high])
+    fo._watch_traffic(state, 100.0)
+    assert fo.state.avoid_key == ""
+
+    # Passed traffic clears the deviation back to the route's heading.
+    fo, state = _enroute_fo([head_on])
+    fo.state.avoid_key = "CS-XXX"
+    fo.state.avoid_heading = 120.0
+    fo.state.avoid_until = 130.0
+    head_on = Contact(
+        written="CS-ZZZ", type_code="C172", latitude=40.0, longitude=-8.06,
+        altitude_ft=3000.0, heading=270.0, ground_speed_kt=200.0)
+    fo.brain.contacts = lambda: [head_on]
+    fo._watch_traffic(state, 100.0)
+    assert fo.state.avoid_key == ""
+    assert fo.state.avoid_heading == -1.0
+
+
 # -- the rejected takeoff ------------------------------------------------------
 
 def _stopped_departure():
