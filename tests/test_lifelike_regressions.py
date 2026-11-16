@@ -625,6 +625,67 @@ def test_the_descent_still_descends_past_the_band_and_climbs_on_a_reclear():
     assert fo._apply_flight_director.call_args.kwargs["vs_fpm"] > 0.0
 
 
+def _arrival_watch(monkeypatch, altitude_ft: float):
+    """An approach position vectoring an arrival onto a seven-mile final
+    for runway 21 -- the flight sits on the extended centreline at
+    ``altitude_ft``, already on a base leg in the pattern."""
+    import meridianatc.atc.arrival as arrival
+    from meridianatc.atc.final import Final
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.build import project
+    from meridianatc.navdata.db import Station
+
+    final = Final("21", 42.0, -8.0, 210.0)
+    monkeypatch.setattr(arrival, "final_for", lambda *a, **k: final)
+    watch = arrival.ArrivalWatch.__new__(arrival.ArrivalWatch)
+    watch.navdb = SimpleNamespace()
+    watch.brain = SimpleNamespace(
+        realism=SimpleNamespace(vectors=True, speed_control=False),
+        controller_at=lambda ident, position: False,
+        approach_choice=lambda *a, **k: SimpleNamespace(
+            kind="ILS", approach=SimpleNamespace(runway="21",
+                                                 name="ILS Z 21"),
+            runway="21"))
+    watch._runway = Mock(return_value="21")
+    watch._weather = Mock(return_value=None)
+    watch._on_a_star_to_the_final = Mock(return_value=None)
+    watch._still_on_star = Mock(return_value=False)
+    watch._intercept = Mock(return_value="cleared")
+
+    outbound = (final.course + 180.0) % 360.0
+    lat, lon = project(final.lat, final.lon, outbound, 7.0)
+    state = SimpleNamespace(
+        latitude=lat, longitude=lon, altitude_ft=altitude_ft,
+        ground_speed_kt=130.0, heading_true=210.0,
+        has_position=True)
+    session = FlightSession(Aircraft(parse_callsign("N45XS")))
+    session.ifr = True
+    session.vector_leg, session.vector_side, session.vector_at = "base", 1, 0.0
+    station = Station("LECO", "APP", 120.2, "Approach")
+    destination = SimpleNamespace(ident="LECO", lat=42.0, lon=-8.0,
+                                  elev_ft=326.0, spoken="Santiago")
+    reply = watch._radar_vectors(session, station, state, destination,
+                                 20.0, None, Phraseology())
+    return watch, session, reply
+
+
+def test_a_flight_too_high_for_the_gate_is_sent_back_out(monkeypatch):
+    """Arriving at the intercept still high is not an approach clearance:
+    the controller sends it round again to make the room -- the real
+    "unable, maintain heading, expect a re-sequence"."""
+    watch, session, reply = _arrival_watch(monkeypatch, 9000.0)
+    watch._intercept.assert_not_called()
+    assert session.vector_leg == "downwind"
+    assert reply is not None
+
+
+def test_a_flight_low_enough_for_the_gate_is_cleared(monkeypatch):
+    watch, session, reply = _arrival_watch(monkeypatch, 2300.0)
+    watch._intercept.assert_called_once()
+
+
 def test_the_assigned_speed_is_flown_to_the_final_segment():
     """"Maintain one-seventy to the marker" is obeyed while the final is
     still far; inside it, the flare's own speed is the one flown."""

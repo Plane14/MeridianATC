@@ -718,7 +718,12 @@ class ArrivalWatch:
                          visual=visual and session.field_in_sight)
         first = not session.vector_leg
         slow = 0 < speed < vec.SLOW_KT
-        if first and vec.too_high(leg, altitude, elevation, slow):
+        # Too high for the miles this leg leaves is not an approach
+        # clearance: the flight goes back out to make the room -- a
+        # downwind it already has gets step-downs on the same leg, a
+        # base or intercept it has not made gets sent round again. A
+        # controller does this on every leg, not only the first.
+        if vec.too_high(leg, altitude, elevation, slow):
             leg = vec.extended(final, state.latitude, state.longitude)
             decision("vectors", airport=destination.ident, event="too high",
                      altitude_ft=round(altitude), track_nm=round(leg.track_nm, 1))
