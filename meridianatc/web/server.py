@@ -1028,8 +1028,15 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         session = engine.session
         if session is None:
             return {"ok": False, "error": "no flight yet"}
-        session.aircraft.language = "fr" if getattr(p, "dialect", "") == "fr" else "en"
-        text = p.radio_check(session.aircraft)
+        # A preview is not a language change: the phraseology wants the
+        # voice's language on the aircraft, but the flight keeps its own.
+        had_language = session.aircraft.language
+        session.aircraft.language = \
+            "fr" if getattr(p, "dialect", "") == "fr" else "en"
+        try:
+            text = p.radio_check(session.aircraft)
+        finally:
+            session.aircraft.language = had_language
         engine.emit("atc", text, station.callsign)
         await asyncio.to_thread(engine.speak, text, station, False, language)
         return {"ok": True, "text": text}
