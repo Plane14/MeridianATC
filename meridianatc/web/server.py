@@ -1446,6 +1446,11 @@ def _apply_settings(engine: Engine, payload: dict) -> set[str]:
     # should have to restart to turn the radio effects off or the volume down.
     if "audio.volume" in changed:
         engine.player.volume = engine.config.audio.volume
+    if "traffic.radius_nm" in changed and getattr(engine, "simwatch", None) \
+            is not None:
+        # Only the next read has to hear about it.
+        engine.simwatch.radius_m = int(
+            engine.config.traffic.radius_nm * 1852.0)
     if "voice.hq_model" in changed:
         _switch_clone_model(engine)
     if "traffic.handling.gsx_vehicles" in changed:
@@ -2392,6 +2397,9 @@ def snapshot(engine: Engine) -> dict[str, Any]:
         # controller would care about them: the arrivals by how close they
         # are, then everybody on the ground.
         "traffic": _traffic_strips(engine),
+        # Every aeroplane out of the window, not only the dozen the strips
+        # show: the worked ones, the parked ones, and everybody else's.
+        "traffic_count": len(engine.traffic.positions(parked=True)),
         "live": _live_view(engine),
         # The data link: the open uplink and the exchange so far, while the
         # flight is logged on with a data authority; {} means none.

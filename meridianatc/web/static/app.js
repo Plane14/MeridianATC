@@ -569,8 +569,11 @@ function paintTraffic() {
   const traffic = (app.state && app.state.traffic) || [];
 
   const here = traffic.filter((a) => a.on_frequency).length;
-  text($("traffic-count"), traffic.length
-    ? `${here} ${t("comms.on_frequency", "on this frequency")}`
+  // The strips are capped; the count is every aeroplane out of the window.
+  const total = (app.state && app.state.traffic_count) || traffic.length;
+  text($("traffic-count"), total
+    ? fill(t("comms.traffic_count", "{here} on this frequency · {total} aircraft"),
+           { here, total })
     : "");
 
   bay.replaceChildren();
@@ -1449,6 +1452,11 @@ function paintSettings() {
     if ($(id)) $(id).hidden = !config.traffic.debug_triggers;
   }
   chips("density-chips", "density", String(config.traffic.density));
+  const radius = $("set-traffic-radius");
+  if (radius && config.traffic.radius_nm != null) {
+    radius.value = config.traffic.radius_nm;
+    text($("traffic-radius-value"), `${radius.value} nm`);
+  }
   chips("callsign-chips", "callsigns", config.traffic.callsigns || "auto");
   chips("source-chips", "source", config.traffic.source_resolved || "meridianatc");
   toggle("set-traffic-live", config.traffic.live ? config.traffic.live.enabled : false);
@@ -2906,6 +2914,10 @@ function wire() {
     on(chip, "click", () =>
       save({ "traffic.density": Number(chip.dataset.density) }, "saved-traffic"));
   }
+  on($("set-traffic-radius"), "input", (e) =>
+    text($("traffic-radius-value"), `${e.target.value} nm`));
+  on($("set-traffic-radius"), "change", (e) =>
+    save({ "traffic.radius_nm": Number(e.target.value) }, "saved-traffic"));
   for (const chip of $("callsign-chips").querySelectorAll(".chip")) {
     on(chip, "click", () =>
       save({ "traffic.callsigns": chip.dataset.callsigns }, "saved-traffic"));

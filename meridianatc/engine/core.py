@@ -481,7 +481,9 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         # Read whether or not this program draws aeroplanes of its own: a
         # pilot who has switched the invented traffic off still has FSLTL
         # running, and the controller has to see it.
-        self.simwatch = SimAircraft(enabled=self.config.traffic.from_simulator)
+        self.simwatch = SimAircraft(
+            enabled=self.config.traffic.from_simulator,
+            radius_m=int(self.config.traffic.radius_nm * 1852.0))
         # And the ramp around the aeroplanes this program parks: who calls
         # on them and when is decided here, and drawn by the simulator.
         # Passengers and their buses are GSX's people and GSX's bus: without

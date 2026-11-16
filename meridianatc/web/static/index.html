@@ -739,6 +739,14 @@
             </div>
           </div>
           <div class="field-block">
+            <div class="label" data-i18n="set.traffic_radius">How far out</div>
+            <div class="chips">
+              <input id="set-traffic-radius" type="range" min="5" max="250" step="5" style="width:130px">
+              <span class="why" id="traffic-radius-value">100 nm</span>
+            </div>
+            <div class="why" data-i18n="set.traffic_radius_why">The aeroplanes the simulator reports — and the ones drawn — within this radius of you. Both simulators.</div>
+          </div>
+          <div class="field-block">
             <div class="label" data-i18n="set.traffic_callsigns">What they call themselves</div>
             <div class="chips" id="callsign-chips">
               <button class="chip" data-callsigns="auto" data-i18n="set.callsigns_auto">Airlines</button>

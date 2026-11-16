@@ -1145,6 +1145,11 @@ class TrafficConfig:
     # real aeroplane in the simulator, so a busy field is capped rather than
     # allowed to fill the ramp.
     in_simulator_limit: int = 12
+    # How far around the pilot the other aeroplanes reach, on either
+    # simulator: the radius the simulator is asked for its own aeroplanes
+    # within (FSLTL, AIG, its own live traffic), and the furthest out this
+    # program's and the feed's are drawn.
+    radius_nm: float = 100.0
     xplane_plugin_host: str = "127.0.0.1"
     xplane_plugin_port: int = 49010
     # Drawn every frame between the traffic's ticks (meridianatc.atc.follow),
@@ -1279,6 +1284,9 @@ describe(
     in_simulator=Setting("traffic", "traffic", restart=True),
     in_simulator_limit=Setting("traffic", "traffic", min=0, max=60,
                                restart=True),
+    radius_nm=Setting("traffic", "traffic", min=5, max=250, unit="nm",
+                      label="set.traffic_radius",
+                      help="set.traffic_radius_why"),
     xplane_plugin_host=Setting("traffic", "traffic", label="set.xplane_plugin_host",
                                restart=True, advanced=True),
     xplane_plugin_port=Setting("traffic", "traffic", label="set.xplane_plugin_port",

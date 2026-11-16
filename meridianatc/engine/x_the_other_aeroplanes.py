@@ -508,6 +508,15 @@ class _The_other_aeroplanes:
             # For how often each is drawn: thirty-five times a second near
             # the pilot, five at ten kilometres.
             self.simtraffic.viewer = (self.state.latitude, self.state.longitude)
+            # And how far out any of them are drawn at all
+            # (traffic.radius_nm): past it the simulator is not asked, on
+            # either simulator.
+            radius_nm = float(self.config.traffic.radius_nm or 0.0)
+            if radius_nm > 0.0:
+                positions = [p for p in positions
+                             if haversine_nm(self.state.latitude,
+                                             self.state.longitude,
+                                             p["lat"], p["lon"]) <= radius_nm]
         self._choose_models(positions, now)
         with timed("tick.traffic.sync", warn_over_ms=500):
             self.simtraffic.sync(positions, now)
