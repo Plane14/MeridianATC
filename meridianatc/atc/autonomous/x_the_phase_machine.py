@@ -963,10 +963,14 @@ class _The_phase_machine:
             target = alt
         # The filed profile's next crossing level caps the climb the
         # way the paperwork means it: a plan that files a fix below the
-        # cruise is crossed there, not stepped over, and the level-off
-        # at it is the plan flown rather than a missed bug.
-        filed, _stage = self._route_level(state)
-        if filed and alt < filed < target:
+        # cruise is crossed there, not stepped over. It holds while the
+        # fix is still ahead -- the small slack is the level-off at it,
+        # which is the plan flown rather than the constraint released --
+        # and an assigned level beats the paperwork altogether.
+        filed, stage = self._route_level(state)
+        if (filed and stage != "DSC"
+                and not self.session.assigned_altitude_ft
+                and alt <= filed + 300.0 and filed < target):
             target = filed
         # A clearance below is answered by coming down, not by climbing
         # away until the clock runs out.
@@ -1040,13 +1044,21 @@ class _The_phase_machine:
             self.director.airspeed_hold(True)
             target = self._altitude_target(state)
             alt = state.altitude_ft or 0.0
-            # A filed step: a plan that crosses its next fix at another
-            # level moves the bug the way a clearance would. Only a
-            # cruise-stage fix moves it -- a descent-stage fix is the
-            # descent phase's number, not this one's.
+            # The filed profile's next crossing level, while the fix
+            # is still ahead and ATC has assigned nothing: a filed
+            # crossing below the target is held until the fix passes;
+            # a filed step above it is written back as the session's
+            # level -- it outlives the fix the way a clearance would
+            # (RouteWatch._plan_step latches the same field). A
+            # descent-stage fix is the descent phase's number.
             filed, stage = self._route_level(state)
-            if filed and stage != "DSC" and abs(filed - target) > 500.0:
-                target = filed
+            if (filed and stage != "DSC"
+                    and not self.session.assigned_altitude_ft):
+                if filed < target and alt <= filed + 300.0:
+                    target = filed
+                elif filed > target + 500.0:
+                    self.session.cruise_altitude_ft = int(filed)
+                    target = filed
             if target and abs(alt - target) > 300.0:
                 # A step clearance answered level is not answered at
                 # all: the bug moves and the aeroplane climbs or
@@ -1079,10 +1091,13 @@ class _The_phase_machine:
         target = self.session.assigned_altitude_ft or self._descent_floor(state)
         # The filed profile's next crossing level is a floor too: a
         # plan that files a fix at twelve thousand is not descended
-        # through it, whatever pattern height says the floor is.
-        filed, _stage = self._route_level(state)
-        if filed and target < filed < (state.altitude_ft or 0.0):
-            target = filed
+        # through it, whatever pattern height says the floor is. It
+        # holds while the fix is still ahead -- leveling at it does not
+        # release it -- and an assigned level beats the paperwork.
+        if not self.session.assigned_altitude_ft:
+            filed, _stage = self._route_level(state)
+            if filed and target < filed <= (state.altitude_ft or 0.0) + 300.0:
+                target = filed
 
         # Top of descent: planned once from the distance to the field,
         # ~318 ft per NM on a three-degree path plus the height to lose.
