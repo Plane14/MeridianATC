@@ -212,9 +212,14 @@ class _Entry_point:
             state_word = {Intent.REPORT_TRAFFIC_IN_SIGHT: "seen",
                           Intent.REPORT_TRAFFIC_LOOKING: "looking",
                           Intent.REPORT_TRAFFIC_NOT_IN_SIGHT: "negative"}[parsed.intent]
-            for name, said in list(session.traffic_called.items()):
-                if said in ("called", "looking", "negative"):
-                    session.traffic_called[name] = state_word
+            # The answer names no traffic, so it belongs to the call still
+            # open -- the most recent one: two called contacts are not both
+            # in sight because one report said so.
+            open_calls = [name for name, said
+                          in session.traffic_called.items()
+                          if said in ("called", "looking", "negative")]
+            if open_calls:
+                session.traffic_called[open_calls[-1]] = state_word
             if parsed.intent is Intent.REPORT_TRAFFIC_IN_SIGHT and session.ifr:
                 session.establish(station)
                 return Reply(p.maintain_visual_separation(aircraft), station)

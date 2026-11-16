@@ -41,6 +41,9 @@ public sealed class EngineClient : IDisposable
     /// <summary>Start or attach to the engine, then begin the event stream.</summary>
     public async Task<bool> ConnectAsync(CancellationToken ct = default)
     {
+        // A second call while connected must not start a second ListenAsync:
+        // two loops would fight over _socket and Connected.
+        if (Connected) return true;
         if (await PingAsync(ct))
         {
             Connected = true;

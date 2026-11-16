@@ -556,7 +556,10 @@ class RadioPlayer:
 
     @property
     def busy(self) -> bool:
-        return self._playing.is_set() or not self._queue.empty()
+        # unfinished_tasks counts an item from put() to task_done(), so the
+        # get->set gap in _run -- popped but not yet playing -- still reads
+        # busy where queue.empty() alone said idle.
+        return self._playing.is_set() or self._queue.unfinished_tasks > 0
 
     @property
     def now_playing(self) -> str:
@@ -803,7 +806,10 @@ class CabinPlayer:
         is told which device lost it instead of watching a first officer
         quietly stop existing.
         """
-        if not self._queue.empty():
+        # unfinished_tasks over queue.empty(): an item stays counted while
+        # _run holds it between get() and _playing.set(), a gap in which
+        # empty() alone would have answered idle over a voice about to speak.
+        if self._queue.unfinished_tasks > 0 and not self._playing.is_set():
             return True
         if not self._playing.is_set():
             return False

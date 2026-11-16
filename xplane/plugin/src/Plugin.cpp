@@ -171,7 +171,11 @@ public:
         std::snprintf(acInfoTexts.icaoAirline, sizeof(acInfoTexts.icaoAirline), "%s", s.op.c_str());
         std::snprintf(acInfoTexts.airline, sizeof(acInfoTexts.airline), "%s", s.op.c_str());
         std::snprintf(acInfoTexts.flightNum, sizeof(acInfoTexts.flightNum), "%s", s.id.c_str());
-        acRadar.code = std::stol(s.squawk);
+        // A squawk that is not a number (empty, "----", a feed quirk) must
+        // not throw here: the exception out of Apply erases the whole
+        // aircraft. Default 2000, the unassigned code, like the engine's.
+        try { acRadar.code = std::stol(s.squawk); }
+        catch (const std::exception&) { acRadar.code = 2000; }
         acRadar.mode = xpmpTransponderMode_ModeC;
         SetGearRatio(static_cast<float>(s.gear)); SetFlapRatio(static_cast<float>(s.flaps));
         SetThrustRatio(static_cast<float>(std::clamp(s.gs / (s.ground ? 40.0 : 250.0), 0.0, 1.0)));
