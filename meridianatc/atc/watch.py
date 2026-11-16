@@ -618,9 +618,13 @@ class DeviationAssistWatch:
                 # below 9,000 on the way to 9,000 is not a deviation,
                 # the way it is when the aeroplane is level or moving
                 # away. Only the ones not converging are challenged.
+                # "Converging" is any rate a crew would call a climb or
+                # a descent: a light single near its ceiling makes two
+                # hundred a minute, and the last few hundred feet onto a
+                # level are flown at three hundred or less by anybody.
                 vs = getattr(state, "vertical_speed_fpm", 0.0) or 0.0
-                closing = (delta > 0.0 and vs > 300.0) \
-                    or (delta < 0.0 and vs < -300.0)
+                closing = (delta > 0.0 and vs >= 100.0) \
+                    or (delta < 0.0 and vs <= -100.0)
                 if not closing:
                     out.append("altitude")
         if session.assigned_heading \

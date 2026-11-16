@@ -1087,7 +1087,9 @@ class _The_phase_machine:
         elif sid is not None:
             self._fly_procedure(state, sid)
         else:
-            self.director.nav(True)
+            vector = self.session.assigned_heading
+            if vector is None:
+                self.director.nav(True)
             self.director.airspeed_hold(True)
             target = self._altitude_target(state)
             alt = state.altitude_ft or 0.0
@@ -1127,6 +1129,12 @@ class _The_phase_machine:
                 if target:
                     self.director.altitude(target)
                 self.director.alt_hold(True)
+                if vector is not None:
+                    # A vector given in level cruise is flown like one
+                    # given in the climb: NAV kept on the route with a
+                    # heading read back is the readback not flown.
+                    self.director.heading(vector)
+                    self.state.ap_hdg_mode = True
             self._manage_throttle(state, self._speed_target(state))
             self.director.speed(self._speed_target(state))
 
@@ -1154,6 +1162,13 @@ class _The_phase_machine:
         """Descend: TOD planning, configuration, approach capture."""
         self._run_checklist_for_phase("descent")
         target = self.session.assigned_altitude_ft or self._descent_floor(state)
+        hold = getattr(self.session, "hold", None)
+        if hold is not None and not self.session.assigned_altitude_ft \
+                and hold.altitude_ft:
+            # "Hold over the fix, maintain": the level the hold was
+            # given at is the level it is flown at, not the floor of a
+            # descent the hold exists to delay.
+            target = float(hold.altitude_ft)
         # The filed profile's next crossing level is a floor too: a
         # plan that files a fix at twelve thousand is not descended
         # through it, whatever pattern height says the floor is. It
@@ -1249,6 +1264,12 @@ class _The_phase_machine:
                                         vs_fpm=vs,
                                         heading=assigned_hdg if assigned_hdg is not None else -1.0,
                                         speed_kt=speed)
+            if assigned_hdg is None:
+                # A vector that has ended is not a heading kept for
+                # ever: with nothing assigned the route is the lateral
+                # plan again, the same ask the climb and the cruise make.
+                self.director.nav(True)
+                self.state.ap_nav_mode = True
 
         # The approach's own navaid, tuned early enough that the needles
         # are alive by the time the final is flown.

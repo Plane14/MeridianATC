@@ -155,8 +155,13 @@ class _Instructions_and_being:
         elif kind == "speed":
             flight.assigned_speed_kt = float(values.get("speed_kt", 0.0))
         elif kind == "resume":
-            flight.assigned_heading = None
-            flight.assigned_speed_kt = None
+            # "Resume own navigation" gives back the heading and "resume
+            # normal speed" the speed: neither takes the other with it.
+            only = values.get("only", "")
+            if only != "speed":
+                flight.assigned_heading = None
+            if only != "heading":
+                flight.assigned_speed_kt = None
         elif kind == "hold_short":
             flight.target.hold = True
 

@@ -1392,3 +1392,195 @@ def test_the_wake_caution_takes_traffic_in_every_language():
         described = wake_traffic("B77W", "departing", language)
         assert "heavy Boeing" in described
         assert p.caution_wake(described).endswith(described)
+
+
+def _head_on(lon=-7.94, lat=40.0):
+    from meridianatc.atc.trafficinfo import Contact
+    return Contact(
+        written="CS-XXX", type_code="C172", latitude=lat, longitude=lon,
+        altitude_ft=3000.0, heading=270.0, ground_speed_kt=200.0)
+
+
+def test_the_avoiding_turn_is_made_once_and_held_until_the_meeting_is_past():
+    """The turn used to be dropped the moment it worked -- the avoidance
+    track no longer met anybody -- which handed the aeroplane straight
+    back to the conflict, and added to on every look until it did."""
+    fo, state = _enroute_fo([_head_on()])
+    events = []
+    fo.on_event = lambda *a, **kw: events.append(a)
+    fo._watch_traffic(state, 100.0)
+    assert abs(fo.state.avoid_heading - 120.0) < 0.5
+    assert fo.state.avoid_from == 90.0
+
+    # Still closing, same look: the turn stands, said once.
+    fo._watch_traffic(state, 101.0)
+    assert abs(fo.state.avoid_heading - 120.0) < 0.5
+    assert fo.state.avoid_until == 131.0
+
+    # Now established on the avoidance track, which is clear -- but the
+    # track that was left still meets them: the turn is kept.
+    state.track_true = state.heading_true = 120.0
+    fo._watch_traffic(state, 102.0)
+    assert fo.state.avoid_key == "CS-XXX"
+    assert abs(fo.state.avoid_heading - 120.0) < 0.5
+    assert fo.state.avoid_until == 132.0
+    assert len(events) == 1
+
+    # Behind and opening: the route is picked up again.
+    fo.brain.contacts = lambda: [_head_on(lon=-8.06)]
+    fo._watch_traffic(state, 103.0)
+    assert fo.state.avoid_key == ""
+    assert fo.state.avoid_from == -1.0
+
+
+def test_head_on_a_little_right_of_the_nose_is_still_a_right_turn():
+    """Two aeroplanes turning towards each other is the one outcome the
+    rules of the air exist to prevent."""
+    fo, state = _enroute_fo([_head_on(lat=39.9995)])
+    fo._watch_traffic(state, 100.0)
+    assert abs(fo.state.avoid_heading - 120.0) < 0.5
+
+
+def test_the_avoiding_turn_is_flown_over_nav_and_in_the_bugs_own_frame(
+        monkeypatch):
+    """A cruise on NAV announced the turn and never flew it; and the bug
+    is magnetic where the geometry is true."""
+    import time as _time
+
+    from meridianatc.navdata import magvar
+    fo, state = _enroute_fo([])
+    fo._dir = Mock()
+    fo.sim = fo._dir.sim
+    monkeypatch.setattr(magvar, "variation", lambda lat, lon: -5.0)
+    want = magvar.to_magnetic(120.0, -5.0) % 360.0
+    assert abs(want - 120.0) > 1.0
+
+    fo._fly_avoidance(state)
+    fo.director.heading.assert_not_called()
+
+    fo.state.avoid_key = "CS-XXX"
+    fo.state.avoid_heading = 120.0
+    fo.state.avoid_until = _time.monotonic() + 30.0
+    fo._fly_avoidance(state)
+    fo.director.heading.assert_called_once()
+    assert abs(fo.director.heading.call_args.args[0] - want) < 0.01
+
+    # Out of date: nothing is flown for a meeting long past.
+    fo.director.reset_mock()
+    fo.state.avoid_until = _time.monotonic() - 1.0
+    fo._fly_avoidance(state)
+    fo.director.heading.assert_not_called()
+
+
+def test_the_avoidance_does_not_outlive_the_enroute_phases():
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo, state = _enroute_fo([_head_on()])
+    fo._watch_traffic(state, 100.0)
+    assert fo.state.avoid_key
+    fo.state.phase = AutonomousPhase.APPROACH
+    fo._watch_traffic(state, 101.0)
+    assert fo.state.avoid_key == "" and fo.state.avoid_heading == -1.0
+
+
+def test_a_descent_whose_vector_ended_takes_the_route_back():
+    """Climb and cruise re-ask for NAV when no heading is assigned; the
+    descent kept the last vector's heading for ever."""
+    fo, state = _descending_fo(9500.0)
+    fo._phase_descent(state, 100.0)
+    fo.director.nav.assert_not_called()
+
+    fo.session.assigned_heading = None
+    fo._phase_descent(state, 101.0)
+    fo.director.nav.assert_called_with(True)
+    assert fo._apply_flight_director.call_args.kwargs["heading"] == -1.0
+
+
+def test_a_vector_in_level_cruise_is_flown_not_left_to_nav():
+    """A heading read back at the cruise level was answered with NAV on
+    the route: only an aeroplane off its level put the bug where the
+    controller asked."""
+    fo, state = _cruising_fo(80.0)
+    fo._phase_cruise(state, 100.0)
+    fo._dir.nav.assert_called_with(True)
+    fo._dir.heading.assert_not_called()
+
+    fo, state = _cruising_fo(80.0)
+    fo.session.assigned_heading = 250.0
+    fo._phase_cruise(state, 100.0)
+    fo._dir.nav.assert_not_called()
+    fo._dir.heading.assert_called_with(250.0)
+
+
+def _held_fo(monkeypatch):
+    from meridianatc.atc import holds
+    from meridianatc.navdata import magvar
+    monkeypatch.setattr(magvar, "variation", lambda lat, lon: 0.0)
+    fo, state = _enroute_fo([])
+    fo._dir = Mock()
+    fo.sim = fo._dir.sim
+    # The fix dead ahead (east), the field beyond it: inbound 090.
+    fo.session.hold = holds.Hold(
+        fix="XAMAX", lat=40.0, lon=-7.9, inbound_true=90.0, side="west",
+        leg_minutes=1.0, altitude_ft=8000.0, reason="sequence",
+        efc_hhmm="1200")
+    return fo, state
+
+
+def _bug(fo):
+    return fo._dir.heading.call_args.args[0]
+
+
+def test_the_hold_the_controller_gave_is_flown(monkeypatch):
+    """The hold was read back and the route flown on past the fix, into
+    "verify holding". The racetrack: to the fix, right turn outbound,
+    the leg's minute, right turn back in."""
+    fo, state = _held_fo(monkeypatch)
+    fo._fly_hold(state, 100.0)
+    assert fo.state.hold_leg == "to_fix"
+    assert abs(_bug(fo) - 90.0) < 1.0
+
+    # Over the fix, still pointing inbound: outbound is a half-turn, and
+    # it goes round to the right -- the bug leads the nose by a quarter.
+    state.longitude = -7.9
+    fo._fly_hold(state, 110.0)
+    assert fo.state.hold_leg == "outbound"
+    assert abs(_bug(fo) - 180.0) < 1.0
+    assert fo.state.hold_leg_at == 0.0
+
+    # Round onto the outbound heading: the bug is the leg and the clock
+    # starts wings level.
+    state.track_true = state.heading_true = 265.0
+    state.latitude = 39.96
+    fo._fly_hold(state, 150.0)
+    assert abs(_bug(fo) - 270.0) < 1.0
+    assert fo.state.hold_leg_at == 150.0
+    fo._fly_hold(state, 200.0)
+    assert fo.state.hold_leg == "outbound"
+
+    # The minute is up: back to the fix, to the right again.
+    state.track_true = state.heading_true = 270.0
+    state.longitude = -7.97
+    fo._fly_hold(state, 211.0)
+    assert fo.state.hold_leg == "inbound"
+    # (the fix bears 053 from here: 143 degrees round, clockwise)
+    assert abs(_bug(fo) - 53.3) < 1.0
+
+    # Cleared to leave: the hold is no longer anybody's heading.
+    fo.session.hold = None
+    fo._dir.reset_mock()
+    fo._fly_hold(state, 220.0)
+    fo._dir.heading.assert_not_called()
+    assert fo.state.hold_leg == ""
+
+
+def test_a_hold_is_flown_at_the_level_it_was_given_at():
+    from meridianatc.atc import holds
+    fo, state = _descending_fo(8000.0)
+    fo.session.assigned_altitude_ft = None
+    fo.session.hold = holds.Hold(
+        fix="XAMAX", lat=40.0, lon=-7.9, inbound_true=90.0, side="west",
+        leg_minutes=1.0, altitude_ft=8000.0, reason="sequence",
+        efc_hhmm="1200")
+    fo._phase_descent(state, 100.0)
+    assert fo._apply_flight_director.call_args.kwargs["altitude"] == 8000.0
+    assert fo._apply_flight_director.call_args.kwargs["vs_fpm"] == 0.0
