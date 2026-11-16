@@ -607,10 +607,20 @@ class DeviationAssistWatch:
         # Mode C is QNH-corrected by the radar, so what the controller sees
         # is true altitude whatever the Kollsman window says -- a mis-set
         # altimeter is a deviation here exactly as it would be on a scope.
-        if session.assigned_altitude_ft \
-                and abs((getattr(state, "altitude_ft", 0.0) or 0.0)
-                        - session.assigned_altitude_ft) > self.ALT_FT:
-            out.append("altitude")
+        if session.assigned_altitude_ft:
+            delta = (session.assigned_altitude_ft
+                     - (getattr(state, "altitude_ft", 0.0) or 0.0))
+            if abs(delta) > self.ALT_FT:
+                # A leg climbing or descending *toward* the assigned
+                # level is doing exactly what it was cleared to do --
+                # below 9,000 on the way to 9,000 is not a deviation,
+                # the way it is when the aeroplane is level or moving
+                # away. Only the ones not converging are challenged.
+                vs = getattr(state, "vertical_speed_fpm", 0.0) or 0.0
+                closing = (delta > 0.0 and vs > 300.0) \
+                    or (delta < 0.0 and vs < -300.0)
+                if not closing:
+                    out.append("altitude")
         if session.assigned_heading \
                 and _heading_off(self._magnetic(state),
                                  session.assigned_heading) > self.HDG_DEG:
