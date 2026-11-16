@@ -512,6 +512,13 @@ class _Weather:
             return False
         if not self._request_ifr:
             return False
+        # The filing outranks the weather and the airframe: a flight
+        # plan (SimBrief, the chain's own, or the rules the pilot set
+        # on the flight) that says IFR is flown IFR -- a C172 on an IFR
+        # plan asks for the clearance it was filed under, not a VFR
+        # release the sky happens to allow.
+        if getattr(self.session, "ifr", False):
+            return True
         from .. import aircraft_class as ac
         cls = getattr(self, "_aircraft_class", "") or ac.AIRLINER
         if cls in (ac.AIRLINER, ac.BUSINESS_JET, ac.TURBOPROP_TWIN):

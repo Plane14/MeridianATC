@@ -1020,6 +1020,7 @@ def test_the_rules_are_decided_by_the_aircraft_and_the_weather():
     assert flight._ifr_required(SimpleNamespace()) is True
     # A light aeroplane in VMC may genuinely go VFR.
     flight._aircraft_class = "piston_single"
+    flight.session.ifr = False        # nothing filed
     flight.session.departure = SimpleNamespace(
         ident="LPPT", lat=38.7, lon=-9.1)
     flight.session.destination = SimpleNamespace(
@@ -1038,6 +1039,30 @@ def test_the_rules_are_decided_by_the_aircraft_and_the_weather():
     # The pilot's own "VFR only" preference is honoured in good weather.
     flight._request_ifr = False
     wx.clouds = [("BKN", 3000)]
+    assert flight._ifr_required(SimpleNamespace()) is False
+
+
+def test_a_flight_filed_ifr_asks_for_ifr_whatever_the_sky():
+    """A filed IFR light aeroplane does not get re-filed VFR by sunshine."""
+    flight = _flier()
+    flight._aircraft_class = "piston_single"
+    flight._is_helicopter = False
+    flight._request_ifr = True
+    flight.session.ifr = True          # filed IFR
+    flight.session.departure = SimpleNamespace(
+        ident="LPPT", lat=38.7, lon=-9.1)
+    flight.session.destination = SimpleNamespace(
+        ident="LPPT", lat=38.7, lon=-9.1)
+    wx = SimpleNamespace(raw="METAR", clouds=[("BKN", 3000)],
+                         visibility_sm=10.0, source="metar")
+    flight.brain = SimpleNamespace(
+        weather_for=lambda ident: wx,
+        region_for=lambda ident: "icao",
+        realism=SimpleNamespace(special_vfr=True))
+    flight._get_current_airport = lambda: flight.session.departure
+    assert flight._ifr_required(SimpleNamespace()) is True
+    # The pilot's "VFR only" preference still outranks the filing.
+    flight._request_ifr = False
     assert flight._ifr_required(SimpleNamespace()) is False
 
 
