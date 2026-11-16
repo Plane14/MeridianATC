@@ -380,6 +380,72 @@ def test_an_expedite_on_the_runway_taxis_the_aeroplane_briskly():
     assert fo._expedite_kt(state, 14.0) == 14.0
 
 
+def test_strobes_follow_the_clearance_and_the_crossing():
+    """A takeoff, line-up or crossing clearance lights the strobes before
+    the pavement is touched; vacating the strip puts the crossing's
+    light out, while a light the departure owns stays for the roll."""
+    from meridianatc.atc.autonomous.x_taxi import _Taxi
+    from meridianatc.atc.session import Phase
+    fo = _Taxi.__new__(_Taxi)
+    calls = []
+    fo.director = SimpleNamespace(
+        strobes=lambda on: calls.append(on))
+    session = SimpleNamespace(
+        crossing_granted="", occupying_runway="",
+        lined_up=False, cleared_takeoff=False, phase=Phase.TAXI_OUT)
+    fo.session = session
+    state = SimpleNamespace(strobe_light=False)
+
+    # Nothing in hand: dark.
+    fo._clearance_strobes(state)
+    assert calls == []
+
+    # Cleared to take off with the nose still at the bars: lit at the
+    # word, not at the pavement edge.
+    session.cleared_takeoff = True
+    fo._clearance_strobes(state)
+    assert calls == [True]
+    state.strobe_light = True
+
+    # A granted runway crossing lights them the same way -- and owns
+    # their going out.
+    session.cleared_takeoff = False
+    session.crossing_granted = "17"
+    session.occupying_runway = "17"
+    state.strobe_light = False
+    fo._clearance_strobes(state)
+    assert calls[-1] is True
+
+    # Off the far side, the grant spent: out they go.
+    session.crossing_granted = ""
+    session.occupying_runway = ""
+    state.strobe_light = True
+    fo._clearance_strobes(state)
+    assert calls[-1] is False
+
+    # On the pavement without a word for it, they burn anyway -- the
+    # strip itself is what they warn of -- and out once vacated.
+    session.occupying_runway = "09"
+    state.strobe_light = False
+    fo._clearance_strobes(state)
+    assert calls[-1] is True
+    session.occupying_runway = ""
+    state.strobe_light = True
+    fo._clearance_strobes(state)
+    assert calls[-1] is False
+
+    # A light that was already burning for its own reason (the
+    # checklist's) is not switched off mid-taxi -- but the crossing
+    # adopts the off it is owed.
+    session.crossing_granted = "17"
+    writes = len(calls)
+    fo._clearance_strobes(state)
+    assert len(calls) == writes  # no write: already lit
+    session.crossing_granted = ""
+    fo._clearance_strobes(state)
+    assert calls[-1] is False
+
+
 # -- the rejected takeoff ------------------------------------------------------
 
 def _stopped_departure():

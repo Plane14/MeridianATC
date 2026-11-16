@@ -59,6 +59,9 @@ class _Taxi:
             # reach a switch, and a dark aeroplane on the taxiway is how
             # ground collisions start.
             self.director.taxi_light(True)
+        # A runway crossed on the way, granted or simply met, is strobes
+        # on until the far side is behind it.
+        self._clearance_strobes(state)
         if not path or len(path) < 2:
             self._taxi_without_path(state, outbound)
             return
@@ -296,6 +299,42 @@ class _Taxi:
             and on_the_runway(self.navdb, field, runway, [me])
             for field, runway in runways)
 
+    def _clearance_strobes(self, state) -> None:
+        """Strobes for a clearance, or a runway, the aeroplane is on.
+
+        The switch is the clearance and the pavement, not the phase: on
+        the moment the line-up, takeoff or runway-crossing clearance is
+        in hand -- the call a crew makes before the bars -- and on for
+        any runway the aeroplane stands on, granted or simply met,
+        because the strip itself is what they warn of. A light the
+        crossing burned goes out once the far side is behind it; one
+        the checklist or the departure burned stays for whoever owns
+        it -- the rollout's own clear-of-runway rule, or the parking
+        checklist.
+        """
+        session = self.session
+        departing = getattr(session, "lined_up", False) \
+            or getattr(session, "cleared_takeoff", False) \
+            or getattr(session, "phase", None) in (
+                Phase.LINED_UP, Phase.TAKEOFF)
+        crossing = bool(getattr(session, "crossing_granted", "")) \
+            or bool(getattr(session, "occupying_runway", ""))
+        lit = bool(getattr(state, "strobe_light", False))
+        if (departing or crossing) and not lit:
+            self.director.strobes(True)
+            self._strobe_for_crossing = crossing and not departing
+        elif lit and not departing and not crossing:
+            if getattr(self, "_strobe_for_crossing", False):
+                # Vacated the strip the grant was for: the crossing's
+                # own lights go out with it.
+                self.director.strobes(False)
+            self._strobe_for_crossing = False
+        elif lit:
+            # Lit some other way -- the checklist's -- but burning
+            # through a crossing all the same: the crossing keeps the
+            # off owed.
+            self._strobe_for_crossing = crossing and not departing
+
     def _yield_to_traffic(self, state, path) -> object | None:
         """The first aeroplane on the corridor the route uses, if any.
 
@@ -317,6 +356,7 @@ class _Taxi:
 
     def _taxi_without_path(self, state, outbound: bool) -> None:
         """No simulator taxiway route: steer at the runway, hold short."""
+        self._clearance_strobes(state)
         if outbound:
             self._find_runway(state)
             if self.session.cleared_takeoff or self.session.phase in (

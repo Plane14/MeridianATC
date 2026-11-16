@@ -352,6 +352,9 @@ class _The_phase_machine:
 
     def _phase_holding_short(self, state, now: float) -> None:
         """Holding short of runway, run before-takeoff checklist."""
+        # The clearance is the switch: a "line up and wait" or a takeoff
+        # while the nose is still at the bars is strobes on already.
+        self._clearance_strobes(state)
         if (state.ground_speed_kt or 0.0) > 1.0:
             self._stop(state)
             return
@@ -464,6 +467,7 @@ class _The_phase_machine:
 
         if not getattr(state, "taxi_light", False):
             d.taxi_light(True)
+        self._clearance_strobes(state)
         if not state.on_ground:
             self._transition(AutonomousPhase.TAKEOFF)
             return
