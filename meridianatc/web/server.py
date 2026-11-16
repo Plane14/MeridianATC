@@ -1468,6 +1468,12 @@ def _apply_settings(engine: Engine, payload: dict) -> set[str]:
                 min(max(float(radius), 5.0), 250.0)
     if "voice.hq_model" in changed:
         _switch_clone_model(engine)
+    if changed & {"gsx.enabled", "gsx.control"}:
+        # The link keeps its own copies, taken at startup: the loop polled
+        # a link that still thought itself off, and "let the radio call
+        # the tug" switched off went on calling it.
+        engine.gsx.enabled = engine.config.gsx.enabled
+        engine.gsx.control = engine.config.gsx.control
     if "traffic.handling.gsx_vehicles" in changed:
         engine.use_gsx_vehicles(engine.config.traffic.handling.gsx_vehicles)
     if changed & {"logging.level", "logging.console_level",
@@ -1532,6 +1538,11 @@ def _apply_settings(engine: Engine, payload: dict) -> set[str]:
         engine.synth.imperfections = imperfections_for(
             engine.config.delivery.imperfections)
         engine.synth.prosody = prosody_for(engine.config.delivery.prosody)
+        # The receiver's balance is the third layer read at construction:
+        # left out, its sliders saved and the cache emptied to render the
+        # same sound again.
+        from ..audio.tone import from_config as tone_for
+        engine.synth.tone = tone_for(engine.config.delivery.tone)
         engine.synth.forget()
     return changed
 

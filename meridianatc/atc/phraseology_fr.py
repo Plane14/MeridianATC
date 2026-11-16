@@ -1400,7 +1400,7 @@ class FrenchPhraseology:
         # UNVERIFIED: the plan's DGAC form.
         parts = [aircraft.spoken(True), "fin du service radar"]
         if squawk_vfr:
-            parts.append(f"transpondeur {fr.squawk(VFR_SQUAWK_EUROPE)}")
+            parts.append(f"transpondeur {fr.squawk(self.vfr_squawk)}")
         if next_station and next_freq:
             parts.append(f"contactez {next_station} {self.freq(next_freq)}")
         else:
@@ -1434,7 +1434,7 @@ class FrenchPhraseology:
 
     def ifr_cancelled(self, aircraft: Aircraft) -> str:
         return _join(aircraft.spoken(True), "annulation IFR reçue",
-                     f"affichez {fr.squawk(VFR_SQUAWK_EUROPE)}",
+                     f"affichez {fr.squawk(self.vfr_squawk)}",
                      "changement de fréquence approuvé") + "."
 
     # ------------------------------------------------------------------
