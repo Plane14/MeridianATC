@@ -853,6 +853,115 @@ class _Shared_helpers:
         self.director.heading(self._magnetic(want, state))
         self.state.ap_hdg_mode = True
 
+    # A fix this near is reached; one that came this near and is now
+    # falling behind was passed abeam.
+    DIRECT_REACHED_NM = 2.0
+    DIRECT_PASSED_NM = 5.0
+
+    def _end_direct(self) -> None:
+        st = self.state
+        st.direct_fix, st.direct_nearest_nm = "", 0.0
+
+    def _fly_direct(self, state) -> None:
+        """Fly the "proceed direct" the controller gave: straight to
+        the fix, then on along the route from it.
+
+        Nothing flew it before: the shortcut was read back and NAV went
+        on round the legs it had cut, on a route the controller no
+        longer expected the flight to be on. The simulator's FMS is
+        never told, so NAV handed back at the fix would turn for the
+        waypoint behind; the rest of the route is flown from here fix
+        to fix, until the arrival procedure or the approach takes the
+        aeroplane. A vector or a hold given meanwhile is flown instead
+        and the route picked up again after it.
+        """
+        st = self.state
+        session = getattr(self, "session", None)
+        route = getattr(getattr(self, "brain", None), "route", None)
+        cleared = (getattr(session, "route_direct", "") or "").upper()
+        enroute = st.phase in (AutonomousPhase.CLIMB, AutonomousPhase.CRUISE,
+                               AutonomousPhase.DESCENT)
+        if not enroute or route is None                 or not getattr(state, "has_position", False)                 or state.on_ground:
+            self._end_direct()
+            st.direct_cleared = ""
+            return
+        if cleared and cleared != st.direct_cleared:
+            st.direct_fix, st.direct_nearest_nm = cleared, 0.0
+        st.direct_cleared = cleared
+        if not st.direct_fix:
+            return
+        fix = route.fix(st.direct_fix)
+        if fix is None:
+            self._end_direct()
+            return
+        if not cleared and getattr(st, "star_nav", None) is not None:
+            # Past the shortcut and on the arrival: the procedure's.
+            self._end_direct()
+            return
+        if getattr(session, "assigned_heading", None) is not None                 or getattr(session, "hold", None) is not None:
+            return
+
+        from ...navdata.build import bearing_deg, haversine_nm
+
+        distance = haversine_nm(state.latitude, state.longitude,
+                                fix.lat, fix.lon)
+        nearest = st.direct_nearest_nm or distance
+        st.direct_nearest_nm = min(nearest, distance)
+        passed = (st.direct_nearest_nm <= self.DIRECT_PASSED_NM
+                  and distance > st.direct_nearest_nm + 0.5)
+        if distance <= self.DIRECT_REACHED_NM or passed:
+            after = route.fixes[route.fixes.index(fix) + 1:]
+            fix = next((f for f in after if not f.is_marker), None)
+            if fix is None:
+                # The route's last fix: the field is the descent's.
+                self._end_direct()
+                return
+            st.direct_fix, st.direct_nearest_nm = fix.ident.upper(), 0.0
+        self.director.heading(self._magnetic(
+            bearing_deg(state.latitude, state.longitude, fix.lat, fix.lon),
+            state))
+        self.state.ap_hdg_mode = True
+
+    # Below this an orbit is not begun: on short final the answer to
+    # traffic too close ahead is the go-around the approach already has.
+    ORBIT_MIN_AGL_FT = 500.0
+
+    def _fly_orbit(self, state) -> bool:
+        """Fly the tower's orbit: one level turn all the way round, to
+        the side it was given, at the height it was given at.
+
+        Nothing flew it before: "orbit left" was read back and the
+        final flown on down behind the traffic it was meant to make
+        room for. The tower counts the turn off the track and calls it
+        complete; the aeroplane's own count ends it once round all the
+        same, should nobody be watching.
+        """
+        st = self.state
+        session = getattr(self, "session", None)
+        side = getattr(session, "orbiting", "") or ""
+        if not side or state.on_ground:
+            st.orbit_alt_ft, st.orbit_track, st.orbit_turned = 0.0, -1.0, 0.0
+            return False
+        track = float(getattr(state, "track_true", None)
+                      or getattr(state, "heading_true", None) or 0.0)
+        if not st.orbit_alt_ft:
+            agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)
+            if agl < self.ORBIT_MIN_AGL_FT:
+                return False
+            st.orbit_alt_ft = float(state.altitude_ft or 0.0)
+            st.orbit_track, st.orbit_turned = track, 0.0
+        step = abs((track - st.orbit_track + 540.0) % 360.0 - 180.0)
+        st.orbit_turned += min(step, 90.0)
+        st.orbit_track = track
+        if st.orbit_turned >= 360.0:
+            return False
+        # A heading bug turns the short way: kept a quarter ahead of
+        # the nose on the orbit's side, it is a turn that way all round.
+        want = (track + (90.0 if side == "right" else -90.0)) % 360.0
+        self._hold_level(state, st.orbit_alt_ft, self._magnetic(want, state),
+                         self._approach_speed(state))
+        return True
+
     def _fly_avoidance(self, state) -> None:
         """Put the avoidance heading on the autopilot, last word of the
         tick: a phase that flies NAV, a procedure or nothing lateral at

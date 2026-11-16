@@ -1609,3 +1609,119 @@ def test_a_vfr_ceiling_caps_the_climb_until_it_is_lifted_or_left_behind():
     fo.session.vfr_ceiling_ft = 2500.0
     fo.session.ifr = True
     assert fo._altitude_target(state) == 6500.0
+
+
+# -- "proceed direct" and the tower's orbit, flown ------------------------------
+
+def _direct_fo(monkeypatch):
+    from meridianatc.atc.route import Route, RouteFix
+    from meridianatc.navdata import magvar
+    monkeypatch.setattr(magvar, "variation", lambda lat, lon: 0.0)
+    fo, state = _enroute_fo([])
+    fo._dir = Mock()
+    fo.sim = fo._dir.sim
+    # A dog-leg: north to BBBBB, back down to CCCCC due east of here,
+    # then on east to DDDDD and the field.
+    fixes = [RouteFix("LPAA", 40.0, -8.5, kind="apt"),
+             RouteFix("BBBBB", 40.5, -7.8),
+             RouteFix("CCCCC", 40.0, -7.5),
+             RouteFix("DDDDD", 40.0, -7.0),
+             RouteFix("LPZZ", 40.0, -6.5, kind="apt")]
+    fo.brain.route = Route(fixes=fixes)
+    fo.session.route_direct = ""
+    fo.session.assigned_heading = None
+    fo.session.hold = None
+    return fo, state
+
+
+def test_a_direct_is_flown_to_its_fix_and_on_along_the_route(monkeypatch):
+    """"Proceed direct CCCCC" was read back and NAV flew on up to BBBBB."""
+    fo, state = _direct_fo(monkeypatch)
+    fo._fly_direct(state)
+    fo._dir.heading.assert_not_called()
+
+    fo.session.route_direct = "CCCCC"
+    fo._fly_direct(state)
+    assert abs(_bug(fo) - 90.0) < 1.0 and fo.state.ap_hdg_mode
+
+    # A vector given meanwhile is the controller's later word.
+    fo._dir.heading.reset_mock()
+    fo.session.assigned_heading = 120.0
+    fo._fly_direct(state)
+    fo._dir.heading.assert_not_called()
+    fo.session.assigned_heading = None
+
+    # At the fix the controller's direct is over; the FMS still has the
+    # leg that was cut as its own, so the next fix is flown from here.
+    state.longitude = -7.5
+    fo.session.route_direct = ""
+    fo._fly_direct(state)
+    assert fo.state.direct_fix == "DDDDD"
+    assert abs(_bug(fo) - 90.0) < 1.0
+
+    # The last fix before the field: the route is NAV's again.
+    state.longitude = -7.0
+    fo._dir.heading.reset_mock()
+    fo._fly_direct(state)
+    assert fo.state.direct_fix == ""
+    fo._dir.heading.assert_not_called()
+
+
+def test_a_direct_ends_where_the_arrival_or_the_ground_begins(monkeypatch):
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo, state = _direct_fo(monkeypatch)
+    fo.session.route_direct = "CCCCC"
+    fo._fly_direct(state)
+    fo.session.route_direct = ""
+    fo.state.star_nav = object()
+    fo._fly_direct(state)
+    assert fo.state.direct_fix == ""
+
+    fo.state.star_nav = None
+    fo.session.route_direct = "CCCCC"
+    fo._fly_direct(state)
+    assert fo.state.direct_fix == "CCCCC"
+    fo.state.phase = AutonomousPhase.APPROACH
+    fo._fly_direct(state)
+    assert fo.state.direct_fix == ""
+
+
+def _orbiting_fo(monkeypatch, agl=900.0):
+    from meridianatc.navdata import magvar
+    monkeypatch.setattr(magvar, "variation", lambda lat, lon: 0.0)
+    fo, state = _enroute_fo([])
+    fo.session.orbiting = "left"
+    fo._hold_level = Mock()
+    fo._approach_speed = lambda state: 75.0
+    state.altitude_ft, state.altitude_agl_ft = 1200.0, agl
+    return fo, state
+
+
+def test_the_towers_orbit_is_flown_level_all_the_way_round(monkeypatch):
+    """"Orbit left" was read back and the final flown on down."""
+    fo, state = _orbiting_fo(monkeypatch)
+    assert fo._fly_orbit(state)
+    target, heading, speed = fo._hold_level.call_args.args[1:]
+    assert (target, heading, speed) == (1200.0, 0.0, 75.0)
+
+    # Round to the left, the bug a quarter ahead of the nose, the height
+    # the orbit began at kept though the aeroplane has sagged.
+    turned = 0
+    while fo._fly_orbit(state):
+        turned += 20
+        assert turned <= 380
+        state.track_true = state.heading_true = (90.0 - turned) % 360.0
+        state.altitude_ft = 1150.0
+        assert fo._hold_level.call_args.args[1] == 1200.0
+    assert turned >= 360
+
+    # The tower calls it complete: the next orbit is a new one.
+    fo.session.orbiting = ""
+    assert not fo._fly_orbit(state)
+    assert fo.state.orbit_alt_ft == 0.0 and fo.state.orbit_turned == 0.0
+
+
+def test_an_orbit_is_not_begun_on_short_final(monkeypatch):
+    fo, state = _orbiting_fo(monkeypatch, agl=300.0)
+    assert not fo._fly_orbit(state)
+    fo._hold_level.assert_not_called()
