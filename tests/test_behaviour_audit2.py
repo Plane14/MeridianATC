@@ -1,6 +1,8 @@
 """Behaviour audit, second pass: the VFR code and the settings applied live."""
 from types import SimpleNamespace
 
+import pytest
+
 from meridianatc import config as cfg
 from meridianatc.atc import profile as flight_profile
 from meridianatc.atc.crew import CrewDirector
@@ -50,6 +52,7 @@ def test_every_language_ends_radar_service_on_the_fields_vfr_code():
 
 
 def test_tone_and_gsx_settings_apply_without_a_restart():
+    pytest.importorskip("fastapi")
     from meridianatc.web import server
 
     config = cfg.Config()
