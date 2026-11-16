@@ -413,6 +413,9 @@ class _Flying_them:
             target.intent = "upwind"
             if along >= CIRCUIT_UPWIND_NM:
                 flight.phase = "crosswind"
+                # A new circuit: the last one's short approach is spent.
+                flight.short_approach = False
+                flight.tight_base = False
         elif flight.phase == "crosswind":
             target.heading = (runway_heading + 90.0 * side) % 360.0
             target.intent = "crosswind"

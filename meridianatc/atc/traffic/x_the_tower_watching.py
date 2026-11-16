@@ -73,20 +73,26 @@ class _The_tower_watching:
     CONFLICT_NM = 1.0
     CONFLICT_FT = 600.0
     AVOID_TURN_DEG = 40.0
+    # "Head-on" is a few degrees either side of the nose, not the one
+    # side of it: both of a meeting pair turn right.
+    HEAD_ON_DEG = 20.0
 
     def _conflict(self, flight: Flight, other_lat: float, other_lon: float,
                   other_alt: float, other_hdg: float,
-                  other_gs: float) -> tuple | None:
+                  other_gs: float, *, heading: float | None = None
+                  ) -> tuple | None:
         """(miss_nm, seconds, vertical_gap_ft) where this flight and the
         other come closest -- None where the meeting is already past or
-        no conflict is predicted."""
+        no conflict is predicted. ``heading`` asks the question of a
+        track other than the one being flown."""
         from ..trafficinfo import closest_approach
 
         try:
             miss, t, vgap = closest_approach(
                 flight.latitude, flight.longitude,
                 float(flight.altitude_ft or 0.0),
-                float(flight.heading or 0.0),
+                float(flight.heading or 0.0) if heading is None
+                else float(heading),
                 float(flight.ground_speed_kt or 0.0),
                 other_lat, other_lon, float(other_alt or 0.0),
                 float(other_hdg or 0.0), float(other_gs or 0.0),
@@ -133,24 +139,39 @@ class _The_tower_watching:
             if hit is not None:
                 threat = (user, hit)
 
+        avoiding = getattr(flight, "_avoid_key", "")
         if threat is None:
-            # Nothing predicted: a flight still flying an avoidance
-            # heading the threat has passed is sent back to its own
-            # navigation once, not left on the vector for ever.
-            if getattr(flight, "_avoid_key", ""):
-                flight._avoid_key = ""
-                if not self._already_told(flight, "resume"):
-                    self._exchange(
-                        flight, now, flight.position,
-                        controller=lambda c, a, s: c.resume_own_navigation(a),
-                        pilot_back=lambda p, a, s: p.wilco(a),
-                        command=("resume", {}))
+            # Nothing predicted on the heading being flown. That is what
+            # the turn was for: whether the meeting is past is asked of
+            # the track the flight was taken off, or "resume" hands it
+            # straight back to the conflict and the pair is turned and
+            # released for as long as they are in sight of each other.
+            if not avoiding:
+                return
+            left = getattr(flight, "_avoid_from", None)
+            if left is not None and self._still_meets(flight, avoiding, left):
+                return
+            if flight.assigned_heading is not None                     and self._already_told(flight, "resume"):
+                # A "resume normal speed" still being read back is not
+                # the heading's release: asked again when it is done,
+                # or the vector would stand with nobody left to lift it.
+                return
+            flight._avoid_key = ""
+            flight._avoid_from = None
+            # Sent back to its own navigation once -- where the vector
+            # is still the one it is flying; a phase that has since
+            # taken the heading away has nothing to be released from.
+            if flight.assigned_heading is not None:
+                self._exchange(
+                    flight, now, flight.position,
+                    controller=lambda c, a, s: c.resume_own_navigation(a),
+                    pilot_back=lambda p, a, s: p.wilco(a),
+                    command=("resume", {"only": "heading"}))
             return
 
         other, _hit = threat
         key = getattr(other, "written", "") or "user"
-        if getattr(flight, "_avoid_key", "") == key \
-                or self._already_told(flight, "heading"):
+        if avoiding == key or self._already_told(flight, "heading"):
             return
         # The final's own machinery owns the approach: a conflict on it
         # is a go-around or the other aircraft's turn, not a vector off
@@ -164,15 +185,34 @@ class _The_tower_watching:
         # Head-on is a right turn -- the rules of the air's answer, and
         # the one that does not turn the pair into each other; anything
         # else is a turn away from the side the threat is on.
-        side = 1.0 if off <= 0.0 else -1.0
+        side = 1.0 if off <= self.HEAD_ON_DEG else -1.0
         hdg = (flight.heading + side * self.AVOID_TURN_DEG) % 360.0
         direction = "right" if side > 0 else "left"
+        if not avoiding:
+            flight._avoid_from = flight.heading
         flight._avoid_key = key
         self._exchange(
             flight, now, flight.position,
             controller=lambda c, a, s: c.turn_heading(a, hdg, direction),
             pilot_back=lambda p, a, s: p.heading(a, hdg),
             command=("heading", {"heading": hdg, "turn": direction}))
+
+    def _still_meets(self, flight: Flight, key: str, heading: float) -> bool:
+        """Whether the track ``heading`` would still meet the aeroplane
+        this flight was turned away from."""
+        user = self.user
+        if key == "user":
+            others = [user] if user is not None and user.has_position \
+                and not user.on_ground else []
+        else:
+            others = [f for f in self.flights
+                      if f is not flight and not f.done and not f.on_ground
+                      and f.written == key]
+        return any(
+            self._conflict(flight, o.latitude, o.longitude, o.altitude_ft,
+                           o.heading, o.ground_speed_kt,
+                           heading=heading) is not None
+            for o in others)
 
     @staticmethod
     def _bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -199,6 +239,10 @@ class _The_tower_watching:
         an airliner on a final shorter than its own gate, so it went round
         every time."""
         radius = _turn_radius_nm(flight.performance.approach_kt * 1.15)
+        if getattr(flight, "tight_base", False):
+            # "Make short approach", read back: the base turn comes in
+            # to the stable gate itself, without the mile of slack.
+            return self._stable_by_nm(flight) + radius
         return max(CIRCUIT_BASE_NM, self._stable_by_nm(flight) + 1.0 + radius)
 
     def _unstable(self, flight: Flight) -> bool:
@@ -560,7 +604,7 @@ class _The_tower_watching:
                     flight, now, flight.position,
                     controller=lambda c, a, s: c.resume_normal_speed(a),
                     pilot_back=lambda p, a, s: p.wilco(a),
-                    command=("resume", {}),
+                    command=("resume", {"only": "speed"}),
                 )
             return
 

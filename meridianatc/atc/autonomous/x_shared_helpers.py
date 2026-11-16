@@ -114,10 +114,37 @@ class _Shared_helpers:
         """
         route = getattr(getattr(self, "brain", None), "route", None)
         filed = float(getattr(route, "cruise_ft", 0.0) or 0.0)
-        return (self.session.assigned_altitude_ft
-                or self.session.cruise_altitude_ft
-                or filed
-                or self.session.initial_altitude_ft or 0.0)
+        if self.session.assigned_altitude_ft:
+            return self.session.assigned_altitude_ft
+        return self._under_vfr_ceiling(
+            self.session.cruise_altitude_ft
+            or filed
+            or self.session.initial_altitude_ft or 0.0, state)
+
+    # How far from the field its "not above" still binds: the reach of
+    # the widest shelf a tower's ceiling is drawn under.
+    VFR_CEILING_REACH_NM = 30.0
+
+    def _under_vfr_ceiling(self, target: float, state) -> float:
+        """``target``, kept at or below the VFR ceiling ATC gave.
+
+        "Not above two thousand five hundred" was read back and the
+        climb carried on to the filed level, through the airspace the
+        figure exists to keep the flight under. It binds a VFR flight
+        until the controller lifts it or the field is well behind.
+        """
+        session = self.session
+        ceiling = float(getattr(session, "vfr_ceiling_ft", 0.0) or 0.0)
+        if not ceiling or not target or getattr(session, "ifr", True):
+            return target
+        field = getattr(session, "departure", None)
+        if field is not None and getattr(state, "has_position", False):
+            try:
+                if state.distance_to(field.lat, field.lon)                         > self.VFR_CEILING_REACH_NM:
+                    return target
+            except Exception:
+                pass
+        return min(target, ceiling)
 
     def _route_level(self, state) -> tuple[float, str]:
         """(level, stage) the plan's next fix is filed at, else 0.
@@ -229,13 +256,13 @@ class _Shared_helpers:
         lim = self._limits(state)
         if altitude:
             d.altitude(self._safe_altitude(state, altitude, lim))
-        if self.state.avoid_until > time.monotonic() \
-                and self.state.avoid_heading >= 0.0:
+        avoid = self._avoid_heading_bug(state)
+        if avoid >= 0.0:
             # See-and-avoid outranks the phase's own steering -- and an
             # assigned one -- for the seconds the threat is ahead: the
             # avoidance heading is what is flown, and the clearance is
             # picked back up when the meeting is past.
-            heading = self.state.avoid_heading
+            heading = avoid
         if heading >= 0.0:
             d.heading(heading)
             self.state.ap_hdg_mode = True
@@ -640,6 +667,7 @@ class _Shared_helpers:
     TRAFFIC_CONFLICT_NM = 0.6
     TRAFFIC_CONFLICT_FT = 400.0
     TRAFFIC_AVOID_TURN_DEG = 30.0
+    TRAFFIC_HEAD_ON_DEG = 20.0
     TRAFFIC_AVOID_S = 30.0
 
     def _watch_traffic(self, state, now: float) -> None:
@@ -651,12 +679,19 @@ class _Shared_helpers:
         answer is the one the rules of the air give a pilot: a meeting
         is turned away from, head-on to the right, and the route is
         picked up again once the other aeroplane is opening.
+
+        The turn is made once and held. The question asked while it is
+        held is whether the track the aeroplane left would still meet
+        the other one -- not whether the avoidance track does, which is
+        "no" the moment the turn works and would hand the aeroplane
+        straight back to the conflict.
         """
         if self.state.phase not in (AutonomousPhase.CLIMB,
                                     AutonomousPhase.CRUISE,
-                                    AutonomousPhase.DESCENT):
-            return
-        if not getattr(state, "has_position", False) or state.on_ground:
+                                    AutonomousPhase.DESCENT) \
+                or not getattr(state, "has_position", False) \
+                or state.on_ground:
+            self._end_avoidance()
             return
         track = getattr(state, "track_true", None) \
             or getattr(state, "heading_true", None) or 0.0
@@ -667,53 +702,164 @@ class _Shared_helpers:
             return
 
         from ...navdata.build import bearing_deg
-        from ..trafficinfo import closest_approach
 
-        threat = None
-        for contact in self._surface_contacts():
-            if contact.on_ground:
-                continue
-            try:
-                miss, t, vgap = closest_approach(
-                    state.latitude, state.longitude,
-                    float(state.altitude_ft or 0.0), track, own_speed,
-                    contact.latitude, contact.longitude,
-                    float(contact.altitude_ft or 0.0),
-                    float(contact.heading or 0.0),
-                    float(contact.ground_speed_kt or 0.0),
-                    own_vs_fpm=float(
-                        getattr(state, "vertical_speed_fpm", 0.0) or 0.0),
-                    vs_fpm=float(contact.vertical_rate_fpm or 0.0),
-                    horizon_s=self.TRAFFIC_LOOKAHEAD_S)
-            except Exception:
-                continue
-            if t > 0.0 and miss < self.TRAFFIC_CONFLICT_NM \
-                    and vgap < self.TRAFFIC_CONFLICT_FT:
-                threat = contact
-                break
-
+        contacts = [c for c in self._surface_contacts() if not c.on_ground]
+        avoiding = self.state.avoid_key
+        threat = next((c for c in contacts
+                       if self._meets(state, c, track, own_speed)), None)
+        if threat is None and avoiding:
+            # Clear on the avoidance track. Whether the one turned away
+            # from is past is asked of the track that was left.
+            left = self.state.avoid_from
+            if left < 0.0:
+                left = track
+            if any((c.written or "traffic") == avoiding
+                   and self._meets(state, c, left, own_speed)
+                   for c in contacts):
+                self.state.avoid_until = now + self.TRAFFIC_AVOID_S
+                return
         if threat is None:
-            if self.state.avoid_key:
-                # The meeting is past: back on the route's own heading.
-                self.state.avoid_key = ""
-                self.state.avoid_heading = -1.0
-                self.state.avoid_until = 0.0
+            # The meeting is past: back on the route's own heading.
+            self._end_avoidance()
             return
 
         key = threat.written or "traffic"
+        if key == avoiding and self.state.avoid_heading >= 0.0:
+            # Still closing on the one already turned away from: the
+            # turn stands, it is not added to on every look.
+            self.state.avoid_until = now + self.TRAFFIC_AVOID_S
+            return
         bearing = bearing_deg(state.latitude, state.longitude,
                               threat.latitude, threat.longitude)
         off = (bearing - track + 540.0) % 360.0 - 180.0
-        # Head-on is a right turn -- the rules of the air's answer;
-        # anything else is a turn away from the side it is on.
-        side = 1.0 if off <= 0.0 else -1.0
+        # Head-on is a right turn -- the rules of the air's answer, and
+        # "head-on" is a few degrees either side of the nose; anything
+        # else is a turn away from the side it is on.
+        side = 1.0 if off <= self.TRAFFIC_HEAD_ON_DEG else -1.0
+        if not avoiding:
+            self.state.avoid_from = track
         self.state.avoid_heading = (track + side
                                     * self.TRAFFIC_AVOID_TURN_DEG) % 360.0
         self.state.avoid_until = now + self.TRAFFIC_AVOID_S
-        if key != self.state.avoid_key:
-            self.state.avoid_key = key
-            self._emit(
-                "info",
-                f"Traffic {key}: turning {('right' if side > 0 else 'left')}"
-                " to avoid", "autonomous.traffic_avoid")
+        self.state.avoid_key = key
+        self._emit(
+            "info",
+            f"Traffic {key}: turning {('right' if side > 0 else 'left')}"
+            " to avoid", "autonomous.traffic_avoid")
+
+    def _meets(self, state, contact, track: float, own_speed: float) -> bool:
+        """Whether flying ``track`` from here meets this contact."""
+        from ..trafficinfo import closest_approach
+        try:
+            miss, t, vgap = closest_approach(
+                state.latitude, state.longitude,
+                float(state.altitude_ft or 0.0), track, own_speed,
+                contact.latitude, contact.longitude,
+                float(contact.altitude_ft or 0.0),
+                float(contact.heading or 0.0),
+                float(contact.ground_speed_kt or 0.0),
+                own_vs_fpm=float(
+                    getattr(state, "vertical_speed_fpm", 0.0) or 0.0),
+                vs_fpm=float(contact.vertical_rate_fpm or 0.0),
+                horizon_s=self.TRAFFIC_LOOKAHEAD_S)
+        except Exception:
+            return False
+        return (t > 0.0 and miss < self.TRAFFIC_CONFLICT_NM
+                and vgap < self.TRAFFIC_CONFLICT_FT)
+
+    def _end_avoidance(self) -> None:
+        self.state.avoid_key = ""
+        self.state.avoid_heading = -1.0
+        self.state.avoid_from = -1.0
+        self.state.avoid_until = 0.0
+
+    def _avoid_heading_bug(self, state) -> float:
+        """The see-and-avoid heading as the bug wants it (magnetic), or
+        -1 when no avoidance stands. The watch keeps it as a true track,
+        the frame the geometry is worked in."""
+        if self.state.avoid_until <= time.monotonic() \
+                or self.state.avoid_heading < 0.0:
+            return -1.0
+        return self._magnetic(self.state.avoid_heading, state)
+
+    # Over the fix: this close is "crossed" to a crew timing a hold by
+    # hand; and the turns are to the right, the standard pattern the
+    # controller's words give.
+    HOLD_OVER_FIX_NM = 1.0
+    HOLD_PASSED_NM = 3.0
+
+    def _fly_hold(self, state, now: float) -> None:
+        """Fly the hold the controller gave: to the fix, then the
+        racetrack -- outbound for the leg's time, a right turn back to
+        the fix, and round again until it is cleared to leave.
+
+        Nothing flew it before: the hold was read back and the route
+        flown straight on past the fix, into the "verify holding" the
+        controller keeps for a flight that wandered off the pattern.
+        It is the last lateral word of the tick but one -- only the
+        see-and-avoid turn outranks it.
+        """
+        st = self.state
+        enroute = st.phase in (AutonomousPhase.CLIMB, AutonomousPhase.CRUISE,
+                               AutonomousPhase.DESCENT)
+        hold = getattr(getattr(self, "session", None), "hold", None) \
+            if enroute else None
+        if hold is None \
+                or not getattr(state, "has_position", False) \
+                or state.on_ground:
+            st.hold_fix, st.hold_leg = "", ""
+            st.hold_leg_at, st.hold_nearest_nm = 0.0, 0.0
+            return
+
+        from ...navdata.build import bearing_deg, haversine_nm
+
+        if st.hold_fix != hold.fix or not st.hold_leg:
+            st.hold_fix, st.hold_leg = hold.fix, "to_fix"
+            st.hold_leg_at, st.hold_nearest_nm = 0.0, 0.0
+        distance = haversine_nm(state.latitude, state.longitude,
+                                hold.lat, hold.lon)
+        to_fix = bearing_deg(state.latitude, state.longitude,
+                             hold.lat, hold.lon)
+        track = float(getattr(state, "track_true", None)
+                      or getattr(state, "heading_true", None) or 0.0)
+        outbound = (hold.inbound_true + 180.0) % 360.0
+
+        if st.hold_leg in ("to_fix", "inbound"):
+            nearest = st.hold_nearest_nm or distance
+            st.hold_nearest_nm = min(nearest, distance)
+            passed = (st.hold_nearest_nm <= self.HOLD_PASSED_NM
+                      and distance > st.hold_nearest_nm + 0.5)
+            if distance <= self.HOLD_OVER_FIX_NM or passed:
+                st.hold_leg, st.hold_leg_at = "outbound", 0.0
+                st.hold_nearest_nm = 0.0
+        want = to_fix
+        if st.hold_leg == "outbound":
+            want = outbound
+            off = abs((track - outbound + 540.0) % 360.0 - 180.0)
+            if not st.hold_leg_at and off < 30.0:
+                # The leg is timed from wings level outbound.
+                st.hold_leg_at = now
+            if st.hold_leg_at and now - st.hold_leg_at \
+                    >= float(hold.leg_minutes or 1.0) * 60.0:
+                st.hold_leg, want = "inbound", to_fix
+                st.hold_nearest_nm = 0.0
+        if st.hold_leg != "to_fix":
+            # A heading bug turns the short way round; the hold turns
+            # right. A half-turn is led round by the bug kept a quarter
+            # ahead of the nose until the short way is the right way.
+            right = (want - track) % 360.0
+            if 150.0 < right < 300.0:
+                want = (track + 90.0) % 360.0
+        self.director.heading(self._magnetic(want, state))
+        self.state.ap_hdg_mode = True
+
+    def _fly_avoidance(self, state) -> None:
+        """Put the avoidance heading on the autopilot, last word of the
+        tick: a phase that flies NAV, a procedure or nothing lateral at
+        all has just asked for that again, and the turn the crew was
+        told about is flown regardless."""
+        bug = self._avoid_heading_bug(state)
+        if bug >= 0.0:
+            self.director.heading(bug)
+            self.state.ap_hdg_mode = True
 

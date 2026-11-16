@@ -173,11 +173,21 @@ class AutonomousState:
     go_around_at: float = 0.0
     missed_alt_ft: float = 0.0
     # See-and-avoid: the heading an airborne traffic conflict put the
-    # aeroplane on, how long the deviation stands, and which contact
-    # caused it -- so the watch emits once rather than every tick.
+    # aeroplane on (true, like the track it is worked from), the track
+    # it left, how long the deviation stands, and which contact caused
+    # it -- so the watch emits once rather than every tick.
     avoid_heading: float = -1.0
+    avoid_from: float = -1.0
     avoid_until: float = 0.0
     avoid_key: str = ""
+    # The hold the controller gave, as it is being flown: which fix,
+    # which leg ("to_fix", "outbound", "inbound"), when the outbound
+    # leg's clock started, and the nearest the fix has been on the way
+    # in -- a fix passed abeam is still a fix passed.
+    hold_fix: str = ""
+    hold_leg: str = ""
+    hold_leg_at: float = 0.0
+    hold_nearest_nm: float = 0.0
     # The cleared approach as a flyable recipe (approach_flight.resolve),
     # resolved once and kept until the field or the runway changes; whether
     # NAV1 has been tuned to its navaid yet, when that was last tried, and

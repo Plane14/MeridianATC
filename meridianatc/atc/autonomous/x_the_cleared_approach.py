@@ -431,7 +431,12 @@ class _The_cleared_approach:
         light = self.performance.cruise_kt < 140.0
         fast = self.performance.cruise_kt >= 230.0
         pattern_ft = elev + (1000.0 if light else 1500.0)
-        speed = self._approach_speed(state) + 10.0
+        # The circuit is flown ten knots over the approach speed -- the
+        # crew's own margin, which a speed the controller assigned is
+        # not padded with: "speed one eight zero" is one eight zero.
+        speed = self._approach_speed(state)
+        if speed != float(self.session.assigned_speed_kt or 0.0):
+            speed += 10.0
         assigned = self.session.assigned_heading
         if assigned is not None and assigned > 0:
             # Being vectored: the controller owns the heading and the
