@@ -7,6 +7,7 @@ from ._shared import (
     auto_nav,
     capabilities,
     fly,
+    random,
 )
 
 
@@ -19,6 +20,11 @@ class _The_phase_machine:
     # backtrack turns round: enough pavement for the turn, none wasted.
     BACKTRACK_MIN_M = 250.0
     BACKTRACK_TURN_M = 60.0
+
+    # The chance this crew asks for an intersection departure rather
+    # than the full length -- a habit some pilots have and others
+    # never take up.
+    INTERSECTION_ASK = 0.30
 
     def _phase_preflight(self, state, now: float) -> None:
         """Preflight: aircraft configured, checks done, clearance next."""
@@ -52,6 +58,14 @@ class _The_phase_machine:
             self._goto_sub("clearance")
 
         elif sub == "clearance":
+            # A crew's habits are settled once, the way the filing below
+            # is: this one will take an intersection entry over the long
+            # taxi to the numbers, where the runway has a legal one to
+            # give. A helicopter departs from wherever it sits and has
+            # no intersection to ask for.
+            self.session.intersection_preferred = (
+                not self._is_helicopter
+                and random.random() < self.INTERSECTION_ASK)
             if not self.session.destination:
                 self._transition(AutonomousPhase.PUSHBACK)
                 return
@@ -539,12 +553,18 @@ class _The_phase_machine:
                                     self.performance.taxi_kt)
                         return
             if not on_path and err["along_m"] > self.BACKTRACK_MIN_M \
-                    and abs(err["offset_m"]) <= 60.0:
+                    and abs(err["offset_m"]) <= 60.0 \
+                    and not getattr(self.session,
+                                    "departure_remaining_m", 0.0):
                 # Joined the runway far from the departure end: the way
                 # to the threshold is along the pavement itself. Enter
                 # facing the way back, drive it, turn round at the end.
-                # Departures are from the threshold -- an intersection
-                # line-up is not offered.
+                # Except where the taxi plan put it there on purpose --
+                # an intersection departure lines up where it joined,
+                # on the centreline past the entry, and the pavement
+                # ahead of that point is what the clearance counted
+                # down to. ``departure_remaining_m`` is that fact; it
+                # holds on an unnamed intersection too.
                 self._goto_sub("backtrack")
                 return
             d.parking_brake(False)
@@ -1472,10 +1492,13 @@ class _The_phase_machine:
                 # wheel that still steers when the rudder has stopped
                 # answering.
                 d.elevator(0.6)
-            if gs > self.performance.taxi_kt + 5.0:
+            if gs > self._expedite_kt(state, self.performance.taxi_kt) + 5.0:
                 # Reverse out to sixty knots where a fast aeroplane has
                 # it -- then the wheel brakes, graduated with speed the
                 # way the autobrake detents a crew actually selects are.
+                # An "expedite" on the rollout raises the figure it
+                # brakes to, so the exit is taken briskly rather than
+                # the strip walked down at the book's taxi speed.
                 d.parking_brake(False)
                 if (self.performance.cruise_kt >= 180.0
                         and capabilities(state.source).flight_axes):

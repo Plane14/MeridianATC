@@ -61,13 +61,14 @@ def _field_layout(*, taxiway: bool = True) -> GroundLayout:
     paths += [
         (PATH_TAXI, 0, 0, "", 1, 5, -1),   # connector at the 09 end
         (PATH_TAXI, 0, 0, "", 4, 8, -1),   # connector at the 27 end
-        (PATH_TAXI, 0, 0, "", 3, 9, -1),   # midfield connector onto r2
-        (PATH_TAXI, 0, 0, "", 9, 7, -1),
+        (PATH_TAXI, 0, 0, "", 3, 9, 1),   # midfield connector onto r2
+        (PATH_TAXI, 0, 0, "B", 9, 7, 1),
         (PATH_RUNWAY, 0, 0, "", 5, 6, -1),
         (PATH_RUNWAY, 0, 0, "", 6, 7, -1),
         (PATH_RUNWAY, 0, 0, "", 7, 8, -1),
     ]
-    return GroundLayout("TEST", 51.0, 0.0, points, parkings, paths, ["A"])
+    return GroundLayout("TEST", 51.0, 0.0, points, parkings, paths,
+                        ["A", "B"])
 
 
 def _runway_line() -> RunwayLine:
@@ -183,6 +184,34 @@ def test_plan_departure_carries_the_paved_way_onto_the_runway():
     end_x, end_z = layout.to_xy(*plan.lineup[-1])
     along, across = layout.runway_frame(end_x, end_z, (0.0, 0.0), 270.0)
     assert across == pytest.approx(0.0, abs=2.0)
+
+
+def test_prefer_intersection_takes_a_legal_mid_runway_entry():
+    """A crew that asks for an intersection is given one: an entry past
+    the threshold that still leaves its takeoff distance ahead."""
+    layout = _field_layout()
+    line = _runway_line()
+    lat, lon = layout.to_latlon(-200.0, 60.0)
+    plan, why = plan_departure(layout, lat, lon, "09", [line],
+                               busy={"09"}, need_m=200.0,
+                               prefer_intersection=True)
+    assert plan is not None, why
+    # The midfield connector, not the threshold it sat nearer to.
+    assert plan.intersection == "B"
+    assert plan.remaining_m >= 200.0
+
+
+def test_prefer_intersection_never_spends_the_takeoff_distance():
+    """An ask is not a way onto pavement that is not there: where no
+    entry leaves the type's distance, the runway is the full length."""
+    layout = _field_layout()
+    line = _runway_line()
+    lat, lon = layout.to_latlon(-200.0, 60.0)
+    plan, why = plan_departure(layout, lat, lon, "09", [line],
+                               busy={"09"}, need_m=900.0,
+                               prefer_intersection=True)
+    assert plan is not None, why
+    assert not plan.intersection
 
 
 # -- the borrowed profile -------------------------------------------------

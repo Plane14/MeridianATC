@@ -43,7 +43,7 @@ from . import climb
 from .controller import ControllerBrain, Reply
 from .phraseology import Weather, language_of
 from .route import CLB
-from .session import FlightSession, Instruction, station_key
+from .session import FlightSession, Instruction, Phase, station_key
 
 log = logging.getLogger(__name__)
 
@@ -91,6 +91,12 @@ class DepartureWatch:
             return None
         if session.emergency:
             return None
+        if session.phase in (Phase.LANDED, Phase.TAXI_IN):
+            # Down and rolling out -- or on the taxiway out still inside
+            # the runway strip: the runway wants it moving when somebody
+            # is on final behind it, and "expedite" is the call for that.
+            return self._expedite_the_rollout(
+                session, station, state, now, language)
         if session.cleared_takeoff:
             if float(getattr(state, "ground_speed_kt", 0.0) or 0.0) \
                     >= self.ROLLING_KT:
@@ -224,6 +230,42 @@ class DepartureWatch:
             ground_speed_kt=0.0)
         return bool(on_the_runway(self.navdb, field, runway, [me]))
 
+    # How long "expedite" stands: the window the crew's brisk taxi is
+    # bought for. The same figure the traffic side gives its aeroplanes
+    # (x_instructions_and_being).
+    EXPEDITE_WINDOW_S = 90.0
+
+    def _expedite_the_rollout(self, session, station, state, now,
+                              language) -> Reply | None:
+        """An arrival still on its runway while the next one is on final.
+
+        The traffic side's aeroplanes have been told "expedite" for
+        years; the flight being flown never was, and it rolled out at
+        taxi speed in front of whatever was on final behind it. Brisk
+        enough already -- thirty knots on the strip -- and the word is
+        not spent on it.
+        """
+        if float(getattr(state, "ground_speed_kt", 0.0) or 0.0) >= 30.0:
+            return None
+        field = self.navdb.airport(station.ident)
+        runway = session.arrival_runway or session.departure_runway
+        if not self._still_on_it(field, runway, state):
+            return None
+        coming = self.brain.arrivals_on_final(
+            field, runway, self.EXPEDITE_WITHIN_NM)
+        if not coming or not session.advise_once("expedite:landing"):
+            return None
+        session.expedite_until = now + self.EXPEDITE_WINDOW_S
+        p = self.brain.for_station(station, language)
+        session.aircraft.language = language_of(p)
+        described = (coming[0].indefinite(language_of(p))
+                     or coming[0].describe(language_of(p)))
+        decision("landing", airport=station.ident, runway=runway,
+                 said="expedite", arrival=coming[0].written or None,
+                 arrival_nm=round(coming[0].distance_nm, 1))
+        return Reply(p.expedite(session.aircraft, p.traffic_on_final(
+            described, coming[0].distance_nm)), station)
+
     def _expedite(self, session, station, state, now, language) -> Reply | None:
         """A departure cleared in front of an arrival that has not moved."""
         if not session.cleared_takeoff_at:
@@ -237,6 +279,7 @@ class DepartureWatch:
                                               self.EXPEDITE_WITHIN_NM)
         if not coming or not session.advise_once("expedite:takeoff"):
             return None
+        session.expedite_until = now + self.EXPEDITE_WINDOW_S
         p = self.brain.for_station(station, language)
         session.aircraft.language = language_of(p)
         described = (coming[0].indefinite(language_of(p))

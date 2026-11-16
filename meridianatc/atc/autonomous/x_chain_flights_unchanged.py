@@ -95,34 +95,88 @@ class _Chain_flights_unchanged:
         weights = [w / total for w in weights]
         return random.choices([c[0] for c in candidates], weights=weights, k=1)[0]
 
+    def _leg_track(self, origin: Airport, destination: Airport) -> float:
+        """The initial great-circle course of the leg, degrees true."""
+        import math as _m
+        lat1, lat2 = _m.radians(origin.lat), _m.radians(destination.lat)
+        dlon = _m.radians(destination.lon - origin.lon)
+        y = _m.sin(dlon) * _m.cos(lat2)
+        x = (_m.cos(lat1) * _m.sin(lat2)
+             - _m.sin(lat1) * _m.cos(lat2) * _m.cos(dlon))
+        return _m.degrees(_m.atan2(y, x)) % 360.0
+
+    def _cruise_altitude(self, origin: Airport, destination: Airport,
+                         distance: float, ifr: bool) -> int:
+        """The level the leg is filed at, plausible for the aeroplane.
+
+        The distance ladder is what an airliner asks for; the class of
+        aeroplane and the type's own published ceiling answer for what
+        it can actually hold. A light aeroplane on a short hop does not
+        file its ceiling -- it levels at the altitude a leg that length
+        is flown at. Under hemispheric rules the filed level then stands
+        the course's way: odd thousands eastbound, even westbound.
+        """
+        if distance < 200:
+            level = 15000
+        elif distance < 500:
+            level = 25000
+        elif distance < 1000:
+            level = 35000
+        else:
+            level = 39000
+
+        code = self.state.aircraft_type
+        if self._is_helicopter:
+            level = min(level, 5000)
+        elif code in fly._TURBOPROP_TYPES or code in ("C25A", "C25C"):
+            # Turboprops and the light jets their owners climb like
+            # them: a step ladder the props top out under, the business
+            # jets chosen beneath their book ceilings the way crews
+            # actually file them.
+            level = min(level, 28000)
+        elif code in fly._LIGHT_TYPES:
+            if distance < 80:
+                level = min(level, 4000)
+            elif distance < 160:
+                level = min(level, 6000)
+            elif distance < 300:
+                level = min(level, 8000)
+            else:
+                level = min(level, 11000)
+
+        # The distance ladder is a wish, not a ceiling: an aeroplane
+        # that declares one in the performance tables never files
+        # above it -- the plan is what the flight is actually flown to.
+        ceiling = 0.0
+        try:
+            from ..perftable import type_perf
+            tp = type_perf(code)
+            ceiling = float(getattr(tp, "ceiling_ft", 0.0) or 0.0)
+        except Exception:
+            ceiling = 0.0
+        if not ceiling:
+            ceiling = float(getattr(self.performance, "ceiling_ft", 0.0)
+                            or 0.0)
+        if ceiling:
+            level = min(level, int(ceiling))
+
+        if ifr and level > 3000:
+            # An IFR filing reads in whole thousands, and the level
+            # stands the course's way -- odd thousands eastbound, even
+            # westbound. Off-parity files a thousand lower, never higher:
+            # the ceiling stays the aeroplane's, not the paperwork's.
+            level = (level // 1000) * 1000
+            eastbound = self._leg_track(origin, destination) < 180.0
+            if (level // 1000) % 2 == (0 if eastbound else 1):
+                level = max(3000, level - 1000)
+        return int(level)
+
     def _create_flight_plan(self, origin: Airport, destination: Airport) -> dict:
         """Create a flight plan dictionary for the leg."""
         distance = haversine_nm(origin.lat, origin.lon,
                                 destination.lat, destination.lon)
-
-        if distance < 200:
-            cruise_ft = 15000
-        elif distance < 500:
-            cruise_ft = 25000
-        elif distance < 1000:
-            cruise_ft = 35000
-        else:
-            cruise_ft = 39000
-
-        if self._is_helicopter:
-            cruise_ft = min(cruise_ft, 5000)
-        elif self.state.aircraft_type in ("TBM9", "PC12", "C25A", "C25C", "AT76", "DH8D"):
-            cruise_ft = min(cruise_ft, 28000)
-        elif self.state.aircraft_type in fly._LIGHT_TYPES:
-            cruise_ft = min(cruise_ft, 12000)
-
-        # The distance ladder is a wish, not a ceiling: an aeroplane
-        # that declares one in its performance profile never files
-        # above it -- the plan is what the flight is actually flown to.
-        ceiling = float(getattr(self.performance, "ceiling_ft", 0.0)
-                        or 0.0)
-        if ceiling:
-            cruise_ft = min(cruise_ft, int(ceiling))
+        ifr = not self._is_helicopter
+        cruise_ft = self._cruise_altitude(origin, destination, distance, ifr)
 
         return {
             "origin": origin.ident,

@@ -296,6 +296,90 @@ def test_an_expedite_command_hurries_what_the_flight_does_next():
     assert flight.next_at == 100.0
 
 
+def _landed_on_the_runway():
+    from meridianatc.atc.session import Phase
+    return SimpleNamespace(
+        emergency=False, cleared_takeoff=False, cleared_takeoff_at=0.0,
+        lined_up=False, departure_runway="", arrival_runway="17",
+        phase=Phase.LANDED, expedite_until=0.0,
+        advise_once=lambda key: True,
+        aircraft=SimpleNamespace(language=""))
+
+
+def _rollout_state():
+    return SimpleNamespace(ground_speed_kt=20.0, on_ground=True,
+                           has_position=True, latitude=41.25,
+                           longitude=-8.68, altitude_ft=100.0,
+                           heading_true=170.0)
+
+
+def test_an_arrival_rolling_out_in_front_of_final_is_told_to_expedite():
+    """A rollout at taxi speed with somebody on final gets the same
+    "expedite" the traffic side's aeroplanes get -- and a clock the
+    taxi can be brisk for."""
+    from meridianatc.atc.departure import DepartureWatch
+    p = Mock()
+    p.language = "en"
+    p.expedite = Mock(return_value="EXPEDITE")
+    p.traffic_on_final = Mock(return_value="TRAFFIC")
+    coming = SimpleNamespace(
+        distance_nm=2.0, written="DAL123",
+        indefinite=lambda lang: "a Boeing",
+        describe=lambda lang: "DAL123")
+    brain = Mock()
+    brain.arrivals_on_final = Mock(return_value=[coming])
+    brain.for_station = Mock(return_value=p)
+    watch = DepartureWatch.__new__(DepartureWatch)
+    watch.navdb = SimpleNamespace(
+        airport=lambda ident: SimpleNamespace(ident="LPPR"))
+    watch.brain = brain
+    session = _landed_on_the_runway()
+    station = SimpleNamespace(ident="LPPR")
+    with patch("meridianatc.atc.occupancy.on_the_runway",
+               return_value=[object()]):
+        reply = watch._expedite_the_rollout(
+            session, station, _rollout_state(), 100.0, "en")
+    assert reply is not None
+    assert session.expedite_until \
+        == 100.0 + DepartureWatch.EXPEDITE_WINDOW_S
+    p.expedite.assert_called_once()
+
+
+def test_the_rollout_expedite_is_not_spent_on_an_empty_final():
+    """Nobody behind, nobody told: the word is for the arrival that
+    cannot come in while the runway is occupied."""
+    from meridianatc.atc.departure import DepartureWatch
+    brain = Mock()
+    brain.arrivals_on_final = Mock(return_value=[])
+    watch = DepartureWatch.__new__(DepartureWatch)
+    watch.navdb = SimpleNamespace(
+        airport=lambda ident: SimpleNamespace(ident="LPPR"))
+    watch.brain = brain
+    session = _landed_on_the_runway()
+    station = SimpleNamespace(ident="LPPR")
+    with patch("meridianatc.atc.occupancy.on_the_runway",
+               return_value=[object()]):
+        assert watch._expedite_the_rollout(
+            session, station, _rollout_state(), 100.0, "en") is None
+    assert session.expedite_until == 0.0
+
+
+def test_an_expedite_on_the_runway_taxis_the_aeroplane_briskly():
+    """The word buys a brisk taxi for as long as it stands, and nothing
+    once the window has closed."""
+    from meridianatc.atc.autonomous.x_taxi import _Taxi
+    fo = _Taxi.__new__(_Taxi)
+    fo.session = SimpleNamespace(
+        expedite_until=time.monotonic() + 90.0,
+        departure=SimpleNamespace(ident="LPPR"), departure_runway="17",
+        destination=None, arrival_runway="")
+    fo.navdb = SimpleNamespace()
+    state = SimpleNamespace(has_position=False)
+    assert fo._expedite_kt(state, 14.0) > 14.0
+    fo.session.expedite_until = time.monotonic() - 1.0
+    assert fo._expedite_kt(state, 14.0) == 14.0
+
+
 # -- the rejected takeoff ------------------------------------------------------
 
 def _stopped_departure():

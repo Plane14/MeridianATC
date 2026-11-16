@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import heapq
 import math
+import random
 from dataclasses import dataclass, field
 
 EARTH_M = 6_371_008.8
@@ -640,7 +641,8 @@ class GroundLayout:
                   threshold: tuple[float, float], heading: float,
                   length_m: float, avoid: set[object] | None = None,
                   closed: set[tuple[object, object]] | None = None,
-                  need_m: float = 0.0
+                  need_m: float = 0.0,
+                  prefer_intersection: bool = False
                   ) -> tuple[Taxiing, Taxiing] | None:
         """From a stand (or wherever it is) to the holding point, and from
         there onto the runway.
@@ -657,6 +659,13 @@ class GroundLayout:
         to full length, where before the entry nearest the threshold won
         whatever the drive to it cost -- which, when the only way to it
         was the strip itself, was the whole runway, backtracked.
+
+        ``prefer_intersection`` is a pilot who asks for one: among the
+        entries that still leave the takeoff distance ahead, one joined
+        past the threshold is picked at random -- a different habit from
+        a different crew, which is what the choice models -- with the
+        cheapest entry kept where the runway offers no intersection at
+        all, because asking is not a way onto a runway that is not there.
         """
         found = self.entries(threshold, heading, length_m)
         entries = [(along, node) for along, node in found
@@ -669,6 +678,7 @@ class GroundLayout:
         if start is None:
             return None
         best = None
+        options: list = []
         for along, entry in entries:
             nodes = (self.route(start, entry, avoid, closed=closed)
                      if closed else self.route(start, entry, avoid))
@@ -713,12 +723,19 @@ class GroundLayout:
                     + (self._metres(onto) + along + PAST_ENTRY_M)
                     / BACKTRACK_MS
                     + TURN_S)
+            options.append((cost, out, onto, along, entry,
+                            first_on - hold_at))
             if best is None or cost < best[0]:
-                best = (cost, out, onto, along, entry,
-                        first_on - hold_at)
+                best = options[-1]
         if best is None:
             return None
-        _cost, out, onto, along, entry, first_idx = best
+        picked = best
+        if prefer_intersection:
+            intersections = [opt for opt in options
+                             if opt[3] > INTERSECTION_M]
+            if intersections:
+                picked = random.choice(intersections)
+        _cost, out, onto, along, entry, first_idx = picked
         # Line up pointing down the runway a little past the entry, on
         # the centreline, rather than stopping sideways across it.
         ex, ez = self.xy[entry]
@@ -741,7 +758,18 @@ class GroundLayout:
         #    has the whole runway again at the line-up.
         line_up.entry_name = ""
         if 0 < first_idx < len(onto):
-            a, b = onto[first_idx - 1], onto[first_idx]
+            # The name an intersection departure is called by belongs to
+            # the connector that ends ON the pavement -- the edge into
+            # the first runway node. The first node inside the hold-off
+            # corridor can be an unlabeled leg of that same connector
+            # (the corridor is wider than the strip), and naming that
+            # leg names nothing the tower or the chart would know.
+            first_rwy = first_idx
+            for position in range(first_idx, len(onto)):
+                if onto[position] in self.runway_nodes:
+                    first_rwy = position
+                    break
+            a, b = onto[first_rwy - 1], onto[first_rwy]
             for other, _metres, runway, label in self.edges.get(a, ()):
                 if other == b and label and not runway:
                     line_up.entry_name = label

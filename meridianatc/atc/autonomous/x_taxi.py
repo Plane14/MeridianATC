@@ -159,7 +159,7 @@ class _Taxi:
                              path[-1][0], path[-1][1]) * 1852.0
         turn = abs((steer["heading"] - (state.heading_true or 0.0)
                     + 540.0) % 360.0 - 180.0)
-        target_kt = self.performance.taxi_kt
+        target_kt = self._expedite_kt(state, self.performance.taxi_kt)
         if rejoining:
             # Back to the line at walking pace: crossing the apron is a
             # job for the slowest speed the aeroplane will hold.
@@ -246,6 +246,56 @@ class _Taxi:
                 self._goto_sub("park")
                 return
 
+    def _expedite_kt(self, state, base_kt: float) -> float:
+        """The taxi speed the tower's "expedite" buys, while it stands.
+
+        The call has a shelf life (``session.expedite_until``): while it
+        stands, and only on the runway it was called for, the aeroplane
+        is taxied briskly -- about double the book's figure, capped
+        where a laden aeroplane still holds the turnoffs. It decays back
+        to the book's figure across the last seconds of the window
+        rather than stepping off it, and it is nothing once the window
+        or the runway has gone: the corners, the rejoin and the bars
+        keep their own slowdowns on top of whatever this answers.
+        """
+        until = float(getattr(self.session, "expedite_until", 0.0) or 0.0)
+        left = until - time.monotonic()
+        if left <= 0.0 or not self._on_the_runway_now(state):
+            return base_kt
+        brisk = min(30.0, base_kt * 2.2)
+        blend = min(1.0, left / 15.0)
+        return base_kt + (brisk - base_kt) * blend
+
+    def _on_the_runway_now(self, state) -> bool:
+        """Whether the aeroplane is on a runway it was assigned.
+
+        Where that cannot be told -- no position, no runway named --
+        the expedite's own context answers for it: "expedite" is a
+        runway call, so the benefit of the doubt is the runway's.
+        """
+        if not getattr(state, "has_position", False):
+            return True
+        session = self.session
+        runways = ((session.departure, session.departure_runway),
+                   (session.destination, session.arrival_runway))
+        named = any(r for _, r in runways)
+        if not named:
+            return True
+        from types import SimpleNamespace
+
+        from ..occupancy import on_the_runway
+        me = SimpleNamespace(
+            latitude=state.latitude, longitude=state.longitude,
+            altitude_ft=float(getattr(state, "altitude_ft", 0.0) or 0.0),
+            on_ground=True,
+            heading=float(getattr(state, "heading_true", 0.0)
+                          or getattr(state, "heading_magnetic", 0.0) or 0.0),
+            ground_speed_kt=0.0)
+        return any(
+            field is not None and runway
+            and on_the_runway(self.navdb, field, runway, [me])
+            for field, runway in runways)
+
     def _yield_to_traffic(self, state, path) -> object | None:
         """The first aeroplane on the corridor the route uses, if any.
 
@@ -308,10 +358,11 @@ class _Taxi:
                                 (rwy_lat, rwy_lon)]):
                     self._stop(state)
                     return
-                self._steer(state, hdg, self.performance.taxi_kt)
+                self._steer(state, hdg,
+                            self._expedite_kt(state, self.performance.taxi_kt))
             else:
                 self._steer(state, self.state.runway_heading,
-                            self.performance.taxi_kt)
+                            self._expedite_kt(state, self.performance.taxi_kt))
         else:
             # Inbound with no route yet: the tower has not said where to
             # park, so the aeroplane finishes its rollout and waits --
@@ -320,7 +371,8 @@ class _Taxi:
                 self._stop(state)
                 if (state.ground_speed_kt or 0.0) <= 1.0:
                     self._transition(AutonomousPhase.PARKED)
-            elif (state.ground_speed_kt or 0.0) > self.performance.taxi_kt:
+            elif (state.ground_speed_kt or 0.0) > self._expedite_kt(
+                    state, self.performance.taxi_kt):
                 self.director.throttle(0.0)
                 self.director.throttle_idle()
                 self.director.spoilers(1.0)

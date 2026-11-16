@@ -224,7 +224,9 @@ class _Ground:
         return taxiplan.plan_departure(
             layout, state.latitude, state.longitude, session.departure_runway,
             lines, avoid=taxiplan.avoid_near(layout, occupied), busy=busy,
-            need_m=need_m)
+            need_m=need_m,
+            prefer_intersection=getattr(
+                session, "intersection_preferred", False))
 
     def _safely_plan(self, session, station, state, *, inbound: bool,
                      weather=None):

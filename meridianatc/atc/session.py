@@ -441,6 +441,10 @@ class FlightSession:
     holding_at: str = ""
     # When the takeoff clearance was given (time.monotonic), for "expedite".
     cleared_takeoff_at: float = 0.0
+    # The word "expedite" has a shelf life (time.monotonic): while it
+    # stands the aeroplane is being told the runway wants it moving, and
+    # the crew taxis it briskly rather than at the book's figure.
+    expedite_until: float = 0.0
     # The wind the last takeoff/landing clearance carried, as
     # (direction, kt, gust kt): the baseline a wind check is issued from.
     wind_at_clearance: tuple = ()
@@ -476,6 +480,12 @@ class FlightSession:
     # 7110.65 3-7-1); both empty/zero for a full-length departure.
     departure_intersection: str = ""
     departure_remaining_m: float = 0.0
+    # The autonomous first officer's own preference for an intersection
+    # departure: rolled once a flight, the way a crew's habit is, and
+    # only ever an ask -- the taxi planner still decides whether the
+    # runway has an entry to offer that leaves the type's takeoff
+    # distance ahead of it.
+    intersection_preferred: bool = False
     # Each runway the route crosses is a clearance of its own, taken one at
     # a time in the order they are met: ``crossing_index`` is how far down
     # the list the aircraft has got, and ``crossing_granted`` the one it is
