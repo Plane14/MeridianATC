@@ -255,6 +255,7 @@ class _Radar_positions_departure:
                 # A VFR flight that was given a code and no advisories: the
                 # code comes back with the frequency change.
                 session.squawk = p.vfr_squawk
+                session.vfr_ceiling_ft = 0.0
                 return Reply(p.squawk_vfr(aircraft, frequency_change=True),
                              station)
             # The end of radar advisories, and of the code that went with
