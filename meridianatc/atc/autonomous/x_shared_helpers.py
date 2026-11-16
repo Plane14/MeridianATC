@@ -114,10 +114,37 @@ class _Shared_helpers:
         """
         route = getattr(getattr(self, "brain", None), "route", None)
         filed = float(getattr(route, "cruise_ft", 0.0) or 0.0)
-        return (self.session.assigned_altitude_ft
-                or self.session.cruise_altitude_ft
-                or filed
-                or self.session.initial_altitude_ft or 0.0)
+        if self.session.assigned_altitude_ft:
+            return self.session.assigned_altitude_ft
+        return self._under_vfr_ceiling(
+            self.session.cruise_altitude_ft
+            or filed
+            or self.session.initial_altitude_ft or 0.0, state)
+
+    # How far from the field its "not above" still binds: the reach of
+    # the widest shelf a tower's ceiling is drawn under.
+    VFR_CEILING_REACH_NM = 30.0
+
+    def _under_vfr_ceiling(self, target: float, state) -> float:
+        """``target``, kept at or below the VFR ceiling ATC gave.
+
+        "Not above two thousand five hundred" was read back and the
+        climb carried on to the filed level, through the airspace the
+        figure exists to keep the flight under. It binds a VFR flight
+        until the controller lifts it or the field is well behind.
+        """
+        session = self.session
+        ceiling = float(getattr(session, "vfr_ceiling_ft", 0.0) or 0.0)
+        if not ceiling or not target or getattr(session, "ifr", True):
+            return target
+        field = getattr(session, "departure", None)
+        if field is not None and getattr(state, "has_position", False):
+            try:
+                if state.distance_to(field.lat, field.lon)                         > self.VFR_CEILING_REACH_NM:
+                    return target
+            except Exception:
+                pass
+        return min(target, ceiling)
 
     def _route_level(self, state) -> tuple[float, str]:
         """(level, stage) the plan's next fix is filed at, else 0.

@@ -235,6 +235,10 @@ class _The_tower_watching:
         an airliner on a final shorter than its own gate, so it went round
         every time."""
         radius = _turn_radius_nm(flight.performance.approach_kt * 1.15)
+        if getattr(flight, "tight_base", False):
+            # "Make short approach", read back: the base turn comes in
+            # to the stable gate itself, without the mile of slack.
+            return self._stable_by_nm(flight) + radius
         return max(CIRCUIT_BASE_NM, self._stable_by_nm(flight) + 1.0 + radius)
 
     def _unstable(self, flight: Flight) -> bool:

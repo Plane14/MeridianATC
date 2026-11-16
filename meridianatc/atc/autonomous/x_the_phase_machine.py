@@ -1107,7 +1107,7 @@ class _The_phase_machine:
                     target = filed
                 elif filed > target + 500.0:
                     self.session.cruise_altitude_ft = int(filed)
-                    target = filed
+                    target = self._under_vfr_ceiling(filed, state)
             if target and abs(alt - target) > 200.0:
                 # A step clearance answered level is not answered at
                 # all: the bug moves and the aeroplane climbs or

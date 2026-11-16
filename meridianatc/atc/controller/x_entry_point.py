@@ -248,6 +248,8 @@ class _Entry_point:
             decision("vrp", airport=station.ident, use="exit_reported",
                      point=session.expected_exit)
             session.expected_exit = ""
+            # Let go: the level it was kept under went with the zone.
+            session.vfr_ceiling_ft = 0.0
             session.establish(station)
             return Reply(p.frequency_change_approved(aircraft), station)
 

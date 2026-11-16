@@ -108,3 +108,21 @@ def test_a_slow_climb_towards_the_level_is_not_a_deviation():
     assert off(8000.0, 0.0)
     assert off(8000.0, -250.0)
     assert not off(8900.0, 0.0)
+
+
+def test_a_short_approach_read_back_tightens_the_base_turn():
+    """"Make short approach" was said, read back, and the circuit flown
+    exactly as wide as before: no command of that kind was carried out."""
+    from meridianatc.atc.flying import Command
+
+    tower = _Tower([])
+    tower.random = SimpleNamespace(uniform=lambda a, b: a)
+    flight = SimpleNamespace(
+        performance=SimpleNamespace(approach_kt=65.0), held_since=0.0,
+        arriving=True, extending=False)
+    normal = tower._base_nm(flight)
+    _Instructions_and_being._carry_out(
+        tower, flight, Command("short_approach", {}), 100.0)
+    assert flight.tight_base
+    assert tower._base_nm(flight) < normal - 0.5
+    assert tower._base_nm(flight) > tower._stable_by_nm(flight)

@@ -1584,3 +1584,28 @@ def test_a_hold_is_flown_at_the_level_it_was_given_at():
     fo._phase_descent(state, 100.0)
     assert fo._apply_flight_director.call_args.kwargs["altitude"] == 8000.0
     assert fo._apply_flight_director.call_args.kwargs["vs_fpm"] == 0.0
+
+
+def test_a_vfr_ceiling_caps_the_climb_until_it_is_lifted_or_left_behind():
+    """"Not above two thousand five hundred" was read back and the FO
+    climbed to the filed level through it."""
+    fo, state = _enroute_fo([])
+    field = SimpleNamespace(lat=40.0, lon=-8.0)
+    fo.session = SimpleNamespace(
+        ifr=False, assigned_altitude_ft=0.0, cruise_altitude_ft=6500.0,
+        initial_altitude_ft=0.0, vfr_ceiling_ft=2500.0, departure=field)
+    state.distance_to = lambda lat, lon: 5.0
+    assert fo._altitude_target(state) == 2500.0
+    # A level the controller assigned is the controller's own word.
+    fo.session.assigned_altitude_ft = 4000.0
+    assert fo._altitude_target(state) == 4000.0
+    fo.session.assigned_altitude_ft = 0.0
+    # Well clear of the field, or lifted, or IFR: the filed level.
+    state.distance_to = lambda lat, lon: 40.0
+    assert fo._altitude_target(state) == 6500.0
+    state.distance_to = lambda lat, lon: 5.0
+    fo.session.vfr_ceiling_ft = 0.0
+    assert fo._altitude_target(state) == 6500.0
+    fo.session.vfr_ceiling_ft = 2500.0
+    fo.session.ifr = True
+    assert fo._altitude_target(state) == 6500.0

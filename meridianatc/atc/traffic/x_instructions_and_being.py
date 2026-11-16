@@ -145,6 +145,12 @@ class _Instructions_and_being:
                     base + side * self.random.uniform(25.0, 55.0)) % 360.0
         elif kind == "extend":
             flight.extending = True
+            flight.tight_base = False
+        elif kind == "short_approach":
+            # The instruction was said and read back and the circuit
+            # flown exactly as wide as before: the base turn is what
+            # tightens (_base_nm).
+            flight.tight_base = True
         elif kind == "continue":
             flight.extending = False
         elif kind == "heading":

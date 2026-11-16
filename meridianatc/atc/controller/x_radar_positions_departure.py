@@ -262,6 +262,7 @@ class _Radar_positions_departure:
             # to a flight that had left the frequency.
             session.flight_following = False
             session.radar_service = ""
+            session.vfr_ceiling_ft = 0.0
             if not session.ifr:
                 session.squawk = p.vfr_squawk
             return Reply(p.radar_service_terminated(aircraft), station)

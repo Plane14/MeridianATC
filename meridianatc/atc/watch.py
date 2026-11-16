@@ -1059,6 +1059,7 @@ class RadarServiceWatch:
         p = self.brain.for_station(station, language)
         session.aircraft.language = language_of(p)
         session.radar_service = ""
+        session.vfr_ceiling_ft = 0.0
         session.squawk = p.vfr_squawk
         text = p.radar_service_terminated(session.aircraft)
         decision("radar_service", station=station.callsign, said="terminated",
