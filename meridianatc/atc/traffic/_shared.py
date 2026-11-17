@@ -689,6 +689,16 @@ RELEASE_GAP_S = 90.0
 HOLD_SHORT_EVERY_S = 60.0
 GIVE_WAY_M = 150.0
 GIVE_WAY_DEG = 45.0
+#: Nose-to-nose on the same lane is a conflict long before the noses are
+#: there: a head-on pilot is yielded to from well ahead of the meeting
+#: point, not once the noses have met.
+GIVE_WAY_HEAD_ON_M = 450.0
+GIVE_WAY_HEAD_ON_DEG = 120.0
+#: And where the stop lands too late -- already nose to nose, neither
+#: moving -- the yield can only deadlock them: after a wait long enough
+#: to be sure nobody is passing, it is let go to keep right and pass.
+GIVE_WAY_STUCK_M = 60.0
+GIVE_WAY_STUCK_S = 20.0
 
 #: How far from the field an observed aeroplane still counts as working it.
 OBSERVED_RANGE_NM = 30.0

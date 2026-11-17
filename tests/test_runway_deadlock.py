@@ -197,7 +197,7 @@ def _pilot_protection(injector, *, near: bool):
     injector._user_on_final = lambda: None
     injector._on_runway = lambda flight: False
     injector._near_departure_runway = lambda flight: near
-    injector._pilot_ahead = lambda flight: False
+    injector._pilot_ahead = lambda flight, now=0.0: False
     injector.hold_live = Mock(return_value=True)
 
 

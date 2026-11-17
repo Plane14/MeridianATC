@@ -3,7 +3,11 @@ from __future__ import annotations
 from ._shared import (
     FT_PER_HPA,
     GIVE_WAY_DEG,
+    GIVE_WAY_HEAD_ON_DEG,
+    GIVE_WAY_HEAD_ON_M,
     GIVE_WAY_M,
+    GIVE_WAY_STUCK_M,
+    GIVE_WAY_STUCK_S,
     HOLD_SHORT_EVERY_S,
     INITIAL_CLIMB_FT,
     LANDING_CLEARANCE_NM,
@@ -859,7 +863,7 @@ class _The_live_ones:
                         pilot_back=lambda p, a, s: p.wilco(a),
                     )
             # On the ground: give way to the pilot taxiing.
-            ahead = self._pilot_ahead(flight)
+            ahead = self._pilot_ahead(flight, now)
             if ahead and not flight.live_held and hold(flight.hex, True):
                 flight.live_held = "give way"
             elif flight.live_held == "give way" and not ahead:
@@ -963,22 +967,51 @@ class _The_live_ones:
             self._parked_since.pop(object_id, None)
         return [one for one in seen if one.object_id not in self._taken_over]
 
-    def _pilot_ahead(self, flight: Flight) -> bool:
-        """The pilot on the ground, close in front of a live one taxiing."""
+    def _pilot_ahead(self, flight: Flight, now: float) -> bool:
+        """The pilot on the ground, in a live one's path -- now or soon."""
         user = self.user
         if (user is None or not user.has_position or not user.on_ground
                 or not flight.on_ground
                 or flight.ground_speed_kt < TAXIING_KT
                 and flight.live_held != "give way"):
+            flight._nose_to_nose_at = 0.0
             return False
         distance_m = haversine_nm(flight.latitude, flight.longitude,
                                   user.latitude, user.longitude) * 1852.0
-        if distance_m > GIVE_WAY_M:
-            return False
         bearing = bearing_deg(flight.latitude, flight.longitude,
                               user.latitude, user.longitude)
-        return abs((bearing - flight.heading + 540.0) % 360.0
-                   - 180.0) <= GIVE_WAY_DEG
+        ahead = abs((bearing - flight.heading + 540.0) % 360.0
+                    - 180.0) <= GIVE_WAY_DEG
+        # Nose-to-nose on the same lane is a conflict long before the
+        # noses are there: a head-on pilot is yielded to from well ahead
+        # of the meeting point, not once the noses have met.
+        head_on = abs((flight.heading - user.heading + 540.0) % 360.0
+                      - 180.0) > GIVE_WAY_HEAD_ON_DEG
+        reach = GIVE_WAY_HEAD_ON_M if head_on else GIVE_WAY_M
+        if getattr(flight, "_unstuck", False):
+            # It deadlocked with this pilot once already: released to keep
+            # right and pass, it is not frozen a second time in the same
+            # lane -- only clear geometry re-arms the yield.
+            if distance_m <= reach and ahead:
+                return False
+            flight._unstuck = False
+        if not ahead or distance_m > reach:
+            flight._nose_to_nose_at = 0.0
+            return False
+        if (head_on and distance_m <= GIVE_WAY_STUCK_M
+                and flight.ground_speed_kt < TAXIING_KT
+                and user.ground_speed_kt < TAXIING_KT):
+            # Already nose to nose and nobody moving: a hold here is the
+            # conflict, not its prevention.
+            if not getattr(flight, "_nose_to_nose_at", 0.0):
+                flight._nose_to_nose_at = now
+            elif now - flight._nose_to_nose_at >= GIVE_WAY_STUCK_S:
+                flight._unstuck = True
+                flight._nose_to_nose_at = 0.0
+                return False
+        else:
+            flight._nose_to_nose_at = 0.0
+        return True
 
     def _take_over_for_a_go_around(self, flight: Flight, now: float) -> None:
         """A live arrival sent around: the real one will land, so from here
