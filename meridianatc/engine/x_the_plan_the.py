@@ -167,6 +167,11 @@ class _The_plan_the:
         return Route(fixes=tuple(fixes),
                      origin=airports[0] if airports else "",
                      destination=airports[-1] if airports else "",
+                     # The FMS carries no filed cruise field -- only each
+                     # leg's altitude. The highest one is the flight's
+                     # level, which is how the cruise reaches the
+                     # session instead of the default table.
+                     cruise_ft=max((f.alt_ft for f in fixes), default=0),
                      source="sim")
 
     def _use_pln_plan(self, path: str) -> None:
