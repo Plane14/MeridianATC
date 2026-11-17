@@ -109,21 +109,66 @@ class _Shared_helpers:
             progress = None
         if progress is None:
             return
-        from ..route import Route, RouteFix
-        # Present position first, then the leg the vector rejoins and
-        # everything after it: the departure field stays the plan's own,
-        # so the upload reads as the same flight with a direct, not a
-        # new one.
-        rest = list(fixes[progress.leg:])
-        ppos = RouteFix(ident="PPOS", lat=state.latitude,
-                        lon=state.longitude, kind="wpt")
-        trimmed = Route(fixes=tuple([fixes[0], ppos] + rest),
-                        origin=route.origin,
-                        destination=route.destination,
-                        cruise_ft=route.cruise_ft, source="sim")
-        if loader(trimmed):
+        trimmed = self._fms_direct_route(state, route)
+        if trimmed is not None and loader(trimmed):
             # The next status read carries this plan back: marked ours,
             # the adoption pass leaves the live session alone.
+            sim._fms_written = True
+
+    def _fms_direct_route(self, state, route):
+        """The plan as a direct from here to the leg being flown.
+
+        Departure field, present position, then the route's active fix and
+        everything after it: what the box holds is the same flight, only
+        drawn from where the aeroplane is instead of where it was --
+        which is what keeps a fresh plan from steering back over the
+        field to intercept a course line that starts there.
+        """
+        fixes = tuple(getattr(route, "fixes", ()) or ())
+        if len(fixes) < 3:
+            return None
+        try:
+            progress = route.progress(
+                state.latitude, state.longitude,
+                float(getattr(state, "ground_speed_kt", 0.0) or 0.0),
+                hint=getattr(self.session, "route_direct_index", -1))
+        except Exception:
+            progress = None
+        if progress is None:
+            return None
+        from ..route import Route, RouteFix
+        ppos = RouteFix(ident="PPOS", lat=state.latitude,
+                        lon=state.longitude, kind="wpt")
+        return Route(fixes=tuple([fixes[0], ppos]
+                                 + list(fixes[progress.leg:])),
+                     origin=route.origin,
+                     destination=route.destination,
+                     cruise_ft=route.cruise_ft, source="sim")
+
+    def _fms_departure_direct(self, state) -> None:
+        """Straight out after takeoff: the first fix, not back overhead.
+
+        The box's course line starts at the departure field: NAV armed
+        on it fresh out of the roll intercepts that line by returning
+        over the airport. A direct from present position to the first
+        fix is the same plan as the box flies it -- written once, when
+        the climb's NAV first goes on.
+        """
+        if getattr(self, "_fms_direct_done", False):
+            return
+        self._fms_direct_done = True
+        sim = getattr(self, "sim", None)
+        loader = getattr(sim, "load_fms_plan", None) \
+            if sim is not None else None
+        if loader is None \
+                or not getattr(state, "has_position", False) \
+                or getattr(state, "on_ground", False):
+            return
+        route = getattr(self.brain, "route", None)
+        if route is None:
+            return
+        trimmed = self._fms_direct_route(state, route)
+        if trimmed is not None and loader(trimmed):
             sim._fms_written = True
 
     @staticmethod

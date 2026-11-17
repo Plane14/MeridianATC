@@ -1112,6 +1112,7 @@ class _The_phase_machine:
         else:
             vector = self.session.assigned_heading
             if vector is None:
+                self._fms_departure_direct(state)
                 self.director.nav(True)
             self.director.airspeed_hold(True)
             target = self._altitude_target(state)
