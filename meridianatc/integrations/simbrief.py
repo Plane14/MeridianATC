@@ -363,8 +363,11 @@ def _altitude(general: dict) -> int:
     if not digits:
         return 0
     value = int(digits)
-    # A number under 1,000 is a flight level, not feet.
-    return value * 100 if value < 1000 else value
+    # A number under 1,000 is a flight level, not feet -- and no flight
+    # level passes 500, so a larger sub-1000 figure stays what it says.
+    if value >= 1000 or value <= 500:
+        return value * 100 if value < 1000 else value
+    return value
 
 
 __all__ = ["Ofp", "NavlogFix", "SimBriefError", "fetch", "parse", "ENDPOINT"]

@@ -1056,6 +1056,16 @@ class _The_phase_machine:
             self.director.nav(True)
             self.state.ap_nav_mode = True
 
+        # A descent or approach clearance outranks the machine's own top
+        # of climb: it is taken first, not after a tick spent thinking
+        # the cruise had begun.
+        if self.session.phase == Phase.DESCENT:
+            self._transition(AutonomousPhase.DESCENT)
+            return
+        if self.session.phase == Phase.APPROACH:
+            self._transition(AutonomousPhase.APPROACH)
+            return
+
         # Level off at the top of the climb.
         if target and abs((state.altitude_ft or 0.0) - target) < 200 \
                 and abs(state.vertical_speed_fpm or 0.0) < 200:
@@ -1066,11 +1076,7 @@ class _The_phase_machine:
             self._transition(AutonomousPhase.CRUISE)
             return
 
-        if self.session.phase == Phase.DESCENT:
-            self._transition(AutonomousPhase.DESCENT)
-        elif self.session.phase == Phase.APPROACH:
-            self._transition(AutonomousPhase.APPROACH)
-        elif now - self.state.phase_entered_at > self.CLIMB_TIMEOUT:
+        if now - self.state.phase_entered_at > self.CLIMB_TIMEOUT:
             self._set_error("Climb timed out")
 
     def _phase_cruise(self, state, now: float) -> None:
@@ -1419,8 +1425,7 @@ class _The_phase_machine:
                 # aeroplane he has just put down.
                 adapt = getattr(self, "_adapt", None)
                 sink_td = getattr(self, "_flare_sink", 0.0)
-                if adapt is not None and self._use_pids \
-                        and sink_td > 0.0:
+                if adapt is not None and sink_td > 0.0:
                     needed = max(-150.0, min(150.0, 250.0 - sink_td))
                     adapt.learn("flare.bias", needed, blend=0.4)
                 self._flare_sink = 0.0

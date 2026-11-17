@@ -18,6 +18,10 @@ class _The_real_aeroplanes:
     _live_said: tuple = ("", "")
     _live_down_said = False
     _live_asked: frozenset = frozenset()
+    # When a feed's construction last raised, by source: a failed start is
+    # retried on a slow tick rather than marked asked and gone for good.
+    _live_failed: dict = {}
+    _LIVE_RETRY_S = 30.0
 
     def _refresh_live_feed(self) -> None:
         """The panel's live-traffic switch, read every tick: off stops the
@@ -26,12 +30,7 @@ class _The_real_aeroplanes:
         traffic) is asked once per choice, not once per tick."""
         live = self.config.traffic.live
         if not live.enabled:
-            if self.live_feed is not None:
-                decision("live_feed", event="stopped",
-                         why="traffic.live.enabled off")
-                self.live_feed.stop()
-                self.live_feed = None
-                self.live_roster = None
+            self._stop_live_feed("traffic.live.enabled off")
             self._live_asked = frozenset()
             return
         if self.live_feed is not None:
@@ -40,8 +39,37 @@ class _The_real_aeroplanes:
         source = traffic_source(self.config.traffic)
         if source in self._live_asked:
             return
+        failed_at = self._live_failed.get(source)
+        if failed_at is not None and time.monotonic() - failed_at < self._LIVE_RETRY_S:
+            return
+        try:
+            self.start_live_feed()
+        except Exception:
+            if failed_at is None:
+                log.warning("could not start the live traffic feed",
+                            exc_info=True)
+            self._live_failed = {**self._live_failed,
+                                 source: time.monotonic()}
+            return
+        # Asked whether it started or was politely refused: the refusal is
+        # said once per choice, not once per tick.
         self._live_asked = self._live_asked | {source}
-        self.start_live_feed()
+        self._live_failed = {
+            key: at for key, at in self._live_failed.items() if key != source}
+
+    def _stop_live_feed(self, why: str) -> None:
+        """Stop the ADS-B thread and forget everything said about it, so a
+        feed that comes back later is reported as new, not compared against
+        the corpse of the last one."""
+        if self.live_feed is None:
+            return
+        decision("live_feed", event="stopped", why=why)
+        self.live_feed.stop()
+        self.live_feed = None
+        self.live_roster = None
+        self.traffic.hold_live = None
+        self._live_said = ("", "")
+        self._live_down_said = False
 
     def start_live_feed(self, run: bool = True):
         """Start asking the ADS-B sources, when the pilot has switched live
@@ -58,6 +86,9 @@ class _The_real_aeroplanes:
         if source != "meridianatc":
             decision("live_feed", event="not started", source=source,
                      why="traffic.source: FSLTL flies the traffic")
+            # Marked asked here too: a startup call takes the same path as
+            # the tick's and the notice is said once, not twice.
+            self._live_asked = self._live_asked | {source}
             self.emit("info", "Live traffic stays off: FSLTL flies the "
                       "traffic (Settings, Traffic).", key="log.live_fsltl")
             return None

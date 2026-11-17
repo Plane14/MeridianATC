@@ -182,6 +182,9 @@ class _What_the_controller:
             return None
         ceiling = float(session.vfr_ceiling_ft)
         if shown < ceiling + RestrictionWatch.ABOVE_FT:
+            # Complied: the next time it is above the ceiling is a new
+            # violation, and a controller warns on every one of them.
+            session.advisories.discard(f"restriction:descend:{key}")
             return None
         if not session.advise_once(f"restriction:descend:{key}"):
             return None

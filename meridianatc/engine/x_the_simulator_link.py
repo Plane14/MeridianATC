@@ -201,6 +201,9 @@ class _The_simulator_link:
             # guess there is, and zeroing it puts the aeroplane in the
             # Atlantic and every frequency out of range.
             self._sim_was_connected = False
+            # The loss was announced, so a failed reconnect does not get a
+            # second "not detected" -- that message is for never-having-been.
+            self._sim_waiting_said = True
             self.emit("info", "Lost the simulator. Looking for it again.",
                       key="log.sim_lost")
             held = replace(self.state)
@@ -231,8 +234,19 @@ class _The_simulator_link:
             sim = attempt.result()
         except Exception:
             log.debug("simulator connection attempt failed", exc_info=True)
+            if not self._sim_waiting_said:
+                # Said here and not at start(): a connect attempt already in
+                # flight is not a missing simulator, only an unanswered one.
+                self._sim_waiting_said = True
+                self.emit(
+                    "info",
+                    "Simulator not detected. Waiting for it, and flying from "
+                    "the manually set aircraft state until it appears.",
+                    key="log.sim_waiting",
+                )
             return
         if self._adopt_simulator(sim):
+            self._sim_waiting_said = False
             # A flight built around a typed departure field is not the flight
             # the simulator is holding. Rebuild it from what is actually
             # there, which is what stops the panel insisting on the old

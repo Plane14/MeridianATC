@@ -217,7 +217,9 @@ def squawk_for(session: FlightSession, airport_ident: str) -> str:
             digits.append(str(value % 8))
             value //= 8
         code = "".join(reversed(digits))
-        if code in reserved or code.endswith("00") or code.startswith("0"):
+        # Codes in the 0xxx block are real discrete assignments; only the
+        # all-zero block header and the reserved codes are out.
+        if code in reserved or code.endswith("00"):
             continue
         return code
     return "4321"

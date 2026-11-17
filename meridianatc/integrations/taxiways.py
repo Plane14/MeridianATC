@@ -222,6 +222,7 @@ def ask_facility_records(dll_path: str, client: bytes, fields, ident: str,
                 region.encode("ascii", "ignore")) != 0:
             return None
         records: list[FacilityRecord] = []
+        ended = False
         data = ctypes.POINTER(_Recv)()
         size = w.DWORD()
         deadline = time.monotonic() + timeout_s
@@ -246,10 +247,14 @@ def ask_facility_records(dll_path: str, client: bytes, fields, ident: str,
                     list_size=int(block.ListSize),
                     is_list_item=int(block.IsListItem), raw=raw))
             elif which == _RECV_FACILITY_DATA_END:
+                ended = True
                 break
             elif which in (_RECV_EXCEPTION, _RECV_QUIT):
                 return None
-        return records
+        # Only a read the simulator closed is the whole list: a read the
+        # deadline cut short is a part of one, and a caller that cached it
+        # would keep the missing records missing for good.
+        return records if ended else None
     finally:
         dll.SimConnect_Close(handle)
 

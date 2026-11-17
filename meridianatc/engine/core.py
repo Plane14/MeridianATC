@@ -577,6 +577,12 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         self._stop = threading.Event()
         self._situation_thread: threading.Thread | None = None
         self._busy = threading.Lock()
+        # One pilot call at a time, spoken or typed. The spoken pipeline's
+        # lock covers the transcription worker only; a typed call off the
+        # web thread or a first officer's transmission on the situation
+        # thread used to reach handle_text and retune mid-response, where
+        # both callers then ate the same pending readback.
+        self._text_lock = threading.RLock()
         # Who is really on the frequency, where a network is configured. The
         # one thing this program must never do is talk over a person.
         # Offline mode: nothing that can reach out is registered -- the poll
@@ -613,6 +619,9 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         self._sim_wanted = bool(self.config.sim.enabled)
         self._next_sim_try = 0.0
         self._sim_was_connected = False
+        # Whether "Simulator not detected" was already said this session --
+        # it is only true once a connect attempt has actually failed.
+        self._sim_waiting_said = False
         # The live simulator link, when there is one. Held by name rather
         # than recognised by type: the question is whether *this* engine has
         # a simulator source in use, and a type check answers a subtly

@@ -260,7 +260,12 @@ class _Situation_loop:
                               "MeridianATC adds no traffic of its own. Aircraft "
                               "already in the simulator are still worked.",
                               key="log.traffic_refused")
-        elif self.brain.traffic is not None:
+        else:
+            # The master switch off: the feed may still be polling from
+            # startup or a mid-flight switch, whatever state the strips are
+            # in -- it is somebody else's aeroplanes only when traffic runs.
+            self._stop_live_feed("traffic.enabled off")
+        if not self.config.traffic.enabled and self.brain.traffic is not None:
             # Switched off mid-flight: the aeroplanes stop existing, and the
             # controller stops sequencing the user against them.
             self.brain.traffic = None

@@ -49,7 +49,10 @@ def test_readback_only_accepts_instructions_from_the_current_controller(same_sta
     parsed = ParsedIntent(intent=Intent.READBACK, normalized="heading nine zero", readback_items={"heading": 90})
     brain.respond(parsed, session, station, Weather())
     assert instruction.read_back is same_station
-    assert session.assigned_heading == (90 if same_station else None)
+    # The readback is not accepted on the wrong frequency, but the
+    # instruction was given and the pilot plainly heard it -- what it
+    # changed is applied either way.
+    assert session.assigned_heading == 90
     assert session.pending is None
 
 

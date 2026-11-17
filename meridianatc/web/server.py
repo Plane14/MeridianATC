@@ -2641,6 +2641,13 @@ def create_setup_app(config, broadcaster: Broadcaster) -> FastAPI:
                     "config": _settings_view(_ConfigOnly(config))}
         changed = set()
         for path, value in accepted.items():
+            if path in SECRETS:
+                # As in the running panel: a credential goes to the DPAPI
+                # store, never into config.yaml.
+                from ..security.secrets import default_store
+                default_store().set(path, str(value))
+                changed.add(path)
+                continue
             if cfg.get_path(config, path) != value:
                 cfg.set_path(config, path, value)
                 release = getattr(config, "release", None)

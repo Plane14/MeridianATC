@@ -69,6 +69,10 @@ class _Session:
 
     def begin_session(self) -> FlightSession:
         """Build the flight session from the sim state and the config."""
+        with self._text_lock:
+            return self._begin_session()
+
+    def _begin_session(self) -> FlightSession:
         flight = self.config.flight
         profile = FlightProfile.of(flight)
         self.brain.profile = profile
@@ -110,7 +114,12 @@ class _Session:
         if self.state.has_position:
             under = self.navdb.home_airport(self.state.latitude, self.state.longitude)
             if departure is None:
-                departure = under
+                # The field below answers "where did it start" only on the
+                # ground: airborne, the aeroplane is over whatever is under
+                # it, and that field is not where it came from -- leave it
+                # unset rather than naming the wrong departure.
+                if self.state.on_ground:
+                    departure = under
             elif not self._plausible_departure(departure):
                 # The aeroplane is not where the flight says it is starting.
                 # The simulator is the authority on where it is, so the typed

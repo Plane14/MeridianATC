@@ -79,8 +79,10 @@ PROMPTS_BEFORE_REISSUE = 2
 # advisory is not one of them.
 _RELEASES_HOLD = frozenset({
     "taxi", "taxi_in", "line_up_and_wait", "takeoff_clearance",
-    "landing_clearance", "transition", "ifr_clearance", "vfr_release",
+    "landing_clearance", "transition", "vfr_release",
     "go_around", "expedite_vacate",
+    # Not "ifr_clearance": an amended route clearance is not movement
+    # authority, and a standing "hold position" outlives it.
 })
 
 # How many wrong readbacks are corrected item by item before the controller
@@ -655,6 +657,11 @@ class FlightSession:
             # position" waits for; a wind check or a handoff is not.
             self.hold_position = False
         if instruction.readback_required:
+            if self.pending is not None and self.pending.values:
+                # A second owed readback displaces the first. The displaced
+                # instruction was still given, so what it changed is
+                # applied: the chase for its readback is what is lost.
+                self.apply(self.pending.values)
             self.pending = instruction
             # A link is up and this is the authority's instruction: it is
             # uplinked rather than voiced, and WILCO is its readback.

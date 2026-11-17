@@ -45,10 +45,7 @@ class _Plumbing:
                 state = None
             if state is not None:
                 declared = {
-                    "rotate_kt": float(getattr(state, "min_rotation_kt", 0.0)
-                                       or getattr(state,
-                                                  "design_takeoff_kt", 0.0)
-                                       or 0.0),
+                    # A design takeoff figure is the climb-away speed,\n                    # not the unstick: rotating at it flies the ground\n                    # run on. Borrowed, it is pulled back to the rotate\n                    # speed the aeroplane's own number is nearest to.\n                    "rotate_kt": float(getattr(state, "min_rotation_kt", 0.0)\n                                       or getattr(state,\n                                                  "design_takeoff_kt", 0.0)\n                                       * 0.9 or 0.0),
                     # A design figure is the model's Vno, not its cruise
                     # speed: borrowed at face value a profile's owner was
                     # cruised at the top of the green arc. Pulled back to

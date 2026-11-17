@@ -2064,8 +2064,12 @@ class _The_other_aeroplanes:
         # A render submitted but not yet on the player counts too: the gap
         # between asking for a transmission and hearing it is still one the
         # cabin must not talk over.
+        # ``_text_lock`` held is a typed call or a crew transmission
+        # mid-answer -- the same busy the spoken pipeline's ``_busy`` is.
+        # ``locked`` is 3.14+; ``_is_owned`` is what it had before.
+        held = getattr(self._text_lock, "locked", self._text_lock._is_owned)
         return bool(self.player.busy or self.microphone.recording
-                    or self._busy.locked() or self._radio_renders)
+                    or self._busy.locked() or held() or self._radio_renders)
 
     def quiet_enough(self) -> bool:
         """Whether an unprompted transmission can go out now.
@@ -2310,7 +2314,11 @@ class _The_other_aeroplanes:
                     % 360.0 - 180.0) >= 30.0
                 and (weather.wind_kt or 0.0) >= 5.0)
             or ((weather.gust_kt or 0.0) - (weather.wind_kt or 0.0) >= 10.0
-                and was_gust - was_kt < 10.0))
+                and was_gust - was_kt < 10.0)
+            # A gust that has died is a wind change too: the tower calls
+            # it the same way it called the gust arriving.
+            or (was_gust - was_kt >= 10.0
+                and (weather.gust_kt or 0.0) - (weather.wind_kt or 0.0) < 10.0))
         if not moved:
             return
         session.wind_at_clearance = (
@@ -3231,11 +3239,12 @@ class _The_other_aeroplanes:
             self._leave_information(session, station, state)
             return
 
-        distance = state.distance_to(
-            *self._station_position(station)
-        ) if self._station_position(station) else 0.0
-
+        where = self._station_position(station)
         reach = STATION_RANGE_NM.get(station.position, 60.0)
+        # A station the database cannot place cannot bound its own coverage:
+        # treat the flight as at the edge of it, so leaving still earns the
+        # handoff rather than silence.
+        distance = state.distance_to(*where) if where else reach
         if distance <= reach * 0.9:
             return
 

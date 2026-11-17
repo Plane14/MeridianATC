@@ -218,7 +218,9 @@ class _Helpers:
         aeroplane is, and the filed cruise level at most."""
         current = getattr(state, "altitude_ft", 0.0) or session.assigned_altitude_ft
         target = session.cruise_altitude_ft or self._default_cruise(session)
-        step = 4000 if current < 18000 else 10000
+        # Steps as a controller gives them: two thousand below the flight
+        # levels, the big steps above.
+        step = 2000 if current < 18000 else 10000
         airport = self.navdb.airport(getattr(session.departure, "ident", "") or "") \
             if session.departure else None
         wanted = max(current + step, 3000.0)

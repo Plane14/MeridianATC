@@ -524,9 +524,13 @@ class _Radar_positions_departure:
         session.squawk = squawk_for(session, station.ident)
         current = float(getattr(state, "altitude_ft", 0.0) or 0.0)
         cruise = session.cruise_altitude_ft or self._default_cruise(session)
-        level = max(cruise, round(current / 100.0) * 100.0)
-        transition = self._transition_altitude(
-            self.navdb.airport(station.ident))
+        airport = self.navdb.airport(station.ident)
+        transition = self._transition_altitude(airport)
+        # Held at the level it is at, never a descent to the paperwork --
+        # but rounded down to a level that is legal for the direction, the
+        # same shaping every other level it is cleared to gets.
+        level = max(cruise, self._valid_level(
+            round(current / 100.0) * 100.0, state, airport, upward=False))
         destination = session.destination
         dest_name = (
             destination.spoken if destination

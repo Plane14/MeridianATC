@@ -65,6 +65,10 @@ class AutonomousFlight(_Plumbing, _Entry, _The_loop, _Shared_helpers, _The_envel
 
         self.state = AutonomousState()
         self._enabled = config.immersion.autonomous_flight
+        # Why the FO let go on its own -- an airframe the autofly limits
+        # refused -- when that is why it is off. The panel shows it where
+        # a plain off would read as the user's choice.
+        self._disabled_reason = ""
         # The rotorcraft controller, when the aeroplane in the sim is a
         # helicopter: it flies the whole leg itself and this class only
         # delegates (meridianatc.atc.autonomous_heli).

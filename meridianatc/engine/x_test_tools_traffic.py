@@ -235,6 +235,10 @@ class _Test_tools_traffic:
 
     def tune(self, mhz: float) -> Station | None:
         """Tune a frequency and work out who is listening."""
+        with self._text_lock:
+            return self._tune(mhz)
+
+    def _tune(self, mhz: float) -> Station | None:
         state = self.state
         lat, lon = (state.latitude, state.longitude) if state.has_position else (0.0, 0.0)
         station = self.navdb.resolve_station(mhz, lat, lon, state.altitude_ft)

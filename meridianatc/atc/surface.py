@@ -115,7 +115,10 @@ def progress(layout, lat: float, lon: float, route: list[str]) -> dict:
     # on counts by what of it is left.
     found_chain = False
     for i, links in enumerate(chains):
-        on_this = pos.found and pos.taxiway and \
+        # A route can visit a taxiway twice (["A","B","A"]): the aeroplane
+        # is on the first of them, and the second counts in full -- not a
+        # second partial copy of the one it is on.
+        on_this = pos.found and pos.taxiway and not found_chain and \
             pos.taxiway.strip().lower() == str(route[i]).strip().lower()
         for a, b in links:
             ax, az = layout.xy[a]

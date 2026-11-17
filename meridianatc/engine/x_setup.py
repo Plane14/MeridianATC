@@ -113,15 +113,24 @@ class _Setup:
         downloaded requires a restart to take effect.
         """
         voice = self.config.voice
-        if voice.engine != "chatterbox":
-            voice.engine = "chatterbox"
+        was = voice.engine
+        voice.engine = "chatterbox"
+        try:
+            self.synth.use_engine(voice.engine, gpu=voice.gpu,
+                                  hq_model=voice.hq_model,
+                                  hq_takes=voice.hq_takes)
+        except Exception:
+            # The file must not be left claiming a switch the synthesiser
+            # never made: put the old engine back and stay on it.
+            voice.engine = was
+            log.warning("could not switch to the cloned voices",
+                        exc_info=True)
+            return
+        if was != "chatterbox":
             try:
                 self.config.save()
             except Exception as exc:
                 log.warning("could not write config.yaml: %s", exc)
-        self.synth.use_engine(voice.engine, gpu=voice.gpu,
-                              hq_model=voice.hq_model,
-                              hq_takes=voice.hq_takes)
         self.synth.verify_with(self.recognizer)
         self.voices_installed()
 
@@ -494,12 +503,9 @@ class _Setup:
         self._stop.clear()
         if self._sim_wanted:
             self._watch_simulator()
-            self.emit(
-                "info",
-                "Simulator not detected. Waiting for it, and flying from the "
-                "manually set aircraft state until it appears.",
-                key="log.sim_waiting",
-            )
+            # "Simulator not detected" is emitted on the first failed connect
+            # attempt (x_the_simulator_link), not here: the attempt above is
+            # in flight and may well be about to succeed.
         if self.config.immersion.enabled:
             self.cabin.start()
         self.refresh_state()

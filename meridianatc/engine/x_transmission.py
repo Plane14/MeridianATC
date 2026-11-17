@@ -23,6 +23,10 @@ class _Transmission:
     # ------------------------------------------------------------------
 
     def begin_transmission(self) -> None:
+        with self._text_lock:
+            self._begin_transmission()
+
+    def _begin_transmission(self) -> None:
         if self.microphone.recording:
             return
         try:
@@ -172,10 +176,24 @@ class _Transmission:
             key="log.copy_error")
 
     def end_transmission(self) -> None:
+        with self._text_lock:
+            self._end_transmission()
+
+    def _end_transmission(self) -> None:
         if not self.microphone.recording:
             return
         captured = self.microphone.stop()
         if captured.too_quiet:
+            # A stream opened for this transmission has no transcribe coming
+            # to collect its finals; end it rather than leaving it to its
+            # own lifetime bound, as a dropped transmission below does.
+            abort = getattr(self.recognizer, "abort_stream", None)
+            if abort is not None:
+                try:
+                    abort()
+                except Exception:
+                    log.debug("could not abandon the recognition stream",
+                              exc_info=True)
             self.emit("info", "Nothing heard on that transmission.",
                       key="log.nothing_heard")
             return
@@ -299,6 +317,11 @@ class _Transmission:
         (1.0 for typed text): a name heard nearly is asked about, not
         refused, when the recogniser was unsure of it.
         """
+        with self._text_lock:
+            return self._handle_text(text, language, speaker, confidence)
+
+    def _handle_text(self, text: str, language: str | None,
+                     speaker: str, confidence: float) -> Reply | None:
         # The recogniser's spacing is not the keyboard's; the same words are
         # the same transmission.
         text = " ".join((text or "").split())

@@ -24,6 +24,8 @@ class _The_loop:
         reason = autofly_limit(state)
         if reason:
             self._enabled = False
+            self._disabled_reason = reason
+            self.config.immersion.autonomous_flight = False
             self._handoff()
             self._emit("info", reason, "log.autofly_unavailable")
             return

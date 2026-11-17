@@ -47,6 +47,7 @@ class _Entry:
 
     def enable(self) -> None:
         self._enabled = True
+        self._disabled_reason = ""
         self.config.immersion.autonomous_flight = True
         # A re-engage must not resume a dead phase: finished, failed or
         # never started is joined where the aeroplane actually is, the
@@ -164,6 +165,7 @@ class _Entry:
         return {
             "available": self.sim is not None,
             "enabled": self._enabled,
+            "disabled_reason": self._disabled_reason,
             "helicopter": self._is_helicopter,
             "phase": self.state.phase.value,
             "sub": self.state.sub or "",
@@ -278,6 +280,8 @@ class _Entry:
         aircraft = self.get_state()
         if self._enabled and aircraft is not None and autofly_limit(aircraft):
             self._enabled = False
+            self._disabled_reason = autofly_limit(aircraft)
+            self.config.immersion.autonomous_flight = False
             self._emit("info", autofly_limit(aircraft), "log.autofly_unavailable")
         self.state = AutonomousState()
         # What this airframe has taught the loops before, resolved for

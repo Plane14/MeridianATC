@@ -288,7 +288,7 @@ class GroundLayout:
     def from_dict(cls, data: dict) -> GroundLayout:
         return cls(data["ident"], data["latitude"], data["longitude"],
                    data["points"], data["parkings"], data["paths"],
-                   data.get("names", []))
+                   data.get("names", []), data.get("flows"))
 
     def __bool__(self) -> bool:
         return bool(self.stands) and bool(self.edges)

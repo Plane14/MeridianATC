@@ -229,9 +229,20 @@ class _Working_the_user:
 
     def _issue_takeoff(self, session, station, weather, p, parsed) -> Reply:
         airport = self.navdb.airport(station.ident)
+        asked = parsed.get("runway")
+        if asked and airport is not None:
+            ends = {name for name, _hdg, _rw
+                    in self.navdb.runway_ends(airport.ident)}
+            # A runway the field does not have is not granted: the ask is
+            # ignored and the wind's runway is used instead -- clearing
+            # somebody for takeoff on pavement that does not exist is how
+            # the request for a 36 at a field with one strip reads as
+            # approved.
+            if ends and str(asked).upper() not in ends:
+                asked = None
         runway = (
             session.departure_runway
-            or parsed.get("runway")
+            or asked
             or self._departure_runway(airport, weather)
         )
         session.departure_runway = runway

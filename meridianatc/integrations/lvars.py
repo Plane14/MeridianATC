@@ -610,11 +610,18 @@ class MobiFlightBridge(Bridge):
                     SIMCONNECT_CLIENT_DATA_REQUEST_FLAG_CHANGED, 0, 0, 0)
             except Exception:
                 log.debug("could not subscribe to %s", name, exc_info=True)
+                with self._lock:
+                    # The new names past this one were marked but never
+                    # subscribed: unmark them so the next ask tries again
+                    # rather than skipping them as already registered.
+                    del self._registered[offset:]
                 self._failed = True
                 return False
             # The module is told last, so that the subscription is already in
             # place when the first value is written.
             if not self._send(f"MF.SimVars.Add.(L:{name})"):
+                with self._lock:
+                    del self._registered[offset:]
                 return False
         return True
 
@@ -898,6 +905,10 @@ class DirectBridge(Bridge):
                     _PERIOD_SECOND, _REQUEST_DEFAULT, 0, 0, 0)
             except Exception:
                 log.debug("could not subscribe to %s", name, exc_info=True)
+                with self._lock:
+                    # The new names past this one were marked but never
+                    # subscribed: unmark them so the next ask tries again.
+                    del self._registered[offset:]
                 self._failed = True
                 return False
         return True

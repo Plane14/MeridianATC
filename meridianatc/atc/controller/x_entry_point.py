@@ -49,6 +49,12 @@ class _Entry_point:
             return Reply("", station, silent=True)
 
         if session.pending is not None and session.pending.station_key != station_key(station):
+            # A readback owed to the frequency the pilot just left cannot be
+            # collected here, but the instruction was still given: what it
+            # changed is applied before it is dropped -- only the chase for
+            # its readback is lost, not the instruction.
+            if session.pending.values:
+                session.apply(session.pending.values)
             session.clear_pending()
 
         # With Ground switched off nobody approves a pushback, and nobody

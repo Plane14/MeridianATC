@@ -27,11 +27,18 @@ class _Frequency:
         Returns whether it took, and a sentence saying why not when it did
         not.
         """
+        with self._text_lock:
+            return self._set_radio(mhz, radio, standby)
+
+    def _set_radio(self, mhz: float, radio: int,
+                   standby: bool) -> tuple[bool, str]:
         try:
             value = round(float(mhz), 3)
         except (TypeError, ValueError):
             return False, "that is not a frequency"
-        if not (118.0 <= value <= 136.999):
+        # The airband ends at 136.975: the odd 136.976-136.999 slice is not
+        # a channel anything transmits on.
+        if not (118.0 <= value <= 136.975):
             return False, "that is not an airband frequency"
 
         setter = getattr(self.source, "set_com", None)
@@ -57,27 +64,29 @@ class _Frequency:
 
     def swap_radio(self, radio: int = 1) -> tuple[bool, str]:
         """Swap active and standby in the aircraft, as the radio's button does."""
-        swap = getattr(self.source, "swap_com", None)
-        if swap is None or not swap(radio):
-            return False, "no aircraft to tune"
-        active = f"com{int(radio)}_active"
-        standby = f"com{int(radio)}_standby"
-        if hasattr(self.state, active) and hasattr(self.state, standby):
-            was = getattr(self.state, active)
-            setattr(self.state, active, getattr(self.state, standby))
-            setattr(self.state, standby, was)
-            if radio == 1:
-                self._tuned_by_us = self.state.com1_active
-        return True, ""
+        with self._text_lock:
+            swap = getattr(self.source, "swap_com", None)
+            if swap is None or not swap(radio):
+                return False, "no aircraft to tune"
+            active = f"com{int(radio)}_active"
+            standby = f"com{int(radio)}_standby"
+            if hasattr(self.state, active) and hasattr(self.state, standby):
+                was = getattr(self.state, active)
+                setattr(self.state, active, getattr(self.state, standby))
+                setattr(self.state, standby, was)
+                if radio == 1:
+                    self._tuned_by_us = self.state.com1_active
+            return True, ""
 
     def set_squawk(self, code: str) -> tuple[bool, str]:
         """Dial a transponder code into the aircraft."""
-        setter = getattr(self.source, "set_squawk", None)
-        if setter is None or not setter(code):
-            return False, "the transponder would not take that code"
-        self.state.transponder_code = "".join(
-            c for c in str(code) if c.isdigit())[:4].rjust(4, "0")
-        return True, ""
+        with self._text_lock:
+            setter = getattr(self.source, "set_squawk", None)
+            if setter is None or not setter(code):
+                return False, "the transponder would not take that code"
+            self.state.transponder_code = "".join(
+                c for c in str(code) if c.isdigit())[:4].rjust(4, "0")
+            return True, ""
 
     def spawn_on_runway(self) -> tuple[bool, str, str]:
         """Line an AI departure up on the runway in use, for the panel.

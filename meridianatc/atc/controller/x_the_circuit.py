@@ -562,7 +562,9 @@ class _The_circuit:
         if refused is not None:
             return refused
 
-        if station.position == "TWR" and self._runway_blocked():
+        if station.position == "TWR" and self._runway_blocked(
+                airport, self._departure_runway(airport, weather)
+                if airport is not None else ""):
             text = p.remain_clear_of_airspace(
                 aircraft, airspace,
                 self._station_name(station, p) if first_call else "")

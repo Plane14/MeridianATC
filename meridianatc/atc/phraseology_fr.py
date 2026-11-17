@@ -619,6 +619,8 @@ class FrenchPhraseology:
         elif leg:
             parts.append(f"rappelez {leg} main {direction} "
                          f"piste {self.rwy(runway)}")
+            if report:
+                parts.append(f"rappelez {report}")
         else:
             parts.append(f"intégrez le circuit main {direction} "
                          f"piste {self.rwy(runway)}")
@@ -1365,11 +1367,14 @@ class FrenchPhraseology:
 
     def position_fix(self, aircraft: Aircraft, miles: int, direction: str,
                      field: str) -> str:
-        # "à l'est", "au nord-ouest".
-        where = f"à l'{direction}" if direction[:1] in "aeiou" else f"au {direction}"
-        return _join(aircraft.spoken(True),
-                     f"vous êtes à {fr.cardinal(int(miles))} nautiques "
-                     f"{where} de {field}") + "."
+        # "à l'est", "au nord-ouest"; and "de" alone when the fix has
+        # no direction word at all.
+        part = f"vous êtes à {fr.cardinal(int(miles))} nautiques"
+        if direction:
+            part += (f" à l'{direction}" if direction[:1] in "aeiou"
+                     else f" au {direction}")
+        part += f" de {field}"
+        return _join(aircraft.spoken(True), part) + "."
 
     def bearing_fix(self, aircraft: Aircraft, kind: str, bearing: int) -> str:
         return _join(aircraft.spoken(True),
