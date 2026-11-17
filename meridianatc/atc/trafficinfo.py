@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import math
 import re
+import time
 from dataclasses import dataclass
 
 from ..logs import decision
@@ -43,6 +44,11 @@ from .session import Instruction, station_key
 # used for VFR advisories).
 CALL_WITHIN_NM = 5.0
 CALL_WITHIN_FT = 1500.0
+
+# How long a model pick for the same contact set stands before it is asked
+# again: a declined call may not suppress the advisories forever, because
+# the contacts it declined are still closing.
+_PICK_REASK_S = 30.0
 # An IFR flight in a centre's cruise is told about traffic inside five miles
 # and a thousand feet: the RVSM level next to its own, which is the only
 # traffic a controller separating it would mention.
@@ -394,8 +400,12 @@ class TrafficWatch:
         ordering, never whether a call may exist. ``-1`` from the advisor
         declines the call this pass.
         """
-        closest = min(range(len(eligible)),
-                      key=lambda i: eligible[i][0].distance_nm)
+        # A canonical order -- distance, then callsign -- so the same set
+        # always presents the same option list and a cached pick cannot
+        # silently point at a different contact.
+        eligible = sorted(
+            eligible, key=lambda wc: (wc[0].distance_nm, wc[1].written))
+        closest = 0
         if self.advisor is None or len(eligible) < 2:
             return eligible[closest]
         options = []
@@ -406,9 +416,10 @@ class TrafficWatch:
                 f"{abs(where.relative_ft)} feet "
                 f"{'above' if where.relative_ft > 0 else 'below'}, "
                 f"moving {where.motion.replace('_', ' ')}")
-        signature = tuple(sorted(c.written for _w, c in eligible))
-        if signature in self._picks:
-            picked = self._picks[signature]
+        signature = tuple(c.written for _w, c in eligible)
+        entry = self._picks.get(signature)
+        if entry is not None and time.monotonic() - entry[1] < _PICK_REASK_S:
+            picked = entry[0]
         else:
             # The situation loop polls telemetry, cautions and the autopilot;
             # the model gets a second to advise, never a provider timeout.
@@ -419,7 +430,7 @@ class TrafficWatch:
                 options, allow_none=True, default=closest, wait_s=1.0)
             if len(self._picks) > 64:
                 self._picks.clear()
-            self._picks[signature] = picked
+            self._picks[signature] = (picked, time.monotonic())
         if picked == -1:
             decision("traffic", said="none", advisor="model")
             return None

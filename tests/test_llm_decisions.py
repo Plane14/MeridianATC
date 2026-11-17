@@ -300,3 +300,21 @@ class TestTrafficWatchAdvisor:
         session.traffic_called.clear()
         watch.look(session, station, _state())
         assert len(calls) == 1
+
+    def test_cached_pick_survives_a_reordered_contact_list(self):
+        # The same contacts arriving in a different order must not move the
+        # cached index onto a different aeroplane.
+        picks = iter((1,))
+        advisor = SimpleNamespace(
+            pick=lambda scope, q, options, **kw: next(picks, 1))
+        watch, station = _watch(advisor)
+        session = _session()
+        first = watch.look(session, station, _state())
+        session.traffic_called.clear()
+        # Reverse the contact order: the signature is the same set.
+        flights = watch.brain.contacts()
+        watch.brain.contacts = lambda: list(reversed(flights))
+        second = watch.look(session, station, _state())
+        assert first is not None and second is not None
+        assert "ABC" not in session.traffic_called
+        assert session.traffic_called == {"DEF": "called"}
