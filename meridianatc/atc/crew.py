@@ -418,6 +418,9 @@ class CrewDirector:
         # it is sent once it has been heard, then the radio is handed back.
         self.radio_call = None
         self.transmit = None
+        # The model advisor (meridianatc.llm.decisions), when the engine
+        # wires one in: it may word the answers above, never decide them.
+        self.advisor = None
         self._radio_call_at: tuple[float, str] | None = None
         self.reserve_gal = 0.0
         self.reserve_lb = 0.0
@@ -2471,7 +2474,33 @@ class CrewDirector:
             else:
                 text = words["no_distance"]
         if text:
+            text = self._advised(text, said, session, language)
             self._say_now(text, f"answer_{asked}", language)
+
+    def _advised(self, text, said, session, language) -> str:
+        """A model-worded version of the first officer's answer, or the
+        answer itself.
+
+        The draft is kept only while every fact in it was already in the
+        answer or the flight's own data, so the officer can sound like a
+        person without ever telling the pilot something new.
+        """
+        advisor = self.advisor
+        if advisor is None or language not in ("en", ""):
+            return text
+        last_atc = [t for _at, who, t in getattr(session, "log", [])
+                    if who == "atc"]
+        facts = " ".join(str(part) for part in (
+            getattr(session, "squawk", "") or "",
+            getattr(session, "departure_runway", "") or "",
+            getattr(session, "arrival_runway", "") or "",
+            getattr(session, "last_clearance", "") or "",
+            last_atc[-1] if last_atc else "",
+        ) if part)
+        return advisor.draft(
+            "first_officer", getattr(said, "text", "") or "", facts, text,
+            persona="the first officer on the flight deck, answering the "
+                    "captain")
 
     def _take_the_radio(self, said, language: str) -> None:
         """ONE call, handed over in so many words, then the radio back."""

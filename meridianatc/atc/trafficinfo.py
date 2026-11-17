@@ -307,8 +307,13 @@ class TrafficWatch:
     """Traffic calls for a VFR flight receiving radar advisories, and for
     an IFR flight with a radar centre."""
 
-    def __init__(self, brain):
+    def __init__(self, brain, advisor=None):
         self.brain = brain
+        # An optional llm.decisions.Decisions. With one, the model picks
+        # which of the eligible contacts is called first -- or that none is
+        # -- but only among contacts that already qualified for a call.
+        # The call itself, and whether one is owed at all, stay here.
+        self.advisor = advisor
 
     def look(self, session, station, state, language: str = "en"):
         from .controller import Reply
@@ -339,7 +344,7 @@ class TrafficWatch:
         own = (state.latitude, state.longitude, float(state.altitude_ft or 0.0), track)
         own_speed = float(getattr(state, "ground_speed_kt", 0.0) or 100.0)
         called = session.traffic_called
-        best = None
+        eligible = []
         for contact in self.brain.contacts():
             if contact.on_ground or not contact.written:
                 continue
@@ -356,11 +361,12 @@ class TrafficWatch:
                 continue
             if where.distance_nm > CALL_WITHIN_NM or abs(where.relative_ft) > within_ft:
                 continue
-            if best is None or where.distance_nm < best[0].distance_nm:
-                best = (where, contact)
-        if best is None:
+            eligible.append((where, contact))
+        if not eligible:
             return None
-        where, contact = best
+        where, contact = self._pick(eligible) or (None, None)
+        if where is None:
+            return None
         called[contact.written] = "called"
         session.aircraft.language = getattr(p, "language", "en")
         text = p.traffic_call(
@@ -375,6 +381,42 @@ class TrafficWatch:
         instruction = session.remember(Instruction(
             "traffic", station_key(station), text, {}, readback_required=False))
         return Reply(text, station, instruction=instruction)
+
+    def _pick(self, eligible):
+        """Which eligible contact gets the call: the closest, or the one the
+        advisor names.
+
+        The model only ever chooses among contacts that already qualified,
+        and the wording comes from the phrasebook either way -- the pick is
+        ordering, never whether a call may exist. ``-1`` from the advisor
+        declines the call this pass.
+        """
+        closest = min(range(len(eligible)),
+                      key=lambda i: eligible[i][0].distance_nm)
+        if self.advisor is None or len(eligible) < 2:
+            return eligible[closest]
+        options = []
+        for where, contact in eligible:
+            options.append(
+                f"{contact.written}: {where.oclock} o'clock, "
+                f"{where.distance_nm:.1f} miles, "
+                f"{abs(where.relative_ft)} feet "
+                f"{'above' if where.relative_ft > 0 else 'below'}, "
+                f"moving {where.motion.replace('_', ' ')}")
+        picked = self.advisor.pick(
+            "traffic_call",
+            "Several contacts qualify for a traffic advisory to this "
+            "flight. Which is most worth calling out first?",
+            options, allow_none=True, default=closest)
+        if picked == -1:
+            decision("traffic", said="none", advisor="model")
+            return None
+        if picked is not None:
+            where, contact = eligible[picked]
+            decision("traffic", contact=contact.written, said="advisor_pick",
+                     miles=round(where.distance_nm, 1))
+            return where, contact
+        return eligible[closest]
 
 
 __all__ = ["Contact", "Relative", "TrafficWatch", "caution",

@@ -252,6 +252,7 @@ class _The_real_aeroplanes:
         close("microphone", getattr(self, "microphone", None), "abandon")
         close("AI understanding", getattr(self, "understanding", None), "close")
         close("AI phrasing", getattr(self, "phrasing", None), "close")
+        close("AI advisor", getattr(self, "decisions", None), "close")
         close("speech renderer", getattr(self, "synth", None), "stop")
         if hasattr(getattr(self, "recognizer", None), "close"):
             close("speech recognizer", self.recognizer, "close")

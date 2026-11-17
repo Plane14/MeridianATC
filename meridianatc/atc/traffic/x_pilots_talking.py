@@ -47,7 +47,12 @@ _HUMOR = [
 
 
 class PilotsTalking:
-    """Mixin on the injector: answers and calls between crews."""
+    """Mixin on the injector: answers and calls between crews.
+
+    ``advisor`` may hold an ``llm.decisions.Decisions`` the engine wires in;
+    it only words the deterministic answer, never decides what one says."""
+
+    advisor = None
 
     def flight_called(self, text: str):
         """The aeroplane a transmission names, if it names one of ours.
@@ -110,9 +115,33 @@ class PilotsTalking:
                      f"{self._position_words(flight)}")
             if humor and random.random() < 0.25:
                 reply += f", {random.choice(_HUMOR)}"
+        reply = self._advised(reply, flight, user_cs, own, text,
+                              humor=humor)
         self._say(flight, self._now(), station_position, from_pilot=True,
                   make=lambda _b, _a, _n, r=reply: r)
         return True
+
+    def _advised(self, reply, flight, user_cs, own, asked, *, humor):
+        """A model-worded version of the crew's answer, or the answer itself.
+
+        Every fact in a kept draft must already be in the answer or the
+        flight's own data -- the advisor can give a crew some personality,
+        never anything to say that was not already true.
+        """
+        advisor = self.advisor
+        if advisor is None or not (reply or "").strip():
+            return reply
+        facts = " ".join(part for part in (
+            own, flight.written, user_cs,
+            self._position_words(flight),
+            f"runway {flight.runway}" if flight.runway else "",
+            f"destination {flight.destination}" if flight.destination else "",
+        ) if part)
+        return advisor.draft(
+            "traffic_pilot", asked, facts, reply,
+            persona=f"the pilot of traffic aeroplane {own}, talking to "
+                    f"another pilot over the radio"
+                    + (", being a little playful" if humor else ""))
 
     def maybe_call_the_user(self, session, station_position: str,
                             now: float) -> bool:

@@ -585,6 +585,17 @@ class AiConfig:
     # and name in the render is checked against the approved wording before it
     # is ever said. Off means the phraseology's words are the ones spoken.
     phrasing: bool = False
+    # Let the model advise in bounded, advisory scope: it may pick among
+    # options the engine enumerated (which traffic contact to call out) and
+    # word replies whose facts were already fixed (a crew's answer, a first
+    # officer's). Every pick is validated against the list and every draft
+    # against the facts -- it cannot issue or change an instruction, and the
+    # deterministic answer stands on any failure. llm/decisions.py.
+    decisions: bool = False
+    # With ``decisions``, still ask the model but only log what it would have
+    # done -- the deterministic answer is used. For measuring agreement
+    # before the pick is trusted.
+    decisions_shadow: bool = False
 
 
 describe(
@@ -608,6 +619,10 @@ describe(
                            step=0.05, restart=True, advanced=True),
     phrasing=Setting("understanding", "understanding", restart=True,
                      advanced=True, when="ai.provider!=none"),
+    decisions=Setting("understanding", "understanding", restart=True,
+                      advanced=True, when="ai.provider!=none"),
+    decisions_shadow=Setting("understanding", "understanding", restart=True,
+                             advanced=True, when="ai.provider!=none"),
 )
 
 
