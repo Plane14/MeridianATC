@@ -488,6 +488,14 @@ class _The_phase_machine:
             if self._runway_blocked():
                 self._stop(state)
                 return
+            # "Line up and wait" is not the takeoff word: the arrival it
+            # names is still in the air when the call comes -- invisible
+            # to the occupancy check above. The bars are held until its
+            # final is no longer landing inside the window; once it is
+            # on the pavement the blocked check owns it again.
+            if not self.session.cleared_takeoff and self._runway_inbound():
+                self._stop(state)
+                return
             # Taxi onto the centreline and align with the runway heading.
             # ``align`` says how far off the extended centreline the
             # aeroplane is and the heading that puts it back on; steering

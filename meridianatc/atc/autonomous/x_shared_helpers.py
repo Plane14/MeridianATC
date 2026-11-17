@@ -835,6 +835,38 @@ class _Shared_helpers:
             log.debug("the runway occupancy check failed", exc_info=True)
             return False
 
+    # How far out an arrival still closes the runway for a "line up and
+    # wait": the couple of miles where the landing is seconds away and
+    # the bars are where a crew stays. Past it the controller is telling
+    # the arrival what to do, not the departure where to sit.
+    LINEUP_FINAL_NM = 2.5
+
+    def _runway_inbound(self, runway: str = "", airport=None) -> bool:
+        """Whether an arrival has the strip next, threshold's view.
+
+        "Line up and wait behind landing traffic" is not on the runway
+        -- it is on final, inside the cone, and ``_runway_blocked``
+        cannot see it until the wheels touch. This is the part of the
+        instruction that says wait: an aeroplane in the final cone
+        inside ``LINEUP_FINAL_NM`` of the threshold.
+        """
+        try:
+            session = self.session
+            name = runway or getattr(session, "departure_runway", "") \
+                or (self.state.runway_key[1] if self.state.runway_key else "")
+            airport = airport or getattr(session, "departure", None) \
+                or getattr(session, "destination", None) \
+                or self._get_current_airport()
+            if not name or airport is None:
+                return False
+            from .. import occupancy
+            return bool(occupancy.on_final(
+                self.navdb, airport, name, self._surface_contacts(),
+                within_nm=self.LINEUP_FINAL_NM))
+        except Exception:
+            log.debug("the final-approach check failed", exc_info=True)
+            return False
+
     # How far ahead the FO looks for somebody in the way, how close a
     # meeting counts as a conflict, and the turn made about it -- the
     # see-and-avoid a crew owes the aeroplane nobody is separating it
