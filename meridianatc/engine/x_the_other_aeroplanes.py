@@ -2018,6 +2018,20 @@ class _The_other_aeroplanes:
                       "files were found. The cabin is using its own voices.",
                       key="log.announcements_empty")
 
+    def _radio_trouble(self, detail: str) -> None:
+        """The radio cannot reach the speaker. Say so rather than go quiet.
+
+        A transmission that never finishes playing used to leave the
+        frequency busy for the rest of the flight -- controllers, ATIS and
+        crew all waiting their turn on a lane that never cleared.
+        ``RadioPlayer.busy`` now writes off a wedged item; this is where the
+        pilot hears about the device that lost it.
+        """
+        self.emit("error",
+                  "The radio cannot reach the speaker; transmissions are "
+                  f"not being heard. ({detail})",
+                  key="log.radio_no_audio", detail=detail)
+
     def _cabin_trouble(self, detail: str) -> None:
         """The cabin cannot reach the speaker. Say so rather than go quiet.
 

@@ -340,11 +340,16 @@ def test_com1_transmit_enum(xp, selection, expected):
 
 def test_ap_max_bank_deg_from_mode(xp):
     server, link = xp
-    server.values.update({EXTRA["bank_mode"]: 2, EXTRA["bank_angle2"]: 25})
+    # The mode dataref is an enum: 0 is automatic and 1-6 select
+    # bank_angles_values[0..5], the same indexing the writer sends.
+    server.values.update({EXTRA["bank_mode"]: 2, EXTRA["bank_angle1"]: 25})
     assert link.connect()
     eventually(lambda: "bank_mode" in link._values)
     assert link.read().ap_max_bank_deg == 25
-    # Out-of-range mode leaves the field at the unknown default.
+    # The highest preset is mode 6; automatic (0) and out-of-range leave
+    # the field at the unknown default.
+    server.values.update({EXTRA["bank_mode"]: 6, EXTRA["bank_angle5"]: 30})
+    eventually(lambda: link.read().ap_max_bank_deg == 30)
     server.values[EXTRA["bank_mode"]] = 9
     eventually(lambda: link.read().ap_max_bank_deg == 0.0)
 

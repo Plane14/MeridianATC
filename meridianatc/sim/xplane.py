@@ -439,12 +439,13 @@ class XPlaneSource:
         state.ambient_precip_state = (4 if values.get("rain", 0) > 0
                                       else 2 if values.get("snow", 0) > 0
                                       else 0)
-        # The bank selector's active step, from the index into the six
-        # preset angles -- the number AP_MAX_BANK writes pick from.
+        # The bank selector's active step. The mode dataref is an enum:
+        # 0 is automatic and 1-6 pick bank_angles_values[0..5] -- the same
+        # indexing AP_MAX_BANK writes use (xpcontrols.py sends index+1).
         bank_mode = int(values.get("bank_mode", -1))
         state.ap_max_bank_deg = (
-            values[f"bank_angle{bank_mode}"]
-            if 0 <= bank_mode <= 5 and f"bank_angle{bank_mode}" in values
+            values[f"bank_angle{bank_mode - 1}"]
+            if 1 <= bank_mode <= 6 and f"bank_angle{bank_mode - 1}" in values
             else 0.0)
         state.spoilers_armed = values.get("speedbrake", 0) < 0
         # X-Plane reports fuel mass, not volume; use the same nominal 6 lb/gal
@@ -635,7 +636,7 @@ class XPlaneSource:
             # kHz channels: the subscribed key is the same dataref just
             # written, so the readback is the honest answer.
             key = f"com{radio}_{'standby' if standby else 'active'}"
-            confirmed = self._await(key, lambda khz: abs(khz - value * 1000) < 2.0)
+            confirmed = self._await(key, lambda khz: abs(khz - value * 1000) <= 2.0)
             return confirmed is not False
         except (ValueError, TypeError):
             return False

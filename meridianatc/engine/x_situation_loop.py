@@ -270,6 +270,7 @@ class _Situation_loop:
             self.traffic._taken_over.clear()
             self.traffic._flown_for.clear()
             self.traffic._parked_since.clear()
+            self.traffic._adopted_live.clear()
             self.traffic._drop_invented()
             self._spawned.clear()
             self.traffic.observed_count = 0

@@ -543,9 +543,20 @@ class RadioPlayer:
     speaking over one another.
     """
 
-    def __init__(self, device: int | str | None = None, volume: float = 1.0):
+    # How long a transmission may take before it is written off, as a
+    # multiple of its own length plus a fixed allowance for opening the
+    # device. The same contract the cabin plays by: sd.play(blocking=True)
+    # wedged inside the audio library reports busy for the rest of the
+    # flight otherwise, and a busy radio silences the controllers, the
+    # ATIS and the crew with it.
+    STALL_FACTOR = 3.0
+    STALL_GRACE_S = 12.0
+
+    def __init__(self, device: int | str | None = None, volume: float = 1.0,
+                 on_trouble: Callable[[str], None] | None = None):
         self.device = device
         self.volume = volume
+        self.on_trouble = on_trouble
         self._queue: queue.Queue[PlaybackItem | None] = queue.Queue(maxsize=32)
         self._start_lock = threading.Lock()
         self._stopping = False
@@ -553,13 +564,26 @@ class RadioPlayer:
         self._stop = threading.Event()
         self._playing = threading.Event()
         self._current: str = ""
+        # When the transmission now playing has outstayed its welcome, and
+        # therefore when ``busy`` stops believing in it.
+        self._stall_at = 0.0
+        # The wedge is reported once, not once per ask of busy.
+        self._reported = False
 
     @property
     def busy(self) -> bool:
         # unfinished_tasks counts an item from put() to task_done(), so the
         # get->set gap in _run -- popped but not yet playing -- still reads
         # busy where queue.empty() alone said idle.
-        return self._playing.is_set() or self._queue.unfinished_tasks > 0
+        if self._queue.unfinished_tasks > 0 and not self._playing.is_set():
+            return True
+        if not self._playing.is_set():
+            return False
+        if self._stall_at and time.monotonic() >= self._stall_at:
+            self._trouble(f"{self._current or 'a transmission'} never "
+                          f"finished playing")
+            return False
+        return True
 
     @property
     def now_playing(self) -> str:
@@ -595,6 +619,9 @@ class RadioPlayer:
                 break
             self._playing.set()
             self._current = item.label
+            seconds = len(item.audio) / float(item.sample_rate or 1)
+            self._stall_at = (time.monotonic()
+                              + seconds * self.STALL_FACTOR + self.STALL_GRACE_S)
             try:
                 if item.on_start:
                     item.on_start()
@@ -603,6 +630,7 @@ class RadioPlayer:
                 sd.play(audio, sample_rate, device=self.device, blocking=True)
             except Exception as exc:
                 log.error("playback failed: %s", exc)
+                self._trouble(str(exc))
             finally:
                 if item.on_done:
                     try:
@@ -610,8 +638,19 @@ class RadioPlayer:
                     except Exception:
                         log.debug("playback callback raised", exc_info=True)
                 self._current = ""
+                self._stall_at = 0.0
                 self._playing.clear()
                 self._queue.task_done()
+
+    def _trouble(self, detail: str) -> None:
+        """Tell somebody the radio cannot reach the speaker."""
+        if self._reported or self.on_trouble is None:
+            return
+        self._reported = True
+        try:
+            self.on_trouble(detail)
+        except Exception:
+            log.debug("radio trouble sink raised", exc_info=True)
 
     def play(
         self,

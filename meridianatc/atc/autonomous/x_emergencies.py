@@ -8,6 +8,21 @@ from ._shared import (
 class _Emergencies:
     # -- emergencies ------------------------------------------------------------
 
+    # A projected shortage has to persist to be declared: the need is
+    # priced on the flow of the moment, and climb power in the first
+    # cruise minute reads triple what the rest of the leg burns -- a
+    # projection priced at it cries emergency over healthy tanks the
+    # same way takeoff and climb do. "Cannot reach the field" settles
+    # faster than "below leg + diversion + reserve": a MAYDAY is held
+    # back less than a PAN PAN.
+    LEG_FUEL_PERSIST_S = 45.0
+    MIN_FUEL_PERSIST_S = 120.0
+    # A bus dying stays collapsed through a transient the way a real
+    # failure does; a combustion flag is a slower read, so a blip of
+    # that size is the one a frame of noise makes.
+    ELECTRICAL_PERSIST_S = 8.0
+    ENGINES_PERSIST_S = 5.0
+
     def _monitor_emergency(self, state, now: float) -> None:
         """Watch for the failures the state can actually see.
 
@@ -40,7 +55,12 @@ class _Emergencies:
         volts = getattr(state, "main_bus_volts", -1.0)
         collapsed = volts is not None and volts > 0.0 and (
             volts < 12.0 or 15.0 < volts < 20.0)
-        if collapsed and not state.on_ground:
+        self._electrical_since = \
+            (getattr(self, "_electrical_since", 0.0) or now) \
+            if collapsed else 0.0
+        if collapsed and not state.on_ground \
+                and now - self._electrical_since \
+                >= self.ELECTRICAL_PERSIST_S:
             self._declare_emergency("electrical", state, mayday=True)
             return
 
@@ -48,10 +68,19 @@ class _Emergencies:
         # "All out" is against everything the sim knows about -- the
         # reported count where it answers, the reported combustions
         # otherwise -- so a twin whose count the model never publishes
-        # does not read one failure as two.
+        # does not read one failure as two. And a frame of noise is not
+        # a failure either: the flags have to stay failed a few seconds
+        # before the frequency hears about them.
         if not state.on_ground:
             engines_out, engines_seen = self._engines_out(state)
+            self._engines_since = \
+                (getattr(self, "_engines_since", 0.0) or now) \
+                if engines_out else 0.0
             count = int(getattr(state, "engine_count", 0) or 0)
+            if engines_out \
+                    and now - self._engines_since \
+                    < self.ENGINES_PERSIST_S:
+                return
             if engines_out and engines_out >= max(count, engines_seen):
                 self._declare_emergency("engine", state, mayday=True)
                 return
@@ -91,12 +120,23 @@ class _Emergencies:
             return
         needed = self._fuel_needed_gal(state)
         if needed is None or fuel_gal <= 0.0:
+            self._fuel_leg_since = self._fuel_min_since = 0.0
             if 0.0 < fuel_gal < 8.0:
                 self._declare_emergency("fuel", state, mayday=True)
             return
-        if fuel_gal < needed["leg_gal"]:
+        leg_short = fuel_gal < needed["leg_gal"]
+        total_short = fuel_gal < needed["total_gal"]
+        self._fuel_leg_since = \
+            (getattr(self, "_fuel_leg_since", 0.0) or now) \
+            if leg_short else 0.0
+        self._fuel_min_since = \
+            (getattr(self, "_fuel_min_since", 0.0) or now) \
+            if total_short else 0.0
+        if leg_short \
+                and now - self._fuel_leg_since >= self.LEG_FUEL_PERSIST_S:
             self._declare_emergency("fuel", state, mayday=True)
-        elif fuel_gal < needed["total_gal"] \
+        elif total_short \
+                and now - self._fuel_min_since >= self.MIN_FUEL_PERSIST_S \
                 and not self.state.minimum_fuel_said:
             self.state.minimum_fuel_said = True
             self._declare_emergency("minimum fuel", state, mayday=False)

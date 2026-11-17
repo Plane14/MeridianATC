@@ -390,8 +390,13 @@ def plan(known: FieldApproaches | None, runway: str, weather=None, *,
             if requested in (approach.kind, approach.name) or (
                     requested == "RNAV" and approach.kind == RNP and airliner):
                 found = usable(approach)
-                return Choice(approach, runway, line=found[2] if found else "",
-                              why="asked for")
+                if found:
+                    return Choice(approach, runway, line=found[2],
+                                  why="asked for")
+        # The approach asked for is published but this aeroplane cannot
+        # fly it -- an RNP-AR in a Cessna, a procedure with no line for
+        # it. Falling through gives it what the runway does have rather
+        # than a clearance onto a plate it cannot use.
 
     if region in VISUAL_REGIONS and _visual_weather(weather):
         return Choice(Approach(VISUAL, runway), runway,

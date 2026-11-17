@@ -694,6 +694,13 @@ class SimConnectSource:
         # False for ever -- which means "not running" is only evidence of
         # anything once it has been True at least once.
         self._seen_running = False
+        # The last position seen and how long a teleport is marked for. A
+        # slew or a map relocation is a jump no groundspeed could cover;
+        # flagging it for a moment keeps the change-watchers from firing
+        # on a position the aeroplane did not fly to. X-Plane does the
+        # same check in sim/xplane.py.
+        self._last_geo: tuple[float, float, float] | None = None
+        self._relocated_until = 0.0
         # Which of the two ways of setting a frequency works, per radio and
         # per active/standby. Not one answer for the whole simulator: MSFS
         # 2024 takes COM_RADIO_SET_HZ for the active frequency and does not
@@ -1212,6 +1219,24 @@ class SimConnectSource:
         for attribute, value in self._values.items():
             setattr(state, attribute, value)
         state.paused = self._is_paused()
+        # A menu move or a slew is a position the aeroplane could not have
+        # flown to -- further than its groundspeed could carry it since
+        # the last read. Marked for a couple of seconds so the change-
+        # watchers hold rather than fire on the delta.
+        now = time.monotonic()
+        if state.has_position:
+            if self._last_geo is not None:
+                lat0, lon0, t0 = self._last_geo
+                dt = max(0.05, now - t0)
+                dlat = (state.latitude - lat0) * 60.0
+                dlon = ((state.longitude - lon0)
+                        * math.cos(math.radians((state.latitude + lat0) / 2))
+                        * 60.0)
+                reach_nm = (state.ground_speed_kt or 0.0) / 3600.0 * dt * 2.5 + 0.25
+                if math.hypot(dlat, dlon) > reach_nm:
+                    self._relocated_until = now + 2.0
+            self._last_geo = (state.latitude, state.longitude, now)
+        state.relocated = now < self._relocated_until
         self._derive(state)
         with self._lock:
             self._state = state
@@ -1324,8 +1349,9 @@ class SimConnectSource:
             return value / 100.0 if value > 100.0 else value
         if kind == "fps_kt":
             # The design-performance speeds are asked for in the
-            # wrapper's native feet per second.
-            return float(raw) * 1.94384449
+            # wrapper's native feet per second; one foot per second is
+            # 0.592484 knots (1.94384449 is the metre-per-second factor).
+            return float(raw) * 0.592484
         if kind == "m_ft":
             return float(raw) * 3.28084
         return float(raw)

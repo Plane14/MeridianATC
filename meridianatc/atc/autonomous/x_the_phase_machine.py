@@ -573,11 +573,16 @@ class _The_phase_machine:
                 return
             d.parking_brake(False)
             self._steer(state, steer_hdg, self.performance.taxi_kt)
-            # "Lined up" means on the pavement: inside the strip's own
-            # half-width, not the flat 25 m that parked a Baron beside
-            # a 45 m runway's edge and called it aligned.
-            if abs(err["offset_m"]) < min(25.0, self._runway_half_m()) \
-                    and hdg_err < 8.0:
+            # "Lined up" means on the paint, not merely on the pavement:
+            # within a few metres of the centreline and a few degrees of
+            # the heading. The old gate -- inside the strip's own
+            # half-width -- declared the Baron aligned at the edge of a
+            # 45 m runway, which is exactly where the roll then started.
+            # ``along_m`` keeps it honest the other way: on the extended
+            # centreline but still short of the numbers is the taxiway,
+            # not a lineup.
+            if abs(err["offset_m"]) < min(8.0, self._runway_half_m()) \
+                    and err["along_m"] > -40.0 and hdg_err < 5.0:
                 self.state.aligned = True
                 self._goto_sub("set")
                 self._emit("info", "Lined up on runway",
@@ -668,10 +673,11 @@ class _The_phase_machine:
                 hdg_err = abs((self.state.runway_heading
                                - (state.heading_true or 0.0) + 540.0)
                               % 360.0 - 180.0)
-                # Beside the strip is a re-align, not a takeoff waited
-                # for on the grass.
-                if abs(err["offset_m"]) > min(40.0, self._runway_half_m()) \
-                        or hdg_err > 20.0:
+                # Beside the paint is a re-align, not a takeoff waited
+                # for half a lane off -- the slack over the align gate
+                # is the creep a hold brake allows, no more.
+                if abs(err["offset_m"]) > min(12.0, self._runway_half_m()) \
+                        or hdg_err > 10.0:
                     self.state.aligned = False
                     self._goto_sub("align")
                     return
@@ -1041,9 +1047,10 @@ class _The_phase_machine:
                                         heading=assigned_hdg,
                                         speed_kt=self._speed_target(state))
         else:
-            self._apply_flight_director(state, altitude=target,
-                                        vs_fpm=vs,
-                                        speed_kt=self._speed_target(state))
+            self._apply_flight_director(
+                state, altitude=target, vs_fpm=vs,
+                heading=self._nav_fallback_heading(state, now),
+                speed_kt=self._speed_target(state))
             # No SID to walk and no heading assigned is not "wings
             # free": NAV flies the filed route until ATC says otherwise.
             self.director.nav(True)
@@ -1082,7 +1089,7 @@ class _The_phase_machine:
                 vs_fpm=-min(self.performance.descend_fpm * 2.0, 5000.0),
                 heading=(self.session.assigned_heading
                          if self.session.assigned_heading is not None
-                         else -1.0),
+                         else self._nav_fallback_heading(state, now)),
                 speed_kt=self._speed_target(state))
         elif sid is not None:
             self._fly_procedure(state, sid)
@@ -1121,7 +1128,7 @@ class _The_phase_machine:
                     state, altitude=target, vs_fpm=vs,
                     heading=(self.session.assigned_heading
                              if self.session.assigned_heading is not None
-                             else -1.0),
+                             else self._nav_fallback_heading(state, now)),
                     speed_kt=self._speed_target(state))
             else:
                 # No assigned or planned level is not an instruction to
@@ -1212,12 +1219,21 @@ class _The_phase_machine:
             self.director.spoilers_arm(True)
 
         # Speed: assigned, else a sensible step-down -- the type's
-        # figure in the descent, approach speed inside three thousand,
-        # Vapp on the final.
+        # descent figure above three thousand (the approach speed held
+        # for the whole descent was the same Vy-for-a-leg bug as the
+        # cruise: a Baron coming down at 95 kt), approach speed inside
+        # it, Vapp on the final. Below ten thousand nothing fast enough
+        # to matter goes over two-fifty.
+        descent = max(self.performance.approach_kt,
+                      0.85 * self._cruise_speed_kt(state))
+        if self.performance.cruise_kt >= 200.0 \
+                and 0.0 < float(getattr(state, "altitude_ft", 0.0)
+                                or 0.0) < 10_000.0:
+            descent = min(descent, 250.0)
         speed = self.session.assigned_speed_kt or (
             self._vapp(state) if on_final
             else (self._vapp(state)) + 20.0
-            if agl < 3000 else self.performance.approach_kt)
+            if agl < 3000 else descent)
         # The descent rate is the model's own where it declares one --
         # a clean turbofan comes down at three thousand, a piston at eight
         # hundred -- and the class figure where it does not. The sign is
@@ -1260,10 +1276,11 @@ class _The_phase_machine:
                 vs = self.performance.climb_fpm
             else:
                 vs = max(-300.0, min(300.0, -err * 4.0))
-            self._apply_flight_director(state, altitude=target,
-                                        vs_fpm=vs,
-                                        heading=assigned_hdg if assigned_hdg is not None else -1.0,
-                                        speed_kt=speed)
+            self._apply_flight_director(
+                state, altitude=target, vs_fpm=vs,
+                heading=assigned_hdg if assigned_hdg is not None
+                else self._nav_fallback_heading(state, now),
+                speed_kt=speed)
             if assigned_hdg is None:
                 # A vector that has ended is not a heading kept for
                 # ever: with nothing assigned the route is the lateral

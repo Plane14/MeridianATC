@@ -72,7 +72,7 @@ def hpa_from_inhg(inhg: float) -> float:
 # --------------------------------------------------------------------------
 
 _RE_WIND = re.compile(r"\b(\d{3}|VRB)(\d{2,3})(?:G(\d{2,3}))?(KT|MPS|KMH)\b")
-_RE_VIS_SM = re.compile(r"\b(\d{1,2})?\s?(\d/\d)?SM\b")
+_RE_VIS_SM = re.compile(r"\bM?(\d{1,2})?\s?(\d/\d)?SM\b")
 _RE_TEMP = re.compile(r"\b(M?\d{2})/(M?\d{2})\b")
 _RE_ALTIM_IN = re.compile(r"\bA(\d{4})\b")
 _RE_ALTIM_HPA = re.compile(r"\bQ(\d{4})\b")
@@ -187,7 +187,10 @@ def parse_metar(raw: str) -> Weather:
 
 def _parse_visibility(body: str) -> float | None:
     """Visibility in statute miles, from either US or metric encoding."""
-    if "9999" in body:
+    # 9999 is the metric "ten kilometres or better" marker, but only as a
+    # token of its own -- inside an RVR group (R36/9999N) it says nothing
+    # about how far the pilot can see.
+    if any(token == "9999" for token in body.split()):
         return 10.0
     m = _RE_VIS_SM.search(body)
     if m and (m.group(1) or m.group(2)):
@@ -259,7 +262,12 @@ class WeatherProvider:
         except Exception as exc:
             log.warning("could not read weather cache: %s", exc)
             return
+        if not isinstance(data, dict):
+            log.warning("weather cache is not a mapping; ignoring it")
+            return
         for station, entry in data.items():
+            if not isinstance(entry, dict):
+                continue
             wx = parse_metar(entry.get("raw", ""))
             self._memory[station] = (entry.get("fetched", 0.0), wx, entry.get("raw", ""))
 

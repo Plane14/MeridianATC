@@ -12,7 +12,7 @@ PyInstaller build carries none unless the spec is told to add it. See the
 version resource in ``meridianatc.spec``, and "Windows Defender" in the README.
 """
 
-__version__ = "2.0.0"
+__version__ = "3.0.0"
 
 #: What goes in the executable's version resource. Not decoration: a scanner
 #: reads these fields, and a file with a publisher looks less like the packed

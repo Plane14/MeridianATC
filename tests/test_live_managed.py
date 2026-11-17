@@ -14,12 +14,15 @@ def _injector(**over):
     injector = TrafficInjector.__new__(TrafficInjector)
     injector.field = SimpleNamespace(
         ident="EBBR", latitude=50.9, longitude=4.48, elevation_ft=184.0,
-        arrival_runway="25R", departure_runway="25R")
+        arrival_runway="25R", departure_runway="25R", stations={})
+    injector.radius_nm = TrafficInjector.OUT_OF_SIGHT_NM
+    injector.observed_nm = 30.0
     injector.ground = None
     injector.hold_live = Mock()
     injector._taken_over = set()
     injector._flown_for = {}
     injector._parked_since = {}
+    injector._adopted_live = set()
     injector._live_flew = set()
     injector._live_moving = set()
     injector._live_stands = {}
@@ -39,6 +42,10 @@ def _injector(**over):
     injector._nearby_field = Mock(return_value=None)
     injector._elsewhere = Mock(return_value="ANTWERP")
     injector._release_all = Mock()
+    injector.can_push = None
+    injector.random = SimpleNamespace(
+        choice=lambda seq: seq[0], uniform=lambda a, b: a,
+        sample=lambda seq, k: list(seq)[:k])
     for key, value in over.items():
         setattr(injector, key, value)
     return injector
@@ -62,7 +69,8 @@ def _flight(**over):
         done=False, retire=False, drawn=True, boarded_at=None,
         latitude=50.9, longitude=4.5, heading=250.0, altitude_ft=3000.0,
         ground_speed_kt=180.0, vertical_rate_fpm=-800.0, performance=None,
-        cleared=False, pattern_direction="left", pattern_work=False)
+        cleared=False, pattern_direction="left", pattern_work=False,
+        handed_off=False, taxi_rest=[], taxi_split_xy=None)
     for key, value in over.items():
         setattr(flight, key, value)
     return flight
@@ -289,3 +297,217 @@ def test_a_parked_adopted_aeroplane_rejoins_when_the_real_one_is_heard():
     assert ours.done
     assert 12345 not in injector._taken_over
     assert real in out  # the feed's aeroplane is heard again
+
+
+def test_a_live_aeroplane_is_adopted_once():
+    """Handed back to the feed it is read rather than flown again: adopted
+    a second time it would be worked and handed off over and over for as
+    long as the real aeroplane stayed in reach."""
+    injector = _injector()
+    flight = _flight(origin="EBBR", destination="EGLL", arriving=False)
+    one = _seen(origin="EBBR", destination="EGLL",
+                vertical_speed_fpm=1500.0)
+    assert injector._adopt_live(flight, one, 100.0)
+    assert flight.observed_id in injector._adopted_live
+    # Its strip back on the feed: not ours to fly again.
+    flight.observed = True
+    assert injector._adopt_live(flight, one, 200.0) is False
+    assert flight.observed is True
+
+
+def test_an_adopted_departure_out_of_sight_is_handed_back_to_the_feed():
+    """A live departure ours has flown out of sight is not dropped: the
+    real aeroplane is still out there inside the feed's wider reach, and
+    its strip goes back to reading it rather than reappearing to be
+    adopted all over again."""
+    injector = _injector()
+    flight = _flight(observed=False, source="live", arriving=False,
+                     phase="departed", handed_off=True, distance_nm=13.0)
+    injector._taken_over.add(flight.observed_id)
+    injector._flown_for[flight.observed_id] = flight
+    injector._adopted_live.add(flight.observed_id)
+    injector._advance_departure(flight, 100.0)
+    assert flight.observed is True
+    assert not flight.done
+    assert flight.observed_id not in injector._taken_over
+    assert flight.observed_id not in injector._flown_for
+
+
+def test_an_invented_departure_out_of_sight_is_done():
+    injector = _injector()
+    flight = _flight(observed=False, source="", arriving=False,
+                     phase="departed", handed_off=True, distance_nm=13.0)
+    injector._advance_departure(flight, 100.0)
+    assert flight.done
+    assert flight.observed is False
+
+
+def test_a_handed_off_departure_back_on_the_feed_is_not_told_twice():
+    injector = _injector()
+    flight = _flight(handed_off=True, phase="departed", arriving=False)
+    injector._advance_observed(flight, 100.0)
+    assert injector.pending == []
+    assert flight.step == 1
+
+
+def test_out_of_sight_is_the_configured_radius_not_twelve_miles():
+    """A handed-off departure stays while it is inside the draw radius
+    the traffic was configured with: thirteen miles was the old fixed
+    figure, and at radius_nm=100 it is still ours at twenty."""
+    injector = _injector(radius_nm=100.0)
+    flight = _flight(observed=False, source="", arriving=False,
+                     phase="departed", handed_off=True, distance_nm=20.0,
+                     altitude_ft=6000.0)
+    injector._advance_departure(flight, 100.0)
+    assert not flight.done
+    # And still gone the moment it is past the radius.
+    flight.distance_nm = 101.0
+    injector._advance_departure(flight, 105.0)
+    assert flight.done
+
+
+def test_the_default_radius_is_the_old_figure():
+    """A caller that never heard of the setting gets what it always
+    got: the departure out of sight at twelve miles."""
+    injector = _injector()
+    flight = _flight(observed=False, source="", arriving=False,
+                     phase="departed", handed_off=True, distance_nm=13.0,
+                     altitude_ft=6000.0)
+    injector._advance_departure(flight, 100.0)
+    assert flight.done
+
+
+def test_the_feed_gate_is_the_configured_radius_too():
+    """The feed is asked out to live.radius_nm (traffic.radius_nm by
+    default), but the strip gate was a fixed thirty miles: at
+    radius_nm=100 a real aeroplane the feed heard at forty was fetched
+    and never shown. The gate follows the setting now."""
+    injector = _injector(observed_nm=100.0)
+    far = _seen(latitude=51.5, longitude=4.5)        # ~40 nm out
+    far.positioned = True
+    assert injector._works_here(far)
+    # Unset, it keeps the old thirty-mile gate.
+    assert not _injector()._works_here(far)
+
+
+def test_a_live_arrival_sent_to_parking_is_handed_back():
+    """A live arrival told to taxi to parking with no layout to drive
+    it down was dropped -- and the real aeroplane on the feed put a
+    fresh strip up a moment later. It goes back to the feed in place."""
+    injector = _injector()
+    injector._exchange = Mock()
+    flight = _flight(observed=False, source="live", phase="taxi_in",
+                     on_layout=False)
+    injector._taken_over.add(flight.observed_id)
+    injector._flown_for[flight.observed_id] = flight
+    injector._adopted_live.add(flight.observed_id)
+    injector._advance_arrival(flight, 100.0)
+    assert flight.observed is True
+    assert not flight.done
+
+
+def test_a_parked_live_arrival_is_handed_back_not_dropped():
+    """Parked long enough a managed arrival leaves the roster -- but a
+    live one's real aeroplane is parked right there on the feed, so the
+    strip goes back to reading it, never a static double and never a
+    vanish-and-fresh-strip."""
+    injector = _injector()
+    injector._rest_of_taxi = Mock()
+    injector._exchange = Mock()
+    flight = _flight(observed=False, source="live", phase="taxi_in",
+                     on_layout=True, step=10, taxi=object(),
+                     parked_at=1.0)
+    injector._taken_over.add(flight.observed_id)
+    injector._flown_for[flight.observed_id] = flight
+    injector._adopted_live.add(flight.observed_id)
+    injector._advance_arrival(flight, 100.0 + flight_phase_parked_s())
+    assert flight.observed is True
+    assert not flight.done
+    assert flight.static is False
+
+
+def flight_phase_parked_s() -> float:
+    from meridianatc.atc.traffic.x_arrivals import _Arrivals
+    return _Arrivals.PARKED_S + 1.0
+
+
+def test_a_live_departure_with_nowhere_to_go_is_handed_back():
+    """A live departure the taxi planner cannot route anywhere was
+    dropped on its stand; the feed's real one reappeared as a fresh
+    strip. It is the feed's again instead."""
+    injector = _injector(ground=Mock(), _plan_departure=Mock(
+        return_value=None))
+    flight = _flight(observed=False, source="live", phase="taxi",
+                     on_layout=True, arriving=False)
+    injector._taken_over.add(flight.observed_id)
+    injector._flown_for[flight.observed_id] = flight
+    injector._adopted_live.add(flight.observed_id)
+    injector._advance_departure(flight, 100.0)
+    assert flight.observed is True
+    assert not flight.done
+
+
+def test_a_stuck_live_aeroplane_is_handed_back_not_dropped():
+    """The watchdog takes away what cannot be made to move -- but a
+    live one still exists on the feed, where its strip reads it rather
+    than vanishing and coming back new."""
+    injector = _injector()
+    injector._where_moving = Mock(return_value="taxiway")
+    injector._queued = Mock(return_value=False)
+    injector._say_stuck = Mock()
+    injector._recover = Mock()
+    injector._release_runway = Mock()
+    flight = _flight(observed=False, source="live", phase="taxi_in",
+                     on_layout=True, still_at=None, still_since=0.0,
+                     stuck=False, recovered=False,
+                     target=SimpleNamespace(clear=lambda: None,
+                                            intent="taxi"))
+    injector._taken_over.add(flight.observed_id)
+    injector._flown_for[flight.observed_id] = flight
+    injector._adopted_live.add(flight.observed_id)
+    injector.flights = [flight]
+    injector._watchdog(100.0)          # marks it standing still
+    injector._watchdog(200.0)          # past the limit: a retry
+    injector._watchdog(300.0)          # still: removed -- for live, back
+    injector._say_stuck.assert_called_with(
+        flight, "taxiway", pytest.approx(100.0), "removed")
+    assert flight.observed is True
+    assert not flight.done
+
+
+def test_an_extended_live_arrival_is_handed_back_not_dropped():
+    """A live arrival the tower extended past the give-up distance was
+    dropped mid-downwind while the real aeroplane flew its approach:
+    the strip goes back to reading the feed."""
+    injector = _injector(
+        _threshold=Mock(return_value=(50.9, 4.48, 250.0)),
+        _runway_frame=Mock(return_value=(3.0, 0.5)),
+        _room_on_final=Mock(return_value=False),
+        _rollout_s=Mock(return_value=60.0))
+    flight = _flight(observed=False, source="live", phase="final",
+                     arriving=True, extending=True, distance_nm=21.0)
+    injector._taken_over.add(flight.observed_id)
+    injector._flown_for[flight.observed_id] = flight
+    injector._adopted_live.add(flight.observed_id)
+    injector._watch_downwind(flight, 100.0)
+    assert flight.observed is True
+    assert not flight.done
+
+
+def test_a_live_aeroplane_the_sim_cannot_draw_is_handed_back():
+    """The model the simulator could not make was dropped -- and the
+    real aeroplane put a fresh strip straight back. It reads the feed
+    instead."""
+    injector = _injector()
+    flight = _flight(observed=False, source="live", drawn=False)
+    injector._taken_over.add(flight.observed_id)
+    injector._flown_for[flight.observed_id] = flight
+    injector._adopted_live.add(flight.observed_id)
+    injector._materialising = [flight]
+    injector._materialise_by[flight.written] = 200.0
+    confirmed, dropped = injector.confirm(
+        lambda cs: False, lambda cs: True, 100.0)
+    assert flight.observed is True
+    assert flight in injector.flights
+    assert dropped == []
+    assert injector._materialising == []

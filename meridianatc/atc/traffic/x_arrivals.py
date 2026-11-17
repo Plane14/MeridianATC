@@ -160,6 +160,7 @@ class _Arrivals:
                     command=("handoff", {}),
                 )
             flight.phase = "taxi_in"
+            flight.handed_off = True
             flight.next_at = now + self.random.uniform(20.0, 50.0)
             return
 
@@ -186,6 +187,12 @@ class _Arrivals:
             # who had just watched it taxi in.
             if flight.parked_at and now - flight.parked_at > self.PARKED_S:
                 self._release_all(flight)
+                if flight.source == "live":
+                    # Ours parked where the real one did: back to the
+                    # feed in place, not a strip that vanishes and a
+                    # fresh one for the same aeroplane.
+                    self._unadopt(flight, now, why="parked")
+                    return
                 if len(self.statics) < self._parked_wanted():
                     self._make_static(flight)
                     return
@@ -201,7 +208,13 @@ class _Arrivals:
                 pilot_back=lambda p, a, s: p.leaving(a),
                 command=("taxi_in", {}),
             )
-            flight.done = True
+            if flight.source == "live":
+                # Sent to parking is as far as a strip can take a live
+                # arrival the taxiways do not reach: the real one is
+                # still there on the feed, and this strip reads it.
+                self._unadopt(flight, now, why="taxied in")
+            else:
+                flight.done = True
             return
 
         if phase in ("go_around", "missed_hold"):

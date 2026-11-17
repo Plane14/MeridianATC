@@ -335,7 +335,9 @@ class Flight:
     # what the button was pressed for.
     by_hand: bool = False
     # A departure that has been handed on and is flying away out of sight,
-    # rather than vanishing a mile off the end of the runway.
+    # rather than vanishing a mile off the end of the runway. On any strip,
+    # that its next-frequency handoff was said -- an observed one handed
+    # back to the feed is not sent a second time.
     handed_off: bool = False
     # Since when it has been waiting for the runway, or 0 if it is not. How
     # the tower knows to leave a gap in the arrivals for it.

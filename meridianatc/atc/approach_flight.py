@@ -29,6 +29,7 @@ minima.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from ..navdata.build import project
@@ -78,6 +79,9 @@ CIRCLE_DOWNWIND_NM = -2.5    # past the threshold, along the landing course
 CIRCLE_OFFSET_NM = 2.0
 CIRCLE_BASE_OUT_NM = 3.5
 
+# The compass words a circle restriction is spoken in, as bearings.
+_CIRCLE_SIDES = {"north": 0.0, "east": 90.0, "south": 180.0, "west": 270.0}
+
 
 @dataclass(frozen=True)
 class Navaid:
@@ -112,6 +116,9 @@ class ApproachRecipe:
     missed_alt_ft: float = 0.0
     navaid: Navaid | None = None
     circling: bool = False
+    # The clearance's circle restriction as spoken -- "north" etc; the
+    # side of the field the manoeuvre has to stay on.
+    circle_side: str = ""
     back_course: bool = False   # a localizer back course: needles sense reversed
     why: str = ""
 
@@ -316,6 +323,7 @@ def resolve(session, brain, navdb, state) -> ApproachRecipe | None:
         missed_alt_ft=missed_ft or elev + 2500.0,
         navaid=navaid,
         circling=bool(getattr(choice, "circle_to", "")),
+        circle_side=getattr(choice, "circle_side", "") or "",
         back_course=back_course,
         why=getattr(choice, "why", "") or "")
 
@@ -376,7 +384,15 @@ def circle_legs(recipe: ApproachRecipe, navdb, state) -> list | None:
     from .procedures import frame
 
     _out, side = frame(final, state.latitude, state.longitude)
-    s = 1.0 if side >= 0 else -1.0
+    bearing = _CIRCLE_SIDES.get(recipe.circle_side)
+    if bearing is not None:
+        # The clearance restricted the circle to one side of the field:
+        # right of the landing course or left of it, whichever the
+        # spoken compass side falls on.
+        s = 1.0 if math.sin(math.radians(bearing - final.course)) > 0 \
+            else -1.0
+    else:
+        s = 1.0 if side >= 0 else -1.0
     points = [
         frame_point(final.lat, final.lon, final.course,
                     CIRCLE_DOWNWIND_NM, s * CIRCLE_OFFSET_NM),

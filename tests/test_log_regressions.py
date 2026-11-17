@@ -666,6 +666,90 @@ def test_one_engine_out_flies_the_drift_down():
     assert flight._speed_target(state) == 160.0
 
 
+def test_cruise_speed_is_the_cruise_not_the_climb():
+    """X-Plane publishes no estimated cruise speed: the fallback was
+    the climb figure, so a Baron "cruised" a whole leg at Vy. Cruise
+    takes the type's own Vno pulled back to a cruise setting, or the
+    profile's figure where one is matched -- never the climb speed."""
+    from dataclasses import replace
+
+    from meridianatc.atc import flying
+    from meridianatc.atc.autonomous import AutonomousPhase
+    # The Baron, as X-Plane reports it: no estimate, Vno at 195, and
+    # the autofly profile's POH numbers on the performance.
+    baron = replace(flying.LIGHT, climb_kt=105.0, cruise_kt=185.0)
+    flight = _flier(baron)
+    flight.state.phase = AutonomousPhase.CRUISE
+    flight.state.climb_kt = 105.0
+    flight.session.assigned_speed_kt = 0
+    state = SimpleNamespace(
+        altitude_ft=8000.0, estimated_cruise_kt=0.0, barber_pole_kt=0.0,
+        design_vc_kt=195.0)
+    speed = flight._speed_target(state)
+    # The profile's 185 stands over 0.75 x Vno; either way not 105.
+    assert speed == 185.0
+    # A model with no profile still cruises at its own figure: the
+    # class's 110 would sell a Vno-195 aeroplane half its legs short.
+    plain = _flier(flying.LIGHT)
+    plain.state.phase = AutonomousPhase.CRUISE
+    plain.state.climb_kt = 85.0
+    plain.session.assigned_speed_kt = 0
+    assert plain._speed_target(state) == 0.75 * 195.0
+    # MSFS still wins where it publishes the estimate.
+    state.estimated_cruise_kt = 170.0
+    assert flight._speed_target(state) == 170.0
+
+
+def test_climb_accelerates_past_the_noise_height():
+    """Vy is for the first stretch; past fifteen hundred the crew
+    pitches for the enroute climb -- part way toward the cruise, not
+    the book figure held to the top."""
+    from dataclasses import replace
+
+    from meridianatc.atc import flying
+    from meridianatc.atc.autonomous import AutonomousPhase
+    baron = replace(flying.LIGHT, climb_kt=105.0, cruise_kt=185.0)
+    flight = _flier(baron)
+    flight.state.phase = AutonomousPhase.CLIMB
+    flight.state.climb_kt = 105.0
+    flight.session.assigned_speed_kt = 0
+    low = SimpleNamespace(
+        altitude_ft=1000.0, altitude_agl_ft=800.0,
+        estimated_cruise_kt=0.0, barber_pole_kt=0.0)
+    assert flight._speed_target(low) == 105.0
+    high = SimpleNamespace(
+        altitude_ft=6000.0, altitude_agl_ft=5500.0,
+        estimated_cruise_kt=0.0, barber_pole_kt=0.0)
+    speed = flight._speed_target(high)
+    assert 105.0 < speed < 185.0
+
+
+def test_the_shared_figure_is_not_the_climb_speed_either():
+    """Any phase with no answer of its own fell back to the climb
+    speed first -- the STAR guidance's descent came down at Vy, the
+    same leg-slow bug as the cruise's. The generic figure is the
+    descent profile's, part way back from cruise."""
+    from dataclasses import replace
+
+    from meridianatc.atc import flying
+    from meridianatc.atc.autonomous import AutonomousPhase
+    baron = replace(flying.LIGHT, climb_kt=105.0, cruise_kt=185.0)
+    flight = _flier(baron)
+    flight.state.phase = AutonomousPhase.DESCENT
+    flight.state.climb_kt = 105.0
+    flight.session.assigned_speed_kt = 0
+    state = SimpleNamespace(
+        altitude_ft=9000.0, estimated_cruise_kt=0.0, barber_pole_kt=0.0,
+        design_vc_kt=195.0)
+    speed = flight._speed_target(state)
+    # 0.85 of the cruise figure, nowhere near the climb's 105.
+    assert abs(speed - 0.85 * 185.0) < 0.01
+    # And the helper both phases now share reads the model's own
+    # estimate where MSFS publishes one.
+    state.estimated_cruise_kt = 170.0
+    assert flight._cruise_speed_kt(state) == 170.0
+
+
 def test_gear_up_gets_one_goaround_then_the_belly_landing():
     """The gear that stayed up: one try, then the runway it has."""
     from meridianatc.atc.autonomous import AutonomousPhase
@@ -1487,6 +1571,8 @@ def _emergency_flight():
     flight = _flier()
     flight._fuel_known = True
     flight._fuel_capacity_seen = 100.0
+    flight._fuel_leg_since = 0.0
+    flight._fuel_min_since = 0.0
     flight._is_helicopter = False
     flight._declare_emergency = Mock()
     return flight
@@ -1531,6 +1617,224 @@ def test_a_few_gallons_still_declares_below_capacity():
     flight._monitor_emergency(state, 10.0)
     flight._declare_emergency.assert_called_once_with(
         "fuel", state, mayday=True)
+
+
+def test_a_projected_shortage_has_to_persist_to_be_declared():
+    """The N45XS case: forty-two seconds into the cruise, the tanks were
+    priced against climb power and a "minimum fuel" PAN went out over
+    two hours of endurance. A shortage has to hold past the transient
+    before it is anybody's emergency."""
+    from meridianatc.atc import flying
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _emergency_flight()
+    flight._perf = flying.LIGHT        # the Baron, not the airliner
+    flight.state.phase = AutonomousPhase.CRUISE
+    flight._reserve_min = 45.0
+    flight.session.destination = SimpleNamespace(
+        ident="LECO", lat=42.0, lon=-8.0)
+    flight.navdb = SimpleNamespace(nearest_airports=lambda *a, **k: [])
+    state = SimpleNamespace(
+        main_bus_volts=28.0, on_ground=False, engine_count=2,
+        engines_running=True, eng2_combustion=True, eng3_combustion=None,
+        eng4_combustion=None, has_position=True,
+        fuel_total_lb=420.0, fuel_total_gal=70.0, fuel_capacity_gal=200.0,
+        est_fuel_flow_pph=200.0,        # climb power, not the leg's
+        estimated_cruise_kt=0.0, design_vc_kt=0.0, ground_speed_kt=140.0,
+        fuel_unusable_gal=0.0, distance_to=lambda lat, lon: 200.0)
+    # Priced short on the first read (leg + reserve at 200 pph is about
+    # 86 gal) -- but it is a projection, not a declaration, until it
+    # persists.
+    flight._monitor_emergency(state, 100.0)
+    flight._declare_emergency.assert_not_called()
+    flight._monitor_emergency(state, 100.0 + flight.MIN_FUEL_PERSIST_S - 1)
+    flight._declare_emergency.assert_not_called()
+    # Once it has persisted it is said -- and said once.
+    flight._monitor_emergency(state, 100.0 + flight.MIN_FUEL_PERSIST_S)
+    flight._declare_emergency.assert_called_once_with(
+        "minimum fuel", state, mayday=False)
+    flight._monitor_emergency(state, 100.0 + flight.MIN_FUEL_PERSIST_S + 60)
+    flight._declare_emergency.assert_called_once()
+
+
+def test_a_shortage_that_clears_is_no_emergency_at_all():
+    """Power back to cruise and the projection heals itself: nothing
+    was ever said."""
+    from meridianatc.atc import flying
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _emergency_flight()
+    flight._perf = flying.LIGHT        # the Baron, not the airliner
+    flight.state.phase = AutonomousPhase.CRUISE
+    flight._reserve_min = 45.0
+    flight.session.destination = SimpleNamespace(
+        ident="LECO", lat=42.0, lon=-8.0)
+    flight.navdb = SimpleNamespace(nearest_airports=lambda *a, **k: [])
+    state = SimpleNamespace(
+        main_bus_volts=28.0, on_ground=False, engine_count=2,
+        engines_running=True, eng2_combustion=True, eng3_combustion=None,
+        eng4_combustion=None, has_position=True,
+        fuel_total_lb=420.0, fuel_total_gal=70.0, fuel_capacity_gal=200.0,
+        est_fuel_flow_pph=200.0,
+        estimated_cruise_kt=0.0, design_vc_kt=0.0, ground_speed_kt=140.0,
+        fuel_unusable_gal=0.0, distance_to=lambda lat, lon: 200.0)
+    flight._monitor_emergency(state, 100.0)
+    # The power comes back: the same tanks at the leg's own burn are
+    # comfortably enough, and the clock is forgotten.
+    state.est_fuel_flow_pph = 60.0
+    flight._monitor_emergency(state, 130.0)
+    flight._monitor_emergency(state, 400.0)
+    flight._declare_emergency.assert_not_called()
+    assert flight._fuel_min_since == 0.0
+
+
+def test_a_bus_spike_is_not_an_electrical_emergency():
+    """A collapsed main bus was declared on a single read -- a load
+    spike or a noisy frame became a MAYDAY. It has to stay collapsed
+    a few seconds first."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _emergency_flight()
+    flight.state.phase = AutonomousPhase.CRUISE
+    state = SimpleNamespace(
+        main_bus_volts=4.0, on_ground=False, engine_count=2,
+        engines_running=True, eng2_combustion=True, eng3_combustion=None,
+        eng4_combustion=None, has_position=True,
+        fuel_total_gal=70.0, fuel_capacity_gal=200.0)
+    flight._monitor_emergency(state, 100.0)
+    flight._declare_emergency.assert_not_called()
+    # A real failure stays collapsed.
+    flight._monitor_emergency(
+        state, 100.0 + flight.ELECTRICAL_PERSIST_S)
+    flight._declare_emergency.assert_called_once_with(
+        "electrical", state, mayday=True)
+
+
+def test_a_cleared_bus_never_declares():
+    """The spike that comes back is forgotten, not remembered."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _emergency_flight()
+    flight.state.phase = AutonomousPhase.CRUISE
+    state = SimpleNamespace(
+        main_bus_volts=4.0, on_ground=False, engine_count=2,
+        engines_running=True, eng2_combustion=True, eng3_combustion=None,
+        eng4_combustion=None, has_position=True,
+        fuel_total_gal=70.0, fuel_capacity_gal=200.0)
+    flight._monitor_emergency(state, 100.0)
+    state.main_bus_volts = 28.0
+    flight._monitor_emergency(
+        state, 100.0 + flight.ELECTRICAL_PERSIST_S + 5.0)
+    flight._declare_emergency.assert_not_called()
+
+
+def test_an_engine_flag_blip_is_not_an_engine_emergency():
+    """One frame of a combustion flag dark declared a PAN PAN and a
+    divert. The flags have to stay failed for a few seconds."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _emergency_flight()
+    flight.state.phase = AutonomousPhase.CRUISE
+    state = SimpleNamespace(
+        main_bus_volts=28.0, on_ground=False, engine_count=2,
+        engines_running=True, eng2_combustion=False,
+        eng3_combustion=None, eng4_combustion=None, has_position=True,
+        fuel_total_gal=70.0, fuel_capacity_gal=200.0)
+    flight._monitor_emergency(state, 100.0)
+    flight._declare_emergency.assert_not_called()
+    # A real failure stays failed -- and a twin on one is the urgency.
+    flight._monitor_emergency(
+        state, 100.0 + flight.ENGINES_PERSIST_S)
+    flight._declare_emergency.assert_called_once_with(
+        "engine-out", state, mayday=False)
+
+
+def test_cannot_reach_the_field_settles_faster_than_minimum_fuel():
+    """The MAYDAY tier still answers in under a minute: a fuel state
+    below the bare leg is grave, but it is still priced on the moment's
+    flow, so it too waits out the transient."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _emergency_flight()
+    flight.state.phase = AutonomousPhase.CRUISE
+    flight._reserve_min = 45.0
+    flight.session.destination = SimpleNamespace(
+        ident="LECO", lat=42.0, lon=-8.0)
+    flight.navdb = SimpleNamespace(nearest_airports=lambda *a, **k: [])
+    state = SimpleNamespace(
+        main_bus_volts=28.0, on_ground=False, engine_count=2,
+        engines_running=True, eng2_combustion=True, eng3_combustion=None,
+        eng4_combustion=None, has_position=True,
+        fuel_total_lb=240.0, fuel_total_gal=40.0, fuel_capacity_gal=200.0,
+        est_fuel_flow_pph=200.0,
+        estimated_cruise_kt=0.0, design_vc_kt=0.0, ground_speed_kt=140.0,
+        fuel_unusable_gal=0.0, distance_to=lambda lat, lon: 400.0)
+    flight._monitor_emergency(state, 100.0)
+    flight._declare_emergency.assert_not_called()
+    flight._monitor_emergency(state, 100.0 + flight.LEG_FUEL_PERSIST_S)
+    flight._declare_emergency.assert_called_once_with(
+        "fuel", state, mayday=True)
+
+
+def _divert_route():
+    """The route N45XS was handed at the PAN PAN: the strip beside the
+    field, then the field -- airport to airport, the way a diversion
+    files it."""
+    from meridianatc.atc.route import Route, RouteFix
+    return Route(fixes=(
+        RouteFix("LPIN", 40.9725, -8.6450, kind="apt"),
+        RouteFix("LPOV", 40.9159, -8.6459, kind="apt")))
+
+
+def _nav_state(latitude, longitude, track):
+    from meridianatc.sim.state import AircraftState
+    return AircraftState(
+        source="xplane", connected=True, latitude=latitude,
+        longitude=longitude, track_true=track, heading_true=track,
+        ground_speed_kt=145.0)
+
+
+def test_an_armed_nav_steering_nowhere_is_flown_to_the_fix():
+    """The N45XS case: the divert's plan was loaded and NAV armed, but
+    nothing steered it -- twelve minutes on the SID's heading into
+    terrain. Pointed persistently nowhere near the leg's fix, the FO
+    flies the heading itself."""
+    flight = _flier()
+    flight._nav_off_since = 0.0
+    flight.brain = SimpleNamespace(route=_divert_route())
+    # North-east of the field, still heading the SID's way -- away
+    # from LPOV to the south-west.
+    state = _nav_state(41.13, -8.415, 64.0)
+    # A course change is trusted a while: an intercept takes a turn.
+    assert flight._nav_fallback_heading(state, 100.0) == -1.0
+    assert flight._nav_fallback_heading(state, 140.0) == -1.0
+    want = flight._nav_fallback_heading(state, 146.0)
+    assert 0.0 <= want < 360.0
+    # And the heading it falls back to is the bearing to the fix the
+    # leg runs to -- the destination, south-west, not 64.
+    assert abs(want - state.bearing_to(40.9159, -8.6459)) < 1.0
+
+
+def test_a_nav_tracking_the_leg_is_left_to_steer():
+    """The fallback never touches an aeroplane pointed at its fix."""
+    flight = _flier()
+    flight._nav_off_since = 0.0
+    flight.brain = SimpleNamespace(route=_divert_route())
+    state = _nav_state(41.13, -8.415, 0.0)
+    state.track_true = state.heading_true = \
+        state.bearing_to(40.9159, -8.6459)
+    assert flight._nav_fallback_heading(state, 100.0) == -1.0
+    assert flight._nav_fallback_heading(state, 400.0) == -1.0
+    # And a transient off-course recovers without being called a
+    # failure: the clock resets the moment the track is back.
+    state.track_true = state.heading_true = 64.0
+    assert flight._nav_fallback_heading(state, 410.0) == -1.0
+    state.track_true = state.heading_true = \
+        state.bearing_to(40.9159, -8.6459)
+    assert flight._nav_fallback_heading(state, 420.0) == -1.0
+    assert flight._nav_off_since == 0.0
+
+
+def test_without_a_route_there_is_nothing_to_fall_back_to():
+    flight = _flier()
+    flight._nav_off_since = 0.0
+    flight.brain = SimpleNamespace(route=None)
+    state = _nav_state(41.13, -8.415, 64.0)
+    assert flight._nav_fallback_heading(state, 100.0) == -1.0
 
 
 def test_the_leg_is_priced_at_cruise_speed_not_the_climbout():

@@ -56,9 +56,15 @@ class _Departures:
         if phase == "taxi" and flight.on_layout:
             planned = self._plan_departure(flight)
             if planned is None:
-                # Nowhere to go from here. It stays on its stand and is
-                # dropped, rather than being put somewhere it cannot reach.
-                flight.done = True
+                # Nowhere to go from here. An invented one stays on its
+                # stand and is dropped, rather than being put somewhere
+                # it cannot reach; a live one is handed back to the
+                # feed, where the real aeroplane's day continues.
+                if flight.source == "live":
+                    self._unadopt(flight, now,
+                                  why="nowhere to go from the stand")
+                else:
+                    flight.done = True
                 return
             if self._crosses(planned[0], flight):
                 # Somebody is coming the other way along it. It waits on
@@ -186,10 +192,17 @@ class _Departures:
         if phase == "departed" and flight.handed_off:
             # Flying away. It goes when it is out of sight, not the moment
             # it has changed frequency.
-            if (flight.distance_nm > self.OUT_OF_SIGHT_NM
+            if (flight.distance_nm > self.radius_nm
                     or flight.altitude_ft > self.field.elevation_ft
                     + self.OUT_OF_SIGHT_FT):
-                flight.done = True
+                if flight.source == "live":
+                    # An adopted one out of sight is the feed's again,
+                    # where the real aeroplane still is: dropped here, it
+                    # comes back inside the feed's wider reach and is
+                    # adopted and handed off all over again.
+                    self._unadopt(flight, now, why="out of sight")
+                else:
+                    flight.done = True
             flight.next_at = now + 5.0
             return
 
@@ -228,7 +241,10 @@ class _Departures:
             self._after_the_go_around(flight, now)
 
     # Where a departure that has been handed on stops being drawn: far enough
-    # out, or high enough, that nobody on the field could still see it.
+    # out, or high enough, that nobody on the field could still see it. The
+    # range itself is the injector's ``radius_nm`` (traffic.radius_nm); the
+    # figure here is only its default for a caller that never set one, and
+    # the altitude that ends it whichever way the range is set.
     OUT_OF_SIGHT_NM = 12.0
     OUT_OF_SIGHT_FT = 9000.0
 

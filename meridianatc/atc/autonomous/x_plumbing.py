@@ -49,10 +49,16 @@ class _Plumbing:
                                        or getattr(state,
                                                   "design_takeoff_kt", 0.0)
                                        or 0.0),
+                    # A design figure is the model's Vno, not its cruise
+                    # speed: borrowed at face value a profile's owner was
+                    # cruised at the top of the green arc. Pulled back to
+                    # a cruise setting it is the aeroplane's own figure.
                     "cruise_kt": float(getattr(state, "estimated_cruise_kt",
                                                0.0)
-                                       or getattr(state, "design_vc_kt",
-                                                  0.0) or 0.0),
+                                       or 0.75
+                                       * float(getattr(state,
+                                                       "design_vc_kt",
+                                                       0.0) or 0.0)),
                     "approach_kt": float(getattr(state, "design_vs1_kt", 0.0)
                                          or 0.0) * 1.3,
                     "descend_fpm": float(

@@ -169,8 +169,8 @@ class _State_and_weather:
         with self._atis_lock:
             if airport_ident in self._atis_stale:
                 self._atis_stale.discard(airport_ident)
-                for (field, _spoken), stale in self._atis.items():
-                    if field == airport_ident:
+                for atis_key, stale in self._atis.items():
+                    if atis_key[0] == airport_ident:
                         stale.current = None
         generator = self._atis.get(key)
         if generator is None:

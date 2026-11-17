@@ -493,8 +493,13 @@ class _Ground:
             # it: a controller who cannot see the strip does not clear
             # anybody across it.
             return "runway traffic unknown"
-        active = normalize_runway(session.departure_runway
-                                  or session.arrival_runway or "")
+        # The runway this field is using: the arrival's strip on the way
+        # in, the departure's on the way out. departure_runway stays
+        # populated after touchdown, so the order matters.
+        active = normalize_runway(
+            (session.arrival_runway or session.departure_runway or "")
+            if session.phase in (Phase.LANDED, Phase.TAXI_IN)
+            else (session.departure_runway or session.arrival_runway or ""))
         if normalize_runway(runway) == active:
             try:
                 if traffic.runway_occupied(now, runway=runway):

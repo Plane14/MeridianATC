@@ -22,7 +22,6 @@ from ._shared import (
     LIVE_TAXIWAY_M,
     M_PER_DEG,
     OBSERVED_CEILING_FT,
-    OBSERVED_RANGE_NM,
     PILOT_FINAL_NM,
     PUSHBACK_DEG,
     PUSHBACK_KT,
@@ -380,7 +379,7 @@ class _The_live_ones:
             return False
         distance = haversine_nm(self.field.latitude, self.field.longitude,
                                 one.latitude, one.longitude)
-        if distance > OBSERVED_RANGE_NM:
+        if distance > self.observed_nm:
             return False
         if not one.on_ground:
             return (one.altitude_ft - self.field.elevation_ft
@@ -753,6 +752,11 @@ class _The_live_ones:
             return
 
         if phase == "departed":
+            if flight.handed_off:
+                # One of ours given back to the feed on its way out:
+                # already sent to the next frequency, once.
+                flight.step = 1
+                return
             station, mhz = self._next_station("DEP", flight.language)
             if not station:
                 return
@@ -762,9 +766,13 @@ class _The_live_ones:
                 controller=lambda c, a, s: c.handoff(a, station, mhz),
                 pilot_back=lambda p, a, s: p.contact(a, station, mhz),
             )
+            flight.handed_off = True
             return
 
         if phase == "taxi_in":
+            if flight.handed_off:
+                flight.step = 1
+                return
             station, mhz = self._next_station("GND", flight.language)
             if not station:
                 return
@@ -775,6 +783,7 @@ class _The_live_ones:
                     a, station, mhz, when=c.when_able()),
                 pilot_back=lambda p, a, s: p.contact(a, station, mhz),
             )
+            flight.handed_off = True
             if flight.source == "live":
                 # And where it goes, which it then does: to the ramp, the
                 # stand being the one it rolls onto.
@@ -977,6 +986,7 @@ class _The_live_ones:
         and the feed's copy of it is ignored -- until ours has landed and
         is parked, where the real one already is (_rejoin_the_feed)."""
         self._taken_over.add(flight.observed_id)
+        self._adopted_live.add(flight.observed_id)
         self._flown_for[flight.observed_id] = flight
         self._live_stands.pop(flight.observed_id, None)
         self._release_held(flight)
@@ -1035,10 +1045,17 @@ class _The_live_ones:
 
         False for the ones that are nobody's to fly from here: a parked
         aeroplane (adopted when the real one starts moving), an overflight
-        just passing, and anything on the ground at a field whose taxiways
+        just passing, anything on the ground at a field whose taxiways
         the simulator has not given -- with no layout a mid-taxi adoption
-        would have nowhere to drive it.
+        would have nowhere to drive it -- and one already flown once.
         """
+        if one.object_id in self._adopted_live:
+            # Adopted once is the feed's for the rest of the session.
+            # Handed back, its strip is read off the feed like any
+            # observed one's; adopted again it would be worked and
+            # handed off a second time, and a third, for as long as the
+            # real aeroplane stays in reach.
+            return False
         arriving = self._live_arriving(flight, one)
         if arriving is None:
             return False
@@ -1071,6 +1088,7 @@ class _The_live_ones:
                     return False            # nowhere to send it
         # Committed. Ours now, the feed's copy suppressed.
         self._taken_over.add(flight.observed_id)
+        self._adopted_live.add(flight.observed_id)
         self._flown_for[flight.observed_id] = flight
         self._live_stands.pop(flight.observed_id, None)
         self._release_held(flight)
@@ -1144,11 +1162,12 @@ class _The_live_ones:
                  why="traffic.live.managed")
         return True
 
-    def _unadopt(self, flight: Flight, now: float) -> None:
+    def _unadopt(self, flight: Flight, now: float,
+                 why: str = "traffic.live.managed off") -> None:
         """Hand an adopted live aeroplane back to the feed: the managed
-        switch gone off, it is read rather than flown again, and drawn
-        wherever the real one now is -- the same snap a fed one takes when
-        it first appears."""
+        switch gone off, or ours flown out of sight, it is read rather
+        than flown again, and drawn wherever the real one now is -- the
+        same snap a fed one takes when it first appears."""
         object_id = flight.observed_id
         self._taken_over.discard(object_id)
         self._flown_for.pop(object_id, None)
@@ -1183,8 +1202,7 @@ class _The_live_ones:
             if flight in self.statics:
                 self.statics.remove(flight)
         decision("live_traffic", event="back to the feed",
-                 callsign=flight.written,
-                 why="traffic.live.managed off")
+                 callsign=flight.written, why=why)
 
     def set_user(self, user: UserAircraft | None) -> None:
         """Tell the traffic where the person flying actually is.

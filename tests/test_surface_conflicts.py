@@ -320,6 +320,56 @@ def test_fo_realigns_when_nudged_off_the_centreline():
     assert fo.state.aligned is False
 
 
+def test_fo_does_not_call_aligned_at_the_runway_edge():
+    """A 45 m strip's old gate -- inside its half-width -- called the
+    Baron "aligned" ~15 m off the paint, near the edge, which is where
+    the roll then started. Fifteen metres out is still steering, not a
+    lineup."""
+    fo = _fo_for_lineup()
+    fo.state.runway_width_ft = 148.0    # LPPR's 45 m
+    fo.session = _fo_session(_path())
+    fo._runway_blocked = Mock(return_value=False)
+    # ~15 m north of the centreline at the numbers, pointed down them.
+    state = _state(51.150135, -0.19, heading_true=90.0)
+    fo._phase_line_up(state, 100.0)
+    assert fo.state.aligned is False
+    assert fo.state.sub == "align"
+    # And on the paint it does line up.
+    state = _state(51.15002, -0.19, heading_true=90.0)
+    fo._phase_line_up(state, 101.0)
+    assert fo.state.aligned is True
+    assert fo.state.sub == "set"
+
+
+def test_fo_does_not_call_aligned_short_of_the_numbers():
+    """On the extended centreline a hundred metres before the threshold
+    is the taxiway, not a lineup -- the roll would start in the grass."""
+    fo = _fo_for_lineup()
+    fo.state.runway_width_ft = 148.0
+    fo.session = _fo_session(_path())
+    fo._runway_blocked = Mock(return_value=False)
+    # ~100 m behind the numbers, dead on the centreline, runway heading.
+    state = _state(51.15, -0.19144, heading_true=90.0)
+    fo._phase_line_up(state, 100.0)
+    assert fo.state.aligned is False
+
+
+def test_fo_realigns_on_a_small_drift_in_the_hold():
+    """Lined up and waiting, a nudge thirteen metres sideways used to
+    keep the "set" -- the old slack was nearly half a wide runway. Now
+    it is a re-align."""
+    fo = _fo_for_lineup()
+    fo.state.runway_width_ft = 148.0
+    fo.session = _fo_session(_path())
+    fo.state.sub = "set"
+    fo.state.aligned = True
+    fo._runway_blocked = Mock(return_value=False)
+    state = _state(51.150117, -0.19, heading_true=90.0)   # ~13 m off
+    fo._phase_line_up(state, 100.0)
+    assert fo.state.sub == "align"
+    assert fo.state.aligned is False
+
+
 def test_fo_lines_up_on_the_connector_not_across_the_infield():
     """LPPR's A3: the hold sits well past the threshold, so a straight
     intercept to the centreline is the backtrack's reciprocal through

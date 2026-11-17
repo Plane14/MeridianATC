@@ -3,6 +3,7 @@ from __future__ import annotations
 from ._shared import (
     CONCURRENT_BY_RANK,
     GLIDE_FT_PER_NM,
+    OBSERVED_RANGE_NM,
     Call,
     Flight,
     NavDB,
@@ -51,9 +52,19 @@ class TrafficInjector(_The_field, _Flying_them, _What_the_pilot, _Making_aeropla
     """
 
     def __init__(self, navdb: NavDB, seed: int | None = None,
-                 density: float = 1.0, callsigns: str = "auto"):
+                 density: float = 1.0, callsigns: str = "auto",
+                 radius_nm: float = 0.0):
         self.navdb = navdb
         self.density = max(0.0, float(density))
+        # How far out a handed-off departure is still drawn, and how far
+        # out a live one the feed is heard is still worth a strip: the
+        # same traffic.radius_nm the engine draws everything within. 0 --
+        # the value a caller that never heard of the setting passes --
+        # keeps the old fixed figures.
+        self.radius_nm = float(radius_nm) if radius_nm else \
+            self.OUT_OF_SIGHT_NM
+        self.observed_nm = float(radius_nm) if radius_nm else \
+            OBSERVED_RANGE_NM
         # The energy model moves the aeroplanes: on by default, off puts
         # them back on the plain integrator it replaced.
         self.energy_model = True
@@ -222,6 +233,10 @@ class TrafficInjector(_The_field, _Flying_them, _What_the_pilot, _Making_aeropla
         # parked, waiting for the feed to hear the real one again.
         self._flown_for: dict[int, Flight] = {}
         self._parked_since: dict[int, float] = {}
+        # And every one ever adopted: a live aeroplane handed back to the
+        # feed stays the feed's for the rest of the session -- adopted a
+        # second time it would be worked and handed off all over again.
+        self._adopted_live: set[int] = set()
         self._hold_short_said = -math.inf
         self._last_release = -math.inf
         # What each live one was last put on (runway, taxiway, stand, or

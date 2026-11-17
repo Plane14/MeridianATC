@@ -107,8 +107,14 @@ class _The_watchdog:
                 flight.still_since = now
                 continue
             self._say_stuck(flight, where, still, "removed")
-            flight.done = True
-            self._release_all(flight)
+            if flight.source == "live":
+                # Ours that cannot be made to move is the feed's again:
+                # the real aeroplane answers for itself there, and the
+                # strip reads it rather than vanishing and coming back.
+                self._unadopt(flight, now, why=f"stuck {where}")
+            else:
+                flight.done = True
+                self._release_all(flight)
             if where == "runway":
                 # Whatever it had booked the runway for is not happening.
                 self._release_runway(flight.runway, now)

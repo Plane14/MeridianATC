@@ -126,8 +126,10 @@ class _Fuel_planning:
         # The rest of the leg is flown at the type's own speed, not the
         # one the aeroplane happens to be making now: a leg priced at
         # climb-out groundspeed calls a full tank short for no reason.
-        cruise = float(getattr(state, "estimated_cruise_kt", 0.0) or 0.0) \
-            or self.performance.cruise_kt or 120.0
+        # The figure is the same one the autopilot will actually command
+        # -- the model's estimate where it publishes one, its Vno pulled
+        # back to a cruise setting next, the class's number last.
+        cruise = self._cruise_speed_kt(state) or 120.0
         gs = float(getattr(state, "ground_speed_kt", 0.0) or 0.0)
         # Priced at the type's own speed, not the one the aeroplane
         # happens to be making: a climb-out's groundspeed calls a full

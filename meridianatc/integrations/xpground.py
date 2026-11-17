@@ -104,7 +104,7 @@ def _scan_index(path: Path) -> dict[str, tuple[int, int]]:
         for raw in handle:
             if raw.startswith(b"1 ") or raw == b"1\n" or raw == b"1\r\n":
                 fields = raw.split(None, 5)
-                if len(fields) >= 5 and fields[1].isdigit() \
+                if len(fields) >= 5 and fields[1].lstrip(b"-").isdigit() \
                         and 3 <= len(fields[4]) <= 6:
                     icao = fields[4].decode("ascii", "ignore").upper()
                     if icao not in found:
@@ -633,7 +633,10 @@ class XPlaneFixes:
                     continue
                 for line in text.splitlines():
                     fields = line.split()
-                    if len(fields) != 3:
+                    # XP11/XP12 earth_fix.dat: "lat lon IDENT terminal
+                    # region numeric-id [name]" -- six fields minimum,
+                    # the same shape cifp.py's index reads.
+                    if len(fields) < 3:
                         continue
                     try:
                         lat, lon = float(fields[0]), float(fields[1])

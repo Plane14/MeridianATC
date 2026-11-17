@@ -90,6 +90,21 @@ class AutonomousFlight(_Plumbing, _Entry, _The_loop, _Shared_helpers, _The_envel
         # The biggest fuel_total_gal the model has ever shown: the
         # capacity for a model that declares no FUEL TOTAL CAPACITY.
         self._fuel_capacity_seen = 0.0
+        # When each projected fuel shortage first read true: it has to
+        # persist to be declared -- climb power in the first cruise
+        # minute reads triple the rest of the leg's burn.
+        self._fuel_leg_since = 0.0
+        self._fuel_min_since = 0.0
+        # The same for the failures a single frame can fake: a bus
+        # reading through a load spike and a combustion flag blinking
+        # both have to stay failed a few seconds before they are
+        # anybody's emergency.
+        self._electrical_since = 0.0
+        self._engines_since = 0.0
+        # When the armed NAV first read as steering nowhere near the
+        # route's next fix -- a transient is an intercept, a persistent
+        # one is a plan the box cannot steer by.
+        self._nav_off_since = 0.0
         # Which checklist item the FO is working, and since when -- an
         # item that cannot be made to hold is answered after the wait,
         # not waited on for ever.

@@ -75,6 +75,25 @@ def test_empty_routes_write_no_plan():
     assert to_pln(None) == "" and to_pln(Route()) == ""
 
 
+def test_the_declared_cycle_is_the_airac_in_force():
+    """The 2026-11-17 case: X-Plane's navdata was cycle 2611 while the
+    plan it was handed declared 2612, because the day-of-year count is
+    not the AIRAC calendar -- each year's ``01`` is effective in late
+    January. Anchored on 2601 (2026-01-22) instead."""
+    import datetime
+    from meridianatc.atc.route import _airac_cycle
+
+    d = datetime.date
+    assert _airac_cycle(d(2026, 1, 22)) == "2601"   # 2601 effective
+    assert _airac_cycle(d(2026, 1, 21)) == "2513"   # still last year's
+    assert _airac_cycle(d(2026, 10, 29)) == "2611"  # 2611 effective
+    assert _airac_cycle(d(2026, 11, 17)) == "2611"  # the incident day
+    assert _airac_cycle(d(2026, 11, 25)) == "2611"  # 2611's last day
+    assert _airac_cycle(d(2026, 11, 26)) == "2612"  # 2612 effective
+    assert _airac_cycle(d(2026, 12, 31)) == "2613"
+    assert _airac_cycle(d(2027, 1, 21)) == "2701"   # the next year
+
+
 def test_xplane_load_fms_plan_sends_an_fpln_datagram():
     link = XPlaneSource()
     # A connected-looking source without a socket: _packet is

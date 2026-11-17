@@ -715,13 +715,21 @@ _PLN_KIND = {"apt": "Airport", "ndb": "NDB", "vor": "VOR",
 
 
 def _airac_cycle(today=None) -> str:
-    """The four-digit AIRAC cycle a .fms declares: the year, then which
-    of the year's thirteen 28-day turns the day is in."""
+    """The four-digit AIRAC cycle a .fms declares.
+
+    Cycles are continuous 28-day turns, not calendar buckets: each
+    year's ``01`` cycle becomes effective mid-to-late January, so a
+    day-of-year count lands a cycle early or late whenever the true
+    boundary falls inside it. Counted from a known cycle instead --
+    2601, effective 2026-01-22 -- with the year taken from the date
+    that run of thirteen began."""
     import datetime
 
-    day = today or datetime.date.today()
-    return f"{day.year % 100:02d}" \
-           f"{min(13, (day.timetuple().tm_yday - 1) // 28 + 1):02d}"
+    anchor = datetime.date(2026, 1, 22)          # AIRAC 2601 effective
+    cycles = ((today or datetime.date.today()) - anchor).days // 28
+    year = (anchor + datetime.timedelta(
+        days=(cycles // 13) * 13 * 28)).year
+    return f"{year % 100:02d}{cycles % 13 + 1:02d}"
 
 
 def _fms_rows(route: Route) -> list[tuple[int, str, str, float, float, float]]:

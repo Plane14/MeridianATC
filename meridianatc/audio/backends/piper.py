@@ -160,7 +160,11 @@ class PiperTTS:
         )
 
         chunks: list[np.ndarray] = []
-        sample_rate = DEFAULT_SAMPLE_RATE
+        # The model's declared rate, not the catalogue default: the sentence
+        # pauses below are sized in samples, and a gap computed for 22050 is
+        # the wrong length on a model that runs at another rate.
+        sample_rate = int(getattr(model.config, "sample_rate", 0)
+                          or DEFAULT_SAMPLE_RATE)
         model_voice = str(getattr(model.config, "espeak_voice", "") or "")
         payloads = self.payloads(text, voice, model_voice)
         for payload in payloads:

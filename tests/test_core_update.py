@@ -10,7 +10,11 @@ from meridianatc import update
 
 def test_update_check_is_single_flight_and_does_not_replace_pending_release(monkeypatch):
     entered, release_check = threading.Event(), threading.Event()
-    release = update.Release("3.0", "v3.0", asset="app.zip", asset_url="https://example.invalid/app.zip")
+    # Newer than whatever this checkout calls itself, so the check still
+    # finds an update after the next version bump.
+    newer = f"{int(update.__version__.split('.')[0]) + 1}.0"
+    release = update.Release(newer, f"v{newer}", asset="app.zip",
+                             asset_url="https://example.invalid/app.zip")
 
     def fetch():
         entered.set()

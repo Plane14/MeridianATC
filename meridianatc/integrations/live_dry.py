@@ -85,7 +85,8 @@ def dry_run(config, navdb, ident: str, seconds: float, *,
                                  poll_s=live.poll_s, wall=clock)
     roster = LiveRoster(live.fallback_after_s, delay_s=live.live_delay_s)
     traffic = TrafficInjector(navdb, seed=config.traffic.seed or None,
-                              density=1.0, callsigns=config.traffic.callsigns)
+                              density=1.0, callsigns=config.traffic.callsigns,
+                              radius_nm=config.traffic.radius_nm)
     runway = _runway(navdb, field.ident)
     traffic.set_field(field.ident, runway, runway,
                       Weather(wind_dir=0, wind_kt=0, qnh_hpa=1013))

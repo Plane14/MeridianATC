@@ -442,7 +442,14 @@ class _The_tower_watching:
                 # a fixed distance regardless put it on base beside an
                 # arrival and across its approach.
                 if flight.distance_nm > self.GIVE_UP_EXTENDING_NM:
-                    flight.done = True
+                    if flight.source == "live":
+                        # Ours sent long and still sent on is the feed's
+                        # again: the real aeroplane's approach continues
+                        # where it is, and this strip reads it.
+                        self._unadopt(flight, now,
+                                      why="extended and given up")
+                    else:
+                        flight.done = True
                 return
             if self._already_told(flight, "continue"):
                 return

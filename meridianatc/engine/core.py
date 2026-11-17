@@ -172,6 +172,7 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         self.player = RadioPlayer(
             device=self.config.audio.output_device,
             volume=self.config.audio.volume,
+            on_trouble=self._radio_trouble,
         )
         self.microphone = MicrophoneCapture(
             device=self.config.audio.input_device,
@@ -329,6 +330,7 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
             density=self.config.traffic.density
             if self.config.traffic.enabled else 0.0,
             callsigns=self.config.traffic.callsigns,
+            radius_nm=self.config.traffic.radius_nm,
         )
         # Nothing invented exists until the simulator has drawn it. A pilot
         # told there is an aeroplane on the runway looks for it, and the

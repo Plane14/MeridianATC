@@ -210,11 +210,17 @@ class _Running_them:
                 return
             if isinstance(blocker, Flight) and not blocker.observed \
                     and blocker.ground_speed_kt <= 1.0:
-                log.info("%s is stuck on the runway behind %s; %s is taken "
-                         "away", flight.written, blocker.written,
-                         blocker.written)
-                blocker.done = True
-                self._release_all(blocker)
+                if blocker.source == "live":
+                    log.info("%s is stuck on the runway behind %s; %s is "
+                             "handed back to the feed", flight.written,
+                             blocker.written, blocker.written)
+                    self._unadopt(blocker, now, why="stuck on the runway")
+                else:
+                    log.info("%s is stuck on the runway behind %s; %s is "
+                             "taken away", flight.written, blocker.written,
+                             blocker.written)
+                    blocker.done = True
+                    self._release_all(blocker)
                 return
         if now - taxi.blocked_since < self.GIVE_WAY_S:
             return
@@ -249,6 +255,12 @@ class _Running_them:
                 loser, self._contested_avoid(loser, winner)):
             return
         if now - taxi.blocked_since < self.DEADLOCK_S:
+            return
+        if loser.source == "live":
+            log.info("%s and %s are nose to nose; %s is handed back to "
+                     "the feed", flight.written, blocker.written,
+                     loser.written)
+            self._unadopt(loser, now, why="nose to nose")
             return
         log.info("%s and %s are nose to nose; %s is taken away",
                  flight.written, blocker.written, loser.written)

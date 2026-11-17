@@ -22,6 +22,56 @@ _BANK_CAP_DEG = {"smooth": 20.0, "gentle": 15.0, "urgent": 30.0}
 class _Shared_helpers:
     # -- shared helpers ------------------------------------------------------
 
+    # How far off the bearing to the fix the active leg runs to the track
+    # may sit before the armed NAV is judged to be steering nothing, and
+    # how long it may sit there before the FO flies the heading itself.
+    # A NAV mode takes tens of seconds to roll into an intercept, so a
+    # course change is not a failure -- keeping on a heading that goes
+    # nowhere near the route for this long is.
+    NAV_OFF_DEG = 80.0
+    NAV_OFF_S = 45.0
+
+    def _nav_fallback_heading(self, state, now: float) -> float:
+        """A heading to fly where the armed NAV is tracking nothing, -1 else.
+
+        The airborne phases arm the simulator's NAV and trust the plan
+        behind it; nothing else checks the plan produced a course, and a
+        NAV with no course leaves the aeroplane on whatever heading it
+        last had -- N45XS flew its SID leg for twelve minutes into
+        terrain on a diverted plan the box never steered. Watched
+        against the bearing to the fix the active leg runs to: pointed
+        anywhere near it is tracking, persistently not is not -- and
+        the fallback is that heading, engaged as the HDG mode's number
+        until the track comes round and NAV can be trusted again.
+        """
+        route = getattr(getattr(self, "brain", None), "route", None)
+        progress = None
+        if route is not None and getattr(state, "has_position", False):
+            try:
+                progress = route.progress(
+                    state.latitude, state.longitude,
+                    float(getattr(state, "ground_speed_kt", 0.0) or 0.0),
+                    hint=getattr(self.session, "route_direct_index", -1))
+            except Exception:
+                progress = None
+        if progress is None:
+            self._nav_off_since = 0.0
+            return -1.0
+        fix = progress.to_fix
+        want = state.bearing_to(fix.lat, fix.lon)
+        have = float(getattr(state, "track_true", 0.0) or 0.0) \
+            or float(getattr(state, "heading_true", 0.0) or 0.0)
+        err = abs((want - have + 180.0) % 360.0 - 180.0)
+        if err <= self.NAV_OFF_DEG:
+            self._nav_off_since = 0.0
+            return -1.0
+        if not getattr(self, "_nav_off_since", 0.0):
+            self._nav_off_since = now
+            return -1.0
+        if now - self._nav_off_since < self.NAV_OFF_S:
+            return -1.0
+        return want
+
     @staticmethod
     def _altimeter_hpa(value) -> float:
         """The altimeter setting in hPa, whatever the dialect gave.
@@ -177,34 +227,61 @@ class _Shared_helpers:
     def _penetration_kt(self, state) -> float:
         """The speed rough air is ridden out at: a margin off the red
         line and off the stall, the way the books write it."""
-        cruise = self.performance.cruise_kt or 200.0
+        cruise = self._cruise_speed_kt(state) or 200.0
         lim = self._limits(state)
         pen = cruise * 0.75
         if lim["stall_kt"] > 0.0:
             pen = max(pen, lim["stall_kt"] * 1.5)
         return max(60.0, min(pen, lim["max_ias_kt"]))
 
+    def _cruise_speed_kt(self, state) -> float:
+        """The cruise figure this leg is flown and priced at: the model's
+        own estimate where it publishes one (MSFS does, X-Plane does
+        not), else the better of the type's Vno pulled back to a cruise
+        power setting and the performance figure -- a matched autofly
+        profile carries the POH's number, and a model with none still
+        flies at its own speed rather than the class's.
+        """
+        estimated = float(getattr(state, "estimated_cruise_kt", 0.0)
+                          or 0.0)
+        if 50.0 < estimated < 600.0:
+            return estimated
+        own = 0.75 * float(getattr(state, "design_vc_kt", 0.0) or 0.0)
+        return max(own, self.performance.cruise_kt) \
+            or self.state.climb_kt
+
     def _speed_target(self, state) -> float:
         target = 0.0
         if self.session.assigned_speed_kt:
             target = self.session.assigned_speed_kt
-        # In the cruise the model's own estimate of its cruise speed is
-        # the best figure there is -- it is this aeroplane's, not a class's
-        # -- and the class number is the fallback for a model that
-        # declares none.
         elif self.state.phase == AutonomousPhase.CRUISE:
-            estimated = float(getattr(state, "estimated_cruise_kt", 0.0)
-                              or 0.0)
-            if 50.0 < estimated < 600.0:
-                # The variable may be true rather than indicated speed;
+            target = self._cruise_speed_kt(state)
+            if target:
+                # The estimate may be true rather than indicated speed;
                 # never command past the model's own red line.
                 redline = float(getattr(state, "barber_pole_kt", 0.0)
                                 or 0.0)
                 if redline > 0:
-                    estimated = min(estimated, redline * 0.95)
-                target = estimated
+                    target = min(target, redline * 0.95)
+        elif self.state.phase == AutonomousPhase.CLIMB:
+            climb = self.state.climb_kt or self.performance.cruise_kt
+            agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)
+            cruise = self.performance.cruise_kt or climb
+            if agl > 1500.0 and cruise > climb:
+                # Vy is for the ground's reach: past the noise height a
+                # crew accelerates to the enroute climb, a share of the
+                # way from the book figure to the cruise -- the POH's
+                # "cruise climb" column the single figure cannot hold.
+                climb += 0.35 * (cruise - climb)
+            target = climb
         if not target:
-            target = self.state.climb_kt or self.performance.cruise_kt
+            # Any other phase: the climb figure was first here, so a
+            # descent with no answer of its own came down at Vy -- the
+            # same slow-leg bug the cruise fallback had. CLIMB is the
+            # only phase the climb speed belongs to, and it has its own
+            # branch above; the rest of flight gets the descent-profile
+            # figure, part way back from cruise the way a crew flies it.
+            target = 0.85 * self._cruise_speed_kt(state)
         if time.monotonic() < self.state.turbulence_until:
             # Rough air beats the assignment, the way a crew asks for a
             # slower speed rather than ride it out at it.

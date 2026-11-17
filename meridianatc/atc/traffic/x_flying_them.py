@@ -841,6 +841,15 @@ class _Flying_them:
                 confirmed.append(flight)
             elif (failed(flight.written)
                   or now > self._materialise_by.get(flight.written, now)):
+                if flight.source == "live":
+                    # The sim cannot draw ours, but the real aeroplane
+                    # is still on the feed: the strip reads it there
+                    # rather than vanishing and coming back as a new one.
+                    self._unadopt(flight, now,
+                                  why="simulator cannot draw it")
+                    self.flights.append(flight)
+                    self._materialise_by.pop(flight.written, None)
+                    continue
                 flight.done = True
                 dropped.append(flight)
             else:
