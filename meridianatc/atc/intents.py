@@ -1076,7 +1076,8 @@ class IntentParser:
 
         # A transmission that both reads something back and carries a request
         # keyword is still a readback if it has no request verb of its own.
-        if (result.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE)
+        if (result.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE,
+                        Intent.STANDBY)
                 and result.values and _READBACK_MARKERS.search(norm)):
             result.intent = Intent.READBACK
 
@@ -1118,7 +1119,8 @@ class IntentParser:
                 result.intent = Intent.READBACK
                 result.confidence = 0.7 if result.callsign_matched else 0.5
 
-        if (result.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE)
+        if (result.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE,
+                        Intent.STANDBY)
                 and result.values and re.search(grammar.readback, norm)):
             result.intent = Intent.READBACK
 
@@ -1158,7 +1160,8 @@ class IntentParser:
                 result.intent = Intent.READBACK
                 result.confidence = 0.7 if result.callsign_matched else 0.5
 
-        if (result.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE)
+        if (result.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE,
+                        Intent.STANDBY)
                 and result.values and READBACK_MARKERS_FR.search(norm)):
             result.intent = Intent.READBACK
 

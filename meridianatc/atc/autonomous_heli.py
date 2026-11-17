@@ -1539,6 +1539,10 @@ class RotorcraftFlight:
         self._send(CYCLIC_LONG_SET, CYCLIC_TRIM_HOVER)
         self._send(CYCLIC_LAT_SET, self._lateral_trim_axis(state))
         self._send(STEERING_SET, 0)
+        # The pedals centre too: torque against the spooling rotor turns
+        # the machine on its wheels if the axis is left where it was.
+        if not self._send(PEDAL_SET, 0):
+            self._send(TAIL_ROTOR_SET, 0)
 
 
 __all__ = ["RotorcraftFlight", "HELI_THROTTLE_SET", "STAGES"]

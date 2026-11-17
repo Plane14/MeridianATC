@@ -168,7 +168,9 @@ def parse(data, now: float | None = None) -> list[Flight]:
         seen = _number(a.get("seen_pos"), _number(a.get("seen"), 0.0))
         if seen > STALE_S:
             continue
-        alt = a.get("alt_baro")
+        # alt_baro is the usual altitude; feeds that only send the
+        # geometric figure still get an altitude from alt_geom.
+        alt = a.get("alt_baro") or a.get("alt_geom")
         ground = alt == "ground"
         out.append(Flight(
             hex=hex_,
