@@ -36,12 +36,26 @@ from collections import Counter
 from dataclasses import dataclass
 
 from ..logs import decision
-from .rendering import _facts
+from .rendering import _ACTIONS, _facts
 
 log = logging.getLogger(__name__)
 
 # The JSON object a small model wraps its pick in, wherever it puts it.
 _OBJECT = re.compile(r"\{.*\}", re.DOTALL)
+
+_WORDS = re.compile(r"[\w'’]+")
+
+# The operational words a draft is not allowed to change. The renderer's own
+# verb set plus the rest of the vocabulary that would alter meaning without
+# carrying a fact token -- a draft may not turn "downwind" into "final" or
+# a chat into a clearance, because every word in this set must survive
+# unchanged, count included.
+_ADVISORY_ACTIONS = _ACTIONS | frozenset((
+    "land", "landing", "takeoff", "taxi", "departure", "arrival",
+    "final", "downwind", "base", "upwind", "crosswind", "touchdown",
+    "lineup", "backtrack", "vacate", "clearance", "mayday", "pan",
+    "wilco", "unable", "affirm", "negative", "roger", "squawk",
+))
 
 
 @dataclass
@@ -114,13 +128,15 @@ class Decisions:
         "invent an option.")
 
     def pick(self, scope: str, question: str, options: list[str], *,
-             allow_none: bool = True, default: int | None = None):
+             allow_none: bool = True, default: int | None = None,
+             wait_s: float | None = None):
         """The index into ``options`` the model chose, or ``default``.
 
         ``-1`` means the model declined every option, which a caller only
         sees when it passed ``allow_none``. An answer that does not parse,
         or a number outside the list, leaves ``default`` -- the engine's
-        own pick.
+        own pick. ``wait_s`` bounds how long the call may stall the caller,
+        for picks made on a clock.
         """
         if not options or not self.model_available:
             return default
@@ -129,10 +145,15 @@ class Decisions:
         prompt = f"{question}\n\nOptions:\n{numbered}"
         if allow_none:
             prompt += "\n0. None -- take no action."
-        raw = self._ask(prompt, self._PICK_SYSTEM)
+        raw = (self._ask(prompt, self._PICK_SYSTEM) if wait_s is None
+               else self._ask_bounded(prompt, self._PICK_SYSTEM, wait_s))
         if raw is None:
             return default
         choice = _parse_choice(raw)
+        # The prompt numbers "none" as 0; a model that answers 0 means the
+        # same thing as "none".
+        if choice == 0:
+            choice = "none"
         if choice == "none":
             if not allow_none:
                 self.stats.rejected += 1
@@ -184,7 +205,13 @@ class Decisions:
         got = Counter(_facts(candidate))
         invented = list((got - allowed).elements())
         missing = list((wanted - got).elements())
-        if invented or missing:
+        # And the operational vocabulary: identical multiset against the
+        # baseline, so a draft may not add an instruction the facts check
+        # cannot see -- "cleared to land", or "final" for "downwind".
+        def actions(text):
+            return Counter(w for w in _WORDS.findall(text.lower())
+                           if w in _ADVISORY_ACTIONS)
+        if invented or missing or actions(candidate) != actions(baseline):
             self.stats.rejected += 1
             log.info("AI %s draft rejected (invented=%s missing=%s)",
                      scope, invented, missing)
@@ -193,6 +220,28 @@ class Decisions:
         return baseline if self.shadow else candidate
 
     # ------------------------------------------------------------------
+
+    def _ask_bounded(self, prompt: str, system: str,
+                     wait_s: float) -> str | None:
+        """``_ask`` on a scratch thread, waited out for ``wait_s`` seconds.
+
+        For callers on a clock -- the situation loop cannot sit out a
+        provider timeout. The abandoned thread finishes on its own and only
+        moves the counters; its late answer is discarded.
+        """
+        box: list[str | None] = []
+
+        def run() -> None:
+            box.append(self._ask(prompt, system))
+
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        worker.join(wait_s)
+        if worker.is_alive():
+            log.info("AI advisor answer over %.1fs; deterministic answer",
+                     wait_s)
+            return None
+        return box[0] if box else None
 
     def _ask(self, prompt: str, system: str) -> str | None:
         """One free-form model call, with the same backoff the understanding

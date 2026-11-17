@@ -314,6 +314,9 @@ class TrafficWatch:
         # -- but only among contacts that already qualified for a call.
         # The call itself, and whether one is owed at all, stay here.
         self.advisor = advisor
+        # One model pick per eligible set, remembered: ``look`` runs on the
+        # situation loop, which may not stall behind a provider timeout.
+        self._picks: dict = {}
 
     def look(self, session, station, state, language: str = "en"):
         from .controller import Reply
@@ -403,11 +406,20 @@ class TrafficWatch:
                 f"{abs(where.relative_ft)} feet "
                 f"{'above' if where.relative_ft > 0 else 'below'}, "
                 f"moving {where.motion.replace('_', ' ')}")
-        picked = self.advisor.pick(
-            "traffic_call",
-            "Several contacts qualify for a traffic advisory to this "
-            "flight. Which is most worth calling out first?",
-            options, allow_none=True, default=closest)
+        signature = tuple(sorted(c.written for _w, c in eligible))
+        if signature in self._picks:
+            picked = self._picks[signature]
+        else:
+            # The situation loop polls telemetry, cautions and the autopilot;
+            # the model gets a second to advise, never a provider timeout.
+            picked = self.advisor.pick(
+                "traffic_call",
+                "Several contacts qualify for a traffic advisory to this "
+                "flight. Which is most worth calling out first?",
+                options, allow_none=True, default=closest, wait_s=1.0)
+            if len(self._picks) > 64:
+                self._picks.clear()
+            self._picks[signature] = picked
         if picked == -1:
             decision("traffic", said="none", advisor="model")
             return None

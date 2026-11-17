@@ -42,7 +42,14 @@ class TestPick:
 
     def test_zero_is_not_an_option_number(self):
         d = _decisions('{"choice": 0}')
-        assert d.pick("t", "q", self.OPTIONS, default=1) == 1
+        assert d.pick("t", "q", self.OPTIONS, allow_none=False,
+                      default=1) == 1
+
+    def test_zero_means_none_when_the_prompt_advertises_it(self):
+        # The prompt numbers "none" as option 0; a model that answers 0
+        # has declined, not picked the default.
+        d = _decisions('{"choice": 0}')
+        assert d.pick("t", "q", self.OPTIONS, allow_none=True) == -1
 
     def test_garbage_is_the_default(self):
         d = _decisions("the second one is closest I think")
@@ -134,6 +141,16 @@ class TestDraft:
 
     def test_missing_fact_rejects(self):
         d = _decisions("DAL45: hi there")
+        assert d.draft("t", "q", "DAL45 runway 27L", self.BASE) == self.BASE
+
+    def test_added_instruction_rejects(self):
+        # The facts all survive -- but a clearance has been spoken into
+        # being, which the fact check alone cannot see.
+        d = _decisions("DAL45 G-BX, cleared to land runway 27L")
+        assert d.draft("t", "q", "DAL45 runway 27L", self.BASE) == self.BASE
+
+    def test_swapped_leg_rejects(self):
+        d = _decisions("DAL45 here G-BX, on final for runway 27L")
         assert d.draft("t", "q", "DAL45 runway 27L", self.BASE) == self.BASE
 
     def test_too_long_rejects(self):
@@ -228,6 +245,31 @@ def _watch(advisor=None):
     return watch, station
 
 
+class TestBoundedAsk:
+    def test_wait_s_bounds_the_call(self):
+        import threading
+        import time
+
+        done = threading.Event()
+
+        def slow(*a, **k):
+            done.wait(5)
+            return '{"choice": 1}'
+
+        provider = SimpleNamespace(complete=slow,
+                                   available=lambda: True)
+        d = Decisions(provider)
+        started = time.monotonic()
+        got = d.pick("t", "q", ["one", "two"], default=0, wait_s=0.2)
+        assert got == 0
+        assert time.monotonic() - started < 2.0
+        done.set()
+
+    def test_wait_s_passes_a_fast_answer_through(self):
+        d = _decisions('{"choice": 2}')
+        assert d.pick("t", "q", ["one", "two"], wait_s=5.0) == 1
+
+
 class TestTrafficWatchAdvisor:
     def test_closest_picked_without_advisor(self):
         watch, station = _watch()
@@ -246,3 +288,15 @@ class TestTrafficWatchAdvisor:
             pick=lambda scope, q, options, **kw: -1)
         watch, station = _watch(advisor)
         assert watch.look(_session(), station, _state()) is None
+
+    def test_pick_is_asked_once_per_contact_set(self):
+        calls = []
+        advisor = SimpleNamespace(
+            pick=lambda scope, q, options, **kw: calls.append(options) or -1)
+        watch, station = _watch(advisor)
+        session = _session()
+        # Clear the called flags between looks so both passes are eligible.
+        watch.look(session, station, _state())
+        session.traffic_called.clear()
+        watch.look(session, station, _state())
+        assert len(calls) == 1
