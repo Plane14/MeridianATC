@@ -85,6 +85,14 @@ class _The_plan_the:
             (str(e.get("id", "")), round(float(e.get("lat", 0) or 0), 5),
              round(float(e.get("lon", 0) or 0), 5), int(e.get("alt", 0) or 0))
             for e in entries if isinstance(e, dict))
+        if getattr(self.source, "_fms_written", False):
+            # The read-back of a plan this engine just wrote to the box
+            # (a vector's present-position direct): its fingerprint is
+            # taken so the echo is seen once, and the session the flight
+            # was built around is left alone.
+            self.source._fms_written = False
+            self._sim_plan_fp = fingerprint
+            return
         old = getattr(self, "_sim_plan_fp", None)
         if fingerprint == old:
             return

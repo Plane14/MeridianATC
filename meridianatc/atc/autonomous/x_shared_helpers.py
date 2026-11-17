@@ -72,6 +72,60 @@ class _Shared_helpers:
             return -1.0
         return want
 
+    def _vector_fms(self, state) -> None:
+        """A vectored plan, told to the FMS once per heading.
+
+        Flying the bug is only half of a vector: the box still wants the
+        fix the heading bypassed, and a "resume own navigation" later
+        would steer back at a point already behind -- so the plan in the
+        FMS is rewritten the way a crew loads it, present position direct
+        the leg the vector rejoins, and its marker cleared when ATC hands
+        the route back.
+        """
+        vector = getattr(self.session, "assigned_heading", None)
+        if vector is None:
+            self._vector_fms_hdg = None
+            return
+        if getattr(self, "_vector_fms_hdg", None) == vector:
+            return
+        self._vector_fms_hdg = vector
+        sim = getattr(self, "sim", None)
+        loader = getattr(sim, "load_fms_plan", None) \
+            if sim is not None else None
+        if loader is None \
+                or not getattr(state, "has_position", False) \
+                or getattr(state, "on_ground", False):
+            return
+        route = getattr(self.brain, "route", None)
+        fixes = tuple(getattr(route, "fixes", ()) or ())
+        if len(fixes) < 3:
+            return
+        try:
+            progress = route.progress(
+                state.latitude, state.longitude,
+                float(getattr(state, "ground_speed_kt", 0.0) or 0.0),
+                hint=getattr(self.session, "route_direct_index", -1))
+        except Exception:
+            progress = None
+        if progress is None:
+            return
+        from ..route import Route, RouteFix
+        # Present position first, then the leg the vector rejoins and
+        # everything after it: the departure field stays the plan's own,
+        # so the upload reads as the same flight with a direct, not a
+        # new one.
+        rest = list(fixes[progress.leg:])
+        ppos = RouteFix(ident="PPOS", lat=state.latitude,
+                        lon=state.longitude, kind="wpt")
+        trimmed = Route(fixes=tuple([fixes[0], ppos] + rest),
+                        origin=route.origin,
+                        destination=route.destination,
+                        cruise_ft=route.cruise_ft, source="sim")
+        if loader(trimmed):
+            # The next status read carries this plan back: marked ours,
+            # the adoption pass leaves the live session alone.
+            sim._fms_written = True
+
     @staticmethod
     def _altimeter_hpa(value) -> float:
         """The altimeter setting in hPa, whatever the dialect gave.
@@ -318,6 +372,7 @@ class _Shared_helpers:
         rate is wanted (climb or descent in progress); zero means level.
         """
         d = self.director
+        self._vector_fms(state)
         # The sim's own flag is the truth: a pilot who bumped the AP off
         # mid-engage gets it back rather than a machine that "remembers"
         # engaging it once and never asks again. AUTOPILOT_ON is
