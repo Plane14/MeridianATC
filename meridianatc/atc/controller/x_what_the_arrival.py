@@ -265,6 +265,7 @@ class _What_the_arrival:
             session.vector_leg, session.vector_side = "", 0.0
             session.vector_at = 0.0
             session.speed_given, session.speed_lifted = "", False
+            session.assigned_speed_kt = None
             session.joined_final = False
         session.arrival_runway = (
             session.arrival_runway or self._arrival_runway(airport, weather))

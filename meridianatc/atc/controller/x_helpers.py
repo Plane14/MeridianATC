@@ -303,6 +303,8 @@ class _Helpers:
                      why="traffic ahead")
             return Reply(p.unable_because(aircraft, "traffic_ahead"), station)
         session.speed_lifted = bool(session.speed_given)
+        if session.speed_lifted:
+            session.assigned_speed_kt = None
         decision("request", asked="speed", answer="no restriction",
                  knots=asked or None)
         return Reply(p.no_speed_restrictions(aircraft), station)
@@ -428,6 +430,7 @@ class _Helpers:
         session.hold, session.hold_requested = None, False
         session.star_join, session.descend_via = "", ""
         session.speed_given, session.speed_lifted = "", False
+        session.assigned_speed_kt = None
         session.field_in_sight = False
         session.advisories = {key for key in session.advisories
                               if not key.startswith(("arrival:", "hold:"))

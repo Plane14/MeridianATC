@@ -732,6 +732,67 @@ def test_the_assigned_speed_is_flown_to_the_final_segment():
     assert fo._approach_speed(far_state(3000.0, 8.0)) == 120.0
 
 
+def _speed_watch(type_code: str, ahead=True):
+    """An approach position with speed control on, vectoring an arrival
+    seven miles out with somebody (or nobody) to follow."""
+    import meridianatc.atc.arrival as arrival
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.db import Station
+
+    contact = SimpleNamespace(
+        on_ground=False, latitude=42.0, longitude=-8.05,
+        altitude_ft=2000.0, written="VLG2FJ") if ahead else None
+    watch = arrival.ArrivalWatch.__new__(arrival.ArrivalWatch)
+    watch.brain = SimpleNamespace(
+        realism=SimpleNamespace(speed_control=True),
+        contacts=lambda: [contact] if contact else [])
+    session = FlightSession(Aircraft(parse_callsign("N45XS"),
+                                     type_code=type_code))
+    session.vector_leg, session.vector_at = "base", 0.0
+    station = Station("LECO", "APP", 120.2, "Approach")
+    destination = SimpleNamespace(ident="LECO", lat=42.0, lon=-8.0,
+                                  elev_ft=326.0, spoken="Santiago")
+    state = SimpleNamespace(
+        latitude=42.0, longitude=-8.1, altitude_ft=4000.0,
+        has_position=True)
+    return watch, session, station, state, destination, Phraseology()
+
+
+def test_a_speed_restriction_the_type_cannot_hold_is_never_given():
+    """"Reduce speed to two one zero" to a Baron is an instruction it
+    cannot fly: the figure is capped at what the type holds, so the
+    speed watch does not nag about a deviation the aeroplane cannot fix."""
+    watch, session, station, state, destination, p = _speed_watch("BE58")
+    reply = watch._speed_control(session, station, state, destination,
+                                 20.0, p)
+    assert reply is not None
+    assert 0 < reply.instruction.values["speed_kt"] < 210
+
+
+def test_a_speed_restriction_stands_when_the_type_can_hold_it():
+    watch, session, station, state, destination, p = _speed_watch("B738")
+    reply = watch._speed_control(session, station, state, destination,
+                                 20.0, p)
+    assert reply is not None
+    assert reply.instruction.values["speed_kt"] == 210
+
+
+def test_no_speed_restrictions_clears_the_assigned_speed():
+    """The lifted restriction has to come off the session too: left
+    assigned, the aeroplane is still being flown and flagged against a
+    figure nobody told it any more."""
+    watch, session, station, state, destination, p = _speed_watch(
+        "BE58", ahead=False)
+    session.speed_given = "pattern"
+    session.assigned_speed_kt = 140.0
+    reply = watch._speed_control(session, station, state, destination,
+                                 20.0, p)
+    assert reply is not None and session.speed_lifted
+    assert session.assigned_speed_kt is None
+
+
 def test_the_closest_approach_arithmetic():
     """The conflict probe's straight-line look ahead: head-on merges,
     in-trail does not, an opening pair is already past."""

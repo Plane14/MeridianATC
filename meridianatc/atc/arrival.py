@@ -136,6 +136,48 @@ PATTERN_SPEED_KT = 210
 FINAL_SPEED_KT = 160
 FINAL_SPEED_UNTIL_NM = 4
 
+
+def _achievable_speed_kt(session, state) -> float | None:
+    """The most this aeroplane can be asked to hold -- the same envelope
+    the autonomous pilot clamps its commands to
+    (autonomous/x_the_envelope.py), plus what the type says for itself. A
+    restriction above it is one the aeroplane cannot fly, which the speed
+    watch then nags about forever."""
+    caps = [cap for cap in (
+        float(getattr(state, "estimated_cruise_kt", 0.0) or 0.0) * 1.35,
+        float(getattr(state, "design_vc_kt", 0.0) or 0.0),
+        float(getattr(state, "barber_pole_kt", 0.0) or 0.0) * 0.95,
+    ) if cap > 0.0]
+    caps.extend(_type_speed_caps_kt(session.aircraft))
+    return min(caps) if caps else None
+
+
+def _type_speed_caps_kt(aircraft) -> list[float]:
+    """What the type says it can hold, where the type is known: the
+    autofly profile the first officer flies by, and the performance
+    table's cruise (perftable.py -- which also covers rotorcraft: an R44
+    is simply never doing two hundred knots)."""
+    caps: list[float] = []
+    code = (getattr(aircraft, "type_code", "") or "").strip()
+    if not code:
+        return caps
+    from . import autofly
+    prof, _how = autofly.nearest(code,
+                                 getattr(aircraft, "callsign", None)
+                                 and getattr(aircraft.callsign, "written", "")
+                                 or "")
+    if prof is not None:
+        cruise = (prof.get("performance") or {}).get("cruiseSpeedKnots")
+        if isinstance(cruise, (int, float)) and cruise > 0:
+            caps.append(float(cruise) * 1.35)
+    from . import perftable
+    perf = perftable.type_perf(code)
+    if perf is not None:
+        for speed in (perf.cruise_tas_kt, perf.approach_ias_kt):
+            if speed > 0.0:
+                caps.append(float(speed))
+    return caps
+
 # On a STAR that runs onto the final, the approach is cleared this far along
 # it from the join (after LocalTC: 25 nm).
 STAR_CLEAR_NM = 25.0
@@ -891,6 +933,7 @@ class ArrivalWatch:
             return None
         ahead = self._traffic_ahead(state, destination, to_run)
         cleared = CLEARED_APPROACH_KEY in session.advisories
+        cap = _achievable_speed_kt(session, state)
         if ahead is None:
             if not session.speed_given \
                     and session.advise_once("arrival:speed:none"):
@@ -899,6 +942,7 @@ class ArrivalWatch:
                          why="nobody ahead on the approach")
             if session.speed_given and not session.speed_lifted:
                 session.speed_lifted = True
+                session.assigned_speed_kt = None
                 decision("speed", airport=destination.ident, event="lifted")
                 text = p.no_speed_restrictions(session.aircraft)
                 return Reply(text, station, instruction=session.remember(
@@ -908,18 +952,20 @@ class ArrivalWatch:
         if cleared and to_run > FINAL_SPEED_UNTIL_NM + 2 \
                 and session.speed_given != "final":
             session.speed_given, session.speed_lifted = "final", False
+            knots = min(FINAL_SPEED_KT, int(cap)) if cap else FINAL_SPEED_KT
             decision("speed", airport=destination.ident, event="final",
-                     knots=FINAL_SPEED_KT, until_nm=FINAL_SPEED_UNTIL_NM,
+                     knots=knots, until_nm=FINAL_SPEED_UNTIL_NM,
                      behind=ahead.written)
-            text = p.speed_until(session.aircraft, FINAL_SPEED_KT,
+            text = p.speed_until(session.aircraft, knots,
                                  FINAL_SPEED_UNTIL_NM)
-            values = {"speed_kt": FINAL_SPEED_KT}
+            values = {"speed_kt": knots}
         elif not cleared and not session.speed_given:
             session.speed_given, session.speed_lifted = "pattern", False
+            knots = min(PATTERN_SPEED_KT, int(cap)) if cap else PATTERN_SPEED_KT
             decision("speed", airport=destination.ident, event="pattern",
-                     knots=PATTERN_SPEED_KT, behind=ahead.written)
-            text = p.speed_restriction(session.aircraft, PATTERN_SPEED_KT)
-            values = {"speed_kt": PATTERN_SPEED_KT}
+                     knots=knots, behind=ahead.written)
+            text = p.speed_restriction(session.aircraft, knots)
+            values = {"speed_kt": knots}
         else:
             return None
         session.vector_at = time.monotonic()
