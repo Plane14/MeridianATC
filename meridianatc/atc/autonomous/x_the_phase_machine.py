@@ -1010,6 +1010,16 @@ class _The_phase_machine:
         """Climb to the assigned or planned level."""
         target = self._altitude_target(state)
         alt = state.altitude_ft or 0.0
+        # The initial-climb window is the flaps' scheduled moment, not
+        # their only one: a climb phase that got there dirty -- too slow
+        # for the retract before the AP took over -- still comes clean,
+        # on the same speed test the window used.
+        ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
+        flap_up_kt = (self.state.v2_kt or self.state.vr_kt or 0.0) + 20.0
+        shear = (self.state.windshear_since
+                 and now - self.state.windshear_since < 15.0)
+        if state.flaps_index and ias > flap_up_kt and not shear:
+            self.director.flaps(0.0)
         if not target:
             # Engaged in the air with no level anywhere: a crew levels
             # where it is, it does not climb at a zero bug for an hour.
