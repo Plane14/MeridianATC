@@ -130,11 +130,32 @@ FIELD_QUESTION_NM = 25.0
 SPEED_BELOW_FT = 10000.0
 SPEED_TRAFFIC_NM = 25.0
 SPEED_TRAFFIC_AGL_FT = 8000.0
-# The speeds: on the pattern, and on the final to a point out (UNVERIFIED:
-# typical figures, 7110.65 5-7-2's minimum 210 kt for a jet beyond 20 nm).
-PATTERN_SPEED_KT = 210
+# The speeds, FAA 7110.65 5-7-3's assignment minima by engine kind: a jet
+# is not slowed below 210, or 170 inside twenty flying miles of the
+# threshold; a reciprocating or turboprop aeroplane 200, or 150; a
+# helicopter 60 -- so a helicopter is asked for what it flies, not the
+# jet's figures. "Lower speeds may be assigned when operationally
+# advantageous" is the note under them all, and it is what the
+# _achievable_speed_kt cap leans on for an aeroplane that cannot hold the
+# table's number. The final is the 160-to-4-DME figure of ICAO/UK
+# practice (a jet's 170-minimum zone already ends at the marker).
+PATTERN_SPEED_KT = {"jet": 210, "prop": 200, "heli": 100}
+NEAR_SPEED_KT = {"jet": 170, "prop": 150, "heli": 60}
+NEAR_NM = 20.0
 FINAL_SPEED_KT = 160
 FINAL_SPEED_UNTIL_NM = 4
+
+
+def _speed_class(state) -> str:
+    """"jet", "prop" or "heli" for the FAA table -- 7110.65's three
+    kinds, mapped from the aeroplane's class."""
+    from . import aircraft_class
+    name = aircraft_class.of_state(state).name
+    if name == aircraft_class.HELICOPTER:
+        return "heli"
+    if name in (aircraft_class.BUSINESS_JET, aircraft_class.AIRLINER):
+        return "jet"
+    return "prop"
 
 
 def _achievable_speed_kt(session, state) -> float | None:
@@ -934,6 +955,7 @@ class ArrivalWatch:
         ahead = self._traffic_ahead(state, destination, to_run)
         cleared = CLEARED_APPROACH_KEY in session.advisories
         cap = _achievable_speed_kt(session, state)
+        kind = _speed_class(state)
         if ahead is None:
             if not session.speed_given \
                     and session.advise_once("arrival:speed:none"):
@@ -952,7 +974,8 @@ class ArrivalWatch:
         if cleared and to_run > FINAL_SPEED_UNTIL_NM + 2 \
                 and session.speed_given != "final":
             session.speed_given, session.speed_lifted = "final", False
-            knots = min(FINAL_SPEED_KT, int(cap)) if cap else FINAL_SPEED_KT
+            knots = min(FINAL_SPEED_KT, int(cap) // 5 * 5) \
+                if cap else FINAL_SPEED_KT
             decision("speed", airport=destination.ident, event="final",
                      knots=knots, until_nm=FINAL_SPEED_UNTIL_NM,
                      behind=ahead.written)
@@ -961,7 +984,16 @@ class ArrivalWatch:
             values = {"speed_kt": knots}
         elif not cleared and not session.speed_given:
             session.speed_given, session.speed_lifted = "pattern", False
-            knots = min(PATTERN_SPEED_KT, int(cap)) if cap else PATTERN_SPEED_KT
+            figure = NEAR_SPEED_KT[kind] if to_run <= NEAR_NM \
+                else PATTERN_SPEED_KT[kind]
+            knots = min(figure, int(cap) // 5 * 5) if cap else figure
+            flying = float(getattr(state, "indicated_airspeed_kt", 0.0)
+                           or getattr(state, "ground_speed_kt", 0.0) or 0.0)
+            if flying and flying <= knots:
+                # Already at or under the figure: nothing to reduce to,
+                # and "reduce speed" to a faster one would be nonsense.
+                session.speed_given = ""
+                return None
             decision("speed", airport=destination.ident, event="pattern",
                      knots=knots, behind=ahead.written)
             text = p.speed_restriction(session.aircraft, knots)

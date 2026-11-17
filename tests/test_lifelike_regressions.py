@@ -732,9 +732,9 @@ def test_the_assigned_speed_is_flown_to_the_final_segment():
     assert fo._approach_speed(far_state(3000.0, 8.0)) == 120.0
 
 
-def _speed_watch(type_code: str, ahead=True):
+def _speed_watch(type_code: str, ahead=True, ias_kt: float = 250.0):
     """An approach position with speed control on, vectoring an arrival
-    seven miles out with somebody (or nobody) to follow."""
+    with somebody (or nobody) to follow."""
     import meridianatc.atc.arrival as arrival
     from meridianatc.atc.phraseology import Aircraft, Phraseology
     from meridianatc.atc.session import FlightSession
@@ -756,6 +756,7 @@ def _speed_watch(type_code: str, ahead=True):
                                   elev_ft=326.0, spoken="Santiago")
     state = SimpleNamespace(
         latitude=42.0, longitude=-8.1, altitude_ft=4000.0,
+        indicated_airspeed_kt=ias_kt, type_code=type_code,
         has_position=True)
     return watch, session, station, state, destination, Phraseology()
 
@@ -772,11 +773,30 @@ def test_a_speed_restriction_the_type_cannot_hold_is_never_given():
 
 
 def test_a_speed_restriction_stands_when_the_type_can_hold_it():
+    """Past twenty miles the jet gets the full 210; inside them the
+    7110.65 figure is 170."""
     watch, session, station, state, destination, p = _speed_watch("B738")
     reply = watch._speed_control(session, station, state, destination,
-                                 20.0, p)
+                                 25.0, p)
     assert reply is not None
     assert reply.instruction.values["speed_kt"] == 210
+    from meridianatc.atc.session import FlightSession
+    session2 = FlightSession(session.aircraft)
+    session2.vector_leg, session2.vector_at = "base", 0.0
+    reply = watch._speed_control(session2, station, state, destination,
+                                 20.0, p)
+    assert reply is not None
+    assert reply.instruction.values["speed_kt"] == 170
+
+
+def test_a_speed_reduction_is_not_asked_of_an_aeroplane_already_slow():
+    """A Cessna doing a hundred knots is not told to reduce to 150 --
+    the instruction would only speed it up."""
+    watch, session, station, state, destination, p = _speed_watch(
+        "C172", ias_kt=110.0)
+    reply = watch._speed_control(session, station, state, destination,
+                                 15.0, p)
+    assert reply is None
 
 
 def test_no_speed_restrictions_clears_the_assigned_speed():
