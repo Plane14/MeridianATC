@@ -768,8 +768,8 @@ class ChecklistRunner:
 
     # -- offers ----------------------------------------------------------
 
-    def _fits(self, state, phase: Phase, height: float, leg: str) -> str:
-        """The checklist this moment belongs to, if one does."""
+    def _fitting(self, state, phase: Phase, height: float, leg: str) -> list:
+        """Every checklist this moment belongs to, in standard order."""
         speed = getattr(state, "ground_speed_kt", 0.0) or 0.0
         engines = bool(getattr(state, "engines_running", False))
         level = abs(getattr(state, "vertical_speed_fpm", 0.0) or 0.0) < 300
