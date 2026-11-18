@@ -319,12 +319,7 @@
           "accept": [
             "check",
             "on"
-          ],
-          "check": {
-            "var": "engines_running",
-            "op": "eq",
-            "value": true
-          }
+          ]
         }
       ]
     },
@@ -1052,8 +1047,8 @@
           ]
         },
         {
-          "challenge": "External power",
-          "response": "on bus",
+          "challenge": "External power, where available",
+          "response": "on bus, or not available",
           "accept": [
             "on",
             "check"
@@ -1180,7 +1175,7 @@
           ]
         },
         {
-          "challenge": "Fire discharge, bottle one",
+          "challenge": "Fire discharge bottle one, if required",
           "response": "discharged",
           "accept": [
             "check",
