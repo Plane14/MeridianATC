@@ -678,6 +678,88 @@
         text(el.veilDetail, detail || '');
     }
 
+    // ------------------------------------- the airspace the simulator knows ---
+
+    /*
+        MSFS keeps its airspace inside the simulator, behind the facility
+        listener the stock avionics use -- SimConnect never sees a boundary,
+        so the application cannot ask for one either. What it can do is what
+        the GPS itself does: a nearest-boundary search around the aeroplane,
+        which answers in diffs. Those are forwarded to the application,
+        which merges them with the airspace it has on file.
+
+        All of it is guarded: outside the simulator there is no Coherent and
+        no view listener, and the whole block becomes a no-op.
+    */
+    var airspace = {
+        listener: null,
+        session: -1,
+        seen: {},            // facility id -> boundary, for the diff
+        at: 0,               // when the last search ran
+        lat: 0, lon: 0       // where it was centred
+    };
+    var AIRSPACE_TYPE = 5;   // FacilitySearchType.Boundary
+    var AIRSPACE_RADIUS_M = 185200;   // 100 NM: every volume that matters
+    var AIRSPACE_MAX = 500;
+    var AIRSPACE_PERIOD_MS = 20000;   // re-ask this often at the earliest
+    var AIRSPACE_MOVED_DEG = 0.4;     // or this far from the last centre
+
+    function startAirspace() {
+        if (airspace.listener || typeof RegisterViewListener !== 'function'
+                || typeof Coherent === 'undefined' || !Coherent.call) return;
+        try {
+            airspace.listener = RegisterViewListener('JS_LISTENER_FACILITY');
+            airspace.listener.on('NearestSearchCompleted', airspaceDone);
+            Coherent.call('START_NEAREST_SEARCH_SESSION', AIRSPACE_TYPE)
+                .then(function (sessionId) {
+                    airspace.session = sessionId;
+                    // Every boundary class: the application decides what
+                    // each kind means.
+                    Coherent.call('SET_NEAREST_BOUNDARY_FILTER',
+                                  sessionId, 0xffffffff);
+                });
+        } catch (e) { airspace.listener = null; }
+    }
+
+    function airspaceTick(state) {
+        if (airspace.session < 0) return;
+        var position = (state && state.position) || {};
+        var lat = position.latitude, lon = position.longitude;
+        if (typeof lat !== 'number' || typeof lon !== 'number'
+                || (!lat && !lon)) return;
+        var now = Date.now();
+        var moved = Math.abs(lat - airspace.lat) + Math.abs(lon - airspace.lon);
+        if (now - airspace.at < AIRSPACE_PERIOD_MS && moved < AIRSPACE_MOVED_DEG) return;
+        airspace.at = now;
+        airspace.lat = lat;
+        airspace.lon = lon;
+        try {
+            Coherent.call('SEARCH_NEAREST', airspace.session, lat, lon,
+                          AIRSPACE_RADIUS_M, AIRSPACE_MAX);
+        } catch (e) { }
+    }
+
+    function airspaceDone(result) {
+        if (!result || result.sessionId !== airspace.session) return;
+        var added = result.added || [];
+        var removed = result.removed || [];
+        var body = { boundaries: [], remove: [] };
+        for (var i = 0; i < added.length; i++) {
+            var b = added[i];
+            if (b && b.id !== undefined) {
+                airspace.seen[b.id] = b;
+                body.boundaries.push(b);
+            }
+        }
+        for (i = 0; i < removed.length; i++) {
+            delete airspace.seen[removed[i]];
+            body.remove.push(removed[i]);
+        }
+        if (body.boundaries.length || body.remove.length) {
+            request('POST', '/api/sim_airspace', body);
+        }
+    }
+
     // ------------------------------------------------------------ the loop ---
 
     function paintState(state) {
@@ -702,6 +784,7 @@
             veil(false);
             paintState(state);
             paintLanding(state.landing);
+            airspaceTick(state);
         }, function (status) {
             fails += 1;
             if (fails >= FAILS_BEFORE_VEIL) {
@@ -877,6 +960,7 @@
     function start() {
         wire();
         paintWords();
+        startAirspace();
         tick();
         if (timer) clearInterval(timer);
         timer = setInterval(tick, PERIOD);

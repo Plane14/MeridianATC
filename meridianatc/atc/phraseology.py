@@ -2396,12 +2396,15 @@ class Phraseology:
              "crosswind": "crosswind", "upwind": "upwind"}
     _SIDES = {"left": "left", "right": "right"}
     _AIRSPACE_FAA = {"B": "Class Bravo", "C": "Class Charlie",
-                     "D": "Class Delta"}
+                     "D": "Class Delta", "P": "prohibited area",
+                     "R": "restricted area", "Q": "danger area"}
     _AIRSPACE_ICAO = {"B": "terminal control area", "C": "terminal area",
-                      "D": "control zone"}
+                      "D": "control zone", "P": "prohibited area",
+                      "R": "restricted area", "Q": "danger area"}
     # CAP 413: "the zone" for a control zone, "controlled airspace" above it.
     _AIRSPACE_UK = {"B": "controlled airspace", "C": "controlled airspace",
-                    "D": "zone"}
+                    "D": "zone", "P": "prohibited area",
+                    "R": "restricted area", "Q": "danger area"}
 
     def leg(self, name: str) -> str:
         """A circuit leg, named the way this language names it."""

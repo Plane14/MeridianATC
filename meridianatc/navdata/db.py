@@ -797,6 +797,13 @@ class NavDB:
         self._circuit_data = None
         self._vrps = None
         self._airspace = None
+        # The filed volumes merged with the simulator's own (navdata
+        # .simspace), rebuilt when the sim's set changes version.
+        self._airspace_merged: tuple[int, list] = (-1, [])
+        # The field a sim-sourced volume was attributed to, lazily: the
+        # sim files do not name one, and the watch needs it to know who
+        # may speak for the volume.
+        self._volume_airports: dict[str, str] = {}
 
     @property
     def _conn(self) -> sqlite3.Connection:
@@ -1756,11 +1763,40 @@ class NavDB:
         return list(self._vrps.get((ident or "").strip().upper(), []))
 
     def airspace_volumes(self) -> list:
+        """The filed volumes plus the ones the connected simulator
+        knows (navdata.simspace): X-Plane's own airspace files, or the
+        boundaries the MSFS panel finds inside the sim."""
+        from . import simspace
         from .vfrdata import load_airspace
 
         if self._airspace is None:
             self._airspace = load_airspace(self._vfr_files("airspace"))
-        return self._airspace
+        version, merged = self._airspace_merged
+        if version != simspace.version():
+            merged = self._airspace + simspace.volumes()
+            self._airspace_merged = (simspace.version(), merged)
+        return merged
+
+    def volume_airport(self, volume) -> str:
+        """The field a volume belongs to.
+
+        Filed volumes carry theirs; the sim's do not, and the airspace
+        watch cannot know who speaks for a volume without one. The
+        nearest field to the outline's middle is the right guess for the
+        zones that matter -- a class D wraps the field whose name it
+        wears -- so that is what an unattributed volume gets, computed
+        once and kept.
+        """
+        if volume.airport:
+            return volume.airport
+        found = self._volume_airports.get(volume.id)
+        if found is None:
+            south, west, north, east = volume.bbox
+            near = self.nearest_airport((south + north) / 2.0,
+                                        (west + east) / 2.0, max_nm=25.0)
+            found = near.ident if near else ""
+            self._volume_airports[volume.id] = found
+        return found
 
     def airspace_at(self, lat: float, lon: float, altitude_ft: float,
                     ground_ft: float | None = None) -> list:
