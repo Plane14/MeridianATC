@@ -1,0 +1,74 @@
+"""The unusual add-on types, and the water runways only they can use."""
+from types import SimpleNamespace
+
+from meridianatc.atc import aircraft_class as ac
+from meridianatc.atc import vspeeds
+
+
+class TestUnusualTypes:
+    def test_the_spyplanes_are_jets(self):
+        assert ac.classify("U2").name == ac.BUSINESS_JET
+        assert ac.classify("B57").name == ac.BUSINESS_JET
+
+    def test_the_ssts_are_airliners(self):
+        assert ac.classify("CONC").name == ac.AIRLINER
+        assert ac.classify("B2707").name == ac.AIRLINER
+
+    def test_the_flying_boats_are_amphibian_turboprops(self):
+        for code in ("US1", "US2"):
+            found = ac.classify(code)
+            assert found.name == ac.TURBOPROP_TWIN
+            assert ac.amphibious(code)
+        # And the rest of the amphibian list.
+        for code in ("U16", "PBY", "PBYA", "G73", "G73T", "LAKE", "SEAB"):
+            assert ac.amphibious(code), code
+
+    def test_a_landplane_is_not_amphibious(self):
+        assert not ac.amphibious("C172")
+        assert not ac.amphibious("B738")
+
+    def test_the_types_have_speeds(self):
+        for code in ("U2", "B57", "CONC", "B2707", "US1", "US2", "LAKE"):
+            speeds = vspeeds.table_speeds(code)
+            assert speeds.vr > 0, code
+
+
+def _water_runway(length_ft=4000):
+    return SimpleNamespace(length_ft=length_ft, surface="WAT",
+                           is_hard=False)
+
+
+def _paved_runway(length_ft=4000):
+    return SimpleNamespace(length_ft=length_ft, surface="ASP",
+                           is_hard=True)
+
+
+class TestWaterRunways:
+    def test_water_serves_only_the_amphibious(self):
+        assert ac.runway_usable(_water_runway(), "US2")
+        assert ac.runway_usable(_water_runway(), "LAKE")
+        assert not ac.runway_usable(_water_runway(), "C172")
+        assert not ac.runway_usable(_water_runway(), "B738")
+
+    def test_a_seaplane_base_serves_only_the_amphibious(self):
+        base = SimpleNamespace(type="seaplane_base")
+        water = [_water_runway()]
+        assert ac.airport_usable(base, water, "US2")
+        assert ac.airport_usable(base, water, "A5")
+        assert not ac.airport_usable(base, water, "C172")
+        assert not ac.airport_usable(base, water, "PA28")
+
+    def test_an_amphibian_still_uses_a_paved_runway(self):
+        assert ac.runway_usable(_paved_runway(), "US2")
+
+    def test_a_short_water_lane_limits_the_boat(self):
+        # A US-2 plans on 3,000 ft; a 2,000 ft water lane is too small.
+        assert not ac.runway_usable(_water_runway(2000), "US2")
+        assert ac.runway_usable(_water_runway(2000), "LAKE")
+
+    def test_the_ssts_want_a_long_runway(self):
+        assert ac.min_runway_ft("CONC") >= 9000
+        assert ac.min_runway_ft("B2707") >= 10000
+        airport = SimpleNamespace(type="small_airport")
+        short = [_paved_runway(8000)]
+        assert not ac.airport_usable(airport, short, "CONC")

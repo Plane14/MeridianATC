@@ -76,6 +76,12 @@ class _Chain_flights_unchanged:
                                     "medium_airport", "large_airport")
         if airport.type in ("large_airport", "medium_airport"):
             return True
+        from .. import aircraft_class as ac
+        if ac.amphibious(self.state.aircraft_type):
+            # A hull that takes the water needs no ramp to be served:
+            # the seaplane base's fuel dock is its ground service.
+            return airport.type in ("seaplane_base", "small_airport",
+                                    "medium_airport", "large_airport")
         if self.state.aircraft_type in fly._LIGHT_TYPES:
             return airport.type in ("small_airport", "medium_airport", "large_airport")
         return False

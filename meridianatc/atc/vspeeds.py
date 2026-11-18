@@ -154,6 +154,33 @@ TABLE: dict[str, Speeds] = {
                     "is published; a mid-range rotation figure; final "
                     "approach 130-140 KIAS",
                vapp=135),
+    # The unusual add-ons pilots fly, all UNVERIFIED -- none publishes a
+    # single set of speeds the table could quote. The figures are each
+    # type's commonly quoted takeoff/approach numbers, not a handbook's.
+    "U2": _u(80, "U-2 Dragonlady: a jet sailplane's takeoff and "
+                 "near-stall approach figures"),
+    "B57": _u(115, "WB-57 Canberra: a mid-weight rotation figure",
+              vapp=135),
+    "CONC": Speeds(
+        v1=175, vr=197, v2=215, vapp=170,
+        source="UNVERIFIED: Concorde's published figures are by weight; "
+               "a heavy takeoff (rotate ~197 KIAS, V2 ~215) and a "
+               "landing-weight VREF around 170 KIAS",
+        unverified=True),
+    "B2707": _u(190, "Boeing 2707-300 (Devinci for X-Plane 12): no handbook "
+                     "figures published; as the era's other SST",
+                v2=210, vapp=165),
+    "US1": _u(95, "Shin Meiwa US-1: a STOL flying boat's water run",
+              vapp=90),
+    "US2": _u(95, "Shin Meiwa US-2: a STOL flying boat's water run",
+              vapp=90),
+    "U16": _u(95, "HU-16 Albatross", vapp=105),
+    "PBY": _u(70, "PBY Catalina", vapp=80),
+    "PBYA": _u(70, "PBY Catalina", vapp=80),
+    "G73": _u(85, "Grumman Mallard", vapp=95),
+    "G73T": _u(90, "Grumman Turbo Mallard", vapp=95),
+    "LAKE": _u(57, "Lake LA-4 amphibian", vapp=65),
+    "SEAB": _u(50, "Republic RC-3 Seabee", vapp=62),
 }
 # The rotary entries: no rotation speed -- vr stays 0 -- but an approach
 # speed, for the "speed" deviation call on the circuit. All UNVERIFIED:

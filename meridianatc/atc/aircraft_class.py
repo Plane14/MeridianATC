@@ -86,6 +86,23 @@ DOC_8643: dict[str, str] = {
     "P180": "L2T",
     # jets the business list below does not have
     "SF50": "L1J",
+    # the unusual types pilots actually fly: a jet sailplane, a Cold-War
+    # Canberra, and the two supersonic transports -- one that flew, and
+    # Devinci's Boeing 2707-300 add-on for X-Plane 12 (b2707_300.acf).
+    "U2": "L1J",
+    "B57": "L2J",
+    "CONC": "L4J",
+    "B2707": "L4J",
+    # Amphibians and seaplanes -- the 'A' and 'S' kinds -- are the only
+    # aeroplanes a water runway serves. The Shin Meiwa pair are
+    # four-turboprop flying boats; the Albatross, Catalina, Mallard and
+    # Lake are piston amphibians (the Mallard has a turboprop refit).
+    "US1": "A4T", "US2": "A4T",
+    "U16": "A2P",            # Grumman HU-16/SA-16 Albatross
+    "PBY": "A2P", "PBYA": "A2P",  # Consolidated PBY Catalina, both spellings
+    "G73": "A2P", "G73T": "A2T",  # Grumman G-73 Mallard, piston and turbo
+    "LAKE": "A1P",           # Lake LA-4 family; the Icon A5 is above
+    "SEAB": "S1P",           # Republic RC-3 Seabee -- a seaplane, no wheels
     # the F-14 is a fighter, which the class table has no word for; a
     # twin-jet with no airline lands as a business jet, the closest fit
     "F14": "L2J",
@@ -235,6 +252,26 @@ def min_runway_ft(type_code: str) -> int:
     if code in ("C152", "C172", "C182", "PA28", "DA40", "SR22", "BE36",
                 "TB20", "PA18", "RV10", "BE58"):
         return 2500
+    # A water strip for an amphibian is marked by the same gate; the
+    # figures are the type's own water-run or runway figures.
+    if code in ("LAKE", "SEAB", "A5"):
+        return 2000
+    if code in ("US1", "US2"):
+        # ShinMaywa's published STOL figure is about a quarter of an
+        # airliner's field; a little more is the planning number.
+        return 3000
+    if code in ("U16", "PBY", "PBYA", "G73", "G73T"):
+        return 3500
+    if code == "U2":
+        # A fragile sailplane that cannot slip; it is only ever aimed at
+        # a long strip.
+        return 6000
+    if code == "B57":
+        return 7000
+    if code == "CONC":
+        return 9000
+    if code == "B2707":
+        return 10000
     if code in ("TBM9", "PC12", "C25A", "C25C", "C525", "E55P", "E50P",
                 "AT76", "DH8D", "C208", "BE9L", "EVOT", "SF50"):
         return 4000
@@ -251,8 +288,12 @@ def min_runway_ft(type_code: str) -> int:
 
 
 def amphibious(type_code: str) -> bool:
-    """Whether the type's Doc 8643 entry is an amphibian ('A' kind)."""
-    return DOC_8643.get((type_code or "").strip().upper(), "L").startswith("A")
+    """Whether the type can take the water: an amphibian ('A' kind) or a
+    seaplane ('S' kind) in its Doc 8643 entry. A floatplane fitted to a
+    landplane code still reports the landplane -- a Cessna on floats is
+    indistinguishable from one on wheels -- so this is the typed kinds,
+    not every hull that could float."""
+    return DOC_8643.get((type_code or "").strip().upper(), "L")[0] in "AS"
 
 
 def runway_usable(runway, type_code: str = "") -> bool:
@@ -298,7 +339,8 @@ def airport_usable(airport, runways, type_code: str = "",
     usable = [rw for rw in runways if runway_usable(rw, type_code)]
     if not usable:
         return False
-    heavies = ("A388", "B744", "B748", "B77W", "B77L", "B77X", "A35K")
+    heavies = ("A388", "B744", "B748", "B77W", "B77L", "B77X", "A35K",
+               "CONC", "B2707")
     return not ((type_code or "").strip().upper() in heavies
                 and len(usable) < 2
                 and not any((rw.length_ft or 0.0) >= 10000
