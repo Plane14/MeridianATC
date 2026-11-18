@@ -180,10 +180,12 @@ simulator, so the one you hear on final is the one you see on final. See
 pilots actually add on — a U-2 or a WB-57 on a long runway, a Concorde or the
 Devinci Boeing 2707-300 needing its ten thousand feet — and each gets the
 class, the runway planning figure and the V-speeds its shape implies. And the
-water is an aerodrome too: a seaplane base's water lanes serve the amphibians
-and seaplanes only — a US-2, a Catalina, a Lake, an Icon A5 can be sent there,
-while a Cessna on wheels is refused. A floatplane on a landplane code still
-reports the landplane, so bring a typed hull.
+water is an aerodrome too: a seaplane base's water lanes serve the aeroplanes
+built for it — a US-2, a Catalina, a Lake, an Icon A5 — while a Cessna on
+wheels is refused. A landplane *on floats* counts too: it still reports the
+landplane's code, so the simulators' own evidence decides — X-Plane's float
+gear type, a title that says floats or amphibian, or water already beneath
+the hull in MSFS.
 
 ---
 

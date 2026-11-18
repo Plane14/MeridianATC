@@ -733,7 +733,8 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
             leg = engine.continuous.plan_next_leg(
                 state.latitude, state.longitude,
                 getattr(airport, "ident", "") or "", callsign,
-                aircraft_type=type_code)
+                aircraft_type=type_code,
+                floats=bool(getattr(aircraft, "on_floats", False)))
             if leg is None:
                 return {"ok": False}
             return {"ok": True, "leg": {

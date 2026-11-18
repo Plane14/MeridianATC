@@ -15,6 +15,8 @@ class _Helpers_kept_from:
         """Compute aircraft range and performance for chain flight planning."""
         type_code = session.aircraft.type_code.upper()
         self.state.aircraft_type = type_code
+        self.state.aircraft_floats = bool(
+            getattr(session.aircraft, "on_floats", False))
 
         ranges = {
             "C152": 350, "C172": 550, "C182": 750, "C208": 800,

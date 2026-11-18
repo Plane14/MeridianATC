@@ -263,6 +263,9 @@ class AutonomousState:
     # Aircraft performance for chain planning
     aircraft_range_nm: float = 0.0
     aircraft_type: str = ""
+    # The sim's own word that the airframe carries floats -- a landplane
+    # code does not say (aircraft_class.amphibious).
+    aircraft_floats: bool = False
     # Error tracking
     error_message: str = ""
     error_count: int = 0

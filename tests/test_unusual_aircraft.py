@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from meridianatc.atc import aircraft_class as ac
 from meridianatc.atc import vspeeds
+from meridianatc.sim.state import floats_said
 
 
 class TestUnusualTypes:
@@ -72,3 +73,32 @@ class TestWaterRunways:
         airport = SimpleNamespace(type="small_airport")
         short = [_paved_runway(8000)]
         assert not ac.airport_usable(airport, short, "CONC")
+
+
+class TestFloatVariants:
+    """A landplane on floats reports the landplane's code; the sim's own
+    word for the floats -- on_floats -- is what lets it take the water."""
+
+    def test_the_title_gives_the_floats_away(self):
+        assert floats_said("Cessna 172 Skyhawk Floats")
+        assert floats_said("de Havilland DHC-2 Beaver Amphibian")
+        assert floats_said("Searey LSX Seaplane")
+        assert not floats_said("Cessna 172 Skyhawk")
+        assert not floats_said("")
+
+    def test_floats_make_a_landplane_water_capable(self):
+        assert ac.amphibious("C172", on_floats=True)
+        assert not ac.amphibious("C172")
+        assert ac.runway_usable(_water_runway(), "C172", on_floats=True)
+        assert not ac.runway_usable(_water_runway(), "C172")
+
+    def test_a_seaplane_base_serves_the_float_variant(self):
+        base = SimpleNamespace(type="seaplane_base")
+        water = [_water_runway()]
+        assert ac.airport_usable(base, water, "C172", on_floats=True)
+        assert not ac.airport_usable(base, water, "C172")
+
+    def test_a_float_variant_still_uses_a_paved_runway(self):
+        # The flag says the airframe can take water; it never takes its
+        # pavement away -- the floats-on-wheels amphibian goes both ways.
+        assert ac.runway_usable(_paved_runway(), "C172", on_floats=True)

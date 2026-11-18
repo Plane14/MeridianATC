@@ -287,16 +287,19 @@ def min_runway_ft(type_code: str) -> int:
     return 6000
 
 
-def amphibious(type_code: str) -> bool:
+def amphibious(type_code: str, on_floats: bool = False) -> bool:
     """Whether the type can take the water: an amphibian ('A' kind) or a
-    seaplane ('S' kind) in its Doc 8643 entry. A floatplane fitted to a
-    landplane code still reports the landplane -- a Cessna on floats is
-    indistinguishable from one on wheels -- so this is the typed kinds,
-    not every hull that could float."""
-    return DOC_8643.get((type_code or "").strip().upper(), "L")[0] in "AS"
+    seaplane ('S' kind) in its Doc 8643 entry.
+
+    ``on_floats`` is the simulator's own word that the airframe carries
+    floats -- a landplane's float variant still reports the landplane's
+    code, so a C172 on floats needs the flag where a US-2 does not."""
+    return bool(on_floats) or \
+        DOC_8643.get((type_code or "").strip().upper(), "L")[0] in "AS"
 
 
-def runway_usable(runway, type_code: str = "") -> bool:
+def runway_usable(runway, type_code: str = "",
+                  on_floats: bool = False) -> bool:
     """Whether a runway can take the type: long enough, on a surface it
     can use.
 
@@ -310,14 +313,14 @@ def runway_usable(runway, type_code: str = "") -> bool:
         return False
     surface = (getattr(runway, "surface", "") or "").upper()
     if "WAT" in surface:
-        return amphibious(type_code)
+        return amphibious(type_code, on_floats)
     if surface and not getattr(runway, "is_hard", True):
         return min_runway_ft(type_code) <= 2500
     return True
 
 
 def airport_usable(airport, runways, type_code: str = "",
-                   helicopter: bool = False) -> bool:
+                   helicopter: bool = False, on_floats: bool = False) -> bool:
     """Whether the field can take the aircraft: a kind of airport it can
     land at, with at least one runway it can use.
 
@@ -332,11 +335,12 @@ def airport_usable(airport, runways, type_code: str = "",
         return kind in ("heliport", "small_airport", "medium_airport",
                         "large_airport")
     allowed = ["large_airport", "medium_airport", "small_airport"]
-    if amphibious(type_code):
+    if amphibious(type_code, on_floats):
         allowed.append("seaplane_base")
     if kind not in allowed:
         return False
-    usable = [rw for rw in runways if runway_usable(rw, type_code)]
+    usable = [rw for rw in runways
+              if runway_usable(rw, type_code, on_floats)]
     if not usable:
         return False
     heavies = ("A388", "B744", "B748", "B77W", "B77L", "B77X", "A35K",
