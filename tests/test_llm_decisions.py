@@ -5,8 +5,14 @@ either way the deterministic answer is what stands on a failure.
 
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
+from unittest.mock import Mock
 
+from meridianatc.atc.callouts import Call
+from meridianatc.atc.crew import CrewDirector
+from meridianatc.atc.notices import Notices
+from meridianatc.atc.session import Phase
 from meridianatc.llm.decisions import Decisions, _parse_choice
 
 
@@ -318,3 +324,118 @@ class TestTrafficWatchAdvisor:
         assert first is not None and second is not None
         assert "ABC" not in session.traffic_called
         assert session.traffic_called == {"DEF": "called"}
+
+
+# ----------------------------------------------------------------------
+# Per-scope telemetry
+# ----------------------------------------------------------------------
+
+class TestTelemetry:
+    def test_scopes_count_independently(self):
+        d = _decisions('{"choice": 2}')
+        d.pick("traffic_pick", "q", ["a", "b"])
+        d.pick("fo_notice", "q", ["a", "b"])
+        assert d.scopes["traffic_pick"]["asked"] == 1
+        assert d.scopes["traffic_pick"]["proposed"] == 1
+        assert d.scopes["fo_notice"]["asked"] == 1
+        assert d.scopes["traffic_pick"]["failed"] == 0
+
+    def test_declines_rejects_and_failures_count(self):
+        d = _decisions('{"choice": "none"}')
+        d.pick("t", "q", ["a"], allow_none=True)
+        assert d.scopes["t"]["declined"] == 1
+        assert d.scopes["t"]["proposed"] == 1
+
+        d = _decisions('{"choice": 9}')
+        d.pick("t", "q", ["a"], default=0)
+        assert d.scopes["t"]["rejected"] == 1
+
+        provider = SimpleNamespace(
+            complete=lambda *a, **k: (_ for _ in ()).throw(ValueError("x")),
+            available=lambda: True)
+        d = Decisions(provider)
+        d.pick("t", "q", ["a"], default=0)
+        assert d.scopes["t"]["failed"] == 1
+
+    def test_close_writes_the_summary(self, caplog):
+        d = _decisions('{"choice": 1}')
+        d.pick("traffic_pick", "q", ["a"])
+        with caplog.at_level(logging.INFO):
+            d.close()
+        assert "fo" not in d.scopes
+        assert "traffic_pick" in caplog.text
+
+    def test_close_with_nothing_asked_is_quiet(self):
+        d = _decisions('{"choice": 1}')
+        d.close()
+        assert d.scopes == {}
+
+
+# ----------------------------------------------------------------------
+# The first officer choosing which notice to surface
+# ----------------------------------------------------------------------
+
+
+def _notice_crew(advisor):
+    crew = CrewDirector.__new__(CrewDirector)
+    crew.advisor = advisor
+    crew.notices = Notices()
+    return crew
+
+
+_notice_session = SimpleNamespace(phase=Phase.ENROUTE)
+_notice_state = SimpleNamespace(altitude_ft=2500.0, on_ground=False)
+
+
+def _notice_calls():
+    return [Call("gear_up_final", {}, "gear up at 400 ft"),
+            Call("altimeter_not_set", {}, "set 1013, given 1021"),
+            Call("wrong_tank", {}, "0.5 gal against 3.0")]
+
+
+class TestAdvisedNotices:
+    def test_no_advisor_says_everything(self):
+        crew = _notice_crew(None)
+        assert crew._advised_notices(_notice_calls(), _notice_session,
+                                     _notice_state) == _notice_calls()
+
+    def test_pick_chooses_one_and_defers_the_rest(self):
+        crew = _notice_crew(SimpleNamespace(
+            pick=lambda *a, **k: 1))  # second option: wrong_tank
+        crew.notices = Mock(wraps=Notices())
+        calls = _notice_calls()
+        out = crew._advised_notices(calls, _notice_session, _notice_state)
+        assert [c.cue for c in out] == ["gear_up_final", "wrong_tank"]
+        crew.notices.defer.assert_called_once_with("altimeter_not_set")
+
+    def test_declining_leaves_only_the_safety_calls(self):
+        crew = _notice_crew(SimpleNamespace(pick=lambda *a, **k: -1))
+        crew.notices = Mock(wraps=Notices())
+        out = crew._advised_notices(_notice_calls(), _notice_session,
+                                    _notice_state)
+        assert [c.cue for c in out] == ["gear_up_final"]
+        assert crew.notices.defer.call_count == 2
+
+    def test_an_absent_answer_says_everything(self):
+        # Model unavailable, slow, or shadowing: unchanged behavior.
+        crew = _notice_crew(SimpleNamespace(pick=lambda *a, **k: None))
+        out = crew._advised_notices(_notice_calls(), _notice_session,
+                                    _notice_state)
+        assert [c.cue for c in out] == [c.cue for c in _notice_calls()]
+
+    def test_all_safety_means_the_model_is_not_asked(self):
+        asked = []
+        advisor = SimpleNamespace(
+            pick=lambda *a, **k: asked.append(a) or 0)
+        crew = _notice_crew(advisor)
+        calls = [Call("gear_up_final", {}, ""),
+                 Call("fuel_reserve", {}, "")]
+        out = crew._advised_notices(calls, _notice_session, _notice_state)
+        assert out == calls and asked == []
+
+    def test_deferred_notice_stays_due(self):
+        notices = Notices()
+        first = notices._once("k1", "altimeter_not_set")
+        assert first and notices._once("k1", "altimeter_not_set") == []
+        notices.defer("altimeter_not_set")
+        assert notices._once("k1", "altimeter_not_set")

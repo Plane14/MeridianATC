@@ -2629,6 +2629,7 @@ class CrewDirector:
         except Exception:
             log.debug("the notices raised", exc_info=True)
             return
+        calls = self._advised_notices(calls, session, state)
         language = self._callout_language()
         spoken = language or self._language
         digits = CHECKLIST_DIGITS.get(spoken, CHECKLIST_DIGITS["en"])
@@ -2658,6 +2659,50 @@ class CrewDirector:
                                            else "")) if live else call.why))
             self._fire(call.cue, session, state, again=True,
                        language=language, extra=extra)
+
+    def _advised_notices(self, calls, session, state) -> list:
+        """Which of the due notices the first officer says this pass.
+
+        Without the advisor, everything due is said, as always. With it,
+        the model picks the one notice worth a mention now -- the choice
+        only, from a list the engine just enumerated. A notice it does
+        not pick is deferred, not dropped (:meth:`Notices.defer`): it
+        stays due while its condition still holds. The safety notices
+        are never the model's to postpone.
+        """
+        if self.advisor is None:
+            return calls
+        safety = [call for call in calls if call.cue in SAFETY_NOTICES]
+        rest = [call for call in calls if call.cue not in SAFETY_NOTICES]
+        if not rest:
+            return calls
+        options = [call.cue.replace("_", " ")
+                   + (f" ({call.why})" if call.why else "")
+                   for call in rest]
+        where = (session.phase.name.lower() if session.phase is not None
+                 else "in flight")
+        picked = self.advisor.pick(
+            "fo_notice",
+            f"You are the first officer; the aeroplane is {where}, "
+            f"{int(state.altitude_ft or 0)} feet"
+            f"{', on the ground' if state.on_ground else ''}. Which of "
+            "these, if any, do you mention to the captain now?",
+            options, allow_none=True, default=None, wait_s=1.0)
+        if picked is None:
+            # Model absent, slow, or shadowing: everything due is said.
+            return calls
+        if picked < 0:
+            for call in rest:
+                self.notices.defer(call.cue)
+            CREW.write("notice", cue=";".join(c.cue for c in rest),
+                       said=False, why="the first officer said nothing "
+                                      "was worth a mention")
+            return safety
+        chosen = rest[picked]
+        for call in rest:
+            if call is not chosen:
+                self.notices.defer(call.cue)
+        return safety + [chosen]
 
     @staticmethod
     def _pressure(value, like=None) -> str:

@@ -70,6 +70,11 @@ class DecisionsStats:
     model_time_s: float = 0.0
 
 
+# What is counted per scope, for the telemetry a shadow run produces.
+_SCOPE_KEYS = ("asked", "proposed", "declined", "rejected", "failed",
+               "overtime")
+
+
 def _parse_choice(raw: str):
     """The pick out of the model's reply: an option number, "none", or None."""
     found = _OBJECT.search(raw or "")
@@ -100,9 +105,15 @@ class Decisions:
         self.enabled = enabled
         self.shadow = shadow
         self.stats = DecisionsStats()
+        # Per-scope counters: the veto/miss rates a ``decisions_shadow`` run
+        # is run to produce, summed into the log when the layer is closed.
+        self.scopes: dict[str, Counter] = {}
         self._closed = threading.Event()
         self._retry_at = 0.0
         self._failures = 0
+
+    def _count(self, scope: str, key: str) -> None:
+        self.scopes.setdefault(scope, Counter())[key] += 1
 
     @property
     def model_available(self) -> bool:
@@ -145,8 +156,10 @@ class Decisions:
         prompt = f"{question}\n\nOptions:\n{numbered}"
         if allow_none:
             prompt += "\n0. None -- take no action."
-        raw = (self._ask(prompt, self._PICK_SYSTEM) if wait_s is None
-               else self._ask_bounded(prompt, self._PICK_SYSTEM, wait_s))
+        raw = (self._ask(prompt, self._PICK_SYSTEM, scope)
+               if wait_s is None
+               else self._ask_bounded(prompt, self._PICK_SYSTEM, scope,
+                                      wait_s))
         if raw is None:
             return default
         choice = _parse_choice(raw)
@@ -156,14 +169,15 @@ class Decisions:
             choice = "none"
         if choice == "none":
             if not allow_none:
-                self.stats.rejected += 1
+                self._rejected(scope)
                 return default
+            self._count(scope, "declined")
             self._took(scope, picked=-1)
             return default if self.shadow else -1
         if isinstance(choice, int) and 1 <= choice <= len(options):
             self._took(scope, picked=choice - 1)
             return default if self.shadow else choice - 1
-        self.stats.rejected += 1
+        self._rejected(scope)
         log.info("AI advisor %s pick rejected: %r", scope, raw[:120])
         return default
 
@@ -193,12 +207,12 @@ class Decisions:
         prompt = (f"The pilot said: {question}\n"
                   f"Facts: {facts}\n"
                   f"Reply to word: {baseline}")
-        raw = self._ask(prompt, system)
+        raw = self._ask(prompt, system, scope)
         if raw is None:
             return baseline
         candidate = raw.strip().strip("\"'").strip()
         if not candidate or len(candidate) > max_len:
-            self.stats.rejected += 1
+            self._rejected(scope)
             return baseline
         allowed = Counter(_facts(f"{baseline} {facts}"))
         wanted = Counter(_facts(baseline))
@@ -212,7 +226,7 @@ class Decisions:
             return Counter(w for w in _WORDS.findall(text.lower())
                            if w in _ADVISORY_ACTIONS)
         if invented or missing or actions(candidate) != actions(baseline):
-            self.stats.rejected += 1
+            self._rejected(scope)
             log.info("AI %s draft rejected (invented=%s missing=%s)",
                      scope, invented, missing)
             return baseline
@@ -221,7 +235,7 @@ class Decisions:
 
     # ------------------------------------------------------------------
 
-    def _ask_bounded(self, prompt: str, system: str,
+    def _ask_bounded(self, prompt: str, system: str, scope: str,
                      wait_s: float) -> str | None:
         """``_ask`` on a scratch thread, waited out for ``wait_s`` seconds.
 
@@ -232,28 +246,31 @@ class Decisions:
         box: list[str | None] = []
 
         def run() -> None:
-            box.append(self._ask(prompt, system))
+            box.append(self._ask(prompt, system, scope))
 
         worker = threading.Thread(target=run, daemon=True)
         worker.start()
         worker.join(wait_s)
         if worker.is_alive():
+            self._count(scope, "overtime")
             log.info("AI advisor answer over %.1fs; deterministic answer",
                      wait_s)
             return None
         return box[0] if box else None
 
-    def _ask(self, prompt: str, system: str) -> str | None:
+    def _ask(self, prompt: str, system: str, scope: str) -> str | None:
         """One free-form model call, with the same backoff the understanding
         layer uses: a failed provider is retried after a pause, not on every
         line of a flight."""
         call = getattr(self.provider, "complete", None) \
             or self.provider.classify
+        self._count(scope, "asked")
         started = time.perf_counter()
         try:
             raw = call(prompt, system)
         except Exception as exc:
             self.stats.failures += 1
+            self._count(scope, "failed")
             self._failures += 1
             self._retry_at = (time.monotonic()
                               + min(60.0, 2.0 ** min(self._failures, 6)))
@@ -271,12 +288,26 @@ class Decisions:
 
     def _took(self, scope: str, **fields) -> None:
         self.stats.accepted += 1
+        self._count(scope, "proposed")
         if self.shadow:
             self.stats.shadowed += 1
         decision("ai_advisor", scope=scope, shadow=self.shadow, **fields)
 
+    def _rejected(self, scope: str) -> None:
+        self.stats.rejected += 1
+        self._count(scope, "rejected")
+
     def close(self) -> None:
         self._closed.set()
+        if self.scopes:
+            summary = {scope: {k: counts.get(k, 0) for k in _SCOPE_KEYS}
+                       for scope, counts in sorted(self.scopes.items())}
+            log.info("AI advisor telemetry: %s", summary)
+            try:
+                decision("ai_advisor_stats", scopes=summary)
+            except Exception:
+                log.debug("could not write advisor telemetry",
+                          exc_info=True)
 
     def describe(self) -> str:
         """One line for the console about the advisory layer."""
