@@ -98,6 +98,13 @@ program. On top of everything above it adds:
   next destination inside your range band and builds the next leg.
 * **A guidance advisor**: a non-authoritative "what to say next" hint that
   can never grant or change a clearance.
+* **An opt-in decision advisor** (`ai.decisions`): the model may *propose*
+  — which traffic contact to call first, which first-officer notice is
+  worth a mention, how a traffic pilot or the FO words a reply — and the
+  engine *disposes*, validating every proposal against options it
+  enumerated and facts it fixed. Off by default; `ai.decisions_shadow`
+  logs what the model would have done while the deterministic answer
+  goes out.
 * **SQLite history**: every flight and its radio transcript, persisted and
   browsable at `/api/history`.
 * **DPAPI secrets, endpoint allow-listing, log redaction and an offline
@@ -168,6 +175,17 @@ belong at your field, each crew speaking the language it would really speak
 there, working the same runway you are. Drawn on the map *and* created in the
 simulator, so the one you hear on final is the one you see on final. See
 [Other traffic](#-other-traffic).
+
+**The unusual aeroplane is understood.** The Doc 8643 table knows the outliers
+pilots actually add on — a U-2 or a WB-57 on a long runway, a Concorde or the
+Devinci Boeing 2707-300 needing its ten thousand feet — and each gets the
+class, the runway planning figure and the V-speeds its shape implies. And the
+water is an aerodrome too: a seaplane base's water lanes serve the aeroplanes
+built for it — a US-2, a Catalina, a Lake, an Icon A5 — while a Cessna on
+wheels is refused. A landplane *on floats* counts too: it still reports the
+landplane's code, so the simulators' own evidence decides — X-Plane's float
+gear type, a title that says floats or amphibian, or water already beneath
+the hull in MSFS.
 
 ---
 
@@ -2356,9 +2374,12 @@ python -m meridianatc.audio.voices --all              # every accent, about 3.2 
 
 ## 🤖 The AI layer
 
-Off by default, and deliberately narrow. A language model is used for exactly
-one job: understanding a transmission the phraseology rules couldn't place. It
-never writes a word the controller says.
+Off by default, and deliberately narrow. A language model has three jobs,
+all optional: understanding a transmission the phraseology rules couldn't
+place, rewording a reply the engine already composed, and proposing among
+options the engine already enumerated. It never writes a clearance, never
+invents an option, and never decides anything the engine couldn't have
+decided alone.
 
 ```
 pilot speech -> recogniser -> rules ---------------> intent
@@ -2379,6 +2400,13 @@ so a hallucinated altitude of 999,999 feet or a squawk of 4891 never reaches
 the controller logic. Below a confidence floor the answer is discarded and
 you're asked to say again, because a wrong guess is worse than an admitted
 misunderstanding.
+
+**The fallback is the architecture, not a degraded mode.** Every model call
+is bounded and validated, and every path keeps its deterministic answer: a
+provider that is off, unreachable, slow, or returns output that fails
+validation simply isn't heard — the engine says and does exactly what it
+would have said and done with no model at all. You can kill Ollama
+mid-flight and the flight doesn't notice.
 
 Two ways to run it:
 
@@ -2404,6 +2432,55 @@ set ANTHROPIC_API_KEY=...
 
 `/stats` in the console shows how the split is going — how many transmissions
 the rules handled, how many needed the model, and how many nobody understood.
+
+### Optional: natural phrasing
+
+With `ai.phrasing`, the model may reword a transmission the engine already
+composed — never compose one. Every fact in the render (each number,
+callsign, runway, frequency) must already be in the approved reply, and the
+operational vocabulary must survive unchanged, or the render is dropped and
+the template's own words go out.
+
+```yaml
+ai:
+  provider: ollama
+  phrasing: true
+```
+
+### Optional: the decision advisor
+
+With `ai.decisions`, the model may propose inside choices the engine made
+for it. It answers with a validated index or words a reply whose facts are
+fixed — it cannot invent an option, extend a clearance, or move an
+aeroplane:
+
+```yaml
+ai:
+  provider: ollama
+  decisions: true
+  decisions_shadow: true   # log what it would pick; keep the engine's pick
+```
+
+Where it is heard, today:
+
+| Scope | What the model may do |
+|---|---|
+| Traffic advisories | Choose which qualifying contact to call out first — or decline the call |
+| Traffic pilots | Word their reply, within the facts of their own flight |
+| First officer | Word his answers, pick which due non-safety notice is worth a mention now, and pick which fitting checklist to offer — or none yet |
+
+A proposal the engine can't validate — out of range, unparseable, a new
+fact, a changed operational word — keeps the deterministic answer. Picks
+are bounded (a slow model can't stall the situation loop) and cached per
+option set, so a standing condition isn't re-asked every pass. Safety
+notices are never the model's to postpone, and a declined notice stays due
+while its condition holds.
+
+`decisions_shadow` is the evidence path: the model is still asked, its
+answer is logged as an `ai_advisor` decision row beside the one the engine
+used, and the per-scope counts (asked / proposed / declined / rejected /
+failed / overtime) are written at shutdown — measure agreement before
+trusting a scope past advisory.
 
 ---
 
@@ -4335,7 +4412,10 @@ worth knowing about:
 | `traffic.handling_limit` | `24` | how many vehicles are on the apron at once, stairs and tugs aside; fewer on a machine that is working hard |
 | `toolbar.enabled` | `true` | `false` to stop serving the panel inside the simulator |
 | `toolbar.port` | `8787` | the fixed loopback port the panel finds the application on |
-| `ai.provider` | `none` | `ollama` or `anthropic` to understand non-standard phrasing |
+| `ai.provider` | `none` | `ollama`, `anthropic`, or an OpenAI-compatible endpoint (`openrouter`, `openai`, `groq`, `deepseek`, `custom`) to understand non-standard phrasing |
+| `ai.phrasing` | `false` | `true` to let the model reword engine-composed transmissions, fact-checked before they're spoken |
+| `ai.decisions` | `false` | `true` to let the model propose among engine-enumerated options (traffic picks, FO notices, wording) — every proposal validated, deterministic fallback |
+| `ai.decisions_shadow` | `false` | `true` to log what the model would have picked while the deterministic answer goes out |
 | `speech.model` | `small.en` | `medium` if your CPU has headroom; the `.en` suffix is dropped automatically unless the languages are pinned to English |
 | `ptt.key` | `grave` | any key you do not use in the sim |
 | `atc.dialect` | `auto` | force `faa` or `icao` instead of following the region |

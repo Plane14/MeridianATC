@@ -19,7 +19,7 @@ import time
 from dataclasses import fields
 
 from .source import SimConnectSource
-from .state import AircraftState
+from .state import AircraftState, floats_said
 from .xpcontrols import OVERRIDES, OVR, READS, XPlaneControls
 
 FT = 3.280839895
@@ -215,6 +215,12 @@ for _engine in range(16):
 for _tank in range(9):
     EXTRA[f"tank{_tank}"] = f"sim/flightmodel/weight/m_fuel[{_tank}]"
     EXTRA[f"tank_ratio{_tank}"] = f"sim/aircraft/overflow/acf_tank_rat[{_tank}]"
+
+# The gear table's ten slots: Plane Maker's types are 0 none, 1 wheel,
+# 2 skid, 3 float -- a float anywhere is a float-fitted airframe, which
+# a landplane's own code never says (a C172 on floats is "C172").
+for _gear in range(10):
+    EXTRA[f"gear_type{_gear}"] = f"sim/aircraft/parts/acf_gear_type[{_gear}]"
 
 EXTRA.update(READS)
 
@@ -414,6 +420,13 @@ class XPlaneSource:
         # that reports ~0 has a free-castoring wheel the brakes steer.
         state.castoring_wheel = (float(values["steer_deg"]) < 0.5
                                  if "steer_deg" in values else None)
+        if any(f"gear_type{i}" in values for i in range(10)):
+            state.on_floats = any(
+                int(values.get(f"gear_type{i}", 0)) == 3 for i in range(10))
+        else:
+            # The table did not answer; the aircraft's own name is the
+            # remaining evidence ("Cessna Skyhawk Floats", and the like).
+            state.on_floats = floats_said(state.title)
         state.category = "Helicopter" if values.get("helicopter") else "Airplane"
         if state.category == "Helicopter":
             state.engine_type = 3 if state.engine_type == 5 else state.engine_type

@@ -171,7 +171,9 @@ class _Session:
             airline=as_airline)
         callsign = alternatives["en"]
         aircraft = Aircraft(callsign, type_code, wake_suffix(type_code),
-                            callsigns=alternatives)
+                            callsigns=alternatives,
+                            on_floats=bool(getattr(self.state,
+                                                   "on_floats", False)))
 
         destination = (
             self.navdb.airport(flight.destination) if flight.destination else None

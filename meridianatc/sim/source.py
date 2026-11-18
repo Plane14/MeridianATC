@@ -27,7 +27,7 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 
 from .serial import serialize
-from .state import AircraftState, normalize_angle
+from .state import AircraftState, floats_said, normalize_angle
 
 log = logging.getLogger(__name__)
 
@@ -472,6 +472,10 @@ class SimConnectSource:
         # flies (meridianatc.atc.tailwheel). A model that does not answer
         # it leaves the field None, not False.
         ("IS_TAIL_DRAGGER", "tail_dragger", "bool", "slow"),
+        # SURFACE TYPE beneath the aircraft (0 concrete, 1 grass,
+        # 2 water, ...); on the ground over water the airframe has to
+        # be built for water -- a float or a hull.
+        ("SURFACE_TYPE", "surface_type", "int", "slow"),
         ("FLAPS_HANDLE_INDEX", "flaps_index", "int", "slow"),
         # For the crew rather than for the controller. Both are standard
         # variables present on nearly every aircraft; one that does not model
@@ -1373,6 +1377,12 @@ class SimConnectSource:
             state.callsign = _radio_callsign(
                 state.callsign, state.airline, state.flight_number,
                 state.type_code)
+
+        # A float-fitted variant reports the landplane's own code -- a
+        # C172 on floats is still "C172" -- so the title's word and the
+        # surface the gear rests on are the evidence it is an amphibian.
+        state.on_floats = (floats_said(state.title)
+                           or (state.surface_type == 2 and state.on_ground))
 
         if not state.track_true:
             state.track_true = state.heading_true

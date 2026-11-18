@@ -82,6 +82,10 @@ OFFER_SETTLE_S = 20.0
 # How long level in the cruise before the cruise checklist is offered.
 LEVEL_FOR_CRUISE_S = 60.0
 
+# How long an advisor's checklist pick stands before the same set of
+# fitting checklists is asked about again.
+CHECKLIST_REASK_S = 30.0
+
 # Hectopascals in an inch of mercury, for an altimeter set in inches.
 HPA_PER_INHG = 33.8639
 
@@ -200,6 +204,10 @@ class ChecklistRunner:
         # Whether offers are made at all: not while the pilot has asked for
         # a quiet cockpit, or callouts only.
         self.offers = True
+        # The model advisor (meridianatc.llm.decisions): which fitting
+        # checklist to offer, or none yet. It proposes among the ones the
+        # fits table already named; it cannot offer one that does not fit.
+        self.advisor = None
         # The simulator's title for the aeroplane, for the mismatch rows a
         # study-level add-on's type file is built from.
         self.aircraft_title = ""
@@ -215,11 +223,12 @@ class ChecklistRunner:
     # ------------------------------------------------------------------
 
     def begin(self, book: Book | None, rules: str = "vfr",
-              language: str = "en") -> None:
+              language: str = "en", advisor=None) -> None:
         """A new flight: nothing done, nothing offered."""
         self.book = book
         self.rules = rules
         self.language = language if language in CHECKLIST_WORDS else "en"
+        self.advisor = advisor
         self.done: set[str] = set()
         self._run: _Run | None = None
         self._state = None
@@ -228,6 +237,7 @@ class ChecklistRunner:
         self._last_offer: float | None = None
         self._talked_at: float | None = None
         self._withheld: set[tuple[str, str]] = set()
+        self._checklist_pick: tuple | None = None
         self._level_since = 0.0
         self._paused_at: float | None = None
         self._begun_at = self.clock()
@@ -758,8 +768,8 @@ class ChecklistRunner:
 
     # -- offers ----------------------------------------------------------
 
-    def _fits(self, state, phase: Phase, height: float, leg: str) -> str:
-        """The checklist this moment belongs to, if one does."""
+    def _fitting(self, state, phase: Phase, height: float, leg: str) -> list:
+        """Every checklist this moment belongs to, in standard order."""
         speed = getattr(state, "ground_speed_kt", 0.0) or 0.0
         engines = bool(getattr(state, "engines_running", False))
         level = abs(getattr(state, "vertical_speed_fpm", 0.0) or 0.0) < 300
@@ -792,11 +802,52 @@ class ChecklistRunner:
             "shutdown": phase is Phase.PARKED,
         }
         have = self.book.for_rules(self.rules) if self.book else {}
-        for name in STANDARD_CHECKLISTS:
-            if (fits.get(name) and name in have and name not in self.done
-                    and name not in self._offered):
-                return name
-        return ""
+        return [name for name in STANDARD_CHECKLISTS
+                if (fits.get(name) and name in have
+                    and name not in self.done
+                    and name not in self._offered)]
+
+    def _fits(self, state, phase: Phase, height: float, leg: str) -> str:
+        """The first fitting checklist this moment belongs to, if one does."""
+        fitting = self._fitting(state, phase, height, leg)
+        return fitting[0] if fitting else ""
+
+    def _advised_checklist(self, names: list[str], phase: Phase,
+                           height: float, now: float) -> str:
+        """Which of the fitting checklists to offer, or "" to hold off.
+
+        The fits table enumerates what the moment belongs to; an advisor
+        may pick among them, or say none are worth offering yet. Without
+        one -- or whenever it has no answer -- the first in order is
+        offered, as it always was.
+        """
+        if self.advisor is None:
+            return names[0]
+        if not getattr(self.advisor, "model_available", True):
+            # The provider is failing: the first fitting, not a decline
+            # cached while it still answered.
+            return names[0]
+        signature = tuple(names)
+        cached = self._checklist_pick
+        if (cached is not None and cached[0] == signature
+                and now - cached[2] < CHECKLIST_REASK_S):
+            picked = cached[1]
+        else:
+            options = [self._title(self.book.checklists[name])[0]
+                       for name in names]
+            picked = self.advisor.pick(
+                "fo_checklist",
+                "You are the first officer; the aeroplane is "
+                f"{phase.name.lower()}, {int(height)} feet up. Which of "
+                "these checklists, if any, do you offer the captain now?",
+                options, allow_none=True, default=None, wait_s=1.0)
+            self._checklist_pick = (signature, picked, now)
+        if picked is None:
+            # Model absent, slow, or shadowing: the first fitting, as ever.
+            return names[0]
+        if picked < 0:
+            return ""
+        return names[picked]
 
     def _withhold(self, name: str, why: str) -> None:
         if (name, why) in self._withheld:
@@ -815,21 +866,30 @@ class ChecklistRunner:
         if (self._talked_at is not None
                 and now - self._talked_at < self.offer_after_talk_s):
             return
-        name = self._fits(state, phase, height, leg)
-        if not name:
+        names = self._fitting(state, phase, height, leg)
+        if not names:
             return
         if phase is Phase.LANDING or (not phase.on_ground
                                       and height < self.offer_floor_agl):
-            self._withhold(name, "short final, or below "
-                                 f"{self.offer_floor_agl:.0f} ft")
+            self._withhold(names[0], "short final, or below "
+                                     f"{self.offer_floor_agl:.0f} ft")
             return
         try:
             free = bool(self.free())
         except Exception:
             free = False
         if not free:
-            self._withhold(name, "the frequency is busy, or somebody else "
-                                 "in the aeroplane has something to say")
+            self._withhold(names[0], "the frequency is busy, or somebody "
+                                     "else in the aeroplane has something "
+                                     "to say")
+            return
+        name = self._advised_checklist(names, phase, height, now)
+        if not name:
+            # The advisor said none are worth offering yet: hold off and
+            # reconsider no sooner than the next offer's turn.
+            self._last_offer = now
+            self._note("offer_declined", options=list(names),
+                       phase=phase.value)
             return
         title, Title = self._title(self.book.checklists[name])
         self._say("offer", title=title, Title=Title)

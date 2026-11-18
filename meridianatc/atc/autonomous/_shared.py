@@ -180,6 +180,7 @@ class AutonomousState:
     avoid_from: float = -1.0
     avoid_until: float = 0.0
     avoid_key: str = ""
+    avoid_since: float = 0.0
     # The hold the controller gave, as it is being flown: which fix,
     # which leg ("to_fix", "outbound", "inbound"), when the outbound
     # leg's clock started, and the nearest the fix has been on the way
@@ -263,6 +264,9 @@ class AutonomousState:
     # Aircraft performance for chain planning
     aircraft_range_nm: float = 0.0
     aircraft_type: str = ""
+    # The sim's own word that the airframe carries floats -- a landplane
+    # code does not say (aircraft_class.amphibious).
+    aircraft_floats: bool = False
     # Error tracking
     error_message: str = ""
     error_count: int = 0

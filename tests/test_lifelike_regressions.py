@@ -1514,6 +1514,32 @@ def test_the_avoiding_turn_is_made_once_and_held_until_the_meeting_is_past():
     assert fo.state.avoid_from == -1.0
 
 
+def test_an_avoidance_turn_outlived_ends_and_a_real_conflict_turns_anew():
+    """The avoid-until refresh alone could hold a deviation forever: a
+    contact the geometry kept "meeting" on either track refreshed it
+    every look, and the aeroplane sat on the avoidance heading for the
+    rest of the flight. Past the hold's cap the deviation ends -- and
+    if the other aeroplane still conflicts, the next look turns anew."""
+    fo, state = _enroute_fo([_head_on()])
+    fo._watch_traffic(state, 100.0)
+    assert abs(fo.state.avoid_heading - 120.0) < 0.5
+
+    # Still meeting the abandoned track at +200s: the hold ends anyway,
+    # and the still-real meeting is worked out again from this look.
+    state.track_true = state.heading_true = 120.0
+    fo._watch_traffic(state, 301.0)
+    assert fo.state.avoid_since == 301.0 or fo.state.avoid_key == ""
+
+    # No conflict anywhere: the watch stays off.
+    fo.brain.contacts = lambda: [_head_on(lon=-8.5)]
+    fo.state.avoid_key = "CS-XXX"
+    fo.state.avoid_since = 1.0
+    fo.state.avoid_until = 60.0
+    fo._watch_traffic(state, 301.0)
+    assert fo.state.avoid_key == ""
+    assert fo.state.avoid_since == 0.0
+
+
 def test_head_on_a_little_right_of_the_nose_is_still_a_right_turn():
     """Two aeroplanes turning towards each other is the one outcome the
     rules of the air exist to prevent."""

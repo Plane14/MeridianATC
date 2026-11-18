@@ -118,7 +118,8 @@ class ContinuousFlights:
 
     def plan_next_leg(self, at_lat: float, at_lon: float,
                       current_ident: str, callsign: str,
-                      aircraft_type: str = "") -> Leg | None:
+                      aircraft_type: str = "",
+                      floats: bool = False) -> Leg | None:
         """Pick the next destination from where the flight now is.
 
         The nearest airport inside the band, among the scanned candidates,
@@ -147,7 +148,7 @@ class ContinuousFlights:
         eligible = [(ap, nm) for ap, nm in candidates
                     if ap.ident.upper() != current
                     and request.min_nm <= nm <= max_nm
-                    and self._can_take(aircraft_type, ap)]
+                    and self._can_take(aircraft_type, ap, floats)]
         if not eligible:
             log.warning("no destination inside %.0f-%.0f NM",
                         request.min_nm, max_nm)
@@ -168,7 +169,8 @@ class ContinuousFlights:
         log.info("planned leg %s (%.0f NM)", leg.summary(), distance)
         return leg
 
-    def _can_take(self, aircraft_type: str, airport) -> bool:
+    def _can_take(self, aircraft_type: str, airport,
+                  floats: bool = False) -> bool:
         """Whether the field has a runway the type flying can use.
 
         No type means the caller did not know what is flying, and the
@@ -179,7 +181,8 @@ class ContinuousFlights:
             return True
         from . import aircraft_class as ac
         return ac.airport_usable(
-            airport, self.navdb.runways(airport.ident), aircraft_type)
+            airport, self.navdb.runways(airport.ident), aircraft_type,
+            on_floats=floats)
 
 
 __all__ = ["ContinuousFlights", "Leg", "MissionRequest"]

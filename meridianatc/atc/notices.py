@@ -71,9 +71,11 @@ RETRACTABLE = frozenset({PISTON_TWIN, TURBOPROP_TWIN, BUSINESS_JET, AIRLINER})
 LEFT_TANKS = frozenset({2, 19})
 RIGHT_TANKS = frozenset({3, 20})
 
-#: The notices worth breaking a quiet cockpit for.
+#: The notices worth breaking a quiet cockpit for -- and never the
+#: model's to postpone: a takeoff-configuration warning deferred past
+#: the takeoff never reaches the pilot at all.
 SAFETY = frozenset({"gear_up_final", "fuel_selector_off", "fuel_reserve",
-                    "parking_brake_power", "xpdr_standby"})
+                    "parking_brake_power", "xpdr_standby", "flaps_takeoff"})
 
 
 @dataclass
@@ -107,7 +109,16 @@ class Notices:
 
     def begin(self) -> None:
         self._said: set = set()
+        # The key each cue was marked said under, so a notice the crew
+        # chose not to voice can be un-marked -- deferred, not dropped --
+        # and stays due while its condition still holds.
+        self._keys: dict = {}
         self._gear_moved = False
+
+    def defer(self, cue: str) -> None:
+        """Un-say a notice: it is due again on the next pass while its
+        condition still holds."""
+        self._said.discard(self._keys.pop(cue, None))
 
     def go_around(self) -> None:
         """A new approach: the final's notices are due again."""
@@ -117,6 +128,7 @@ class Notices:
         if key in self._said:
             return []
         self._said.add(key)
+        self._keys[cue] = key
         return [Call(cue, values, why)]
 
     def watch(self, previous, state, w: Watching) -> list[Call]:

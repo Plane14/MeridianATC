@@ -66,6 +66,15 @@ class AircraftState:
     # flag, so None there and callers fall back to the type table
     # (meridianatc.atc.tailwheel.is_castoring).
     castoring_wheel: bool | None = None
+    # The airframe is fitted for water. A landplane's float variant still
+    # reports the landplane's code -- a C172 on floats is "C172" -- so
+    # the source finds the floats themselves: X-Plane's gear-type table,
+    # the aircraft's own title, or water beneath it. The ATC side reads
+    # it through aircraft_class.amphibious(type, on_floats).
+    on_floats: bool = False
+    # SimConnect's SURFACE TYPE under the aircraft (0 concrete, 1 grass,
+    # 2 water, ...); X-Plane does not fill it.
+    surface_type: int = 0
     flaps_index: int = 0
     # The two switches the crew talk about. Nothing on the radio needs them --
     # a controller never mentions the seatbelt sign -- but the first officer
@@ -346,3 +355,17 @@ def normalize_angle(value: float, source_is_radians: bool | None = None) -> floa
     ):
         value = math.degrees(value)
     return value % 360.0
+
+
+_FLOAT_WORDS = ("float", "amphib", "seaplane", "pontoon")
+
+
+def floats_said(title: str) -> bool:
+    """Whether the aircraft's own title calls it float-fitted.
+
+    The float variant of a landplane keeps the landplane's type code --
+    a C172 on floats still says "C172" -- so the sim's own name for the
+    airframe is what gives the floats away.
+    """
+    text = (title or "").lower()
+    return any(word in text for word in _FLOAT_WORDS)

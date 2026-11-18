@@ -81,6 +81,7 @@ def test_the_declared_cycle_is_the_airac_in_force():
     not the AIRAC calendar -- each year's ``01`` is effective in late
     January. Anchored on 2601 (2026-01-22) instead."""
     import datetime
+
     from meridianatc.atc.route import _airac_cycle
 
     d = datetime.date

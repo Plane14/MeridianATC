@@ -257,6 +257,19 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
                 and provider is not None:
             from ..llm.rendering import PhrasingRenderer
             self.phrasing = PhrasingRenderer(self.understanding.provider)
+        # Opt-in model advisory (llm/decisions.py): the model may pick among
+        # options the engine enumerated and word replies whose facts are
+        # already fixed. It cannot issue or change an instruction, and the
+        # deterministic answer stands on any failure -- the same provider and
+        # consent rules as phrasing.
+        self.decisions = None
+        if self.config.ai.decisions and provider is not None \
+                and not self.config.network.offline \
+                and (not is_cloud or self.config.network.cloud_consent):
+            from ..llm.decisions import Decisions
+            self.decisions = Decisions(
+                provider, shadow=self.config.ai.decisions_shadow)
+        self.crew.advisor = self.decisions
         self.brain = ControllerBrain(
             self.navdb, self._base_phraseology(),
             strict_icao_digits=self.config.atc.strict_icao_digits,
@@ -343,6 +356,9 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
             self.config.traffic, "expedite", True)
         self.traffic.diurnal = getattr(
             self.config.traffic, "diurnal_rhythm", True)
+        # The same advisor words a traffic crew's answers; PilotsTalking
+        # treats it as optional.
+        self.traffic.advisor = self.decisions
         self.traffic.max_invented = self.config.traffic.in_simulator_limit
         # The invented aeroplanes' own switch (traffic.invented); the
         # situation loop re-reads it every tick so a mid-flight toggle
@@ -424,7 +440,7 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         self.brain.sim_traffic = self._sim_contacts
         from ..atc.trafficinfo import TrafficWatch
 
-        self.traffic_watch = TrafficWatch(self.brain)
+        self.traffic_watch = TrafficWatch(self.brain, advisor=self.decisions)
         self.simtraffic = SimTraffic(
             enabled=self.config.traffic.enabled
             and self.config.traffic.in_simulator,
