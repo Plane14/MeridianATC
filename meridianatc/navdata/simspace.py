@@ -42,7 +42,10 @@ UNLIMITED_FT = 999_999
 _lock = threading.Lock()
 _mode = ""
 _xplane: list[Volume] | None = None
-_msfs: dict[str, Volume] = {}
+_msfs: dict[str, list[Volume]] = {}
+# Set when a fresh sim attach emptied the store: the panel keeps the
+# boundaries it learned, so it must be asked to send them all again.
+_msfs_resync = False
 _version = 0
 
 
@@ -58,11 +61,12 @@ def attach(source: str) -> None:
     volumes turn up when the parse finishes. MSFS volumes arrive on their
     own over HTTP from the in-sim panel, whenever it learns them.
     """
-    global _mode
+    global _mode, _msfs_resync
     kind = {"xplane": "xplane", "simconnect": "msfs"}.get(source, "")
     with _lock:
         _mode = kind
         _msfs.clear()
+        _msfs_resync = kind == "msfs"
         _bump()
     if kind == "xplane":
         threading.Thread(target=_parse_xplane, daemon=True,
@@ -71,10 +75,11 @@ def attach(source: str) -> None:
 
 def detach() -> None:
     """The simulator went away: its airspace goes with it."""
-    global _mode
+    global _mode, _msfs_resync
     with _lock:
         _mode = ""
         _msfs.clear()
+        _msfs_resync = False
         _bump()
 
 
@@ -90,7 +95,7 @@ def volumes() -> list[Volume]:
         if _mode == "xplane" and _xplane:
             return list(_xplane)
         if _mode == "msfs":
-            return list(_msfs.values())
+            return [v for shapes in _msfs.values() for v in shapes]
         return []
 
 
@@ -378,93 +383,111 @@ def _msfs_limit(alt_m, alt_type: int, upper: bool) -> tuple[int, str]:
     return (UNLIMITED_FT, "MSL") if upper else (0, "MSL")
 
 
-def boundary_volume(raw: dict) -> Volume | None:
-    """One sim boundary facility as a Volume, or None when it has no
-    shape this can keep."""
+def boundary_volumes(raw: dict) -> list[Volume]:
+    """One sim boundary facility as its Volumes.
+
+    A facility can be several shapes -- a ring, one or more circles, or
+    both -- and each becomes a zone of its own. Arcs and circles are
+    centred on the origin vector their ``originId`` names, never on the
+    last origin seen; an arc's radius is the origin's distance to the
+    arc's end point, the way the stock avionics flatten the same data.
+    """
     cls = _MSFS_CLASSES.get(raw.get("type"), "E")
+    fid = raw.get("id")
+    lower = _msfs_limit(raw.get("minAlt"), raw.get("minAltType", 0),
+                        upper=False)
+    upper = _msfs_limit(raw.get("maxAlt"), raw.get("maxAltType", 0),
+                        upper=True)
     common = dict(
-        id=f"msfs:{raw.get('id')}", name=str(raw.get("name") or ""),
-        cls=cls, airport="",
-        lower_ft=_msfs_limit(raw.get("minAlt"), raw.get("minAltType", 0),
-                             upper=False)[0],
-        lower_ref=_msfs_limit(raw.get("minAlt"), raw.get("minAltType", 0),
-                              upper=False)[1],
-        upper_ft=_msfs_limit(raw.get("maxAlt"), raw.get("maxAltType", 0),
-                             upper=True)[0],
-        upper_ref=_msfs_limit(raw.get("maxAlt"), raw.get("maxAltType", 0),
-                              upper=True)[1],
+        name=str(raw.get("name") or ""), cls=cls, airport="",
+        lower_ft=lower[0], lower_ref=lower[1],
+        upper_ft=upper[0], upper_ref=upper[1],
         hours="", source="msfs")
     ring: list[tuple[float, float]] = []
-    center = (0.0, 0.0)
+    origins: dict[int, tuple[float, float]] = {}
+    last_origin: tuple[float, float] | None = None
     circles: list[tuple[float, float, float]] = []
-    vectors = raw.get("vectors") or []
-    for vec in vectors:
+    for vec in raw.get("vectors") or []:
         kind = vec.get("type")
         lat, lon = vec.get("lat"), vec.get("lon")
         if lat is None or lon is None:
             continue
-        if kind == 3:      # Origin: the arc center
-            center = (lat, lon)
-        elif kind == 6:    # Circle round the last Origin
+        if kind == 3:      # Origin: registers its own position by id
+            origins[vec.get("originId")] = (lat, lon)
+            last_origin = (lat, lon)
+        elif kind == 6:    # Circle round the origin its originId names
             radius = (vec.get("radius") or 0.0) * METERS_TO_NM
+            center = origins.get(vec.get("originId"), last_origin)
             if radius > 0:
-                circles.append((lat, lon, radius))
-        elif kind in (4, 5):  # Arc to this point, around the last Origin
-            radius = (vec.get("radius") or 0.0) * METERS_TO_NM
-            if radius <= 0 and ring:
-                radius = haversine_nm(center[0], center[1],
-                                      ring[-1][0], ring[-1][1])
-            if radius > 0 and ring:
-                ring.extend(_arc_points(
-                    center, ring[-1], (lat, lon), radius,
-                    clockwise=(kind == 4)))
-            else:
+                clat, clon = center if center is not None else (lat, lon)
+                circles.append((clat, clon, radius))
+        elif kind in (4, 5):  # Arc to this point round its named origin
+            center = origins.get(vec.get("originId"), last_origin)
+            if center is None or not ring:
                 ring.append((lat, lon))
+                continue
+            radius = haversine_nm(center[0], center[1], lat, lon)
+            if radius <= 0:
+                continue
+            ring.extend(_arc_points(center, ring[-1], (lat, lon), radius,
+                                    clockwise=(kind == 4)))
         else:              # Start / Line
             ring.append((lat, lon))
-    if circles and not ring:
-        clat, clon, radius = circles[0]
+    found: list[Volume] = []
+    for clat, clon, radius in circles:
         dlat = radius / 60.0
         dlon = radius / (60.0 * max(0.01, math.cos(math.radians(clat))))
-        return Volume(shape="circle", lat=clat, lon=clon, radius_nm=radius,
-                      bbox=(clat - dlat, clon - dlon,
-                            clat + dlat, clon + dlon), **common)
-    if len(ring) < 3:
-        return None
-    lats = [p[0] for p in ring]
-    lons = [p[1] for p in ring]
-    return Volume(shape="polygon", ring=tuple(ring),
-                  bbox=(min(lats), min(lons), max(lats), max(lons)),
-                  **common)
+        found.append(Volume(
+            id=f"msfs:{fid}:{len(found)}", shape="circle",
+            lat=clat, lon=clon, radius_nm=radius,
+            bbox=(clat - dlat, clon - dlon,
+                  clat + dlat, clon + dlon), **common))
+    if len(ring) >= 3:
+        lats = [p[0] for p in ring]
+        lons = [p[1] for p in ring]
+        found.append(Volume(
+            id=f"msfs:{fid}:{len(found)}", shape="polygon",
+            ring=tuple(ring),
+            bbox=(min(lats), min(lons), max(lats), max(lons)), **common))
+    return found
 
 
-def feed_msfs(payload: dict) -> int:
+def feed_msfs(payload: dict) -> dict:
     """Boundaries the panel's search answered with.
 
     ``boundaries`` are added or replaced by facility id, ``remove`` drops
     ids the sim stopped reporting, ``reset`` clears first -- the search
     answers in diffs against the previous query, and the panel forwards
-    them verbatim.
+    them verbatim. The answer carries ``resync`` when the store was
+    rebuilt (the app restarted or the sim was re-adopted): the panel
+    then reposts everything it knows with ``reset`` set.
     """
+    global _msfs_resync
     added = removed = 0
+    resync = False
     with _lock:
         if _mode != "msfs":
-            return 0
+            return {"volumes": 0, "resync": False}
         if payload.get("reset"):
             _msfs.clear()
+            _msfs_resync = False
+        elif _msfs_resync:
+            resync = True
+            _msfs_resync = False
         for raw in payload.get("boundaries") or []:
-            volume = boundary_volume(raw)
-            if volume is not None:
-                _msfs[volume.id] = volume
+            shapes = boundary_volumes(raw)
+            if shapes:
+                _msfs[f"msfs:{raw.get('id')}"] = shapes
                 added += 1
         for vid in payload.get("remove") or []:
             if _msfs.pop(f"msfs:{vid}", None) is not None:
                 removed += 1
         if added or removed or payload.get("reset"):
             _bump()
-    return len(_msfs)
+        total = sum(len(shapes) for shapes in _msfs.values())
+    return {"volumes": total, "resync": resync}
 
 
-__all__ = ["attach", "boundary_volume", "detach", "feed_msfs",
+__all__ = ["attach", "boundary_volumes", "detach", "feed_msfs",
            "load_xplane", "parse_openair", "version", "volumes",
            "xplane_files"]
