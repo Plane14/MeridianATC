@@ -810,7 +810,10 @@ class AirspaceWatch:
                      said="enter", via=point.name if point else None)
             return Reply(text, station)
         if established and rule == "clearance":
-            if (session.cleared_bravo == self.navdb.volume_airport(volume)
+            # A landing or Bravo clearance covers the field it names, not
+            # the restricted and danger areas along the way.
+            if volume.cls == "B" and (
+                    session.cleared_bravo == self.navdb.volume_airport(volume)
                     or session.cleared_landing):
                 return None
             session.advise_once(key)
