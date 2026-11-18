@@ -181,6 +181,10 @@ class Aircraft:
     type_code: str = ""
     wake: str = ""                 # "", "heavy", "super"
     is_heavy: bool = False
+    # The airframe carries floats, by the simulator's own word: a
+    # landplane's float variant keeps the landplane's code, so it is
+    # remembered here where the code alone would say landplane.
+    on_floats: bool = False
     # Alternative spoken forms, keyed by language code.
     callsigns: dict[str, sp.Callsign] = field(default_factory=dict)
     language: str = "en"
