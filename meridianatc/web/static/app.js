@@ -988,11 +988,6 @@ async function loadLive() {
 
 // ------------------------------------------------------------- the card ---
 
-/** A translated line with its blanks filled. */
-function fill(line, values) {
-  return String(line).replace(/\{(\w+)\}/g, (_, key) => values[key] ?? "");
-}
-
 /** A named point on a route, in words. */
 function waypointText(point) {
   switch (point.kind) {
