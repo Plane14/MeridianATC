@@ -2371,7 +2371,14 @@ def snapshot(engine: Engine) -> dict[str, Any]:
             "airport_name": airport.name if airport else "",
             "here": ident,
             "position": station.position if station else "",
-            "distance_nm": round(station.distance_nm, 1) if station else 0,
+            # Live, like the bearing beside it: the station's own number is
+            # from the moment it was tuned, and an aeroplane that crashed
+            # and respawned, or flew a hundred miles without retuning, would
+            # still show it.
+            "distance_nm": (
+                round(state.distance_to(airport.lat, airport.lon), 1)
+                if station and airport and state.has_position
+                else round(station.distance_nm, 1) if station else 0),
             # Which way the field is, for the panel in the simulator: its one
             # circular face is a bearing ring and a needle resting at north
             # would say the airport was straight ahead.

@@ -75,6 +75,35 @@ class _Session:
     def _begin_session(self) -> FlightSession:
         flight = self.config.flight
         profile = FlightProfile.of(flight)
+        # The simulator is the authority on what the aeroplane is (the type
+        # correction below), and what it says can disagree with the profile
+        # outright: a Baron is not an odd airliner, it is a wrong profile.
+        # Where what is flown says so plainly the profile follows it, is
+        # written back so the settings screen stops disagreeing, and is
+        # told -- the way the type and the departure are. An unknown class
+        # says nothing (``questioned`` returns "" for a guess).
+        from ..atc import aircraft_class
+
+        reported = aircraft_class.classify(
+            self.state.type_code or flight.aircraft_type or "",
+            engine_type=(self.state.engine_type
+                         if getattr(self.state, "engine_type", -1) >= 0
+                         else None),
+            engines=getattr(self.state, "engine_count", 0) or 0,
+            category=getattr(self.state, "category", ""),
+            airline=profile.airliner)
+        question = profile.questioned(reported)
+        if question:
+            self.emit(
+                "info",
+                f"The simulator has a {reported.name.replace('_', ' ')}, "
+                f"so the {profile.kind.replace('_', ' ')} profile is now "
+                f"{question.replace('_', ' ')}.",
+                key="log.profile_moved", profile=question,
+                was=profile.kind, aircraft_class=reported.name)
+            self.config.flight.profile = question
+            flight = self.config.flight
+            profile = FlightProfile.of(flight)
         self.brain.profile = profile
         self.traffic.profile = profile
         # Whether this is an airline flight is the pilot's to say. In general
