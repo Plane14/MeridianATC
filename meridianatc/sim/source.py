@@ -1161,6 +1161,24 @@ class SimConnectSource:
             log.debug("simvar %s unavailable: %s", name, exc)
             return None
 
+    def _get_live(self, name: str):
+        """One variable asked for now, skipping the batched read's cache.
+
+        ``_get`` answers a batched name out of ``_batch_raw``, which only
+        a ``read()`` refreshes. A write's confirm loop cannot use it: on
+        the thread that also runs the reads the cache cannot move while
+        the loop waits, so the just-sent event could never be seen and
+        the fallback encoding would fire on top of the one that worked.
+        """
+        if self._requests is None or name in self._missing:
+            return None
+        try:
+            return self._requests.get(name)
+        except Exception as exc:
+            self._missing.add(name)
+            log.debug("simvar %s unavailable: %s", name, exc)
+            return None
+
     # How many of the slowly-changing variables are refreshed per read. Four
     # covers the whole set in six passes, which at a quarter-second interval
     # is a second and a half -- well inside the time it takes a parking brake
@@ -1532,7 +1550,7 @@ class SimConnectSource:
         name = self._COM_VARIABLES.get(key, "")
         if not name:
             return False
-        found = decode_frequency(self._get(name))
+        found = decode_frequency(self._get_live(name))
         return bool(found) and abs(found - wanted) < 0.013
 
     def _took(self, key: tuple[int, bool], wanted: float) -> bool:
@@ -1548,7 +1566,7 @@ class SimConnectSource:
         deadline = time.monotonic() + self.CONFIRM_S
         while time.monotonic() < deadline:
             time.sleep(self.CONFIRM_STEP_S)
-            found = decode_frequency(self._get(name))
+            found = decode_frequency(self._get_live(name))
             if found and abs(found - wanted) < 0.013:
                 return True
         return False
@@ -1635,7 +1653,7 @@ class SimConnectSource:
 
     def _nav_reads(self, variable: str, wanted: float) -> bool:
         """Whether the NAV radio is already showing a frequency."""
-        found = decode_nav_frequency(self._get(variable))
+        found = decode_nav_frequency(self._get_live(variable))
         return bool(found) and abs(found - wanted) < 0.005
 
     def _nav_took(self, variable: str, wanted: float) -> bool:
@@ -1643,7 +1661,7 @@ class SimConnectSource:
         deadline = time.monotonic() + self.CONFIRM_S
         while time.monotonic() < deadline:
             time.sleep(self.CONFIRM_STEP_S)
-            found = decode_nav_frequency(self._get(variable))
+            found = decode_nav_frequency(self._get_live(variable))
             if found and abs(found - wanted) < 0.005:
                 return True
         return False
