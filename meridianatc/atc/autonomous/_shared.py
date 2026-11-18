@@ -180,6 +180,7 @@ class AutonomousState:
     avoid_from: float = -1.0
     avoid_until: float = 0.0
     avoid_key: str = ""
+    avoid_since: float = 0.0
     # The hold the controller gave, as it is being flown: which fix,
     # which leg ("to_fix", "outbound", "inbound"), when the outbound
     # leg's clock started, and the nearest the fix has been on the way

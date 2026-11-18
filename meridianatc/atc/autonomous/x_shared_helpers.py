@@ -878,6 +878,11 @@ class _Shared_helpers:
     TRAFFIC_AVOID_TURN_DEG = 30.0
     TRAFFIC_HEAD_ON_DEG = 20.0
     TRAFFIC_AVOID_S = 30.0
+    # The turn is made once and held, not lived on: a meeting a
+    # geometry keeps alive past this long is taken as a fresh look --
+    # the watch ends the deviation and, if the other aeroplane is still
+    # a conflict, works out a new turn rather than an endless vector.
+    TRAFFIC_AVOID_MAX_S = 180.0
 
     def _watch_traffic(self, state, now: float) -> None:
         """See and avoid: look ahead for a meeting nobody has called.
@@ -914,8 +919,17 @@ class _Shared_helpers:
 
         contacts = [c for c in self._surface_contacts() if not c.on_ground]
         avoiding = self.state.avoid_key
+        if avoiding and now - self.state.avoid_since \
+                > self.TRAFFIC_AVOID_MAX_S:
+            self._end_avoidance()
+            avoiding = ""
+        # The one already turned away from is asked about on the track
+        # that was left, not this one: the avoidance track meeting it
+        # again is the turn not working, which another 30 degrees away
+        # answers better than holding the one that did not.
         threat = next((c for c in contacts
-                       if self._meets(state, c, track, own_speed)), None)
+                       if (c.written or "traffic") != avoiding
+                       and self._meets(state, c, track, own_speed)), None)
         if threat is None and avoiding:
             # Clear on the avoidance track. Whether the one turned away
             # from is past is asked of the track that was left.
@@ -935,7 +949,9 @@ class _Shared_helpers:
         key = threat.written or "traffic"
         if key == avoiding and self.state.avoid_heading >= 0.0:
             # Still closing on the one already turned away from: the
-            # turn stands, it is not added to on every look.
+            # turn stands, it is not added to on every look. (The
+            # avoided contact is excluded above, so this is only a new
+            # conflict on the same callsign.)
             self.state.avoid_until = now + self.TRAFFIC_AVOID_S
             return
         bearing = bearing_deg(state.latitude, state.longitude,
@@ -951,6 +967,7 @@ class _Shared_helpers:
                                     * self.TRAFFIC_AVOID_TURN_DEG) % 360.0
         self.state.avoid_until = now + self.TRAFFIC_AVOID_S
         self.state.avoid_key = key
+        self.state.avoid_since = now
         self._emit(
             "info",
             f"Traffic {key}: turning {('right' if side > 0 else 'left')}"
@@ -981,6 +998,7 @@ class _Shared_helpers:
         self.state.avoid_heading = -1.0
         self.state.avoid_from = -1.0
         self.state.avoid_until = 0.0
+        self.state.avoid_since = 0.0
 
     def _avoid_heading_bug(self, state) -> float:
         """The see-and-avoid heading as the bug wants it (magnetic), or
