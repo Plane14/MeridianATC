@@ -1125,6 +1125,320 @@
           ]
         }
       ]
+    },
+    "engine_fire": {
+      "title": {
+        "en": "engine fire"
+      },
+      "items": [
+        {
+          "challenge": "Engine fire handle, affected engine",
+          "response": "pulled",
+          "accept": [
+            "check",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Fuel spar valve isolation",
+          "response": "closed, isolated",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Generator bus isolation",
+          "response": "tripped, off",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Hydraulic pump isolation",
+          "response": "isolated",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Engine core spool-down",
+          "response": "run down, below ten percent N two",
+          "accept": [
+            "check",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Bottle selector",
+          "response": "bottle one",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Fire discharge, bottle one",
+          "response": "discharged",
+          "accept": [
+            "check",
+            "complete"
+          ],
+          "note": "conditional: only if discharging is required."
+        },
+        {
+          "challenge": "If warning persists, bottle two discharge",
+          "response": "second bottle discharged",
+          "accept": [
+            "check",
+            "complete"
+          ],
+          "note": "conditional: only when the fire warning persists after the first bottle."
+        }
+      ]
+    },
+    "engine_failure": {
+      "title": {
+        "en": "engine failure in flight"
+      },
+      "items": [
+        {
+          "challenge": "Engine core speed decay",
+          "response": "decaying, below fifty percent N two",
+          "accept": [
+            "check",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Thrust lever, affected engine",
+          "response": "idle",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Generator off, auto bus transfer",
+          "response": "off and transferred",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Engine fuel shutoff valve",
+          "response": "closed",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Engine bleed air valve",
+          "response": "off",
+          "accept": [
+            "check",
+            "off"
+          ]
+        }
+      ]
+    },
+    "hydraulic_failure": {
+      "title": {
+        "en": "hydraulic system failure"
+      },
+      "items": [
+        {
+          "challenge": "Utility circuit pressure",
+          "response": "unavailable, below one thousand five hundred",
+          "accept": [
+            "check",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Landing gear actuator supply",
+          "response": "starved, consumer warning",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Nosewheel steering actuator supply",
+          "response": "starved, free castor",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Brake accumulator reserve pressure",
+          "response": "checked, minimum two thousand",
+          "accept": [
+            "check",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Alternate gear extension checklist",
+          "response": "reviewed and briefed",
+          "accept": [
+            "check",
+            "complete"
+          ]
+        }
+      ]
+    },
+    "generator_failure": {
+      "title": {
+        "en": "electrical generator failure"
+      },
+      "items": [
+        {
+          "challenge": "Generator off annunciator",
+          "response": "illuminated, off",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Switched bus auto transfer",
+          "response": "active, transferred",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Main bus power status",
+          "response": "energized, off light extinguished",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Galley bus shedding",
+          "response": "shed, off",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Generator control switch",
+          "response": "off then reset",
+          "accept": [
+            "check",
+            "set"
+          ]
+        }
+      ]
+    },
+    "depressurisation": {
+      "title": {
+        "en": "rapid depressurisation"
+      },
+      "items": [
+        {
+          "challenge": "Cabin altitude warning annunciator",
+          "response": "illuminated, horn",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Passenger oxygen masks",
+          "response": "deployed",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Crew oxygen masks",
+          "response": "donned, emergency selected",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Crew oxygen supply",
+          "response": "bottle above dispatch minimum",
+          "accept": [
+            "check",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Thrust levers one through four",
+          "response": "flight idle, below sixty-five percent N one",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Pressurization mode controller",
+          "response": "manual",
+          "accept": [
+            "set",
+            "check"
+          ]
+        }
+      ]
+    },
+    "gear_alternate_extension": {
+      "title": {
+        "en": "landing gear alternate extension"
+      },
+      "items": [
+        {
+          "challenge": "Landing gear normal unsafe indication",
+          "response": "unsafe, in transit",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Landing gear handle",
+          "response": "down",
+          "accept": [
+            "down",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Alternate gear extension lever",
+          "response": "pulled, mechanical uplock release",
+          "accept": [
+            "check",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Landing gear downlock indication",
+          "response": "down and locked, three green",
+          "accept": [
+            "down",
+            "check",
+            "green"
+          ]
+        },
+        {
+          "challenge": "Nose strut mechanical downlock",
+          "response": "locked",
+          "accept": [
+            "check",
+            "down"
+          ]
+        }
+      ]
     }
   }
 }
