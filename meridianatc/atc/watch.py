@@ -674,10 +674,14 @@ def _heading_off(a: float, b: float) -> float:
 # ----------------------------------------------------------------------
 
 # What each class asks of a VFR flight before it enters (ICAO Annex 11
-# 2.6; FAA AIM 3-2): A is closed to VFR, B needs a clearance, C and D need
-# two-way contact (and, outside the US, the tower's leave to enter), E, F
-# and G need nothing.
-ENTRY_RULES = {"A": "no_vfr", "B": "clearance", "C": "contact", "D": "contact"}
+# 2.6; FAA AIM 3-2): A is closed to VFR and so is a prohibited area, B
+# needs a clearance and so do restricted and danger areas, C and D need
+# two-way contact (and, outside the US, the tower's leave to enter), E,
+# F and G need nothing. The simulator's files carry R, P and Q of their
+# own (navdata.simspace), which the CSV classes never did.
+ENTRY_RULES = {"A": "no_vfr", "P": "no_vfr", "B": "clearance",
+               "R": "clearance", "Q": "clearance",
+               "C": "contact", "D": "contact"}
 # How far ahead the watch looks for the edge: a minute at the aeroplane's
 # ground speed, which is the warning a controller tries to give.
 LOOKAHEAD_S = 60.0
@@ -722,9 +726,10 @@ class AirspaceWatch:
         B belongs to KDEN in the data and is Denver Departure's on
         Centennial's 132.750. A Class D is the tower's own.
         """
-        if volume.airport == station.ident:
+        if self.navdb.volume_airport(volume) == station.ident:
             return True
-        if station.position not in RADAR or volume.cls not in ("B", "C"):
+        if (station.position not in RADAR
+                or volume.cls not in ("B", "C", "P", "Q", "R")):
             return False
         room = (station.facility or "").strip().lower()
         if not room:
@@ -732,7 +737,8 @@ class AirspaceWatch:
         if volume.name.lower().startswith(room + " "):
             return True
         return any(other.facility.strip().lower() == room
-                   for other in self.navdb.stations(volume.airport)
+                   for other in self.navdb.stations(
+                       self.navdb.volume_airport(volume))
                    if other.position in RADAR)
 
     def look(self, session: FlightSession, station: Station | None, state,
@@ -773,8 +779,10 @@ class AirspaceWatch:
                 if v.id not in seen and v.cls in ENTRY_RULES:
                     seen.add(v.id)
                     entering.append(v)
-        entering = [v for v in sorted(entering, key=lambda v: v.cls)
-                    if self._speaks_for(v, station)]
+        severity = {"no_vfr": 0, "clearance": 1, "contact": 2}
+        entering = [v for v in sorted(
+            entering, key=lambda v: severity[ENTRY_RULES[v.cls]])
+            if self._speaks_for(v, station)]
         if not entering:
             return None
         volume = entering[0]
@@ -794,7 +802,7 @@ class AirspaceWatch:
                         "APPROACH", "LANDING")):
                 return None
             session.advise_once(key)
-            airport = self.navdb.airport(volume.airport)
+            airport = self.navdb.airport(self.navdb.volume_airport(volume))
             point = self.brain.vrp_ahead(airport, state) if airport else None
             text = p.enter_zone(session.aircraft, airspace,
                                 p.vrp(point.name) if point else "")
@@ -802,7 +810,11 @@ class AirspaceWatch:
                      said="enter", via=point.name if point else None)
             return Reply(text, station)
         if established and rule == "clearance":
-            if session.cleared_bravo == volume.airport or session.cleared_landing:
+            # A landing or Bravo clearance covers the field it names, not
+            # the restricted and danger areas along the way.
+            if volume.cls == "B" and (
+                    session.cleared_bravo == self.navdb.volume_airport(volume)
+                    or session.cleared_landing):
                 return None
             session.advise_once(key)
             decision("airspace", volume=volume.name, cls=volume.cls,

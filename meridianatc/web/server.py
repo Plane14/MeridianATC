@@ -342,6 +342,20 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
             "traffic": traffic[:40],
         }
 
+    @app.post("/api/sim_airspace")
+    async def sim_airspace(payload: dict) -> dict:
+        """The boundaries the in-sim panel found, from the simulator itself.
+
+        MSFS keeps its airspace inside the sim, where SimConnect cannot see
+        it; the toolbar panel runs the facility boundary search the stock
+        avionics use and posts what the sim answers with. ``boundaries``
+        are added by facility id, ``remove`` drops ids, ``reset`` clears
+        first -- the diffs the search returns, forwarded verbatim.
+        """
+        from ..navdata import simspace
+
+        return {"ok": True, **simspace.feed_msfs(payload or {})}
+
     @app.get("/api/map")
     async def geographic_map(
         north: float = 0.0, south: float = 0.0,

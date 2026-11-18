@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ..navdata import simspace
 from ._shared import (
     Future,
     ManualSource,
@@ -99,9 +100,13 @@ class _The_simulator_link:
         # The airports whose frequencies were read from the last session are
         # not this session's; ask again.
         self._facilities_done.clear()
+        # The sim's own airspace: X-Plane's files start parsing, MSFS's
+        # panel starts feeding back the boundaries it finds.
+        simspace.attach(self.state.source)
         return True
 
     def _detach_simulator_integrations(self) -> None:
+        simspace.detach()
         for integration in (self.simvehicles, self.simdoors, self.simsystems,
                             self.servicepoints, self.simtraffic, self.simwatch):
             integration.detach()
