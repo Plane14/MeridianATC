@@ -2662,3 +2662,140 @@ def test_the_roll_tracks_the_centreline(monkeypatch):
     flight._phase_takeoff(state, 1000.0)
     args, kwargs = flight._ground_directional.call_args
     assert abs(args[1] - 173.5) < 1e-6
+
+
+# ---------------------------------------------------------------------
+# the handoff landed, but the call that was owed on it never came --
+# and the pushback tug nobody ever called
+# ---------------------------------------------------------------------
+
+
+def test_the_first_call_on_the_new_frequency_is_not_the_old_ones_repeat():
+    """"Contact tower" dialled, the "ready" owed on it is a new ask --
+    not a repeat of the one ground heard half a minute ago. The
+    re-ask clock belongs to the station the call was made on, which
+    is what left the FO silent at the hold after the handoff."""
+    from meridianatc.atc.session import station_key
+    twr = _station("TWR", 118.45)
+    gnd = _station("GND", 121.70)
+    flight, state, dialled, kinds = _radio_flight(
+        stations=[gnd, twr], phase="holding_short", com1=118.45,
+        current_station=twr, session_phase="holding_short")
+    sent = []
+    flight.crew.radio_call = lambda kind: kinds.append(kind) or ("call", "")
+    flight.crew.transmit = lambda text: sent.append(text)
+    # "Ready for departure" went out on ground thirty seconds back, and
+    # ground's "standby" is still fresh -- the tower heard neither.
+    flight._call_on = station_key(gnd)
+    flight.state.last_radio_at = 1000.0 - 30.0
+    flight._call_tried_at = 1000.0 - 30.0
+    flight.session.told_to_wait_at = 1000.0 - 10.0
+    flight._work_the_calls(state, flight.session, 1000.0)
+    assert "ready" in kinds
+    assert sent == ["call"]
+    # And the call that went out marks the station it was made on, so
+    # the tower's own re-ask clock runs from here.
+    assert flight._call_on == station_key(twr)
+
+
+def test_the_same_stations_ready_call_still_waits_out_the_clock():
+    """On the station it was made to, the ready ask is still on the
+    crew's patience -- the new-station pass is not an excuse to nag."""
+    from meridianatc.atc.session import station_key
+    twr = _station("TWR", 118.45)
+    flight, state, dialled, kinds = _radio_flight(
+        stations=[twr], phase="holding_short", com1=118.45,
+        current_station=twr, session_phase="holding_short")
+    flight._call_on = station_key(twr)
+    flight.state.last_radio_at = 1000.0 - 30.0
+    flight._call_tried_at = 1000.0 - 30.0
+    flight._work_the_calls(state, flight.session, 1000.0)
+    assert "ready" not in kinds
+
+
+def test_a_handoff_is_discharged_by_the_call_it_sent():
+    """Established with the station it was sent to ends the handoff:
+    a surface handoff no longer lives on COM1 for ever afterwards."""
+    from meridianatc.atc.session import FlightSession
+    session = FlightSession(aircraft=None)
+    twr = SimpleNamespace(ident="LEVX", position="TWR", mhz=118.45)
+    gnd = SimpleNamespace(ident="LEVX", position="GND", mhz=121.70)
+    session.handoff_pending = twr
+    # A call to somebody else discharges nothing.
+    session.establish(gnd)
+    assert session.handoff_pending is twr
+    # The call to the station it named is the check-in that ends it.
+    session.establish(twr)
+    assert session.handoff_pending is None
+
+
+def test_pushback_is_not_asked_of_the_tower():
+    """The tug is not the tower's to send: asked of it while a ground
+    position is worked, the call is refused -- the stale handoff's
+    "request pushback" on the tower frequency."""
+    from meridianatc.engine.core import Engine
+    engine = Engine.__new__(Engine)
+    twr = SimpleNamespace(position="TWR", mhz=118.45, ident="LEVX",
+                          callsign_in=lambda spoken: "Vigo Tower")
+    engine.session = SimpleNamespace(
+        aircraft=SimpleNamespace(
+            spoken=lambda abbreviated=False: "cessna two sierra papa"),
+        pending=None, phase="takeoff",
+        departure_runway="19", ifr=True, clearance_issued=True,
+        destination=SimpleNamespace(name="", ident="LEMD"))
+    engine.station = twr
+    engine._language_for = lambda *a: "en"
+    engine.brain = SimpleNamespace(
+        for_station=lambda s, l: None, staffed=lambda s: True)
+    engine.navdb = SimpleNamespace(
+        stations=lambda ident: [SimpleNamespace(position="GND")])
+    engine.last_language = "en"
+    text, why = engine.first_officer_call("pushback")
+    assert text == "" and why == "not_on:ground"
+    # But where the tower works the surface alone, it still answers.
+    engine.navdb = SimpleNamespace(stations=lambda ident: [])
+    text, _why = engine.first_officer_call("pushback")
+    assert "pushback" in text
+
+
+def test_an_approved_push_calls_the_sim_tug_when_the_ramp_is_silent():
+    """Approved over the radio and nobody called: a GSX that is not
+    there -- or does not answer -- is not the end of the tug, it is
+    the simulator's own."""
+    from meridianatc.engine.x_test_tools_traffic import _Test_tools_traffic
+    engine = _Test_tools_traffic.__new__(_Test_tools_traffic)
+    engine.emit = Mock()
+    pushed = []
+    engine.source = SimpleNamespace(
+        pushback=lambda: pushed.append(1) or True)
+    # GSX enabled but silent: the approval still gets its tug.
+    engine.config = SimpleNamespace(gsx=SimpleNamespace(enabled=True))
+    engine.gsx = SimpleNamespace(start_pushback=lambda: "")
+    engine._start_pushback()
+    assert pushed == [1]
+    # GSX off entirely: same tug.
+    pushed.clear()
+    engine.config.gsx.enabled = False
+    engine._start_pushback()
+    assert pushed == [1]
+
+
+def test_a_re_engage_at_the_hold_resumes_where_the_leg_was():
+    """Cleared for takeoff and re-engaged, the flight is at the bars --
+    not walked back through a preflight whose next radio call asked
+    the tower for a pushback."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    from meridianatc.atc.session import Phase
+    flight = _autonomous()
+    flight.get_state = lambda: SimpleNamespace(
+        connected=True, on_ground=True, ground_speed_kt=0.0)
+    session = SimpleNamespace(
+        phase=Phase.TAKEOFF, cleared_takeoff=True, lined_up=False)
+    phase, _sub = flight._entry_phase(session)
+    assert phase == AutonomousPhase.HOLDING_SHORT
+    # Rolling is not "at the hold": a takeoff roll re-engaged is not
+    # braked into one either.
+    flight.get_state = lambda: SimpleNamespace(
+        connected=True, on_ground=True, ground_speed_kt=80.0)
+    phase, _sub = flight._entry_phase(session)
+    assert phase == AutonomousPhase.PREFLIGHT

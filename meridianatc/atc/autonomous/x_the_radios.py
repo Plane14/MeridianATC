@@ -100,6 +100,11 @@ class _The_radios:
             return False
         self.crew.transmit(text)
         self.state.last_radio_at = time.monotonic()
+        # Which station this call went to: the re-ask clocks the asks
+        # are held on belong to it, not to whichever frequency was in
+        # the radio before it.
+        self._call_on = station_key(
+            getattr(getattr(self, "session", None), "current_station", None))
         return True
 
     def _radio_quiet(self) -> bool:
@@ -487,8 +492,19 @@ class _The_radios:
             kind = "ready"
         else:
             return
+        # The clocks belong to the station the last call was made on: a
+        # "ready" already heard by ground is not the tower's call made,
+        # and a "standby" from ground is not the tower's to wait out.
+        # On a new station the first ask goes at the unkeyed beat --
+        # which is what the handoff's check-in was waiting for when it
+        # never came.
+        current = getattr(session, "current_station", None)
+        fresh = bool(current) \
+            and station_key(current) != getattr(self, "_call_on", "")
         tried = getattr(self, "_call_tried_at", 0.0)
-        if now - getattr(session, "told_to_wait_at", 0.0) < READY_REASK_S:
+        if not fresh \
+                and now - getattr(session, "told_to_wait_at", 0.0) \
+                < READY_REASK_S:
             # The last word the frequency had for this flight was
             # "standby"/"hold position": it is on the list and the
             # callback is owed to it. A crew that keeps asking anyway
@@ -500,7 +516,8 @@ class _The_radios:
         # tower knows the aeroplane is there, and the crew that waits a
         # stretch is the one that does not get a second telling-off.
         interval = READY_REASK_S if kind == "ready" else 25.0
-        if now - max(self.state.last_radio_at, tried) < interval \
+        if (not fresh
+                and now - max(self.state.last_radio_at, tried) < interval) \
                 or not self._unkeyed():
             return
         self._call_tried_at = now

@@ -866,6 +866,18 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
                     return "", "not_on:ground"
             return speech.request_taxi(aircraft, name), ""
         if kind == "pushback":
+            if station.position not in ("DEL", "GND", "RMP", "INFO",
+                                        "CTAF", "UNICOM", "RDO", "AFIS"):
+                # The tug is not the tower's to send: a push asked of a
+                # position that cannot give one is refused wherever a
+                # surface position is actually worked -- and asked of
+                # the tower only where the tower works the surface too.
+                has_ground = any(
+                    s.position in ("DEL", "GND", "RMP")
+                    and self.brain.staffed(s)
+                    for s in self.navdb.stations(station.ident))
+                if has_ground:
+                    return "", "not_on:ground"
             return speech.request_pushback(aircraft, name), ""
         if kind == "ready":
             return speech.ready_for_departure(
