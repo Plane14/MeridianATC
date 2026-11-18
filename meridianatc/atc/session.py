@@ -634,8 +634,17 @@ class FlightSession:
         return not self.ifr or self.pattern_work
 
     def establish(self, station: Station | None) -> None:
-        if station:
-            self.contacted.add(station_key(station))
+        if not station:
+            return
+        self.contacted.add(station_key(station))
+        # The call that lands on the station a handoff named is the
+        # check-in that discharges it. Left pending after that, the
+        # handoff is a stale claim on COM1 -- the FO's surface tuning
+        # kept obeying a "contact tower" long after the tower was
+        # being talked to.
+        if self.handoff_pending is not None \
+                and station_key(self.handoff_pending) == station_key(station):
+            self.handoff_pending = None
 
     def remember(self, instruction: Instruction) -> Instruction:
         """Hold an instruction, and owe a readback for it if one is due.

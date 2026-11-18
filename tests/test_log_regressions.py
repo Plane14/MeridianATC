@@ -2662,3 +2662,294 @@ def test_the_roll_tracks_the_centreline(monkeypatch):
     flight._phase_takeoff(state, 1000.0)
     args, kwargs = flight._ground_directional.call_args
     assert abs(args[1] - 173.5) < 1e-6
+
+
+# ---------------------------------------------------------------------
+# the handoff landed, but the call that was owed on it never came --
+# and the pushback tug nobody ever called
+# ---------------------------------------------------------------------
+
+
+def test_the_first_call_on_the_new_frequency_is_not_the_old_ones_repeat():
+    """"Contact tower" dialled, the "ready" owed on it is a new ask --
+    not a repeat of the one ground heard half a minute ago. The
+    re-ask clock belongs to the station the call was made on, which
+    is what left the FO silent at the hold after the handoff."""
+    from meridianatc.atc.session import station_key
+    twr = _station("TWR", 118.45)
+    gnd = _station("GND", 121.70)
+    flight, state, dialled, kinds = _radio_flight(
+        stations=[gnd, twr], phase="holding_short", com1=118.45,
+        current_station=twr, session_phase="holding_short")
+    sent = []
+    flight.crew.radio_call = lambda kind: kinds.append(kind) or ("call", "")
+    flight.crew.transmit = lambda text: sent.append(text)
+    # "Ready for departure" went out on ground thirty seconds back, and
+    # ground's "standby" is still fresh -- the tower heard neither.
+    flight._call_on = station_key(gnd)
+    flight.state.last_radio_at = 1000.0 - 30.0
+    flight._call_tried_at = 1000.0 - 30.0
+    flight.session.told_to_wait_at = 1000.0 - 10.0
+    flight._work_the_calls(state, flight.session, 1000.0)
+    assert "ready" in kinds
+    assert sent == ["call"]
+    # And the call that went out marks the station it was made on, so
+    # the tower's own re-ask clock runs from here.
+    assert flight._call_on == station_key(twr)
+
+
+def test_the_same_stations_ready_call_still_waits_out_the_clock():
+    """On the station it was made to, the ready ask is still on the
+    crew's patience -- the new-station pass is not an excuse to nag."""
+    from meridianatc.atc.session import station_key
+    twr = _station("TWR", 118.45)
+    flight, state, dialled, kinds = _radio_flight(
+        stations=[twr], phase="holding_short", com1=118.45,
+        current_station=twr, session_phase="holding_short")
+    flight._call_on = station_key(twr)
+    flight.state.last_radio_at = 1000.0 - 30.0
+    flight._call_tried_at = 1000.0 - 30.0
+    flight._work_the_calls(state, flight.session, 1000.0)
+    assert "ready" not in kinds
+
+
+def test_a_handoff_is_discharged_by_the_call_it_sent():
+    """Established with the station it was sent to ends the handoff:
+    a surface handoff no longer lives on COM1 for ever afterwards."""
+    from meridianatc.atc.session import FlightSession
+    session = FlightSession(aircraft=None)
+    twr = SimpleNamespace(ident="LEVX", position="TWR", mhz=118.45)
+    gnd = SimpleNamespace(ident="LEVX", position="GND", mhz=121.70)
+    session.handoff_pending = twr
+    # A call to somebody else discharges nothing.
+    session.establish(gnd)
+    assert session.handoff_pending is twr
+    # The call to the station it named is the check-in that ends it.
+    session.establish(twr)
+    assert session.handoff_pending is None
+
+
+def test_pushback_is_not_asked_of_the_tower():
+    """The tug is not the tower's to send: asked of it while a ground
+    position is worked, the call is refused -- the stale handoff's
+    "request pushback" on the tower frequency."""
+    from meridianatc.engine.core import Engine
+    engine = Engine.__new__(Engine)
+    twr = SimpleNamespace(position="TWR", mhz=118.45, ident="LEVX",
+                          callsign_in=lambda spoken: "Vigo Tower")
+    engine.session = SimpleNamespace(
+        aircraft=SimpleNamespace(
+            spoken=lambda abbreviated=False: "cessna two sierra papa"),
+        pending=None, phase="takeoff",
+        departure_runway="19", ifr=True, clearance_issued=True,
+        destination=SimpleNamespace(name="", ident="LEMD"))
+    engine.station = twr
+    engine._language_for = lambda *a: "en"
+    engine.brain = SimpleNamespace(
+        for_station=lambda s, l: None, staffed=lambda s: True)
+    engine.navdb = SimpleNamespace(
+        stations=lambda ident: [SimpleNamespace(position="GND")])
+    engine.last_language = "en"
+    text, why = engine.first_officer_call("pushback")
+    assert text == "" and why == "not_on:ground"
+    # But where the tower works the surface alone, it still answers.
+    engine.navdb = SimpleNamespace(stations=lambda ident: [])
+    text, _why = engine.first_officer_call("pushback")
+    assert "pushback" in text
+
+
+def test_an_approved_push_calls_the_sim_tug_when_the_ramp_is_silent():
+    """Approved over the radio and nobody called: a GSX that is not
+    there -- or does not answer -- is not the end of the tug, it is
+    the simulator's own."""
+    from meridianatc.engine.x_test_tools_traffic import _Test_tools_traffic
+    engine = _Test_tools_traffic.__new__(_Test_tools_traffic)
+    engine.emit = Mock()
+    pushed = []
+    engine.source = SimpleNamespace(
+        pushback=lambda: pushed.append(1) or True)
+    # GSX enabled but silent: the approval still gets its tug.
+    engine.config = SimpleNamespace(gsx=SimpleNamespace(enabled=True))
+    engine.gsx = SimpleNamespace(start_pushback=lambda: "")
+    engine._start_pushback()
+    assert pushed == [1]
+    # GSX off entirely: same tug.
+    pushed.clear()
+    engine.config.gsx.enabled = False
+    engine._start_pushback()
+    assert pushed == [1]
+
+
+def test_a_re_engage_at_the_hold_resumes_where_the_leg_was():
+    """Cleared for takeoff and re-engaged, the flight is at the bars --
+    not walked back through a preflight whose next radio call asked
+    the tower for a pushback."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    from meridianatc.atc.session import Phase
+    flight = _autonomous()
+    flight.get_state = lambda: SimpleNamespace(
+        connected=True, on_ground=True, ground_speed_kt=0.0)
+    session = SimpleNamespace(
+        phase=Phase.TAKEOFF, cleared_takeoff=True, lined_up=False)
+    phase, _sub = flight._entry_phase(session)
+    assert phase == AutonomousPhase.HOLDING_SHORT
+    # Rolling is not "at the hold": a takeoff roll re-engaged is not
+    # braked into one either.
+    flight.get_state = lambda: SimpleNamespace(
+        connected=True, on_ground=True, ground_speed_kt=80.0)
+    phase, _sub = flight._entry_phase(session)
+    assert phase == AutonomousPhase.PREFLIGHT
+
+
+def _junction_layout():
+    """The apt.dat junction shape: the taxiway meets the runway at the
+    holding bars, off the pavement, so the junction is an ordinary taxi
+    node -- the one ``nearest_node`` lands on for an aeroplane parked
+    there. (xpground marks ``runway_nodes`` from the runway rows' own
+    geometry, not from segment kind, which is what leaves the bars a
+    taxi node.)"""
+    from meridianatc.atc.ground import (
+        PATH_PARKING,
+        PATH_RUNWAY,
+        PATH_TAXI,
+        GroundLayout,
+    )
+    points = [
+        (0, 0, 0.0, 0.0),         # 0 r0 -- the 09 threshold end
+        (0, 0, 400.0, 0.0),       # 1 r1
+        (0, 0, 800.0, 0.0),       # 2 r2
+        (0, 0, 1200.0, 0.0),      # 3 r3 -- the 27 threshold end
+        (0, 0, 0.0, 150.0),       # 4 t0, taxiway F
+        (0, 0, 400.0, 150.0),     # 5 t1
+        (0, 0, 800.0, 150.0),     # 6 t2
+        (0, 0, 1200.0, 150.0),    # 7 t3
+        (0, 0, 0.0, 100.0),       # 8 jA -- the bars at the 09 end
+        (0, 0, 1200.0, 100.0),    # 9 jB -- the bars at the 27 end
+        (0, 0, -80.0, 150.0),     # 10 stand connector
+    ]
+    parkings = [(14, 0, "GATE", "", 1, 0, 90.0, 20.0, -80.0, 170.0)]
+    paths = [
+        (PATH_PARKING, 0, 0, "", 10, 0, -1),
+        (PATH_TAXI, 0, 0, "", 10, 4, -1),
+        (PATH_TAXI, 0, 0, "", 4, 5, 0),
+        (PATH_TAXI, 0, 0, "", 5, 6, 0),
+        (PATH_TAXI, 0, 0, "", 6, 7, 0),
+        (PATH_TAXI, 0, 0, "", 4, 8, 0),
+        (PATH_TAXI, 0, 0, "", 7, 9, 0),
+        (PATH_RUNWAY, 0, 0, "", 0, 1, -1),
+        (PATH_RUNWAY, 0, 0, "", 1, 2, -1),
+        (PATH_RUNWAY, 0, 0, "", 2, 3, -1),
+        (PATH_RUNWAY, 0, 0, "", 8, 0, 1),
+        (PATH_RUNWAY, 0, 0, "", 9, 3, 1),
+    ]
+    layout = GroundLayout("TEST", 51.0, 0.0, points, parkings, paths,
+                          ["F", "runway"])
+    # What the runway rows' geometry marks: the pavement only. The bars
+    # stay taxi nodes, exactly as p13 did at Vigo.
+    layout.runway_nodes = {("p", 0), ("p", 1), ("p", 2), ("p", 3)}
+    return layout
+
+
+def test_parked_at_the_only_entry_is_still_a_taxi_plan():
+    """The Baron pushed back onto Vigo's p13 -- the one junction that was
+    runway 19's only entry with enough strip left. Asked for the taxi
+    from there, ``departure`` routed start to entry, got a route of one
+    node, threw the entry away for "no route", and ground made up
+    "J, H, G" for an aeroplane that then drove across the field to the
+    threshold. Already AT the hold is still a plan: metres of taxi and
+    the line-up onto the runway."""
+    layout = _junction_layout()
+    # Only jB is a viable entry for 27 (jA leaves no strip ahead), and
+    # the aeroplane is parked next to it.
+    legs = layout.departure(None, (1200.0, 110.0), (1200.0, 0.0), 270.0,
+                            1200.0)
+    assert legs is not None
+    taxi_out, line_up = legs
+    # The hold it already sits at -- the taxi is the few metres to the
+    # bars, from where the aeroplane actually is.
+    assert taxi_out.points[0] == (1200.0, 110.0)
+    assert taxi_out.points[-1] == (1200.0, 100.0)
+    # The line-up ends on the centreline past the bars, pointed down the
+    # runway -- the entry it is held at is where it enters.
+    along, across = layout.runway_frame(*line_up.points[-1],
+                                        (1200.0, 0.0), 270.0)
+    assert abs(across) < 1e-6
+    assert along > 0.0
+    assert line_up.face == 270.0
+    # And the entry the taxi is called by is the taxiway the bars sit on.
+    assert line_up.entry_name == "F"
+
+
+def test_the_cleared_runway_is_the_runway_the_taxi_is_for():
+    """"Departure runway zero one" in the clearance, "runway one niner"
+    in the taxi minutes later: the clearance never wrote down which
+    runway it named, and ground's fresh pick from a wind that had come
+    round was the other end of the strip. Issuing the clearance now
+    stores the runway it names."""
+    from meridianatc.atc.controller.x_clearance_delivery import _Clearance_delivery
+    ctl = _Clearance_delivery.__new__(_Clearance_delivery)
+    ctl.navdb = SimpleNamespace(
+        airport=lambda ident: SimpleNamespace(),
+        station_for=lambda ident, position: None)
+    ctl.realism = SimpleNamespace(ifr_departure=True)
+    ctl._departure_runway = lambda airport, weather: "01"
+    ctl._planned_sid = lambda airport, weather: ""
+    ctl._fms_sid = lambda airport, runway: ""
+    ctl._departure_altitudes = lambda *a: (5000, 10)
+    ctl._sid_for_runway = lambda *a: ""
+    ctl._transition_altitude = lambda airport: 3000
+    ctl._station_name = lambda station, p: ""
+    ctl._plan_idents = lambda: ()
+    ctl._default_cruise = lambda session: 9000
+    session = SimpleNamespace(
+        destination=None, destination_input="LEST", squawk="",
+        cruise_altitude_ft=0.0, initial_altitude_ft=0.0, sid="",
+        aircraft=SimpleNamespace(
+            callsign=SimpleNamespace(written="N45XS"), language="en"),
+        departure_runway="",
+        established_with=lambda station: False,
+        remember=lambda instruction: instruction)
+    station = SimpleNamespace(ident="LEVT", position="DEL", mhz=121.7)
+    p = SimpleNamespace(
+        ifr_clearance=lambda *a, **kw: "cleared",
+        UNKNOWN_DESTINATION="somewhere",
+        ROUTE_AS_FILED="as filed", ROUTE_RADAR_VECTORS="radar vectors")
+    ctl._issue_clearance(session, station, None, p)
+    assert session.clearance_issued
+    assert session.departure_runway == "01"
+
+
+def test_the_pushback_toggle_is_not_sent_twice_for_one_tug():
+    """TOGGLE_PUSHBACK is a toggle: the Baron's four approved asks and
+    the wait-sub's fallback sent it five times over three minutes, each
+    one undoing the last -- the tug that finally arrived on the odd
+    count. A repeat ask inside the window answers True -- the tug is
+    already on its way -- and sends nothing."""
+    from meridianatc.sim.source import SimConnectSource
+    source = SimConnectSource.__new__(SimConnectSource)
+    source._connected = True
+    source._push_sent_at = 0.0
+    source._state = SimpleNamespace(
+        pushback_wait=False, pushback_attached=False)
+    sent = []
+    source._send = lambda event, data=0: sent.append(event) or True
+    assert source.pushback()
+    assert sent == [b"TOGGLE_PUSHBACK"]
+    # Approved again inside the window, the tug it already called is
+    # not toggled back off.
+    assert source.pushback()
+    assert sent == [b"TOGGLE_PUSHBACK"]
+    # Where the sim itself says the tug is on its way, the ask is held
+    # even past the window.
+    source._push_sent_at -= SimConnectSource.PUSH_ASK_S + 1.0
+    source._state.pushback_wait = True
+    assert source.pushback()
+    assert sent == [b"TOGGLE_PUSHBACK"]
+    # And a tug that never showed -- no wait, no attachment -- is asked
+    # for again once the window is out.
+    source._state.pushback_wait = False
+    assert source.pushback()
+    assert sent == [b"TOGGLE_PUSHBACK", b"TOGGLE_PUSHBACK"]
+    # And a dead link still answers dead.
+    source._connected = False
+    assert not source.pushback()

@@ -193,15 +193,23 @@ class _Test_tools_traffic:
         is reported and nothing else: the aeroplane is where it was, and the
         pilot can still push it themselves.
         """
-        if not self.config.gsx.enabled:
-            return
-        try:
-            said = self.gsx.start_pushback()
-        except Exception:
-            log.debug("could not start the pushback", exc_info=True)
-            return
+        said = ""
+        if self.config.gsx.enabled:
+            try:
+                said = self.gsx.start_pushback()
+            except Exception:
+                log.debug("could not start the pushback", exc_info=True)
+        # The ramp that does not answer is not the end of the tug: the
+        # simulator's own is still the push the approval promised --
+        # "push and start approved" that never called anybody is how the
+        # FO ended up asking ground for the same tug four times.
+        if not said and self._sim_pushback():
+            said = "Pushback tug called"
         if said:
+            log.info("pushback: %s", said)
             self.emit("info", said, key="log.ground_handling", detail=said)
+        else:
+            log.info("pushback: approved, but no tug took it")
 
     def _room_on_the_channel(self, station: Station | None,
                              mhz: float) -> Station | None:

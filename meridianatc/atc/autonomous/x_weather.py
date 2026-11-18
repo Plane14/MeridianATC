@@ -459,6 +459,7 @@ class _Weather:
             if not self.state.convective_hold_said:
                 self.state.convective_hold_said = True
                 self.state.wind_hold_since = now
+                log.info("holding departure: thunderstorm at the field")
                 self._emit("info",
                            "Holding departure: thunderstorm at the field",
                            "autonomous.weather.hold")
@@ -473,6 +474,9 @@ class _Weather:
             if not self.state.wind_hold_said:
                 self.state.wind_hold_said = True
                 self.state.wind_hold_since = now
+                log.info("holding departure: %.0f kt crosswind, %.0f kt "
+                         "tailwind (limits %.0f/%.0f)",
+                         cross, tail, xlim, tlim)
                 self._emit(
                     "info",
                     f"Holding departure: {cross:.0f} kt crosswind, "

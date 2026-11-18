@@ -187,6 +187,19 @@ class _Entry:
             state = None
         if state is None or not getattr(state, "connected", False) \
                 or getattr(state, "on_ground", True):
+            if session is not None and (
+                    getattr(session, "cleared_takeoff", False)
+                    or getattr(session, "lined_up", False)
+                    or getattr(session, "phase", None) in (
+                        Phase.HOLDING_SHORT, Phase.LINED_UP,
+                        Phase.TAKEOFF)) \
+                    and float(getattr(state, "ground_speed_kt", 0.0)
+                              or 0.0) <= 10.0:
+                # Re-engaged where the leg already was: at the bars
+                # under, or waiting on, the takeoff clearance -- not
+                # walked back to a preflight the flight is long past,
+                # whose next radio call asked the tower for a pushback.
+                return AutonomousPhase.HOLDING_SHORT, ""
             return AutonomousPhase.PREFLIGHT, "systems"
         session_phase = getattr(session, "phase", Phase.PREFLIGHT)
         if session_phase in (Phase.APPROACH, Phase.LANDING):
@@ -224,6 +237,7 @@ class _Entry:
         self._dialled_at = 0.0
         self._comms_settled = True
         self._call_tried_at = 0.0
+        self._call_on = ""
         self._last_busy_at = 0.0
         self._last_lever = 0.0
         self._flaps_asked = 0.0
