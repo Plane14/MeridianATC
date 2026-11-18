@@ -510,13 +510,14 @@ class _Flying_them:
         of it, which brings it in and then keeps it there.
         """
         along, across = self._runway_frame(flight, runway_heading)
-        if along > 0.0:
+        if along > 0.0 and getattr(flight, "phase", "") == "inbound":
             # Upfield of the runway -- the missed-approach return still
             # on its climb-out heading, or a crossing overhead. Aiming
             # along the course only ever flies it away; the course
             # reversal is the extended centreline a few miles out on
             # final, the way a vector (or a missed without legs) brings
-            # it back round.
+            # it back round. A "final" past the threshold is the landing
+            # itself -- it carries on down the strip.
             end = self._threshold(flight.runway)
             if end is None:
                 return flight.heading
