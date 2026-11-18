@@ -443,7 +443,10 @@ class TestAdvisedNotices:
         crew = _notice_crew(advisor)
         calls = _notice_calls() + [Call("gear_up_final", {}, "gear up")]
         out = crew._advised_notices(calls, _notice_session, _notice_state)
-        assert out == calls and asked == []
+        # Everything due, the urgent call first, and no model asked.
+        assert out[0].cue == "gear_up_final"
+        assert [c.cue for c in out[1:]] == [c.cue for c in calls[:-1]]
+        assert asked == []
 
     def test_flaps_is_a_safety_notice(self):
         from meridianatc.atc.notices import SAFETY

@@ -2684,9 +2684,9 @@ class CrewDirector:
         if self.advisor is None:
             return calls
         if any(call.cue in SAFETY_NOTICES for call in calls):
-            # Something urgent is already due: the first officer says
-            # everything, and no safety call waits on the model.
-            return calls
+            # Something urgent is already due: safety calls first, the
+            # rest behind them, and nothing waits on the model.
+            return sorted(calls, key=lambda c: c.cue not in SAFETY_NOTICES)
         refused = [call for call in calls if self.refused(call.cue)]
         rest = [call for call in calls if call not in refused]
         if not rest:
