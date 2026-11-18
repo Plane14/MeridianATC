@@ -68,7 +68,8 @@ class TypePerf:
 # The rotorcraft codes: their "landing Vat" is a hover-ish figure, not a
 # threshold speed, so the approach speed is read from the approach IAS.
 HELI_TYPES: frozenset[str] = frozenset({
-    "R44", "R66", "H125", "AS50", "EC30", "B06", "B407", "EC35", "EC45",
+    "R22", "R44", "R66", "H125", "AS50", "EC30", "B06", "B407", "EC35",
+    "EC45",
     "H145", "H160", "AS32", "S76", "A109", "A139", "B412", "UH1",
 })
 

@@ -40,27 +40,41 @@ class _Helpers_kept_from:
             "E170": 1800, "E175": 1800, "E190": 2200, "E195": 2200,
         }
 
-        range_nm = ranges.get(type_code, 0)
+        # The perftable's own row first -- it is the maintained source of
+        # still-air ranges -- then the local list, which carries the
+        # business jets and heavies the perftable does not. The class
+        # figure is last: a profile says what the flight looks like, not
+        # what the aeroplane is, and an airliner flight on a piston twin
+        # used to give the Baron two and a half thousand miles of legs.
+        from .. import perftable
+
+        perf = perftable.type_perf(type_code)
+        range_nm = perf.range_nm if perf else 0.0
+        if not range_nm:
+            range_nm = ranges.get(type_code, 0)
         if not range_nm:
             for prefix, r in ranges.items():
                 if type_code.startswith(prefix):
                     range_nm = r
                     break
-
         if not range_nm:
+            # A type nobody lists takes the class figure -- but the class
+            # of airframe the simulator says it is, not the flight's
+            # profile: an unknown piston twin or rotorcraft does not fly
+            # an airliner's legs.
             from .. import aircraft_class as ac
 
-            found = session.profile.classify(type_code).name
-            if session.profile.airliner:
-                range_nm = 2500
-            elif found == ac.BUSINESS_JET:
-                range_nm = 2000
-            elif found in (ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN):
-                range_nm = 1000
-            elif found == ac.HELICOPTER:
-                range_nm = 250
-            else:
-                range_nm = 500
+            cls = ""
+            try:
+                state = self.get_state()
+                if state is not None:
+                    cls = ac.of_state(state).name
+            except Exception:
+                pass
+            light = cls in (ac.PISTON_SINGLE, ac.PISTON_TWIN, ac.HELICOPTER)
+            range_nm = perftable.range_for(type_code, light=light)
+            if cls in (ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN):
+                range_nm = min(range_nm, 1200.0)
 
         self.state.aircraft_range_nm = range_nm
         log.info("Aircraft %s: estimated range %d NM", type_code, range_nm)
