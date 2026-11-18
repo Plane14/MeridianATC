@@ -118,6 +118,7 @@ class _Instructions_and_being:
             flight.assigned_speed_kt = None
             flight.missed_hold = False
             flight.missed_nav = self._missed_for(flight)
+            flight.missed_alt_ft = self._missed_alt_for(flight)
             flight.next_at = now + self.random.uniform(20.0, 35.0)
         elif kind == "expedite":
             # "Expedite": a firmer aim for a while and no more waiting --
@@ -170,6 +171,26 @@ class _Instructions_and_being:
                 flight.assigned_speed_kt = None
         elif kind == "hold_short":
             flight.target.hold = True
+
+    def _missed_alt_for(self, flight: Flight) -> float:
+        """The altitude an IFR missed approach is climbed to.
+
+        The plate's missed-approach altitude where the data has it -- it
+        is coded even where the legs are not -- else two thousand feet
+        over the field, the level a go-around is conventionally flown to
+        before approach takes it back (AIM 5-4-21). 0 for VFR, which
+        keeps the circuit.
+        """
+        if not flight.ifr:
+            return 0.0
+        known = (self.approach_data or {}).get(
+            getattr(self.field, "ident", ""))
+        if known is not None:
+            _faf, missed = known.altitudes(flight.runway)
+            if missed:
+                return float(missed)
+        return float(self.field.elevation_ft) + max(
+            2000.0, flight.performance.pattern_agl_ft)
 
     def _missed_for(self, flight: Flight):
         """The published missed for the approach it was flying, as a

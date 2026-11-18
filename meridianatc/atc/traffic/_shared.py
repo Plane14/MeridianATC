@@ -302,6 +302,12 @@ class Flight:
     missed_hold: bool = False
     missed_hold_until: float = 0.0
     missed_hold_alt_ft: float = 0.0
+    # The level a missed is climbed to even where the data codes no
+    # legs for it: the plate's missed altitude, else two thousand feet
+    # over the field. An IFR go-around holds runway heading up to it
+    # and comes back for another approach; the circuit is the VFR
+    # aeroplane's answer, not this one's. 0 while there is none.
+    missed_alt_ft: float = 0.0
     # Told to hurry and by when that expires: a higher climb/roll speed
     # and shorter pauses until then, 0 if it was never told.
     expedite_until: float = 0.0

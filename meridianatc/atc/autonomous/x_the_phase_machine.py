@@ -810,6 +810,10 @@ class _The_phase_machine:
                 state, keep_hdg, gs, rate_cap=5.0)
             d.rudder(keep)
             d.steering(keep * _nws_fade(gs))
+            # The yoke into the wind, eased off as the speed builds --
+            # the roll's crosswind aileron the AFH teaches, and on a
+            # gusty day as lively as the gusts themselves.
+            d.aileron(self._roll_aileron(state, gs, takeoff=True))
             rotate_at = (self.state.vr_kt
                          or getattr(state, "min_rotation_kt", 0.0) or 0.0
                          or self.performance.rotate_kt)
@@ -1611,6 +1615,11 @@ class _The_phase_machine:
                     rate_cap=4.0)
                 d.rudder(rudder)
                 d.steering(rudder * _nws_fade(gs))
+            # The yoke into the wind the other way round: a touch at
+            # rollout speed growing to full as the aeroplane slows and
+            # the rudder's authority fades with it -- and gusts move it
+            # for real, not on a schedule.
+            d.aileron(self._roll_aileron(state, gs, takeoff=False))
             if tail and gs < 40.0:
                 # The tail comes up with the aeroplane's speed: the
                 # stick stays back as the rollout slows, pinning the

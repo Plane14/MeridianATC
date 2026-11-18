@@ -393,6 +393,31 @@ class _The_checklist_answered:
         self._pedal_check(pedal, rate, gs)
         return pedal * self._pedal_dir()
 
+    def _roll_aileron(self, state, gs_kt: float, takeoff: bool) -> float:
+        """Aileron into the wind on the ground roll -- the AFH technique.
+
+        Takeoff: full into-wind deflection at brake release, eased
+        toward neutral as the speed builds -- the surfaces only come
+        alive with the airflow, and a yoke still crossed at rotate is
+        the wing that drops first. Landing: the mirror of it -- a light
+        bias over the numbers growing to full as the aeroplane slows
+        and the rudder fades below it, which is what a gusty day rolls
+        out on. ``aircraft_wind_x_kt`` carries the gusts, so the input
+        is as lively as the air is -- and it is the same sign the
+        flare's into-wind bias uses, so a model whose wind axis is
+        flipped banks the wrong way the same gentle amount, not into
+        the weeds.
+        """
+        xwind = float(getattr(state, "aircraft_wind_x_kt", 0.0) or 0.0)
+        rotate = max(40.0, float(self.performance.rotate_kt or 60.0))
+        if takeoff:
+            # Full at the brakes, a tenth of it left at rotate.
+            scale = max(0.0, 1.0 - 0.9 * gs_kt / rotate)
+        else:
+            # Light at touchdown speed, full at a fast walk.
+            scale = max(0.15, min(1.0, 1.5 - gs_kt / 60.0))
+        return max(-0.3, min(0.3, xwind * 0.02)) * scale
+
     def _breakaway_lever(self) -> float:
         """The momentary lever that starts the aeroplane rolling.
 

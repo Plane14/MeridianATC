@@ -285,6 +285,146 @@ def test_a_missed_still_being_flown_is_left_alone():
     assert flight.next_at == 103.0
 
 
+def test_an_ifr_go_around_without_legs_climbs_to_the_missed_altitude():
+    """No coded legs still has the plate's missed altitude, not a circuit."""
+    from meridianatc.atc.approaches import Approach, FieldApproaches
+    from meridianatc.atc.flying import Command
+    injector = _injector()
+    injector.field = SimpleNamespace(ident="LPPR", elevation_ft=100.0)
+    injector.random = random.Random(0)
+    known = FieldApproaches("LPPR")
+    known.add_procedure(Approach("ILS", "17", missed_ft=2000.0))
+    injector.approach_data = {"LPPR": known}
+    flight = _ifl_flight()
+    injector._carry_out(flight, Command(kind="go_around"), 100.0)
+    assert flight.missed_nav is None
+    assert flight.missed_alt_ft == pytest.approx(2000.0)
+
+
+def test_an_ifr_go_around_rejoins_inbound_at_the_missed_altitude():
+    """Climbs to the published level, then back for another approach."""
+    injector = _injector()
+    injector.field = SimpleNamespace(elevation_ft=100.0)
+    flight = _going_around(5.0, 800.0)
+    flight.ifr = True
+    flight.missed_alt_ft = 2100.0
+    flight.missed_nav = None
+    injector._after_the_go_around(flight, 100.0)
+    assert flight.phase == "go_around"
+    assert flight.next_at == 103.0
+    flight.altitude_ft = 2100.0
+    injector._after_the_go_around(flight, 104.0)
+    assert flight.phase == "inbound"
+    assert flight.arriving is True
+
+
+def test_a_vfr_go_around_still_flies_the_circuit_upwind():
+    """The missed-altitude path is the IFR one, not the VFR one's."""
+    injector = _injector()
+    injector.field = SimpleNamespace(elevation_ft=0.0)
+    flight = _going_around(0.3, 900.0)
+    flight.ifr = False
+    injector._after_the_go_around(flight, 100.0)
+    assert flight.phase == "upwind"
+
+
+# -- level-off and top of descent --------------------------------------------
+
+def test_the_cruise_level_off_releases_flight_level_change():
+    """FLCH left on at altitude capture is the idle-thrust stall."""
+    flight = _flight()
+    flight._dir = Mock()
+    flight.sim = flight._dir.sim
+    flight._speed_target = Mock(return_value=170.0)
+    flight._level_off_at_cruise(SimpleNamespace(autothrottle=False))
+    flight._dir.level_change.assert_called_with(False)
+    flight._dir.alt_hold.assert_called_with(True)
+
+
+def test_the_top_of_descent_leaves_room_to_slow_down():
+    """The 3-degree path plus a mile per ten knots to lose, not less."""
+    flight = _flight()
+    flight.session = SimpleNamespace(
+        destination=SimpleNamespace(lat=43.3, lon=-8.4))
+    flight._perf = SimpleNamespace(approach_kt=90.0)
+    flight._cruise_speed_kt = Mock(return_value=200.0)
+    flight._field_elevation = Mock(return_value=0.0)
+    state = SimpleNamespace(
+        altitude_ft=9000.0, has_position=True,
+        distance_to=lambda lat, lon: 40.0)
+    flight._plan_tod(state)
+    # 9000 ft at 318 ft/nm is 28.3 nm; a 200 kt jet needs ~3 more to
+    # slow to its descent figure.
+    assert flight.state.tod_nm == pytest.approx(28.3 + 3.0, abs=0.6)
+
+
+# -- crosswind aileron on the roll -------------------------------------------
+
+def _roll_state(xwind_kt: float):
+    return SimpleNamespace(aircraft_wind_x_kt=xwind_kt)
+
+
+def test_the_takeoff_roll_holds_aileron_into_the_wind_and_relaxes():
+    flight = _flight()
+    flight._perf = SimpleNamespace(rotate_kt=110.0)
+    state = _roll_state(15.0)
+    start = flight._roll_aileron(state, 0.0, takeoff=True)
+    near_vr = flight._roll_aileron(state, 105.0, takeoff=True)
+    assert start == pytest.approx(0.3)
+    assert abs(near_vr) < abs(start) * 0.3
+
+
+def test_the_landing_roll_grows_the_into_wind_aileron_as_it_slows():
+    flight = _flight()
+    flight._perf = SimpleNamespace(rotate_kt=110.0)
+    state = _roll_state(15.0)
+    fast = flight._roll_aileron(state, 100.0, takeoff=False)
+    slow = flight._roll_aileron(state, 25.0, takeoff=False)
+    assert abs(fast) == pytest.approx(0.3 * 0.15)
+    assert slow == pytest.approx(0.3)
+
+
+def test_a_nav_stuck_on_a_stale_course_is_flown_to_the_fix():
+    """Persistently nowhere near the leg's fix, the FO steers itself."""
+    from meridianatc.atc.route import Progress, RouteFix
+    flight = _flight()
+    flight.brain = SimpleNamespace(
+        route=SimpleNamespace(
+            progress=lambda *a, **k: Progress(
+                leg=1,
+                from_fix=RouteFix(ident="A", lat=41.0, lon=-8.0),
+                to_fix=RouteFix(ident="B", lat=42.0, lon=-8.0),
+                cross_track_nm=2.0, along_leg_nm=0.0, to_go_nm=60.0,
+                to_next_nm=60.0, eta_s=())))
+    flight.session = SimpleNamespace(
+        route_direct_index=-1, destination=None)
+    state = SimpleNamespace(
+        has_position=True, latitude=41.2, longitude=-8.1,
+        ground_speed_kt=150.0, track_true=195.0, heading_true=195.0,
+        bearing_to=lambda lat, lon: 30.0)
+    now = 1000.0
+    assert flight._nav_fallback_heading(state, now) == -1.0
+    assert flight._nav_fallback_heading(state, now + 50.0) \
+        == pytest.approx(30.0)
+
+
+def test_a_navless_route_falls_back_to_the_destination_bearing():
+    """No route to place: badly off the destination is still corrected."""
+    flight = _flight()
+    flight.brain = SimpleNamespace(route=None)
+    flight.session = SimpleNamespace(
+        route_direct_index=-1,
+        destination=SimpleNamespace(lat=43.3, lon=-8.4))
+    state = SimpleNamespace(
+        has_position=True, latitude=40.7, longitude=-7.9,
+        ground_speed_kt=150.0, track_true=199.0, heading_true=199.0,
+        bearing_to=lambda lat, lon: 340.0)
+    now = 2000.0
+    assert flight._nav_fallback_heading(state, now) == -1.0
+    assert flight._nav_fallback_heading(state, now + 50.0) \
+        == pytest.approx(340.0)
+
+
 # -- expedite -----------------------------------------------------------------
 
 def test_an_expedite_command_hurries_what_the_flight_does_next():

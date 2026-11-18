@@ -207,10 +207,19 @@ class _Helpers_kept_from:
 
     def _level_off_at_cruise(self, state) -> None:
         """Level off at cruise altitude."""
+        # FLCH off first, before the holds go on: the mode left engaged
+        # past altitude capture keeps the levers at the climb/descent
+        # extremes it was flying -- idle where it levelled off -- and
+        # the speed decays toward the stall before the holds pull the
+        # aeroplane out of it (the mode is for the level *change*; the
+        # cruise belongs to ALT + SPD).
+        self.director.level_change(False)
         self.director.alt_hold(True)
         self.director.nav(True)
         self.director.airspeed_hold(True)
         self.director.speed(self._speed_target(state))
+        if not getattr(state, "autothrottle", False):
+            self.director.autothrottle_arm()
         self.director.vs_hold(False)
         self.state.ap_alt_mode = True
         self.state.ap_nav_mode = True

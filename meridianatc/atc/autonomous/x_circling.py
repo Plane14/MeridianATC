@@ -120,9 +120,16 @@ class _Circling:
             self.state.tod_nm = -1.0
             return
         agl = (state.altitude_ft or 0.0) - self._field_elevation(state)
-        # 318 ft per NM is the standard path; the TOD is where that path,
-        # started now, reaches the field.
-        self.state.tod_nm = max(0.0, agl / 318.0)
+        # 318 ft per NM is the standard path; the TOD is where that
+        # path, started now, reaches the field -- plus the room the
+        # speed takes to come back to the descent figure: about a mile
+        # for every ten knots a level cruise would still be carrying,
+        # the "three times the thousands plus the slowdown" rule of
+        # thumb a crew plans by.
+        cruise = self._cruise_speed_kt(state)
+        descent_kt = max(self.performance.approach_kt, 0.85 * cruise)
+        slow = max(0.0, cruise - descent_kt) / 10.0
+        self.state.tod_nm = max(0.0, agl / 318.0 + slow)
 
     def _descent_floor(self, state) -> float:
         """The lowest level the descent may level at: pattern height."""

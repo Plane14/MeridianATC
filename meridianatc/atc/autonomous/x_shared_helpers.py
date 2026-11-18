@@ -43,6 +43,12 @@ class _Shared_helpers:
         anywhere near it is tracking, persistently not is not -- and
         the fallback is that heading, engaged as the HDG mode's number
         until the track comes round and NAV can be trusted again.
+
+        And where the plan cannot be placed at all -- progress None,
+        which is what the box's stale diverted plan looks like -- the
+        bearing it is checked against is the destination's, because
+        pointed somewhere is still better than pointed at the last
+        stale course.
         """
         route = getattr(getattr(self, "brain", None), "route", None)
         progress = None
@@ -54,11 +60,25 @@ class _Shared_helpers:
                     hint=getattr(self.session, "route_direct_index", -1))
             except Exception:
                 progress = None
-        if progress is None:
+        want = None
+        if progress is not None:
+            fix = progress.to_fix
+            want = state.bearing_to(fix.lat, fix.lon)
+        else:
+            # The route cannot be placed -- the box's plan is the thing
+            # steering now, and the check that remains is whether the
+            # track is going where the flight goes at all.
+            destination = getattr(self.session, "destination", None)
+            if destination is not None \
+                    and getattr(state, "has_position", False):
+                try:
+                    want = state.bearing_to(destination.lat,
+                                            destination.lon)
+                except Exception:
+                    want = None
+        if want is None:
             self._nav_off_since = 0.0
             return -1.0
-        fix = progress.to_fix
-        want = state.bearing_to(fix.lat, fix.lon)
         have = float(getattr(state, "track_true", 0.0) or 0.0) \
             or float(getattr(state, "heading_true", 0.0) or 0.0)
         err = abs((want - have + 180.0) % 360.0 - 180.0)
@@ -471,20 +491,30 @@ class _Shared_helpers:
         # limiter's tighter one while that flag is up -- and never more
         # than the aeroplane's own declared limit.
         demeanor = self._demeanor(state)
-        cap = 15.0 if self.state.g_limited else _BANK_CAP_DEG.get(
-            demeanor, 20.0)
+        cap = 15.0 if (self.state.g_limited
+                       or now < getattr(self.state, "turbulence_until",
+                                        0.0)) \
+            else _BANK_CAP_DEG.get(demeanor, 20.0)
         own = float(getattr(self.performance, "max_bank_deg", 0.0) or 0.0)
         if own > 0.0:
             cap = min(cap, own)
         self._cap_bank(cap)
         if self._ap_mode == "managed":
             # Managed legs climb and descend on the flight-level-change
-            # mode where the model has it; direct legs use the VS bug.
+            # mode where the model has it -- a step inside the cruise
+            # too, the way the real mode flies a small level change on
+            # proportional thrust rather than the VS bug (Boeing FLCH).
+            # It is OFF the moment level is captured: latched on, it
+            # holds the levers at the climb/descent extreme it was
+            # flying and the speed decays toward the stall before the
+            # holds pull it back.
             if vs_fpm and self.state.phase in (
-                    AutonomousPhase.CLIMB, AutonomousPhase.DESCENT):
+                    AutonomousPhase.CLIMB, AutonomousPhase.DESCENT,
+                    AutonomousPhase.CRUISE):
                 d.level_change(True)
             elif self.state.phase in (AutonomousPhase.CLIMB,
-                                      AutonomousPhase.DESCENT) \
+                                      AutonomousPhase.DESCENT,
+                                      AutonomousPhase.CRUISE) \
                     and abs(vs_fpm) < 1:
                 d.level_change(False)
 

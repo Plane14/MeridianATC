@@ -532,6 +532,21 @@ class _Where_it_is:
             return
         pattern_ft = (self.field.elevation_ft
                       + flight.performance.pattern_agl_ft)
+        if getattr(flight, "ifr", False):
+            # The published missed where the legs are not coded: runway
+            # heading up to its altitude, then back into the arrival
+            # stream for approach to sequence again -- the circuit is
+            # the VFR aeroplane's way round, not this one's.
+            goal = getattr(flight, "missed_alt_ft", 0.0) or pattern_ft
+            if (flight.altitude_ft < goal - 100.0
+                    and flight.distance_nm < 15.0):
+                flight.next_at = now + 3.0
+                return
+            flight.phase = "inbound"
+            flight.arriving = True
+            flight.step = 0
+            flight.next_at = now + 5.0
+            return
         if (flight.altitude_ft < pattern_ft - 200.0
                 and flight.distance_nm < CIRCUIT_UPWIND_NM):
             flight.next_at = now + 3.0

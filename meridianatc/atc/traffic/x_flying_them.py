@@ -202,7 +202,11 @@ class _Flying_them:
         elif phase == "go_around":
             target.heading = heading
             target.speed_kt = performance.climb_kt
-            target.altitude_ft = elevation + performance.pattern_agl_ft
+            # An IFR go-around climbs to the plate's missed altitude on
+            # the runway heading; a VFR one to pattern height.
+            target.altitude_ft = (
+                getattr(flight, "missed_alt_ft", 0.0)
+                or elevation + performance.pattern_agl_ft)
             target.intent = "going around"
             missed_nav = getattr(flight, "missed_nav", None)
             if missed_nav is not None:
