@@ -2686,7 +2686,10 @@ class CrewDirector:
             return calls
         if any(call.cue in SAFETY_NOTICES for call in calls):
             # Something urgent is already due: safety calls first, the
-            # rest behind them, and nothing waits on the model.
+            # rest behind them, and nothing waits on the model. A shadow
+            # advisor only observes: the deterministic order stands.
+            if getattr(self.advisor, "shadow", False):
+                return calls
             return sorted(calls, key=lambda c: c.cue not in SAFETY_NOTICES)
         refused = [call for call in calls if self.refused(call.cue)]
         rest = [call for call in calls if call not in refused]

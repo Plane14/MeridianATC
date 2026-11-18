@@ -449,6 +449,15 @@ class TestAdvisedNotices:
         assert [c.cue for c in out[1:]] == [c.cue for c in calls[:-1]]
         assert asked == []
 
+    def test_shadow_keeps_the_deterministic_order(self):
+        advisor = SimpleNamespace(
+            shadow=True, model_available=True,
+            pick=lambda *a, **k: 0)
+        crew = _notice_crew(advisor)
+        calls = _notice_calls() + [Call("gear_up_final", {}, "gear up")]
+        out = crew._advised_notices(calls, _notice_session, _notice_state)
+        assert [c.cue for c in out] == [c.cue for c in calls]
+
     def test_a_dead_provider_restores_everything_not_the_cached_decline(self):
         asked = []
         advisor = SimpleNamespace(
@@ -534,6 +543,22 @@ class TestChecklistPick:
             model_available=False, pick=lambda *a, **k: -1))
         assert runner._advised_checklist(
             self._names, Phase.ENROUTE, 8000.0, 0.0) == "cruise"
+
+    def test_fits_returns_the_first_fitting_checklist(self):
+        # Regression: the fitting enumeration is reachable without an
+        # advisor at all.
+        runner = self._runner(None)
+        runner.rules = "vfr"
+        runner.done = set()
+        runner._offered = set()
+        runner._level_since = 0.0
+        runner.clock = lambda: 0.0
+        runner.book = SimpleNamespace(
+            checklists={"before_start": SimpleNamespace()},
+            for_rules=lambda rules: {"before_start": SimpleNamespace()})
+        state = SimpleNamespace(ground_speed_kt=0.0, engines_running=False,
+                                vertical_speed_fpm=0.0)
+        assert runner._fits(state, Phase.PREFLIGHT, 0.0, "") == "before_start"
 
     def test_deferred_notice_stays_due(self):
         notices = Notices()
