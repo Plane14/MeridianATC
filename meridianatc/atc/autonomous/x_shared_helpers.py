@@ -923,13 +923,13 @@ class _Shared_helpers:
                 > self.TRAFFIC_AVOID_MAX_S:
             self._end_avoidance()
             avoiding = ""
-        # The one already turned away from is asked about on the track
-        # that was left, not this one: the avoidance track meeting it
-        # again is the turn not working, which another 30 degrees away
-        # answers better than holding the one that did not.
+        # The one already turned away from is judged first: a turn that
+        # still meets it is held rather than swapped for whichever other
+        # contact lists next -- two standing conflicts must not alternate
+        # the turn's direction on every look.
+        contacts.sort(key=lambda c: (c.written or "traffic") != avoiding)
         threat = next((c for c in contacts
-                       if (c.written or "traffic") != avoiding
-                       and self._meets(state, c, track, own_speed)), None)
+                       if self._meets(state, c, track, own_speed)), None)
         if threat is None and avoiding:
             # Clear on the avoidance track. Whether the one turned away
             # from is past is asked of the track that was left.
@@ -949,9 +949,7 @@ class _Shared_helpers:
         key = threat.written or "traffic"
         if key == avoiding and self.state.avoid_heading >= 0.0:
             # Still closing on the one already turned away from: the
-            # turn stands, it is not added to on every look. (The
-            # avoided contact is excluded above, so this is only a new
-            # conflict on the same callsign.)
+            # turn stands, it is not added to on every look.
             self.state.avoid_until = now + self.TRAFFIC_AVOID_S
             return
         bearing = bearing_deg(state.latitude, state.longitude,
