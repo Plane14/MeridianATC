@@ -2182,7 +2182,9 @@ class NavDB:
                        if position is not None and position["type"] == "CTR"]
             if not centres:
                 continue
-            group = row.get("grp", "")
+            # sqlite3.Row has no .get(), and ``in`` on it tests the values,
+            # not the column names -- keys() is the membership to ask.
+            group = row["grp"] if "grp" in row.keys() else ""  # noqa: SIM118
             own = [position for position in centres
                    if group and _names_match(
                        _GENERIC_CENTRE_WORD.sub("", position["callsign"]), group)]
