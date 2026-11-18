@@ -122,6 +122,15 @@ class _Arrivals:
                 elif flight.hold is not None and not self._needs_the_hold(
                         flight):
                     self._leave_the_hold(flight, now)
+            end = self._threshold(flight.runway)
+            if end is not None and self._runway_frame(
+                    flight, end[2])[0] > 0.0:
+                # Still upfield of the strip -- the missed-approach
+                # return coming back round. Distance reads zero out
+                # there, so the tower's handoff would call it "final"
+                # now and drop the reversal that is bringing it back.
+                flight.next_at = now + 4.0
+                return
             if (flight.distance_nm > self.HANDOFF_TO_TOWER_NM
                     or flight.hold is not None):
                 flight.next_at = now + 4.0
