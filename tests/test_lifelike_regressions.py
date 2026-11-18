@@ -328,6 +328,58 @@ def test_a_vfr_go_around_still_flies_the_circuit_upwind():
     assert flight.phase == "upwind"
 
 
+def test_the_missed_altitude_is_the_flown_approachs():
+    """Two approaches on a runway: the missed level is its own plate's."""
+    from meridianatc.atc.approaches import Approach, FieldApproaches
+    from meridianatc.atc.flying import Command
+    injector = _injector()
+    injector.field = SimpleNamespace(ident="LPPR", elevation_ft=0.0)
+    injector.random = random.Random(0)
+    known = FieldApproaches("LPPR")
+    known.add_procedure(Approach("ILS", "17", missed_ft=2000.0))
+    known.add_procedure(Approach("NDB", "17", missed_ft=3200.0))
+    injector.approach_data = {"LPPR": known}
+    flight = _ifl_flight()
+    flight.approach = "NDB"
+    injector._carry_out(flight, Command(kind="go_around"), 100.0)
+    assert flight.missed_alt_ft == pytest.approx(3200.0)
+
+
+def test_an_upfield_intercept_points_back_down_the_final():
+    """Past the runway's upwind end the aim is the extended centreline
+    out on final, not thirty degrees more of flying away."""
+    injector = _injector()
+    injector.field = SimpleNamespace(elevation_ft=0.0)
+    injector._threshold = lambda runway: (41.0, -8.0, 360.0)
+    flight = SimpleNamespace(latitude=41.03, longitude=-8.0,
+                             heading=0.0, runway="36")
+    want = injector._intercept(flight, 360.0)
+    # ~south, back at the extended final beyond the field.
+    assert 150.0 < want < 210.0
+
+
+def test_an_inbound_still_upfield_holds_the_missed_altitude():
+    """Coming back round is not the glide: it holds the missed's level."""
+    injector = _injector()
+    injector.field = SimpleNamespace(elevation_ft=0.0)
+    injector._threshold = lambda runway: (41.0, -8.0, 360.0)
+    injector._threshold_ft = lambda runway: 0.0
+    injector._surface_ft = lambda flight: 0.0
+    flight = SimpleNamespace(
+        phase="inbound", latitude=41.03, longitude=-8.0, heading=0.0,
+        runway="36", altitude_ft=2100.0, distance_nm=0.0,
+        missed_alt_ft=2100.0, on_ground=False, ground_speed_kt=140.0,
+        performance=SimpleNamespace(
+            approach_kt=90.0, climb_kt=100.0, cruise_kt=140.0,
+            pattern_agl_ft=1000.0, rotate_kt=80.0),
+        target=SimpleNamespace(), hold=None, procedure_pair=None,
+        assigned_heading=None,
+        assigned_altitude_ft=None, assigned_speed_kt=None,
+        expedite_until=0.0)
+    injector._aim(flight)
+    assert flight.target.altitude_ft == pytest.approx(2100.0)
+
+
 # -- level-off and top of descent --------------------------------------------
 
 def test_the_cruise_level_off_releases_flight_level_change():
