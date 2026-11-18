@@ -680,6 +680,16 @@ class GroundLayout:
         best = None
         options: list = []
         for along, entry in entries:
+            if start == entry:
+                # The aeroplane is already at this entry's holding
+                # point: there is no taxi to plan, only the way onto
+                # the runway. Skipping it as "no route" below is how an
+                # aeroplane parked at the field's only entry gets told
+                # an invented route instead.
+                options.append((0.0, [entry], [entry], along, entry, 0))
+                if best is None or best[0] > 0.0:
+                    best = options[-1]
+                continue
             nodes = (self.route(start, entry, avoid, closed=closed)
                      if closed else self.route(start, entry, avoid))
             if len(nodes) < 2:
@@ -772,6 +782,14 @@ class GroundLayout:
             a, b = onto[first_rwy - 1], onto[first_rwy]
             for other, _metres, runway, label in self.edges.get(a, ()):
                 if other == b and label and not runway:
+                    line_up.entry_name = label
+                    break
+        elif first_idx == 0:
+            # Held at the entry already: the taxiway the junction itself
+            # sits on is the name the departure is called by.
+            for _other, _metres, runway_edge, label in \
+                    self.edges.get(entry, ()):
+                if not runway_edge and label:
                     line_up.entry_name = label
                     break
         line_up.entry_along_m = max(0.0, along + PAST_ENTRY_M)

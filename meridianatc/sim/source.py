@@ -679,6 +679,10 @@ class SimConnectSource:
         # Events are mapped to the simulator once each and kept. Mapping is a
         # round trip, and tuning a radio should not pay for one.
         self._events: dict[bytes, object] = {}
+        # When the pushback toggle was last sent: the event is a toggle,
+        # so a second press while the first tug is still on its way sends
+        # the tug home rather than hurry it up.
+        self._push_sent_at = 0.0
         # The two tiers, split once rather than on every read.
         self._fast = tuple((n, a, k) for n, a, k, tier in self.REQUESTS
                            if tier == "fast")
@@ -1016,6 +1020,7 @@ class SimConnectSource:
             self._next_slow = 0
             self._full_sweep = True
             self._seen_running = False
+            self._push_sent_at = 0.0
             log.info("connected to the simulator")
             return True
         except Exception as exc:
@@ -1571,17 +1576,36 @@ class SimConnectSource:
                 return True
         return False
 
+    # A tug's longest reasonable trip to the aeroplane. Asked again inside
+    # this window the toggle undoes whatever it started; outside it a tug
+    # that never showed is plainly not coming and the ask is made again.
+    PUSH_ASK_S = 150.0
+
     def pushback(self) -> bool:
         """Start the simulator's own pushback.
 
         One event, unchecked, unlike the radios: there is no variable that
         reads back "a tug is attached", so there is nothing to confirm it
         against. GSX takes this over when it is set to, which is why it is
-        worth sending even at a stand GSX is working.
+        worth sending even at a stand GSX is working. And the event is a
+        toggle: sent again while a tug is on its way it sends the tug
+        home, so while the sim reports one coming or attached -- or the
+        send is still inside PUSH_ASK_S -- a repeat answers True, the ask
+        already in hand, and nothing more is sent.
         """
         if not self._connected:
             return False
-        return self._send(b"TOGGLE_PUSHBACK", 0)
+        state = self._state
+        if getattr(state, "pushback_wait", False) \
+                or getattr(state, "pushback_attached", False):
+            return True
+        now = time.monotonic()
+        if now - self._push_sent_at < self.PUSH_ASK_S:
+            return True
+        if self._send(b"TOGGLE_PUSHBACK", 0):
+            self._push_sent_at = now
+            return True
+        return False
 
     def swap_com(self, radio: int = 1) -> bool:
         """Swap active and standby, the way the button on the radio does."""

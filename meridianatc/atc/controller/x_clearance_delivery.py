@@ -175,6 +175,12 @@ class _Clearance_delivery:
         )
 
         session.clearance_issued = True
+        # The runway named in the clearance is the runway the taxi is
+        # for. Left unset it is picked again when ground is asked, and a
+        # wind that has come around in between sends the aeroplane to
+        # the other end of the strip it was cleared off.
+        if worked and runway:
+            session.departure_runway = runway
         values: dict[str, Any] = {"altitude_ft": int(initial), "squawk": session.squawk}
         if departure_freq:
             values["frequency"] = departure_freq

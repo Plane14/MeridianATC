@@ -206,7 +206,10 @@ class _Test_tools_traffic:
         if not said and self._sim_pushback():
             said = "Pushback tug called"
         if said:
+            log.info("pushback: %s", said)
             self.emit("info", said, key="log.ground_handling", detail=said)
+        else:
+            log.info("pushback: approved, but no tug took it")
 
     def _room_on_the_channel(self, station: Station | None,
                              mhz: float) -> Station | None:
