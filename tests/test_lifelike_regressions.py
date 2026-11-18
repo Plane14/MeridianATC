@@ -365,7 +365,7 @@ def test_a_final_past_the_threshold_keeps_the_runway_heading():
     injector._threshold = lambda runway: (41.0, -8.0, 360.0)
     flight = SimpleNamespace(latitude=41.003, longitude=-8.0,
                              heading=0.0, runway="36", phase="final")
-    assert injector._intercept(flight, 360.0) == pytest.approx(360.0)
+    assert injector._intercept(flight, 360.0) == pytest.approx(0.0)
 
 
 def test_an_inbound_still_upfield_holds_the_missed_altitude():
