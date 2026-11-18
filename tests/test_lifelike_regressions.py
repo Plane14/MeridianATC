@@ -352,10 +352,27 @@ def test_an_upfield_intercept_points_back_down_the_final():
     injector.field = SimpleNamespace(elevation_ft=0.0)
     injector._threshold = lambda runway: (41.0, -8.0, 360.0)
     flight = SimpleNamespace(latitude=41.03, longitude=-8.0,
-                             heading=0.0, runway="36", phase="inbound")
+                             heading=0.0, runway="36", phase="inbound",
+                             missed_alt_ft=2100.0, missed_nav=None)
     want = injector._intercept(flight, 360.0)
     # ~south, back at the extended final beyond the field.
     assert 150.0 < want < 210.0
+
+
+def test_the_missed_return_flies_out_before_turning_in():
+    """Overhead and still outbound, it holds the reciprocal leg -- the
+    U-turn belongs miles out on the final side, not over the strip."""
+    injector = _injector()
+    injector.field = SimpleNamespace(elevation_ft=0.0)
+    injector._threshold = lambda runway: (41.0, -8.0, 360.0)
+    flight = SimpleNamespace(latitude=40.97, longitude=-8.0,
+                             heading=180.0, runway="36", phase="inbound",
+                             missed_alt_ft=2100.0, missed_nav=None)
+    assert injector._intercept(flight, 360.0) == pytest.approx(180.0)
+    # Far enough out, the intercept onto final takes over.
+    flight.latitude = 40.86
+    want = injector._intercept(flight, 360.0)
+    assert want < 60.0 or want > 300.0
 
 
 def test_a_final_past_the_threshold_keeps_the_runway_heading():

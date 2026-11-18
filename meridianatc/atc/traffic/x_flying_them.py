@@ -248,10 +248,10 @@ class _Flying_them:
                 self._threshold_ft(flight.runway), flight.distance_nm,
                 GLIDE_FT_PER_NM)
             if phase == "inbound" \
-                    and self._runway_frame(flight, heading)[0] > 0.0:
-                # Still upfield of the strip, coming back round from
-                # the missed: hold the missed's level until it is back
-                # on the approach side and the glide can take it down.
+                    and self._missed_return_active(flight, heading):
+                # The reversal is not the glide: hold the missed's
+                # level until the turn-in and the intercept can take
+                # it down.
                 target.altitude_ft = (
                     getattr(flight, "missed_alt_ft", 0.0)
                     or elevation + performance.pattern_agl_ft)
@@ -510,25 +510,47 @@ class _Flying_them:
         of it, which brings it in and then keeps it there.
         """
         along, across = self._runway_frame(flight, runway_heading)
-        if along > 0.0 and getattr(flight, "phase", "") == "inbound":
-            # Upfield of the runway -- the missed-approach return still
-            # on its climb-out heading, or a crossing overhead. Aiming
-            # along the course only ever flies it away; the course
-            # reversal is the extended centreline a few miles out on
-            # final, the way a vector (or a missed without legs) brings
-            # it back round. A "final" past the threshold is the landing
-            # itself -- it carries on down the strip.
+        if self._missed_return_active(flight, runway_heading):
+            # The course reversal: back over the field and out the
+            # other end on the reciprocal, until there is room to turn
+            # in -- the way a missed without legs (or a vectored
+            # re-sequence) actually comes round. Aiming at the final
+            # alone just orbited the strip.
             end = self._threshold(flight.runway)
             if end is None:
                 return flight.heading
-            point = project(end[0], end[1],
-                            (runway_heading + 180.0) % 360.0,
-                            circuitry.LONG_FINAL_NM + 2.0)
-            return bearing_deg(flight.latitude, flight.longitude,
-                               point[0], point[1])
+            if along > 0.0:
+                point = project(end[0], end[1],
+                                (runway_heading + 180.0) % 360.0,
+                                circuitry.LONG_FINAL_NM + 2.0)
+                return bearing_deg(flight.latitude, flight.longitude,
+                                   point[0], point[1])
+            return (runway_heading + 180.0) % 360.0
         angle = math.degrees(math.atan2(-across, INTERCEPT_LEAD_NM))
         angle = max(-INTERCEPT_LIMIT_DEG, min(INTERCEPT_LIMIT_DEG, angle))
         return (runway_heading + angle) % 360.0
+
+    def _missed_return_active(self, flight: Flight,
+                              runway_heading: float) -> bool:
+        """The missed-approach return still in its course reversal.
+
+        True while the aeroplane is upfield of the threshold, and while
+        it is outbound past it with the turn-in still to do -- called
+        off once it is out far enough that the intercept onto final
+        closes. Only the legless return flies this; coded legs, VFR
+        and ordinary arrivals keep their own steerings.
+        """
+        if getattr(flight, "phase", "") != "inbound" \
+                or not getattr(flight, "missed_alt_ft", 0.0) \
+                or getattr(flight, "missed_nav", None) is not None:
+            return False
+        along, _ = self._runway_frame(flight, runway_heading)
+        if along > 0.0:
+            return True
+        err = abs((runway_heading - flight.heading + 180.0) % 360.0
+                  - 180.0)
+        return err > 60.0 \
+            and along > -(circuitry.LONG_FINAL_NM + 2.0)
 
     def _runway_frame(self, flight: Flight,
                       runway_heading: float) -> tuple[float, float]:
