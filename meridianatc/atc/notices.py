@@ -71,9 +71,11 @@ RETRACTABLE = frozenset({PISTON_TWIN, TURBOPROP_TWIN, BUSINESS_JET, AIRLINER})
 LEFT_TANKS = frozenset({2, 19})
 RIGHT_TANKS = frozenset({3, 20})
 
-#: The notices worth breaking a quiet cockpit for.
+#: The notices worth breaking a quiet cockpit for -- and never the
+#: model's to postpone: a takeoff-configuration warning deferred past
+#: the takeoff never reaches the pilot at all.
 SAFETY = frozenset({"gear_up_final", "fuel_selector_off", "fuel_reserve",
-                    "parking_brake_power", "xpdr_standby"})
+                    "parking_brake_power", "xpdr_standby", "flaps_takeoff"})
 
 
 @dataclass

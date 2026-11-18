@@ -219,6 +219,11 @@ GALLEY_DELAY_S = 330.0
 # How often the first officer says something unprompted in a long cruise,
 # and only with the chatter turned up.
 CHATTER_EVERY_S = 900.0
+# How long an advisor's notice pick stands before the same set is asked
+# about again -- a declined or unpicked notice stays due while its
+# condition holds, and without a re-ask clock the situation loop would
+# put the same question to the provider every pass.
+NOTICE_REASK_S = 30.0
 
 # The altitude bands the callouts hang on. Above the transition the crew
 # would be calling flight levels, but ten thousand is where the signs and the
@@ -421,6 +426,9 @@ class CrewDirector:
         # The model advisor (meridianatc.llm.decisions), when the engine
         # wires one in: it may word the answers above, never decide them.
         self.advisor = None
+        # The pick it last made over a set of due notices: (signature,
+        # answer, when), so a standing condition is not re-asked every pass.
+        self._notice_pick = None
         self._radio_call_at: tuple[float, str] | None = None
         self.reserve_gal = 0.0
         self.reserve_lb = 0.0
@@ -514,6 +522,7 @@ class CrewDirector:
         self._checklist_said_at = 0.0
         self.callouts.begin()
         self.notices.begin()
+        self._notice_pick = None
         self.reserve_gal = self.reserve_lb = 0.0
         self._qnh_seen = self._qnh_at = 0.0
         self.cockpit = "normal"
@@ -2665,29 +2674,43 @@ class CrewDirector:
 
         Without the advisor, everything due is said, as always. With it,
         the model picks the one notice worth a mention now -- the choice
-        only, from a list the engine just enumerated. A notice it does
+        only, from a list the engine just enumerated, asked at most once
+        per :data:`NOTICE_REASK_S` per unchanged set. A notice it does
         not pick is deferred, not dropped (:meth:`Notices.defer`): it
-        stays due while its condition still holds. The safety notices
-        are never the model's to postpone.
+        stays due while its condition still holds. A safety notice is
+        never held behind the pick, and a notice a setting has refused
+        is never offered to the model at all.
         """
         if self.advisor is None:
             return calls
-        safety = [call for call in calls if call.cue in SAFETY_NOTICES]
-        rest = [call for call in calls if call.cue not in SAFETY_NOTICES]
+        if any(call.cue in SAFETY_NOTICES for call in calls):
+            # Something urgent is already due: the first officer says
+            # everything, and no safety call waits on the model.
+            return calls
+        refused = [call for call in calls if self.refused(call.cue)]
+        rest = [call for call in calls if call not in refused]
         if not rest:
             return calls
-        options = [call.cue.replace("_", " ")
-                   + (f" ({call.why})" if call.why else "")
-                   for call in rest]
-        where = (session.phase.name.lower() if session.phase is not None
-                 else "in flight")
-        picked = self.advisor.pick(
-            "fo_notice",
-            f"You are the first officer; the aeroplane is {where}, "
-            f"{int(state.altitude_ft or 0)} feet"
-            f"{', on the ground' if state.on_ground else ''}. Which of "
-            "these, if any, do you mention to the captain now?",
-            options, allow_none=True, default=None, wait_s=1.0)
+        signature = tuple(sorted(call.cue for call in rest))
+        now = time.monotonic()
+        cached = self._notice_pick
+        if cached is not None and cached[0] == signature \
+                and now - cached[2] < NOTICE_REASK_S:
+            picked = cached[1]
+        else:
+            options = [call.cue.replace("_", " ")
+                       + (f" ({call.why})" if call.why else "")
+                       for call in rest]
+            where = (session.phase.name.lower() if session.phase is not None
+                     else "in flight")
+            picked = self.advisor.pick(
+                "fo_notice",
+                f"You are the first officer; the aeroplane is {where}, "
+                f"{int(state.altitude_ft or 0)} feet"
+                f"{', on the ground' if state.on_ground else ''}. Which of "
+                "these, if any, do you mention to the captain now?",
+                options, allow_none=True, default=None, wait_s=1.0)
+            self._notice_pick = (signature, picked, now)
         if picked is None:
             # Model absent, slow, or shadowing: everything due is said.
             return calls
@@ -2697,12 +2720,12 @@ class CrewDirector:
             CREW.write("notice", cue=";".join(c.cue for c in rest),
                        said=False, why="the first officer said nothing "
                                       "was worth a mention")
-            return safety
+            return refused
         chosen = rest[picked]
         for call in rest:
             if call is not chosen:
                 self.notices.defer(call.cue)
-        return safety + [chosen]
+        return refused + [chosen]
 
     @staticmethod
     def _pressure(value, like=None) -> str:

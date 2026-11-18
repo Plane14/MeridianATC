@@ -376,10 +376,21 @@ class TestTelemetry:
 # ----------------------------------------------------------------------
 
 
-def _notice_crew(advisor):
+def _notice_crew(advisor, *, notices_on=True):
     crew = CrewDirector.__new__(CrewDirector)
     crew.advisor = advisor
     crew.notices = Notices()
+    crew._notice_pick = None
+    crew.config = SimpleNamespace(immersion=SimpleNamespace(
+        enabled=True, copilot=True, cabin=True, callouts=True,
+        checklists=True, briefings=True, announcements=True,
+        service=True, boarding_music=True, applause=True,
+        verbosity="normal",
+        first_officer=SimpleNamespace(notices=notices_on),
+        autonomous_flight=False))
+    crew.cockpit = "normal"
+    crew._class = None
+    crew._session = None
     return crew
 
 
@@ -388,8 +399,10 @@ _notice_state = SimpleNamespace(altitude_ft=2500.0, on_ground=False)
 
 
 def _notice_calls():
-    return [Call("gear_up_final", {}, "gear up at 400 ft"),
-            Call("altimeter_not_set", {}, "set 1013, given 1021"),
+    # Non-safety notices only; a safety call takes the calls past the
+    # model entirely.
+    return [Call("altimeter_not_set", {}, "set 1013, given 1021"),
+            Call("frequency_not_tuned", {}, "126.625"),
             Call("wrong_tank", {}, "0.5 gal against 3.0")]
 
 
@@ -401,20 +414,20 @@ class TestAdvisedNotices:
 
     def test_pick_chooses_one_and_defers_the_rest(self):
         crew = _notice_crew(SimpleNamespace(
-            pick=lambda *a, **k: 1))  # second option: wrong_tank
+            pick=lambda *a, **k: 1))  # second option: frequency
         crew.notices = Mock(wraps=Notices())
-        calls = _notice_calls()
-        out = crew._advised_notices(calls, _notice_session, _notice_state)
-        assert [c.cue for c in out] == ["gear_up_final", "wrong_tank"]
-        crew.notices.defer.assert_called_once_with("altimeter_not_set")
+        out = crew._advised_notices(_notice_calls(), _notice_session,
+                                    _notice_state)
+        assert [c.cue for c in out] == ["frequency_not_tuned"]
+        assert crew.notices.defer.call_count == 2
 
-    def test_declining_leaves_only_the_safety_calls(self):
+    def test_declining_says_nothing(self):
         crew = _notice_crew(SimpleNamespace(pick=lambda *a, **k: -1))
         crew.notices = Mock(wraps=Notices())
         out = crew._advised_notices(_notice_calls(), _notice_session,
                                     _notice_state)
-        assert [c.cue for c in out] == ["gear_up_final"]
-        assert crew.notices.defer.call_count == 2
+        assert out == []
+        assert crew.notices.defer.call_count == 3
 
     def test_an_absent_answer_says_everything(self):
         # Model unavailable, slow, or shadowing: unchanged behavior.
@@ -423,15 +436,38 @@ class TestAdvisedNotices:
                                     _notice_state)
         assert [c.cue for c in out] == [c.cue for c in _notice_calls()]
 
-    def test_all_safety_means_the_model_is_not_asked(self):
+    def test_a_safety_call_is_never_held_behind_the_model(self):
         asked = []
         advisor = SimpleNamespace(
             pick=lambda *a, **k: asked.append(a) or 0)
         crew = _notice_crew(advisor)
-        calls = [Call("gear_up_final", {}, ""),
-                 Call("fuel_reserve", {}, "")]
+        calls = _notice_calls() + [Call("gear_up_final", {}, "gear up")]
         out = crew._advised_notices(calls, _notice_session, _notice_state)
         assert out == calls and asked == []
+
+    def test_flaps_is_a_safety_notice(self):
+        from meridianatc.atc.notices import SAFETY
+        assert "flaps_takeoff" in SAFETY
+
+    def test_refused_notices_are_never_asked_about(self):
+        asked = []
+        advisor = SimpleNamespace(
+            pick=lambda *a, **k: asked.append(a) or 0)
+        crew = _notice_crew(advisor, notices_on=False)
+        out = crew._advised_notices(_notice_calls(), _notice_session,
+                                    _notice_state)
+        assert out == _notice_calls() and asked == []
+
+    def test_the_same_set_is_asked_once_per_reask_window(self):
+        asked = []
+        advisor = SimpleNamespace(
+            pick=lambda *a, **k: asked.append(a) or -1)
+        crew = _notice_crew(advisor)
+        crew._advised_notices(_notice_calls(), _notice_session,
+                              _notice_state)
+        crew._advised_notices(_notice_calls(), _notice_session,
+                              _notice_state)
+        assert len(asked) == 1
 
     def test_deferred_notice_stays_due(self):
         notices = Notices()
