@@ -55,3 +55,5 @@ desktop/**/obj/
 # Native X-Plane plugin
 xplane/plugin/build*/
 xplane/plugin/out/
+data/adsb_cache.json
+history.db
