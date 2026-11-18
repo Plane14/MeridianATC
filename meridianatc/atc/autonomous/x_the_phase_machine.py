@@ -745,6 +745,9 @@ class _The_phase_machine:
         if sub == "roll":
             if not state.on_ground:
                 self.state.airborne_at = now
+                # The roll's into-wind aileron is a ground answer -- in
+                # the air a crossed yoke only banks it.
+                d.aileron(0.0)
                 self._goto_sub("rotate")
                 return
             # Brakes off -- all of them: the parking lever and the toe
@@ -859,6 +862,9 @@ class _The_phase_machine:
                 # The liftoff clock the initial climb is timed from:
                 # the roll's own path already stamps it where it fired.
                 self.state.airborne_at = self.state.airborne_at or now
+                # The roll's into-wind aileron is a ground answer --
+                # in the air a crossed yoke only banks it.
+                d.aileron(0.0)
                 self._goto_sub("initial_climb")
                 return
             # Pull to the rotation attitude and hold it until the wheels
