@@ -156,8 +156,8 @@ LIGHT = Performance(
 # Which types fly like what. Anything unlisted is judged by the company it
 # keeps: a flight with an operator is an airliner, a registration is not.
 _LIGHT_TYPES = frozenset({
-    "C152", "C172", "C182", "PA28", "P28A", "PA34", "DA40", "DA42", "SR22",
-    "BE36", "TB20", "AT3", "R44", "C25A",
+    "C152", "C172", "C182", "PA28", "P28A", "PA34", "DA40", "DA42", "DA62",
+    "SR22", "BE36", "TB20", "AT3", "R44", "C25A",
     # X-Plane 12's piston natives: the Baron is the twin in a table that
     # judges by cabin rather than engines, the Cub and RV-10 its singles.
     "BE58", "PA18", "RV10",

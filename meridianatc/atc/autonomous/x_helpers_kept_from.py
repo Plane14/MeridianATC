@@ -58,7 +58,23 @@ class _Helpers_kept_from:
                     range_nm = r
                     break
         if not range_nm:
-            range_nm = perftable.range_for(type_code)
+            # A type nobody lists takes the class figure -- but the class
+            # of airframe the simulator says it is, not the flight's
+            # profile: an unknown piston twin or rotorcraft does not fly
+            # an airliner's legs.
+            from .. import aircraft_class as ac
+
+            cls = ""
+            try:
+                state = self.get_state()
+                if state is not None:
+                    cls = ac.of_state(state).name
+            except Exception:
+                pass
+            light = cls in (ac.PISTON_SINGLE, ac.PISTON_TWIN, ac.HELICOPTER)
+            range_nm = perftable.range_for(type_code, light=light)
+            if cls in (ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN):
+                range_nm = min(range_nm, 1200.0)
 
         self.state.aircraft_range_nm = range_nm
         log.info("Aircraft %s: estimated range %d NM", type_code, range_nm)
