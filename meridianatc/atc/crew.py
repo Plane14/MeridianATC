@@ -528,7 +528,8 @@ class CrewDirector:
         self.cockpit = "normal"
         self._stated = vspeeds.Stated()
         self.callout_minimums = None
-        self.checklists.begin(None, language=self._language)
+        self.checklists.begin(None, language=self._language,
+                              advisor=self.advisor)
         self._know_the_aeroplane(None, session)
         CREW.write("flight", callsign=self._callsign, type=self._type,
                    language=self._language,

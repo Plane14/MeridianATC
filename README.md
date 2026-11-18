@@ -2456,7 +2456,7 @@ Where it is heard, today:
 |---|---|
 | Traffic advisories | Choose which qualifying contact to call out first — or decline the call |
 | Traffic pilots | Word their reply, within the facts of their own flight |
-| First officer | Word his answers, and pick which due non-safety notice is worth a mention now |
+| First officer | Word his answers, pick which due non-safety notice is worth a mention now, and pick which fitting checklist to offer — or none yet |
 
 A proposal the engine can't validate — out of range, unparseable, a new
 fact, a changed operational word — keeps the deterministic answer. Picks

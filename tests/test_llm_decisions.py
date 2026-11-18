@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from meridianatc.atc.callouts import Call
+from meridianatc.atc.checklist import ChecklistRunner
 from meridianatc.atc.crew import CrewDirector
 from meridianatc.atc.notices import Notices
 from meridianatc.atc.session import Phase
@@ -486,6 +487,53 @@ class TestAdvisedNotices:
         crew._advised_notices(_notice_calls(), _notice_session,
                               _notice_state)
         assert len(asked) == 1
+
+class TestChecklistPick:
+    def _runner(self, advisor):
+        runner = ChecklistRunner.__new__(ChecklistRunner)
+        runner.advisor = advisor
+        runner._checklist_pick = None
+        runner.book = SimpleNamespace(checklists={
+            "cruise": SimpleNamespace(), "descent": SimpleNamespace()})
+        runner.language = "en"
+        return runner
+
+    _names = ["cruise", "descent"]
+
+    def test_no_advisor_offers_the_first_fitting(self):
+        runner = self._runner(None)
+        assert runner._advised_checklist(
+            self._names, Phase.ENROUTE, 8000.0, 0.0) == "cruise"
+
+    def test_the_pick_chooses_which_to_offer(self):
+        runner = self._runner(SimpleNamespace(pick=lambda *a, **k: 1))
+        assert runner._advised_checklist(
+            self._names, Phase.ENROUTE, 8000.0, 0.0) == "descent"
+
+    def test_declining_offers_nothing_this_turn(self):
+        runner = self._runner(SimpleNamespace(pick=lambda *a, **k: -1))
+        assert runner._advised_checklist(
+            self._names, Phase.ENROUTE, 8000.0, 0.0) == ""
+
+    def test_an_absent_answer_offers_the_first_fitting(self):
+        runner = self._runner(SimpleNamespace(pick=lambda *a, **k: None))
+        assert runner._advised_checklist(
+            self._names, Phase.ENROUTE, 8000.0, 0.0) == "cruise"
+
+    def test_the_same_set_is_asked_once_per_reask_window(self):
+        asked = []
+        advisor = SimpleNamespace(
+            pick=lambda *a, **k: asked.append(a) or -1)
+        runner = self._runner(advisor)
+        runner._advised_checklist(self._names, Phase.ENROUTE, 8000.0, 0.0)
+        runner._advised_checklist(self._names, Phase.ENROUTE, 8000.0, 5.0)
+        assert len(asked) == 1
+
+    def test_a_dead_provider_offers_the_first_fitting(self):
+        runner = self._runner(SimpleNamespace(
+            model_available=False, pick=lambda *a, **k: -1))
+        assert runner._advised_checklist(
+            self._names, Phase.ENROUTE, 8000.0, 0.0) == "cruise"
 
     def test_deferred_notice_stays_due(self):
         notices = Notices()
