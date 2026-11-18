@@ -134,6 +134,24 @@ def test_boundary_two_shapes_become_two_volumes():
     assert [vol.lat for vol in v] == [40.0, 41.0]
 
 
+def test_boundary_disjoint_polygons_stay_separate():
+    v = simspace.boundary_volumes(_boundary(vectors=[
+        {"type": 1, "lat": 40.0, "lon": -105.0},
+        {"type": 2, "lat": 41.0, "lon": -105.0},
+        {"type": 2, "lat": 41.0, "lon": -104.0},
+        {"type": 2, "lat": 40.0, "lon": -104.0},
+        {"type": 1, "lat": 50.0, "lon": -100.0},
+        {"type": 2, "lat": 51.0, "lon": -100.0},
+        {"type": 2, "lat": 51.0, "lon": -99.0},
+        {"type": 2, "lat": 50.0, "lon": -99.0},
+    ]))
+    assert len(v) == 2
+    assert all(vol.shape == "polygon" for vol in v)
+    assert v[0].contains(40.5, -104.5, 10000)
+    assert not v[0].contains(50.5, -99.5, 10000)
+    assert v[1].contains(50.5, -99.5, 10000)
+
+
 def test_boundary_type_mapping():
     kinds = {15: "R", 16: "P", 19: "Q", 14: "E", 4: "C", 9: "D", 22: "E"}
     for sim_type, cls in kinds.items():

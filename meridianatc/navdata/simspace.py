@@ -386,11 +386,12 @@ def _msfs_limit(alt_m, alt_type: int, upper: bool) -> tuple[int, str]:
 def boundary_volumes(raw: dict) -> list[Volume]:
     """One sim boundary facility as its Volumes.
 
-    A facility can be several shapes -- a ring, one or more circles, or
-    both -- and each becomes a zone of its own. Arcs and circles are
-    centred on the origin vector their ``originId`` names, never on the
-    last origin seen; an arc's radius is the origin's distance to the
-    arc's end point, the way the stock avionics flatten the same data.
+    A facility can be several shapes -- disjoint outlines and circles,
+    each delimited by its own Start vector -- and every shape becomes a
+    zone of its own. Arcs and circles are centred on the origin vector
+    their ``originId`` names, never on the last origin seen; an arc's
+    radius is the origin's distance to the arc's end point, the way the
+    stock avionics flatten the same data.
     """
     cls = _MSFS_CLASSES.get(raw.get("type"), "E")
     fid = raw.get("id")
@@ -403,6 +404,7 @@ def boundary_volumes(raw: dict) -> list[Volume]:
         lower_ft=lower[0], lower_ref=lower[1],
         upper_ft=upper[0], upper_ref=upper[1],
         hours="", source="msfs")
+    rings: list[list[tuple[float, float]]] = []
     ring: list[tuple[float, float]] = []
     origins: dict[int, tuple[float, float]] = {}
     last_origin: tuple[float, float] | None = None
@@ -431,8 +433,14 @@ def boundary_volumes(raw: dict) -> list[Volume]:
                 continue
             ring.extend(_arc_points(center, ring[-1], (lat, lon), radius,
                                     clockwise=(kind == 4)))
-        else:              # Start / Line
+        elif kind == 1:    # Start: another outline begins
+            if ring:
+                rings.append(ring)
+            ring = [(lat, lon)]
+        else:              # Line
             ring.append((lat, lon))
+    if ring:
+        rings.append(ring)
     found: list[Volume] = []
     for clat, clon, radius in circles:
         dlat = radius / 60.0
@@ -442,7 +450,9 @@ def boundary_volumes(raw: dict) -> list[Volume]:
             lat=clat, lon=clon, radius_nm=radius,
             bbox=(clat - dlat, clon - dlon,
                   clat + dlat, clon + dlon), **common))
-    if len(ring) >= 3:
+    for ring in rings:
+        if len(ring) < 3:
+            continue
         lats = [p[0] for p in ring]
         lons = [p[1] for p in ring]
         found.append(Volume(
