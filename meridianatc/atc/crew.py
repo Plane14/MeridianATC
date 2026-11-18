@@ -2691,6 +2691,10 @@ class CrewDirector:
         rest = [call for call in calls if call not in refused]
         if not rest:
             return calls
+        if not getattr(self.advisor, "model_available", True):
+            # The provider is failing: back to saying everything due, not
+            # to a decline cached while it still answered.
+            return calls
         signature = tuple(sorted(call.cue for call in rest))
         now = time.monotonic()
         cached = self._notice_pick

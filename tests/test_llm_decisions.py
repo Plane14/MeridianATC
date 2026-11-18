@@ -448,6 +448,21 @@ class TestAdvisedNotices:
         assert [c.cue for c in out[1:]] == [c.cue for c in calls[:-1]]
         assert asked == []
 
+    def test_a_dead_provider_restores_everything_not_the_cached_decline(self):
+        asked = []
+        advisor = SimpleNamespace(
+            model_available=True,
+            pick=lambda *a, **k: asked.append(a) or -1)
+        crew = _notice_crew(advisor)
+        out = crew._advised_notices(_notice_calls(), _notice_session,
+                                    _notice_state)
+        assert out == []
+        # The provider dies while the decline is still cached.
+        advisor.model_available = False
+        out = crew._advised_notices(_notice_calls(), _notice_session,
+                                    _notice_state)
+        assert len(out) == 3 and len(asked) == 1
+
     def test_flaps_is_a_safety_notice(self):
         from meridianatc.atc.notices import SAFETY
         assert "flaps_takeoff" in SAFETY
