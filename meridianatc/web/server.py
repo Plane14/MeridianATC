@@ -354,7 +354,7 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         """
         from ..navdata import simspace
 
-        return {"ok": True, "volumes": simspace.feed_msfs(payload or {})}
+        return {"ok": True, **simspace.feed_msfs(payload or {})}
 
     @app.get("/api/map")
     async def geographic_map(

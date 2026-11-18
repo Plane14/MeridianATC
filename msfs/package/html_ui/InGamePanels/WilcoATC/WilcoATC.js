@@ -756,7 +756,17 @@
             body.remove.push(removed[i]);
         }
         if (body.boundaries.length || body.remove.length) {
-            request('POST', '/api/sim_airspace', body);
+            request('POST', '/api/sim_airspace', body, function (answer) {
+                // The app rebuilt its store (restart, sim re-adopted):
+                // it has nothing but diffs, so send everything we know.
+                if (answer && answer.resync) {
+                    var all = { reset: true, boundaries: [], remove: [] };
+                    for (var id in airspace.seen) {
+                        all.boundaries.push(airspace.seen[id]);
+                    }
+                    request('POST', '/api/sim_airspace', all);
+                }
+            });
         }
     }
 
