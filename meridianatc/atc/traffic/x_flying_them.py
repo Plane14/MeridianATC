@@ -247,6 +247,14 @@ class _Flying_them:
             target.altitude_ft = glide_altitude(
                 self._threshold_ft(flight.runway), flight.distance_nm,
                 GLIDE_FT_PER_NM)
+            if phase == "inbound" \
+                    and self._runway_frame(flight, heading)[0] > 0.0:
+                # Still upfield of the strip, coming back round from
+                # the missed: hold the missed's level until it is back
+                # on the approach side and the glide can take it down.
+                target.altitude_ft = (
+                    getattr(flight, "missed_alt_ft", 0.0)
+                    or elevation + performance.pattern_agl_ft)
             target.intent = "on approach" if phase == "inbound" else "on final"
             height = flight.altitude_ft - surface
             if phase == "final" and height < FLARE_FT:
@@ -501,7 +509,22 @@ class _Flying_them:
         way to the threshold. This aims it at a point on the centreline ahead
         of it, which brings it in and then keeps it there.
         """
-        _along, across = self._runway_frame(flight, runway_heading)
+        along, across = self._runway_frame(flight, runway_heading)
+        if along > 0.0:
+            # Upfield of the runway -- the missed-approach return still
+            # on its climb-out heading, or a crossing overhead. Aiming
+            # along the course only ever flies it away; the course
+            # reversal is the extended centreline a few miles out on
+            # final, the way a vector (or a missed without legs) brings
+            # it back round.
+            end = self._threshold(flight.runway)
+            if end is None:
+                return flight.heading
+            point = project(end[0], end[1],
+                            (runway_heading + 180.0) % 360.0,
+                            circuitry.LONG_FINAL_NM + 2.0)
+            return bearing_deg(flight.latitude, flight.longitude,
+                               point[0], point[1])
         angle = math.degrees(math.atan2(-across, INTERCEPT_LEAD_NM))
         angle = max(-INTERCEPT_LIMIT_DEG, min(INTERCEPT_LIMIT_DEG, angle))
         return (runway_heading + angle) % 360.0
