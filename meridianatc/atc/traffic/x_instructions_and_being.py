@@ -186,7 +186,9 @@ class _Instructions_and_being:
         known = (self.approach_data or {}).get(
             getattr(self.field, "ident", ""))
         if known is not None:
-            _faf, missed = known.altitudes(flight.runway)
+            from ..approaches import legacy_kind
+            _faf, missed = known.altitudes(
+                flight.runway, legacy_kind(flight.approach))
             if missed:
                 return float(missed)
         return float(self.field.elevation_ft) + max(
