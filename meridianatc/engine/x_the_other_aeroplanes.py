@@ -3267,6 +3267,14 @@ class _The_other_aeroplanes:
             return
         if nxt is None or station_key(nxt) == station_key(station):
             return
+        if (nxt.callsign == station.callsign
+                and same_channel(nxt.mhz, station.mhz, 0)):
+            # The same facility filed under another airport -- one approach
+            # position serving several fields is a normal thing, and the
+            # answer to "you have flown past me" is then the very station
+            # and frequency the flight is on. Handing it to itself loops
+            # forever, and overwrites a handoff that is still owed.
+            return
 
         spoken = self._language_for(station.ident, self.last_language)
         p = self.brain.for_station(station, spoken)
