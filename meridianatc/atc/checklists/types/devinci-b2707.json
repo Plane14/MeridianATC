@@ -1,0 +1,1130 @@
+{
+  "_comment": "Devinci Boeing 2707-300 SST for X-Plane 12 (Devinci_B2707_300/b2707_300.acf). Checklists distilled from the B2707-300 Complete Handbook v0.16.0 Edition 4, 'Normal checklists' section. The addon drives its own switches, so only the gear and flap handles keep a sim check; everything else is answered on trust, like the other study-level types.",
+  "source": "Devinci B2707-300 Complete Handbook v0.16.0 Edition 4",
+  "match": [
+    "2707",
+    "b2707",
+    "devinci"
+  ],
+  "no_check": [
+    "beacon_light",
+    "landing_light",
+    "nav_light",
+    "strobe_light",
+    "taxi_light",
+    "transponder_code",
+    "transponder_state",
+    "kohlsman_hpa"
+  ],
+  "checklists": {
+    "preflight": {
+      "title": {
+        "en": "preflight"
+      },
+      "items": [
+        {
+          "challenge": "Battery switch",
+          "response": "on",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Battery voltage",
+          "response": "minimum twenty-four volts",
+          "accept": [
+            "value",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Standby power",
+          "response": "armed, not armed light out",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "External power",
+          "response": "connected and on",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Annunciator lights test",
+          "response": "held, all capsules lit",
+          "accept": [
+            "check",
+            "complete"
+          ]
+        },
+        {
+          "challenge": "Master caution inhibit",
+          "response": "normal, not inhibited",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Crew oxygen bottle",
+          "response": "above dispatch minimum",
+          "accept": [
+            "check",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Crew oxygen masks",
+          "response": "stowed, one hundred percent, flow checked",
+          "accept": [
+            "check",
+            "complete"
+          ]
+        },
+        {
+          "challenge": "Engine fire handles",
+          "response": "in, stowed",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Landing gear handle",
+          "response": "down",
+          "accept": [
+            "down",
+            "check"
+          ],
+          "check": {
+            "var": "gear_down",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Parking brake",
+          "response": "set",
+          "accept": [
+            "set",
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Fuel quantity and distribution",
+          "response": "checked",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Air data heaters",
+          "response": "off",
+          "accept": [
+            "off",
+            "check"
+          ]
+        }
+      ]
+    },
+    "before_start": {
+      "title": {
+        "en": "before engine start"
+      },
+      "items": [
+        {
+          "challenge": "Fasten seat belts and no smoking",
+          "response": "on",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Packs one through four, crossbleed isolation one through three",
+          "response": "four close, three open",
+          "accept": [
+            "check",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Primary and secondary heat exchangers",
+          "response": "all eight auto",
+          "accept": [
+            "check",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Both outflow selectors",
+          "response": "auto, commands off",
+          "accept": [
+            "check",
+            "set"
+          ]
+        },
+        {
+          "challenge": "End service, retain ground power and air start",
+          "response": "G P U and A S U retained",
+          "accept": [
+            "check",
+            "complete"
+          ]
+        },
+        {
+          "challenge": "Main tank boost pumps",
+          "response": "on",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Anti-collision beacon",
+          "response": "on",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Cabin doors and slides",
+          "response": "closed and armed",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Thrust levers",
+          "response": "idle",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Sliding windows",
+          "response": "closed, lever latched",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Transponder code and mode",
+          "response": "set, standby",
+          "accept": [
+            "set",
+            "check",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Weather radar",
+          "response": "standby",
+          "accept": [
+            "check",
+            "set"
+          ]
+        }
+      ]
+    },
+    "engine_start": {
+      "title": {
+        "en": "engine start"
+      },
+      "items": [
+        {
+          "challenge": "Ground power on the buses",
+          "response": "ground power on bus illuminated",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Air start cart",
+          "response": "connected",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Starter air supply",
+          "response": "three hundred or more",
+          "accept": [
+            "value",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Fuel on board",
+          "response": "at least five thousand kilograms",
+          "accept": [
+            "value",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Engine fire handles one through four",
+          "response": "all stowed",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Parking brake",
+          "response": "set",
+          "accept": [
+            "set",
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Engine four start",
+          "response": "idle or running",
+          "accept": [
+            "check",
+            "on"
+          ],
+          "note": "One start click; fuel lever rich at N2 twelve percent; confirm light-off."
+        },
+        {
+          "challenge": "Engine three start",
+          "response": "idle or running",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Engine two start",
+          "response": "idle or running",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Engine one start",
+          "response": "idle or running",
+          "accept": [
+            "check",
+            "on"
+          ],
+          "check": {
+            "var": "engines_running",
+            "op": "eq",
+            "value": true
+          }
+        }
+      ]
+    },
+    "after_start": {
+      "title": {
+        "en": "after start"
+      },
+      "items": [
+        {
+          "challenge": "Standby power",
+          "response": "armed, not armed light out",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Generators one through four line contactors",
+          "response": "closed, on bus",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Engine-driven hydraulics",
+          "response": "all four circuits available",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Tank crossfeed",
+          "response": "closed, feature disabled",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Engine bleeds one through four",
+          "response": "open",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Left air data heater",
+          "response": "on",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Right air data heater",
+          "response": "on",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Air conditioning packs one through four",
+          "response": "open",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Air start cart",
+          "response": "disconnected",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Ground power switch",
+          "response": "off",
+          "accept": [
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Chocks and ground equipment",
+          "response": "disconnected, removed",
+          "accept": [
+            "check",
+            "complete"
+          ]
+        }
+      ]
+    },
+    "taxi": {
+      "title": {
+        "en": "before taxi"
+      },
+      "items": [
+        {
+          "challenge": "Hydraulic utility circuits",
+          "response": "all four available",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Nose visor and flight controls",
+          "response": "checked",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Wheel brakes and nosewheel steering",
+          "response": "responsive, no starvation",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Takeoff trim",
+          "response": "set for C G",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flap position indicator",
+          "response": "valid, agrees with handle",
+          "accept": [
+            "check",
+            "value"
+          ]
+        },
+        {
+          "challenge": "T C A S",
+          "response": "powered, no fail flag",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Taxi light",
+          "response": "on",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Parking brake",
+          "response": "released for taxi",
+          "accept": [
+            "check",
+            "off"
+          ]
+        }
+      ]
+    },
+    "before_takeoff": {
+      "title": {
+        "en": "before takeoff"
+      },
+      "items": [
+        {
+          "challenge": "Engines one through four",
+          "response": "idle or running",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Hydraulic utility circuits",
+          "response": "all four available",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Landing gear",
+          "response": "down and locked",
+          "accept": [
+            "down",
+            "check",
+            "green"
+          ],
+          "check": {
+            "var": "gear_down",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Nose visor",
+          "response": "down, takeoff",
+          "accept": [
+            "check",
+            "down"
+          ]
+        },
+        {
+          "challenge": "Parking brake",
+          "response": "released",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Forward to aft trim transfer",
+          "response": "off",
+          "accept": [
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Aft to forward trim transfer",
+          "response": "on, or off with automatic tail-first transfer",
+          "accept": [
+            "on",
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flaps",
+          "response": "set for takeoff, check gauge",
+          "accept": [
+            "set",
+            "check",
+            "value"
+          ],
+          "check": {
+            "var": "flaps_index",
+            "op": "min",
+            "value": 1
+          }
+        },
+        {
+          "challenge": "Transponder and T C A S",
+          "response": "alt, T A R A",
+          "accept": [
+            "set",
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Weather radar",
+          "response": "as required",
+          "accept": [
+            "check",
+            "set",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Crew seats",
+          "response": "adjusted, engineer forward",
+          "accept": [
+            "check",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Strobe lights",
+          "response": "on",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Landing lights",
+          "response": "extended and on",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Cabin crew",
+          "response": "advised, seated",
+          "accept": [
+            "check",
+            "complete"
+          ]
+        }
+      ]
+    },
+    "after_takeoff": {
+      "title": {
+        "en": "after takeoff"
+      },
+      "items": [
+        {
+          "challenge": "Landing gear",
+          "response": "up locked, handle off",
+          "accept": [
+            "up",
+            "check"
+          ],
+          "check": {
+            "var": "gear_down",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Flaps",
+          "response": "up",
+          "accept": [
+            "up",
+            "check"
+          ],
+          "check": {
+            "var": "flaps_index",
+            "op": "eq",
+            "value": 0
+          }
+        },
+        {
+          "challenge": "Speedbrake",
+          "response": "down, disarmed",
+          "accept": [
+            "check",
+            "down",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Nose visor",
+          "response": "up and locked",
+          "accept": [
+            "up",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Reheat",
+          "response": "off",
+          "accept": [
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Pressurization",
+          "response": "auto",
+          "accept": [
+            "check",
+            "set"
+          ]
+        }
+      ]
+    },
+    "climb": {
+      "title": {
+        "en": "climb"
+      },
+      "items": [
+        {
+          "challenge": "Altimeters",
+          "response": "standard, two niner niner two",
+          "accept": [
+            "set",
+            "value",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Cabin pressurization",
+          "response": "delta p increasing normally",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Transonic acceleration prep, fuel aft trim transfer",
+          "response": "armed, initiated",
+          "accept": [
+            "on",
+            "check",
+            "set"
+          ]
+        }
+      ]
+    },
+    "cruise": {
+      "title": {
+        "en": "cruise"
+      },
+      "items": [
+        {
+          "challenge": "Cruise Mach number",
+          "response": "Mach two point seven",
+          "accept": [
+            "value",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Cabin altitude",
+          "response": "below eight thousand feet",
+          "accept": [
+            "value",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Supersonic cruise C G",
+          "response": "within dispatch envelope",
+          "accept": [
+            "check",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Hydraulic system health",
+          "response": "systems A through D normal",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Generator load, generators one through four",
+          "response": "all on line, paralleled, sharing load",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Flight deck temperature",
+          "response": "eighteen to twenty-six, near selected",
+          "accept": [
+            "value",
+            "check"
+          ]
+        },
+        {
+          "challenge": "I N S one two three position cross-check",
+          "response": "within comparison limit",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Standby power",
+          "response": "armed, not armed light out",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Fuel tank sequence, boost pumps",
+          "response": "empty auxiliary pumps off, feed tanks full",
+          "accept": [
+            "check"
+          ]
+        }
+      ]
+    },
+    "descent": {
+      "title": {
+        "en": "descent"
+      },
+      "items": [
+        {
+          "challenge": "Pressurization",
+          "response": "auto",
+          "accept": [
+            "check",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Altimeters",
+          "response": "set, cross-checked",
+          "accept": [
+            "set",
+            "check",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Cabin signs",
+          "response": "on",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Air data heaters",
+          "response": "both on",
+          "accept": [
+            "on",
+            "check"
+          ]
+        }
+      ]
+    },
+    "approach": {
+      "title": {
+        "en": "approach"
+      },
+      "items": [
+        {
+          "challenge": "Altimeters, Q N H",
+          "response": "destination Q N H set",
+          "accept": [
+            "set",
+            "value",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Altimeters",
+          "response": "cross-checked",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Approach minimums",
+          "response": "set, cross-checked",
+          "accept": [
+            "set",
+            "check",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Fuel and C G",
+          "response": "within envelope",
+          "accept": [
+            "check",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Cabin signs",
+          "response": "on",
+          "accept": [
+            "on",
+            "check"
+          ]
+        }
+      ]
+    },
+    "before_landing": {
+      "title": {
+        "en": "landing"
+      },
+      "items": [
+        {
+          "challenge": "Landing gear",
+          "response": "down and locked",
+          "accept": [
+            "down",
+            "check",
+            "green"
+          ],
+          "check": {
+            "var": "gear_down",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Flaps",
+          "response": "landing",
+          "accept": [
+            "check",
+            "set",
+            "value"
+          ],
+          "check": {
+            "var": "flaps_index",
+            "op": "min",
+            "value": 1
+          }
+        },
+        {
+          "challenge": "Nose visor",
+          "response": "down and locked",
+          "accept": [
+            "down",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Landing lights",
+          "response": "on",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Parking brake",
+          "response": "released",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Reheat",
+          "response": "off",
+          "accept": [
+            "off",
+            "check"
+          ]
+        }
+      ]
+    },
+    "after_landing": {
+      "title": {
+        "en": "after landing"
+      },
+      "items": [
+        {
+          "challenge": "Nose visor for taxi",
+          "response": "extended, drooped",
+          "accept": [
+            "check",
+            "down"
+          ]
+        },
+        {
+          "challenge": "Air data heaters",
+          "response": "off",
+          "accept": [
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Landing lights",
+          "response": "standby",
+          "accept": [
+            "check",
+            "off",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Taxi light",
+          "response": "on",
+          "accept": [
+            "on",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Strobe lights",
+          "response": "off",
+          "accept": [
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Transponder and T C A S",
+          "response": "standby",
+          "accept": [
+            "check",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Weather radar",
+          "response": "standby",
+          "accept": [
+            "check",
+            "set",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Air conditioning packs",
+          "response": "open, normal",
+          "accept": [
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Parking brake",
+          "response": "released, monitor cooling",
+          "accept": [
+            "check",
+            "off"
+          ]
+        }
+      ]
+    },
+    "shutdown": {
+      "title": {
+        "en": "shutdown and secure"
+      },
+      "items": [
+        {
+          "challenge": "Parking brake",
+          "response": "set",
+          "accept": [
+            "set",
+            "check",
+            "on"
+          ]
+        },
+        {
+          "challenge": "External power",
+          "response": "on bus",
+          "accept": [
+            "on",
+            "check"
+          ],
+          "note": "conditional: where ground power is available."
+        },
+        {
+          "challenge": "Engine fuel shutoff valves one through four",
+          "response": "closed, valve closed lights on",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Engines one through four spool-down",
+          "response": "zero, shut down",
+          "accept": [
+            "check",
+            "complete"
+          ]
+        },
+        {
+          "challenge": "Generator bus off annunciators",
+          "response": "off, annunciated",
+          "accept": [
+            "check",
+            "off"
+          ]
+        },
+        {
+          "challenge": "Fuel boost pumps",
+          "response": "off",
+          "accept": [
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Battery master switch",
+          "response": "off",
+          "accept": [
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Windshield wipers",
+          "response": "off, parked",
+          "accept": [
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Crew oxygen masks",
+          "response": "stowed, supply reset",
+          "accept": [
+            "check",
+            "complete"
+          ]
+        },
+        {
+          "challenge": "Sliding windows",
+          "response": "closed and latched",
+          "accept": [
+            "check",
+            "off"
+          ]
+        }
+      ]
+    }
+  }
+}
