@@ -28,8 +28,10 @@ class _Taxi:
     CONFLICT_LOOK_M = 90.0
     # The hold is the route's last point -- the holding point the planner
     # picked: stop with the nose just short of the bars, not a taxiway
-    # length back from them.
-    HOLD_BARS_M = 15.0
+    # length back from them. The sim reports the aeroplane's datum, not
+    # its nose, so the datum's distance is the class's own nose radius
+    # plus the margin the paint deserves.
+    HOLD_BARS_MARGIN_M = 4.0
     # Held off the cleared line this long, the route is asked for again:
     # planned from where the aeroplane actually is, it is a route it can
     # rejoin rather than one it holds short of for ever. Twice is enough
@@ -187,7 +189,7 @@ class _Taxi:
         if outbound:
             # Creep the last metres to the bars instead of stopping a
             # taxiway short of them.
-            if end_m <= self.HOLD_BARS_M:
+            if end_m <= self._bars_stop_m():
                 target_kt = 0.0
             elif end_m < 60.0:
                 target_kt = min(target_kt, 4.0)
@@ -242,8 +244,9 @@ class _Taxi:
             # close the last metres: holding either way. HOLDING_SHORT
             # runs the before-takeoff checklist and waits for the line-up
             # clearance.
-            if end_m <= self.HOLD_BARS_M or (
-                    end_m <= self.HOLD_BARS_M * 3
+            bars_m = self._bars_stop_m()
+            if end_m <= bars_m or (
+                    end_m <= bars_m * 3
                     and (state.ground_speed_kt or 0.0) <= 1.0
                     and self._sub_age() > 10.0):
                 self._held_at_split = False
@@ -255,6 +258,26 @@ class _Taxi:
             if steer.get("done"):
                 self._goto_sub("park")
                 return
+
+    def _bars_stop_m(self) -> float:
+        """Metres the datum keeps from the bars for the nose to sit just
+        short of them.
+
+        The sim reports where the datum is; the nose is the class's own
+        radius ahead of it -- a piston's a couple of strides, an
+        airliner's a bus length -- so the fixed metre stop that puts a
+        transport at the paint parks a light aeroplane halfway down the
+        link. Wake-heavy and super fly a little more nose.
+        """
+        from .. import aircraft_class as ac
+        cls = getattr(self, "_aircraft_class", "") or ac.PISTON_SINGLE
+        nose = ac.stand_radius_m(cls)
+        wake = getattr(getattr(self.session, "aircraft", None), "wake", "")
+        if wake == "super":
+            nose += 10.0
+        elif wake == "heavy":
+            nose += 6.0
+        return nose + self.HOLD_BARS_MARGIN_M
 
     def _expedite_kt(self, state, base_kt: float) -> float:
         """The taxi speed the tower's "expedite" buys, while it stands.

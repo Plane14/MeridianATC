@@ -176,10 +176,14 @@ class _The_plan_the:
                      origin=airports[0] if airports else "",
                      destination=airports[-1] if airports else "",
                      # The FMS carries no filed cruise field -- only each
-                     # leg's altitude. The highest one is the flight's
-                     # level, which is how the cruise reaches the
-                     # session instead of the default table.
-                     cruise_ft=max((f.alt_ft for f in fixes), default=0),
+                     # leg's altitude. The highest en-route one is the
+                     # flight's level, which is how the cruise reaches
+                     # the session instead of the default table. Airport
+                     # legs are left out of the count: theirs is the
+                     # field's elevation, which read as the level capped
+                     # the cruise at the runway's own height.
+                     cruise_ft=max((f.alt_ft for f in fixes
+                                    if f.kind != "apt"), default=0),
                      source="sim")
 
     def _use_pln_plan(self, path: str) -> None:

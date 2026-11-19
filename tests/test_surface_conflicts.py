@@ -256,9 +256,10 @@ def test_fo_holds_at_the_bars_not_fifty_metres_short():
     fo = _fo()
     fo.session = _fo_session(path)
     from meridianatc.atc.autonomous import AutonomousPhase
-    # 10 m short of the last point -- the nose is at the bars.
+    # 7 m short of the last point -- a light aeroplane's nose is at the
+    # bars (the datum stop is the class's nose radius plus the margin).
     end_lat, end_lon = path[-1]
-    short = _state(end_lat, end_lon - 0.00016, ground_speed_kt=3.0)
+    short = _state(end_lat, end_lon - 0.0001, ground_speed_kt=3.0)
     fo._taxi_along_path(short, outbound=True)
     assert fo.state.phase == AutonomousPhase.HOLDING_SHORT
     assert fo.state.sub == "" or fo.state.sub == "align"

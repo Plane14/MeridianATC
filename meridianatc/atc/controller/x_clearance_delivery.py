@@ -256,10 +256,18 @@ class _Clearance_delivery:
         initial = initial_altitude(
             elevation, getattr(airport, "ident", ""), sid, runway,
             session.aircraft.callsign.written, floor_ft=floor)
+        # Never cleared above the level the flight filed: a "climb to
+        # FL080" to an aeroplane whose plan says 5,000 is an altitude it
+        # cannot use, and no strip says otherwise. The terrain floor
+        # still wins -- a filed level below it cannot be vectored to.
+        if cruise > 0:
+            floor_level = (int(floor) + 999) // 1000 * 1000
+            initial = min(initial, max(int(cruise), floor_level))
         route = self.route if self.route else Route(())
         minutes = route.minutes_to_cruise(cruise)
         decision("clearance", airport=getattr(airport, "ident", ""),
-                 initial_ft=initial, terrain_floor_ft=round(floor),
+                 initial_ft=initial, cruise_ft=int(cruise),
+                 terrain_floor_ft=round(floor),
                  field_ft=round(elevation), sid=sid, runway=runway,
                  expect_minutes=minutes,
                  minutes_from=("plan" if route and route.top_of_climb

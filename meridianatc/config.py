@@ -1860,6 +1860,11 @@ class ImmersionConfig:
     # approach speed, icing protection in cloud, convective delays, and
     # a go-around -- then a diversion -- when the destination is out.
     autonomous_weather: bool = True
+    # Whether a thunderstorm over the field holds the departure. On, a
+    # convective cell overhead is waited out as a crew waits it; off,
+    # the FO departs through the weather and only the demonstrated wind
+    # limits still hold it.
+    autonomous_departure_hold: bool = True
     # Whether to use the simulator's AI pilot (AI Control) for parts of the
     # flight the First Officer doesn't explicitly manage. Off by default
     # because it conflicts with explicit autopilot control.
@@ -1951,6 +1956,9 @@ describe(
                                           help="set.autonomous_reserve_why", **_AUTONOMOUS),
     autonomous_weather=Setting(label="set.autonomous_weather",
                                help="set.autonomous_weather_why", **_AUTONOMOUS),
+    autonomous_departure_hold=Setting(
+        label="set.autonomous_departure_hold",
+        help="set.autonomous_departure_hold_why", **_AUTONOMOUS),
     autonomous_use_sim_ai=Setting(label="set.autonomous_use_sim_ai",
                                   help="set.autonomous_use_sim_ai_why", **_AUTONOMOUS),
 )
