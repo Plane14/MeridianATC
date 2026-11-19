@@ -211,6 +211,14 @@ def star_join(final, fixes) -> RouteFix | None:
     if final is None:
         return None
     fixes = [f for f in fixes if not f.is_marker]
+    if fixes:
+        # The first fix has no leg to judge its arrival by, so it is never
+        # a pair's "fix" below; on the centreline it is the join itself --
+        # a STAR that starts on the final meets it there.
+        out, side = frame(final, fixes[0].lat, fixes[0].lon)
+        if (JOIN_OUT_NM[0] <= out <= JOIN_OUT_NM[1]
+                and abs(side) <= JOIN_SIDE_NM):
+            return fixes[0]
     for before, fix in zip(fixes, fixes[1:], strict=False):
         out, side = frame(final, fix.lat, fix.lon)
         if not (JOIN_OUT_NM[0] <= out <= JOIN_OUT_NM[1]

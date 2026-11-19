@@ -300,17 +300,40 @@ def apply_script(pid: int) -> str:
         ":copy",
         # A moment more: the process is gone before every handle on its DLLs is.
         "timeout /t 2 /nobreak >NUL",
-        'robocopy "%SRC%\\_internal" "%DST%\\_internal" /MIR /R:20 /W:1 /NFL /NDL /NP >> "%LOG%"',
-        "if errorlevel 8 goto failed",
+        # The old install is moved aside whole -- a rename, instant on the
+        # same volume -- so a copy that dies halfway is not left behind:
+        # :restore puts it back and starts what was working before.
+        'set "BAK=%DST%\\_update_backup"',
+        'if exist "%BAK%" rmdir /s /q "%BAK%" >NUL 2>&1',
+        'mkdir "%BAK%" 2>NUL',
+        'if exist "%DST%\\_internal" (',
+        '  move "%DST%\\_internal" "%BAK%\\_internal" >NUL',
+        '  if exist "%DST%\\_internal" (',
+        '    echo FAILED: old _internal cannot be moved aside >> "%LOG%"',
+        "    goto failed",
+        "  )",
+        ")",
+        'for %%F in ("%DST%\\*.exe") do move "%%F" "%BAK%\\" >NUL 2>&1',
+        'robocopy "%SRC%\\_internal" "%DST%\\_internal" /E /R:20 /W:1 /NFL /NDL /NP >> "%LOG%"',
+        "if errorlevel 8 goto restore",
         'robocopy "%SRC%" "%DST%" /R:20 /W:1 /NFL /NDL /NP /XF config.yaml config.local.yaml >> "%LOG%"',
-        "if errorlevel 8 goto failed",
+        "if errorlevel 8 goto restore",
         'if exist "%SRC%\\data\\navdata" (',
         f'  robocopy "%SRC%\\data\\navdata" "%DST%\\data\\navdata" /E /R:20 /W:1 /NFL /NDL /NP /XF {keep} >> "%LOG%"',
-        "  if errorlevel 8 goto failed",
+        "  if errorlevel 8 goto restore",
         ")",
         'echo done >> "%LOG%"',
+        'rmdir /s /q "%BAK%" >NUL 2>&1',
         f'start "" "%DST%\\{EXECUTABLE}"',
         "exit /b 0",
+        ":restore",
+        'echo FAILED - restoring previous install >> "%LOG%"',
+        'if exist "%DST%\\_internal" rmdir /s /q "%DST%\\_internal" >NUL 2>&1',
+        'if exist "%BAK%\\_internal" robocopy "%BAK%\\_internal" "%DST%\\_internal" /E /R:20 /W:1 /NFL /NDL /NP >> "%LOG%"',
+        'for %%F in ("%BAK%\\*.exe") do copy /y "%%F" "%DST%\\" >NUL 2>&1',
+        'rmdir /s /q "%BAK%" >NUL 2>&1',
+        f'start "" "%DST%\\{EXECUTABLE}"',
+        "exit /b 1",
         ":failed",
         'echo FAILED >> "%LOG%"',
         # The old program is still whole wherever robocopy stopped short of
@@ -593,6 +616,9 @@ def quit_process(delay_s: float = 0.6) -> None:
         except Exception:
             log.debug("no window to close", exc_info=True)
         time.sleep(8.0)
+        # os._exit skips every atexit and buffer; without this the batch's
+        # last moments -- the lines the update log is for -- can be lost.
+        logging.shutdown()
         os._exit(0)
 
     threading.Thread(target=later, name="meridianatc-update-quit",

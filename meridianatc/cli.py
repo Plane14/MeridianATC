@@ -1422,6 +1422,13 @@ def cmd_gui(args) -> int:
     _apply_overrides(config, args)
     logs.configure(config)
 
+    if args.host not in ("127.0.0.1", "localhost", "::1"):
+        # The API carries no login: anybody who can reach the port can fly
+        # the session -- retune the radio, change settings, apply updates.
+        console.print(
+            f"[yellow]Serving the panel on {args.host}:{args.port} -- "
+            "everyone on the network has full, unauthenticated control.[/yellow]")
+
     broadcaster = Broadcaster()
     url = f"http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}"
     try:

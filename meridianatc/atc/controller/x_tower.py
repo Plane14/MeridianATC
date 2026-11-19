@@ -39,12 +39,12 @@ class _Tower:
         if parsed.intent is Intent.REQUEST_TAKEOFF:
             if airborne:
                 return Reply(p.already_airborne(aircraft), station)
-            return self._issue_takeoff(session, station, weather, p, parsed)
+            return self._issue_takeoff(session, station, weather, p, parsed, state)
 
         if parsed.intent is Intent.REQUEST_PATTERN_WORK:
             session.pattern_work = True
             if not airborne:
-                return self._issue_takeoff(session, station, weather, p, parsed)
+                return self._issue_takeoff(session, station, weather, p, parsed, state)
             return self._work_the_circuit(session, station, weather, p, parsed,
                                           state)
 
@@ -60,7 +60,7 @@ class _Tower:
 
         if parsed.intent is Intent.CHECK_IN and session.phase.outbound:
             if not airborne:
-                return self._issue_takeoff(session, station, weather, p, parsed)
+                return self._issue_takeoff(session, station, weather, p, parsed, state)
             # Already off the ground and still on the tower frequency: what
             # they need is the next controller, not a clearance to do the
             # thing they have already done.

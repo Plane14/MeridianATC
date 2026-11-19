@@ -45,7 +45,7 @@ class _What_the_arrival:
         departure it had held.
         """
         return self._issue_takeoff(session, station, weather, p,
-                                   ParsedIntent())
+                                   ParsedIntent(), state)
 
     def clear_to_land(self, session, station, weather, p, state=None) -> Reply:
         """The landing clearance for an arrival that has not asked for one.

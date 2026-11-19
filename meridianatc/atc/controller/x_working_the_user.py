@@ -7,6 +7,7 @@ from ._shared import (
     decision,
     final_for,
     language_of,
+    normalize_runway,
     runway_length_nm,
     say_words,
     sid_first_fix,
@@ -227,7 +228,8 @@ class _Working_the_user:
         then.text = f"{order} {then.text}"
         return then
 
-    def _issue_takeoff(self, session, station, weather, p, parsed) -> Reply:
+    def _issue_takeoff(self, session, station, weather, p, parsed,
+                       state=None) -> Reply:
         airport = self.navdb.airport(station.ident)
         asked = parsed.get("runway")
         if asked and airport is not None:
@@ -255,6 +257,28 @@ class _Working_the_user:
             return Reply(
                 p.already_cleared_for_takeoff(session.aircraft, runway), station
             )
+
+        # A takeoff clearance is issued to an aeroplane at the runway, not
+        # to one still taxiing to it -- "cleared for takeoff" heard on the
+        # apron is rolled onto wherever it happened to be pointing. Where
+        # position is not reported at all this cannot be told, so the ask
+        # is trusted the way it always was. `lined_up` skips the check:
+        # the aeroplane holds a line-up clearance, it is on it.
+        if (state is not None and getattr(state, "has_position", False)
+                and airport is not None and not session.lined_up):
+            standing = self.navdb.runway_at(
+                airport.ident, state.latitude, state.longitude,
+                heading=getattr(state, "heading_true", None))
+            if normalize_runway(standing or "") != normalize_runway(runway):
+                instruction = session.remember(
+                    Instruction("taxi", station_key(station), "",
+                                {"runway": runway}))
+                return Reply(
+                    p.taxi_to_runway(
+                        session.aircraft, self._station_name(station, p),
+                        runway, (), abbreviated=True),
+                    station, instruction=instruction)
+
         # Below VFR minima nothing VFR takes off without Special VFR, and
         # circuits are not flown in it at all.
         refused = self._below_vmc(session, station, weather, p, airport,

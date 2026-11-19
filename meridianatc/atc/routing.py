@@ -161,14 +161,19 @@ class RouteWatch:
         assigned = float(session.assigned_altitude_ft or 0.0)
         if not assigned or float(state.altitude_ft or 0.0) < assigned - 500.0:
             return None
-        etas = dict(progress.eta_s)
+        # ETA by position, not ident: a route can pass a fix twice and the
+        # dictionary kept only the last time, telling the step climb about
+        # the wrong visit.
+        queue = list(progress.eta_s)
         for fix in route.fixes[progress.leg:]:
+            eta = None
+            if queue and queue[0][0] == fix.ident:
+                eta = queue.pop(0)[1]
             if fix.stage == DSC:
                 break
             if fix.stage != CRZ or fix.is_marker \
                     or fix.alt_ft <= assigned + 500.0:
                 continue
-            eta = etas.get(fix.ident)
             if eta is None or eta > PLAN_STEP_LEAD_S:
                 return None
             step = int(round(fix.alt_ft / 1000.0) * 1000)

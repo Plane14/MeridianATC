@@ -138,6 +138,17 @@ def vector(final, lat: float, lon: float, *, speed_kt: float = 0.0,
             # Already on it: the final's own heading, not a cut across it.
             return Vector(inbound, "intercept", out, 1.0, out)
         from_side = 1.0 if lateral >= 0 else -1.0
+        if after == "intercept" and out > ON_CENTRELINE_NM:
+            # A second full-angle cut once one was already given is a
+            # fishtail: drift a whisker past the centreline and a fresh
+            # thirty degrees comes back from the other side. What a
+            # controller gives instead is the small heading that rejoins
+            # by the gate, never shallower than a nudge and never more
+            # than a real intercept.
+            correction = math.degrees(math.atan2(abs(lateral), out))
+            angle = min(INTERCEPT_DEG, max(5.0, correction))
+            return Vector((inbound - angle * from_side) % 360.0, "intercept",
+                          math.hypot(out, lateral), from_side, 0.0)
         join = out - abs(lateral) / math.tan(math.radians(INTERCEPT_DEG))
         return Vector((inbound - INTERCEPT_DEG * from_side) % 360.0, "intercept",
                       2.0 * abs(lateral) + max(join, 0.0), from_side,

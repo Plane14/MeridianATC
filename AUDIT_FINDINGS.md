@@ -156,8 +156,54 @@ Fixed in the third pass (2026-11-19):
 - **#26** verified acceptable — ADS-B `track` already falls back to
   `true_heading` with a 0.0 floor.
 
-Still open or unverified: #19 (rollback risk), #20c/d, #25 (documented
-trade), #27, #28, #34, #37–#39, #41–#43, #45–#49, #71.
+Fixed in the fourth pass (2026-11-19), remaining-items sweep:
+
+- **#19** update batch moves the old install aside to `_update_backup`
+  before copying; on failure `:restore` puts it back and relaunches
+  what was working — no more half-copied install left unstartable.
+- **#20c** `_resolve_fix` returns "not found" when no nearby navaid
+  matches, so "proceed direct" is refused rather than clearing the
+  flight to a fix that exists nowhere.
+- **#20d** `_issue_takeoff` checks `runway_at` when position is known:
+  a pilot asking for takeoff away from the cleared runway gets "taxi
+  to the runway, holding point" instead of a takeoff clearance;
+  `lined_up` and no-position cases are untouched.
+- **#27** `FlightBook` validates cache entry shapes on load and locks
+  mutations against `stop()`-time `save()` — no torn dict or poisoned
+  lookups.
+- **#28** Deepgram `_note` parse is fully guarded against malformed
+  frames; `synthesize` rejects bodies that are not PCM16.
+- **#38** a second vector after "intercept" is a shallow rejoin
+  correction, not a fresh 30-degree cut from the new side — no
+  fishtail across the centreline.
+- **#39** route ETAs are matched positionally; a route passing a fix
+  twice gives each visit its own ETA.
+- **#41** the landing sequence measures the user's distance to the
+  threshold like the traffic's, not to the field centre.
+- **#42** (partial) a refused crossing now issues a hold-short
+  Instruction with readback; a transit request above the shelf is
+  approved at the shelf, not verbatim.
+- **#45** `star_join` evaluates the STAR's own first fix — a STAR that
+  starts on the final joins there.
+- **#48** `logging.shutdown()` before `os._exit` so the last lines of
+  the update log are not truncated.
+- **#49** `gui --host` off loopback prints a warning that the control
+  API is unauthenticated.
+- **#71** pilot humor is seeded per callsign — the module's
+  deterministic claim is now true.
+
+Verified as already correct or accepted: **#25** (every caller passes
+an explicit kind; the heuristic is dormant), **#34** (pauses already
+sized on `model.config.sample_rate`, chunk rate when reported),
+**#37** (display-only, bounded), **#43** (sim contacts carry true
+heading on both sims), **#47** (record() already suppresses
+sqlite3.Error).
+
+Still open: **#42** remainder (IFR altimeter on the ground, SVFR on
+the radar position falling to expected-calls, taxi-to-parking on
+Delivery, VFR release issued by GND not DEL — controller routing
+work), **#46** (watch-hysteresis wording too vague to locate a
+concrete defect).
 
 
 ## HIGH

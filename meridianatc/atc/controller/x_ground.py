@@ -568,7 +568,14 @@ class _Ground:
                      asked=asked, distance_m=round(apart))
             if not asked and not remind:
                 return None
-            return Reply(p.hold_short_instruction(aircraft, runway), station)
+            # A refused crossing is still an instruction to hold -- without
+            # it landing in the session's book, nothing chased the readback
+            # and "hold short" was heard once and forgotten.
+            text = p.hold_short_instruction(aircraft, runway)
+            instruction = session.remember(Instruction(
+                "hold_short", station_key(station), text,
+                {"runway": runway}))
+            return Reply(text, station, instruction=instruction)
         session.grant_crossing(runway)
         decision("runway_crossing", airport=station.ident,
                  event="granted", runway=runway, asked=asked,

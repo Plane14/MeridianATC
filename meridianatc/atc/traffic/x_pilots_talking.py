@@ -54,6 +54,11 @@ class PilotsTalking:
 
     advisor = None
 
+    # Same aeroplane, same jokes: module-level random would draw every
+    # flight from one stream, so each keeps a stream of its own, seeded
+    # on its callsign like the rest of the session's "random".
+    _humor_rng: dict = {}
+
     def flight_called(self, text: str):
         """The aeroplane a transmission names, if it names one of ours.
 
@@ -113,8 +118,11 @@ class PilotsTalking:
         else:
             reply = (f"{user_cs}, {own}: "
                      f"{self._position_words(flight)}")
-            if humor and random.random() < 0.25:
-                reply += f", {random.choice(_HUMOR)}"
+            if humor:
+                rng = self._humor_rng.setdefault(
+                    flight.written, random.Random(flight.written))
+                if rng.random() < 0.25:
+                    reply += f", {rng.choice(_HUMOR)}"
         reply = self._advised(reply, flight, user_cs, own, text,
                               humor=humor)
         self._say(flight, self._now(), station_position, from_pilot=True,

@@ -578,7 +578,13 @@ class _The_circuit:
                             readback_required=False))
             return Reply(text, station, instruction=instruction)
 
-        ceiling = parsed.get("altitude_ft") or self._vfr_ceiling(airport)
+        # Approved up to the shelf, not to whatever was asked: a request for
+        # five thousand through a shelf at four is a transit approved to
+        # four, and an approval read back at five takes the flight into the
+        # airspace above somebody else's.
+        ceiling = min(float(parsed.get("altitude_ft")
+                            or self._vfr_ceiling(airport)),
+                      float(self._vfr_ceiling(airport)))
         session.vfr_ceiling_ft = float(ceiling)
         session.transition_approved = True
         if self._airspace_class(airport, station) == "B":
@@ -681,7 +687,16 @@ class _The_circuit:
 
         # Where the user comes in the arrival stream. "Number two, follow the
         # Airbus" is only worth saying when there is an Airbus to follow, so
-        # the sequence is built from the traffic that actually exists.
+        # the sequence is built from the traffic that actually exists --
+        # and on the same ruler: the traffic's distance_nm is to the
+        # threshold, so the user's is measured there too, not to the
+        # field's centre a mile off it.
+        final = final_for(self.navdb, airport.ident, runway)
+        if final is not None and state is not None \
+                and getattr(state, "has_position", False):
+            threshold_nm = final.distance(state)
+            if math.isfinite(threshold_nm):
+                distance = threshold_nm
         sequence = ""
         ahead = [f for f in self._traffic_ahead(True) if f.distance_nm < distance]
         if ahead:

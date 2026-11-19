@@ -112,7 +112,7 @@ class _Clearance_delivery:
             sent = self._send_on(session, station, p, "TWR", "GND")
             if sent is not None:
                 return sent
-            return self._issue_takeoff(session, station, weather, p, parsed)
+            return self._issue_takeoff(session, station, weather, p, parsed, state)
 
         if parsed.intent is Intent.RADIO_CHECK:
             return Reply(p.radio_check(aircraft), station)

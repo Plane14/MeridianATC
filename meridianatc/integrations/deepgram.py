@@ -200,24 +200,32 @@ class _StreamSession:
     # -- the pump ------------------------------------------------------------
 
     def _note(self, raw) -> None:
+        # The pump calls this for every websocket message; a frame the
+        # service shaped differently must not kill the pump, so the whole
+        # parse sits inside the guard, not just the JSON decode.
         try:
             message = json.loads(raw)
-        except (TypeError, ValueError):
+            if not isinstance(message, dict):
+                return
+            if message.get("type") != "Results" or not message.get("is_final"):
+                return
+            channel = message.get("channel") or {}
+            alternatives = channel.get("alternatives") or [{}]
+            alternative = alternatives[0] if alternatives else {}
+            if not isinstance(alternative, dict):
+                return
+            text = (alternative.get("transcript") or "").strip()
+            if text:
+                self.finals.append(text)
+            confidence = float(alternative.get("confidence") or 0.0)
+            if confidence:
+                self.confidence = confidence
+            detected = (channel.get("detected_language")
+                        or alternative.get("language"))
+            if detected:
+                self.detected = str(detected)[:2]
+        except (TypeError, ValueError, AttributeError, IndexError):
             return
-        if message.get("type") != "Results" or not message.get("is_final"):
-            return
-        channel = message.get("channel") or {}
-        alternative = (channel.get("alternatives") or [{}])[0]
-        text = (alternative.get("transcript") or "").strip()
-        if text:
-            self.finals.append(text)
-        confidence = float(alternative.get("confidence") or 0.0)
-        if confidence:
-            self.confidence = confidence
-        detected = (channel.get("detected_language")
-                    or alternative.get("language"))
-        if detected:
-            self.detected = str(detected)[:2]
 
     async def _send(self, ws, asyncio) -> None:
         while True:
@@ -574,6 +582,8 @@ class DeepgramTTS:
             raise DeepgramError(f"speak failed: {type(exc).__name__}") from exc
         if response.status_code != 200:
             raise DeepgramError(f"speak returned {response.status_code}")
+        if not response.content or len(response.content) % 2:
+            raise DeepgramError("speak returned a body that is not PCM16")
         pcm = np.frombuffer(response.content, dtype=np.int16)
         audio = (pcm.astype(np.float32) / 32768.0).clip(-1.0, 1.0)
         return audio, self.capabilities.sample_rate

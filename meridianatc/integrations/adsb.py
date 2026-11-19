@@ -382,6 +382,15 @@ class Route:
     destination_name: str = ""  # the city, as a clearance says it
 
 
+def _entry(v, at_least: int) -> bool:
+    """A cache entry well enough shaped to be read back: a list with the
+    timestamp first and at least ``at_least`` fields. Anything else on
+    disk -- a string, a scalar, a half-written row -- is dropped rather
+    than handed to the consumers that index it."""
+    return (isinstance(v, (list, tuple)) and len(v) >= at_least
+            and isinstance(v[0], (int, float)))
+
+
 class FlightBook:
     """Each callsign's route and each address's type and registration, from
     adsbdb.com, kept on this PC.
@@ -400,6 +409,9 @@ class FlightBook:
         self.routes: dict[str, list] = {}   # callsign -> [asked, origin, dest, name]
         self.aircraft: dict[str, list] = {}  # hex -> [asked, type, registration]
         self._busy_until = 0.0
+        # stop()'s save and a look-up still mid-round can meet; the writes
+        # and the snapshot share one lock.
+        self._lock = threading.Lock()
         self._load()
 
     def _load(self) -> None:
@@ -407,9 +419,11 @@ class FlightBook:
             return
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-            self.routes = {k: list(v) for k, v in data.get("routes", {}).items()}
+            self.routes = {k: list(v) for k, v in data.get("routes", {}).items()
+                           if _entry(v, 3)}
             self.aircraft = {k: list(v)
-                             for k, v in data.get("aircraft", {}).items()}
+                             for k, v in data.get("aircraft", {}).items()
+                             if _entry(v, 2)}
         except (OSError, ValueError, AttributeError):
             log.debug("adsb cache unreadable; starting empty", exc_info=True)
 
@@ -417,12 +431,14 @@ class FlightBook:
         if self.path is None:
             return
         now = self._clock()
-        data = {
-            "routes": {k: v for k, v in self.routes.items()
-                       if now - v[0] < (ROUTE_TTL_S if v[1] else UNKNOWN_TTL_S)},
-            "aircraft": {k: v for k, v in self.aircraft.items()
-                         if now - v[0] < TYPE_TTL_S},
-        }
+        with self._lock:
+            data = {
+                "routes": {k: v for k, v in self.routes.items()
+                           if now - v[0] < (ROUTE_TTL_S if v[1]
+                                            else UNKNOWN_TTL_S)},
+                "aircraft": {k: v for k, v in self.aircraft.items()
+                             if now - v[0] < TYPE_TTL_S},
+            }
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(json.dumps(data), encoding="utf-8")
@@ -478,13 +494,15 @@ class FlightBook:
                 got = self._ask_route(f.callsign)
                 if got is None:
                     break
-                self.routes[f.callsign] = [now, *got]
+                with self._lock:
+                    self.routes[f.callsign] = [now, *got]
             if asked < limit and self._type_due(f, now):
                 asked += 1
                 got = self._ask_aircraft(f.hex)
                 if got is None:
                     break
-                self.aircraft[f.hex] = [now, *got]
+                with self._lock:
+                    self.aircraft[f.hex] = [now, *got]
         if asked:
             self.save()
         return asked

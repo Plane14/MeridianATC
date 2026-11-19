@@ -539,7 +539,10 @@ class _Helpers:
                 best_ident, best_name, best_score = ident, name, score
         if best_score >= 0.6:
             return best_ident, best_name
-        return heard, ""
+        # Nothing nearby it could be: refuse rather than clearing the
+        # flight to a fix that exists nowhere we can point to -- the
+        # clearance a controller cannot name a position for is "unable".
+        return "", ""
 
     @staticmethod
     def _bearing_to(state, airport) -> tuple[int, float]:
