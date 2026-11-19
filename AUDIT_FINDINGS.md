@@ -224,6 +224,18 @@ Fixed in the fifth pass (2026-11-19), closing the last open items:
 Nothing remains open. All 82 findings are now fixed, verified-fixed,
 or recorded as deliberate trade-offs above.
 
+Verified in the sixth pass (2026-11-19), a fresh-eyes sweep of the
+least-covered paths — traffic internals (flying, running, arrivals,
+departures, live-feed adoption/held-release, exchange composition,
+pilots talking, field placement, making aeroplanes, what the pilot),
+the engine situation loop and phase transitions, all ten watches
+(surface, crossing, transponder, taxi, deviation-assist, airspace,
+reporting point, runway, radar service, restriction) plus the
+departure/climb-step/SID watches, centre traffic, CPDLC, the TTS
+render lane, installer rollback, sim state and channel matching.
+No new defects: the behaviour matches the documented reasoning in
+each path, and the suite stands at 1333 passing + 1 skipped.
+
 
 ## HIGH
 
