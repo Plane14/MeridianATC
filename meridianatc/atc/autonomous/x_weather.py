@@ -457,8 +457,10 @@ class _Weather:
         now = time.monotonic()
         # A cell overhead is waited out while the pilot's setting says to
         # wait; flown through when it says to go -- the demonstrated wind
-        # limits below are the envelope and hold either way.
-        if self._departure_hold and self._convective(weather):
+        # limits below are the envelope and hold either way. Read live:
+        # flipping it off mid-hold releases the flight without a restart.
+        if getattr(self.config.immersion, "autonomous_departure_hold",
+                   True) and self._convective(weather):
             if not self.state.convective_hold_said:
                 self.state.convective_hold_said = True
                 self.state.wind_hold_since = now

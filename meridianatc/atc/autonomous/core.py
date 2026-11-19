@@ -91,11 +91,8 @@ class AutonomousFlight(_Plumbing, _Entry, _The_loop, _Shared_helpers, _The_envel
         # leg it was given whatever falls out of the sky on it.
         self._weather_reactions = getattr(
             config.immersion, "autonomous_weather", True)
-        # Whether a cell over the field holds the departure: off, the FO
-        # launches through the thunderstorm and only the demonstrated
-        # wind limits still stand between it and the runway.
-        self._departure_hold = getattr(
-            config.immersion, "autonomous_departure_hold", True)
+        # Whether a cell over the field holds the departure: read live
+        # in x_weather so flipping it mid-wait releases the flight.
         # The biggest fuel_total_gal the model has ever shown: the
         # capacity for a model that declares no FUEL TOTAL CAPACITY.
         self._fuel_capacity_seen = 0.0
