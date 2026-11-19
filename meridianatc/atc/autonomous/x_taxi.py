@@ -10,6 +10,27 @@ from ._shared import (
 )
 
 
+def _pursuit_leg(heading: float, path: list, seg: int) -> float:
+    """The leg direction the pursuit's ask is bounded against.
+
+    The ask is joining whichever leg it least departs from, not
+    blindly the nearest segment: at a hairpin's apex both legs share
+    the vertex, the strict distance tie in ``path_steering`` keeps the
+    incoming one, and a bound measured off it clamps the return turn
+    away from the route.
+    """
+    seg = min(seg, len(path) - 2)
+    leg = auto_nav.bearing_deg(path[seg][0], path[seg][1],
+                               path[seg + 1][0], path[seg + 1][1])
+    if seg + 2 < len(path):
+        nxt = auto_nav.bearing_deg(path[seg + 1][0], path[seg + 1][1],
+                                   path[seg + 2][0], path[seg + 2][1])
+        if abs((heading - nxt + 540.0) % 360.0 - 180.0) \
+                < abs((heading - leg + 540.0) % 360.0 - 180.0):
+            leg = nxt
+    return leg
+
+
 def _bounded_intercept(heading: float, leg_hdg: float,
                        rejoining: bool) -> float:
     """The pursuit's ask, bounded against the leg's own direction.
@@ -165,10 +186,8 @@ class _Taxi:
         # The pursuit's ask, bounded against the leg's own direction: a
         # point beside the line is rejoined at a steady intercept, not
         # steered at whatever bearing the lookahead happens to publish.
-        seg = min(steer["nearest"], len(remaining_path) - 2)
-        leg_hdg = auto_nav.bearing_deg(
-            remaining_path[seg][0], remaining_path[seg][1],
-            remaining_path[seg + 1][0], remaining_path[seg + 1][1])
+        leg_hdg = _pursuit_leg(steer["heading"], remaining_path,
+                               steer["nearest"])
         steer["heading"] = _bounded_intercept(
             steer["heading"], leg_hdg, rejoining)
 

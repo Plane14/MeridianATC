@@ -2209,3 +2209,20 @@ def test_the_taxi_steer_law_brakes_on_the_lead_not_the_stale_read():
     flight._steer_dt = 2.0
     # Six a second held for three seconds lands eighteen past the read.
     assert flight._steer_lead(10.0, 6.0) == pytest.approx(-8.0)
+
+
+def test_the_pursuit_bound_follows_the_leg_being_joined():
+    """At a hairpin's apex the nearest index still names the incoming
+    leg -- the vertex is shared, the tie keeps the first. Bounding the
+    ask against it would clamp the return turn away from the route, so
+    the bound is taken against the leg the ask least departs from."""
+    from meridianatc.atc.autonomous.x_taxi import _pursuit_leg
+    # A hairpin: out east, back west.
+    path = [(40.0, -7.90), (40.0, -7.89), (40.001, -7.90)]
+    # Asking back down the outgoing leg: the bound is off the ~200deg
+    # leg, not the ~90deg one the apex still reports as nearest.
+    assert _pursuit_leg(200.0, path, 0) == pytest.approx(
+        _pursuit_leg(200.0, path, 1))
+    # Asking along the incoming leg keeps that leg.
+    assert _pursuit_leg(90.0, path, 0) != pytest.approx(
+        _pursuit_leg(90.0, path, 1), abs=45.0)
