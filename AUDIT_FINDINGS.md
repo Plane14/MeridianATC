@@ -199,11 +199,30 @@ sized on `model.config.sample_rate`, chunk rate when reported),
 heading on both sims), **#47** (record() already suppresses
 sqlite3.Error).
 
-Still open: **#42** remainder (IFR altimeter on the ground, SVFR on
-the radar position falling to expected-calls, taxi-to-parking on
-Delivery, VFR release issued by GND not DEL — controller routing
-work), **#46** (watch-hysteresis wording too vague to locate a
-concrete defect).
+Fixed in the fifth pass (2026-11-19), closing the last open items:
+
+- **#42 (remainder)** all four routing items done:
+  - IFR altimeter: the taxi instruction now gives the pressure unless a
+    release or approval already read it (`session.altimeter_issued`,
+    set on the VFR release and Special VFR paths). The old
+    `clearance_issued` guard withheld it from exactly the IFR flights
+    that never heard it.
+  - SVFR on a radar position: an airborne `REQUEST_SPECIAL_VFR` reaches
+    `_special_vfr` on any position, not just DEL/GND/TWR — the entry
+    half of the handler is the join into the zone.
+  - Taxi-to-parking on Delivery is routed like taxi: handoff to GND
+    where one is staffed, `_issue_taxi_in` itself where it is not.
+  - VFR release on GND hands off to DEL where one is staffed —
+    mirroring the REQUEST_CLEARANCE path.
+- **#46** DeviationAssistWatch: a kind back inside limits is held for
+    HOLD_S (60 s) instead of dropped the same tick, so a crew weaving
+    in and out in bursts accumulates deviation time rather than
+    starting a fresh settle on every excursion; and a blocked standing
+    offer no longer silences the watch for an hour — the deviation call
+    is still made.
+
+Nothing remains open. All 82 findings are now fixed, verified-fixed,
+or recorded as deliberate trade-offs above.
 
 
 ## HIGH

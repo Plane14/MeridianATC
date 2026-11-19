@@ -382,6 +382,11 @@ class FlightSession:
     profile: FlightProfile = DEFAULT_PROFILE
     clearance_issued: bool = False
     clearance_read_back: bool = False
+    # The pressure setting was said in a release or a Special VFR
+    # approval, so the taxi instruction need not say it again. IFR
+    # clearances do not carry it, which is why ground gives it to the
+    # IFR flight and the flag only lives on the VFR paths.
+    altimeter_issued: bool = False
 
     # --- VFR ---
     # A VFR flight is worked differently from the first call to the last: it is

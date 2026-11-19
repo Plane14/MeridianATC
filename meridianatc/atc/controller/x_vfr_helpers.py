@@ -102,6 +102,8 @@ class _Vfr_helpers:
                                  self._vfr_ceiling(airport))
         session.vfr_ceiling_ft = altitude
         session.special_vfr = True
+        # The pressure is read in the approval, whichever way it goes.
+        session.altimeter_issued = True
         airspace = p.airspace(self._airspace_class(airport, station))
         zone = getattr(airport, "spoken", "") or ""
         pressure = (weather.altimeter_inhg if p.region == "faa"

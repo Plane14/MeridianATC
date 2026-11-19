@@ -10,6 +10,7 @@ from ._shared import (
     decision,
     log,
     normalize_runway,
+    same_channel,
     say_words,
     station_key,
     taxi_route,
@@ -65,6 +66,18 @@ class _Ground:
                              station)
 
         if parsed.intent is Intent.REQUEST_VFR_DEPARTURE:
+            # Where the field has a delivery position the release is
+            # its to write, exactly as the IFR clearance below is; only
+            # a field with nobody on delivery has ground doing it.
+            delivery = self.controller_at(station.ident, "DEL")
+            if delivery and not same_channel(delivery.mhz, station.mhz,
+                                             0):
+                return Reply(
+                    p.handoff(aircraft,
+                              self._station_name(delivery, p, short=True),
+                              delivery.mhz),
+                    station, handoff_to=delivery,
+                )
             return self._issue_vfr_release(session, station, p, parsed, weather)
 
         if parsed.intent is Intent.REQUEST_CLEARANCE:
@@ -360,7 +373,12 @@ class _Ground:
             session.aircraft,
             self._station_name(station, p) if not session.established_with(station) else "",
             runway, said, hold_short=hold_short,
-            altimeter=altimeter if not session.clearance_issued else 0.0,
+            # The pressure belongs in the taxi instruction unless a
+            # release or an approval has already said it -- an IFR
+            # clearance does not carry it, so an IFR flight hears it
+            # here (the earlier clearance_issued guard left it unheard).
+            altimeter=(0.0 if getattr(session, "altimeter_issued", False)
+                       else altimeter),
             abbreviated=session.established_with(station),
             hold_short_taxiway=(say_words(station.ident, [hold_at])[0]
                                 if hold_at else ""),

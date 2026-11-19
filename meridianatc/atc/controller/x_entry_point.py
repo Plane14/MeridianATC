@@ -303,7 +303,11 @@ class _Entry_point:
         # Special VFR is the zone's: whoever releases or joins a VFR flight
         # there gives it.
         if (parsed.intent is Intent.REQUEST_SPECIAL_VFR
-                and station.position in ("DEL", "GND", "TWR")):
+                and (station.position in ("DEL", "GND", "TWR")
+                     or _airborne(state))):
+            # On a radar position the request can only come from the
+            # air, and the airborne half of _special_vfr is the join
+            # into the zone -- a ground position answers the out half.
             handler = self._special_vfr
 
         # "Affirm"/"negative" answers an open offer of assistance on any

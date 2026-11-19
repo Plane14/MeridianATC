@@ -563,6 +563,10 @@ class DeviationAssistWatch:
     # A reminder per kind, until the third becomes the offer.
     REMIND_S = 60.0
     OFFER_AFTER = 2
+    # A return to profile this brief is still the same excursion: a
+    # crew weaving in and out in bursts would otherwise start a fresh
+    # settle on every one and never be warned at all.
+    HOLD_S = 60.0
 
     def __init__(self, navdb: NavDB, brain: ControllerBrain):
         self.navdb = navdb
@@ -582,15 +586,16 @@ class DeviationAssistWatch:
         p = self.brain.for_station(station, language)
         session.aircraft.language = language_of(p)
         for kind in off:
-            since, last, said = self._seen.get(kind, [now, 0.0, 0])
+            since, last, said = self._seen.get(kind, [now, 0.0, 0])[:3]
+            # On the excursion again: whatever the hold window left is
+            # the same episode, and its settle clock keeps running.
+            self._seen[kind] = [since, last, said, 0.0]
             if now - since < self.SETTLE_S:
-                self._seen[kind] = [since, last, said]
                 continue
             if now - last < self.REMIND_S:
-                self._seen[kind] = [since, last, said]
                 continue
             if said < self.OFFER_AFTER:
-                self._seen[kind] = [since, now, said + 1]
+                self._seen[kind] = [since, now, said + 1, 0.0]
                 decision("deviation", check=kind,
                          station=station.callsign, count=said + 1)
                 return Reply(
@@ -600,8 +605,26 @@ class DeviationAssistWatch:
                 decision("assist", check=kind,
                          station=station.callsign)
                 return Reply(p.offer_assistance(session.aircraft), station)
-            return None
-        self._seen = {k: v for k, v in self._seen.items() if k in off}
+            # The offer was made recently and stands -- the deviation is
+            # still there, so the call is still made. Going quiet for
+            # the hour was a controller who had stopped watching.
+            self._seen[kind] = [since, now, said + 1, 0.0]
+            decision("deviation", check=kind,
+                     station=station.callsign, count=said + 1)
+            return Reply(
+                self._verify(kind, p, session, state), station)
+        # Back within limits is not the end of the episode until it has
+        # lasted: a kind that comes off again inside HOLD_S resumes the
+        # clock it left, and one that stays inside is a new episode.
+        for kind in list(self._seen):
+            if kind in off:
+                continue
+            entry = self._seen[kind][:3] + [self._seen[kind][3]
+                                          if len(self._seen[kind]) > 3
+                                          and self._seen[kind][3] else now]
+            self._seen[kind] = entry
+            if now - entry[3] >= self.HOLD_S:
+                del self._seen[kind]
         return None
 
     def _off_now(self, session: FlightSession, state) -> list[str]:

@@ -80,13 +80,19 @@ class _Clearance_delivery:
                 )
             return self._issue_taxi(session, station, weather, p, state)
 
-        if parsed.intent is Intent.REQUEST_TAXI:
+        if parsed.intent in (Intent.REQUEST_TAXI,
+                             Intent.REQUEST_TAXI_TO_PARKING):
             ground = self.controller_at(station.ident, "GND")
             if ground and not same_channel(ground.mhz, station.mhz, 0):
                 return Reply(
                     p.handoff(aircraft, self._station_name(ground, p, short=True), ground.mhz),
                     station, handoff_to=ground,
                 )
+            # No ground position: delivery at a small field does its
+            # work, in the direction the aeroplane is going.
+            if parsed.intent is Intent.REQUEST_TAXI_TO_PARKING:
+                return self._issue_taxi_in(session, station, weather, p,
+                                           state)
             return self._issue_taxi(session, station, weather, p, state)
 
         # Delivery pushes nobody back and launches nobody, but it is the
@@ -523,6 +529,9 @@ class _Clearance_delivery:
                          point=point.name, source=point.source)
         ceiling = self._vfr_ceiling(airport)
         session.vfr_ceiling_ft = ceiling
+        # The pressure is read in the release below; ground need not
+        # say it again with the taxi.
+        session.altimeter_issued = weather is not None
 
         text = p.vfr_departure_clearance(
             session.aircraft,
