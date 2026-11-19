@@ -27,6 +27,7 @@ from collections.abc import Iterable
 from typing import NamedTuple
 
 from ..navdata.build import bearing_deg
+from ..navdata.db import normalize_runway
 from .approaches import Choice
 from .approaches import plan as _approach_plan
 from .procedure_legs import (
@@ -120,9 +121,12 @@ def pick_sid(procedures: AirportProcedures | None, runway: str = "",
         if chosen.transition is None:
             continue
         trans = chosen.transition
-        if runway and trans.runway and trans.runway != runway:
+        if (runway and trans.runway
+                and normalize_runway(trans.runway) != normalize_runway(runway)):
             continue
-        score = 8.0 if runway and trans.runway == runway else 0.0
+        score = (8.0 if runway and trans.runway
+                 and normalize_runway(trans.runway) == normalize_runway(runway)
+                 else 0.0)
         last = trans.last_fix
         if at is not None and last is not None:
             score += _direction_score(at, toward, last.lat, last.lon)

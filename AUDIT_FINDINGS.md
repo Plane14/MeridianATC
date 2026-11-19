@@ -126,9 +126,38 @@ Verified as intended (not defects): **#22** — CPDLC "roger" is pinned
 by `test_roger_acknowledges_without_applying` to acknowledge without
 applying.
 
-Still open or unverified: #16 (obs-time staleness), #19 (rollback
-risk), #20c/d/e, #25–#28, #31, #32, #34, #36–#43, #45, #46, #48–#50,
-#52, #53, #69–#72.
+Fixed in the third pass (2026-11-19):
+
+- **#16** METAR freshness is now measured from the DDHHMMZ observation
+  time (month-wrapped), not the fetch time — a feed still serving
+  yesterday's report is stale however new the download.
+- **#20e** A "final" report after the landing clearance answers "roger"
+  instead of re-issuing a circuit join and resetting the phase.
+- **#31** SimBrief `_ifr` treats ICAO rules "Z" (VFR-first) as VFR — "Y"
+  (IFR-first) stays IFR.
+- **#32** `_HELICOPTER_TYPES` gains H125 and H60.
+- **#40** `procedure_select` compares runways through
+  `normalize_runway` — "09" vs "09L" no longer drops a valid
+  transition.
+- **#50** `fixes.py` lowercases `kind` before the lookup.
+- **#52** `health.py` redacts check-exception text before the UI sees it.
+- **#53** `redact._CREDENTIAL_FIELD` matches unquoted values
+  (`api_key=abc`), not only quoted ones.
+- **#69** live-feed non-hex ids get a stable `zlib.crc32` Mode-S
+  address instead of per-process `hash()`.
+- **#70** apron spread bearing uses `crc32(callsign)` — same aeroplane,
+  same spot, every launch.
+- **#72** verified already fixed — `_stop_live_feed` clears
+  `traffic.hold_live`.
+- **#78** verified already fixed — `start_live_feed` marks
+  `_live_asked` itself.
+- **#36** verified already fixed — `_allows` requires `visibility is
+  not None`.
+- **#26** verified acceptable — ADS-B `track` already falls back to
+  `true_heading` with a 0.0 floor.
+
+Still open or unverified: #19 (rollback risk), #20c/d, #25 (documented
+trade), #27, #28, #34, #37–#39, #41–#43, #45–#49, #71.
 
 
 ## HIGH

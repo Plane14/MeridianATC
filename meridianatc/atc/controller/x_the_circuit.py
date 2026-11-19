@@ -399,6 +399,11 @@ class _The_circuit:
                             readback_required=False))
             return Reply(text, station, instruction=instruction)
 
+        if on_final and session.cleared_landing:
+            # The landing clearance is already issued: a final report now
+            # is the rollout talking, not a request to rejoin the circuit.
+            return Reply(p.roger(session.aircraft), station)
+
         # --- everything else is a join, from where the aeroplane is --------
         session.phase = Phase.APPROACH
         if here is not None:

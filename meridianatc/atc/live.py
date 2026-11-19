@@ -36,6 +36,7 @@ finish what they are doing rather than being taken away.
 from __future__ import annotations
 
 import math
+import zlib
 from dataclasses import dataclass
 
 from ..navdata.build import bearing_deg, haversine_nm, project
@@ -551,7 +552,9 @@ def _address(hex_: str) -> int:
     try:
         return int(hex_, 16)
     except ValueError:
-        return abs(hash(hex_)) % (1 << 24)
+        # hash() is salted per process: the same feed id would be a
+        # different Mode-S address on every launch. crc32 is stable.
+        return zlib.crc32(hex_.encode("utf-8")) % (1 << 24)
 
 
 __all__ = ["AIRLINE", "CARGO", "GA", "CATEGORIES", "LiveRoster", "LiveSeen",

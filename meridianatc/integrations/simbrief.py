@@ -176,8 +176,8 @@ def _ifr(general: dict) -> bool | None:
     """Whether the plan was filed IFR, or None where it does not say.
 
     Read from whichever key this payload uses. ICAO writes the rules as a
-    single letter -- I, V, Y, Z -- and the two mixed ones both start under
-    instrument rules.
+    single letter -- I, V, Y, Z -- where Y starts under instrument rules
+    and Z under visual ones.
     """
     said = ""
     for key in ("flight_rules", "flightrules", "rules"):
@@ -187,7 +187,7 @@ def _ifr(general: dict) -> bool | None:
             break
     if not said:
         return None
-    return not said.startswith("v")
+    return said[0] in ("i", "y")
 
 
 def parse(body: bytes | str | dict) -> Ofp:

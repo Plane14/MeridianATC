@@ -45,6 +45,7 @@ class SimFixes:
     def __call__(self, ident: str, region: str, kind: str
                  ) -> tuple[float, float] | None:
         """(lat, lon) of a fix, or None. Airports are the database's."""
+        kind = (kind or "").lower()
         if kind == "apt":
             return None
         key = (ident.upper(), region.upper(), kind)

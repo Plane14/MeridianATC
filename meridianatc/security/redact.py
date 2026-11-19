@@ -17,7 +17,7 @@ _AUTH_HEADER = re.compile(
     re.IGNORECASE)
 _CREDENTIAL_FIELD = re.compile(
     r"([\"']?(?:api[_-]?key|access[_-]?token|secret|password)[\"']?"
-    r"\s*[:=]\s*[\"'])([^\"'\r\n]+)([\"'])",
+    r"\s*[:=]\s*[\"']?)([^\"'\s,\r\n]+)([\"']?)",
     re.IGNORECASE)
 _PROVIDER_KEY = re.compile(r"\b(?:sk-or-v1-|sk-)[A-Za-z0-9_-]{12,}\b")
 

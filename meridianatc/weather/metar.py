@@ -23,6 +23,7 @@ that are present in it.
 
 from __future__ import annotations
 
+import calendar
 import json
 import logging
 import re
@@ -79,6 +80,31 @@ _RE_ALTIM_IN = re.compile(r"\bA(\d{4})\b")
 _RE_ALTIM_HPA = re.compile(r"\bQ(\d{4})\b")
 _RE_CLOUD = re.compile(r"\b(FEW|SCT|BKN|OVC|VV)(\d{3})(CB|TCU)?\b")
 _RE_TIME = re.compile(r"\b(\d{2})(\d{2})(\d{2})Z\b")
+
+
+def _obs_epoch(raw: str, now: float) -> float | None:
+    """The DDHHMMZ observation time of a METAR, as epoch seconds.
+
+    Days are issued without a month, so the stamp that lands in the
+    future is yesterday's month -- a report made on day 1 read on day
+    31 belongs to last month, not tomorrow.
+    """
+    m = _RE_TIME.search(raw or "")
+    if not m:
+        return None
+    day, hour, minute = (int(group) for group in m.groups())
+    parts = time.gmtime(now)
+    for month_back in (0, -1):
+        month = parts.tm_mon + month_back
+        year = parts.tm_year + (month - 1) // 12
+        month = (month - 1) % 12 + 1
+        try:
+            stamp = calendar.timegm((year, month, day, hour, minute, 0))
+        except (OverflowError, ValueError):
+            continue
+        if stamp <= now + 3600.0:
+            return stamp
+    return None
 # A METAR present-weather group is one whitespace token: an intensity mark
 # and/or a descriptor (MI PR BC DR BL SH TS FZ), then the phenomena (DZ RA
 # SN SG IC PL GR GS UP BR FG FU VA DU SA HZ PO SQ FC SS DS). "-RASN" is
@@ -307,8 +333,14 @@ class WeatherProvider:
         with self._lock:
             cached = self._memory.get(station)
             failed_at = self._failed.get(station)
-        if cached and not force and (now - cached[0]) < self.refresh_s:
-            return WeatherSample(cached[1], "metar", station, age_s=now - cached[0])
+        # Freshness is measured from the observation, not from when it
+        # was fetched -- a feed still serving yesterday's METAR is stale,
+        # however new the download.
+        served = (min(cached[0], _obs_epoch(cached[2], now) or cached[0])
+                  if cached else 0.0)
+        if cached and not force and (now - served) < self.refresh_s:
+            return WeatherSample(cached[1], "metar", station,
+                                 age_s=now - served)
 
         recently_failed = (failed_at is not None and not force
                            and (now - failed_at) < FAILURE_RETRY_S)
@@ -329,7 +361,9 @@ class WeatherProvider:
         with self._lock:
             cached = self._memory.get(station)
         if cached:
-            return WeatherSample(cached[1], "cache", station, age_s=now - cached[0])
+            served = min(cached[0], _obs_epoch(cached[2], now) or cached[0])
+            return WeatherSample(cached[1], "cache", station,
+                                 age_s=now - served)
         return WeatherSample(Weather(), "default", station)
 
     def _fetch_and_store(self, station: str) -> Weather | None:

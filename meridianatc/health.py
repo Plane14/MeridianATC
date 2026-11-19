@@ -31,6 +31,7 @@ from typing import Any
 
 from .config import Config
 from .paths import command_hint, model_dir, resolve
+from .security.redact import redact
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ def _check(fn: Callable[[Config], Check | None], config: Config,
         return fn(config)
     except Exception as exc:                        # pragma: no cover - defensive
         log.debug("check %s failed", key, exc_info=True)
-        return Check(key, name, "error", str(exc)[:80])
+        return Check(key, name, "error", redact(str(exc))[:80])
 
 
 # --------------------------------------------------------------------------
@@ -82,7 +83,7 @@ def _navdata(config: Config) -> Check:
         airports = db._conn.execute(
             "SELECT COUNT(*) FROM airports").fetchone()[0]
     except Exception as exc:
-        return Check("navdata", "Nav database", "error", str(exc)[:80],
+        return Check("navdata", "Nav database", "error", redact(str(exc))[:80],
                      fix="navdata")
     finally:
         if db is not None:

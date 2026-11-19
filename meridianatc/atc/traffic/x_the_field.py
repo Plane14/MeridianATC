@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import zlib
+
 from ._shared import (
     _SPEED,
     Flight,
@@ -485,8 +487,10 @@ class _The_field:
             return
 
         # Everything else is on the apron. Spread them around the field rather
-        # than stacking them on the centre of it.
-        bearing = (hash(flight.written) % 360)
+        # than stacking them on the centre of it. hash() is salted per
+        # process; crc32 gives the same aeroplane the same apron spot
+        # every launch.
+        bearing = zlib.crc32(flight.written.encode("utf-8")) % 360
         flight.latitude, flight.longitude = project(
             field_lat, field_lon, bearing, 0.35)
         flight.heading = (bearing + 90.0) % 360.0
