@@ -471,20 +471,27 @@ class LocalOpenAIProvider:
         self.url = f"{self._chat_base}/chat/completions"
         self._checked: bool | None = None
         self._check_after = 0.0
+        # The same hardening the keyed provider carries: no redirects (a
+        # local server must not forward the conversation elsewhere), and no
+        # environment inheritance (netrc credentials, external proxies).
+        self._session = requests.Session()
+        self._session.max_redirects = 0
+        self._session.trust_env = False
 
     def available(self) -> bool:
-        """Whether a server answers at the configured address."""
+        """Whether the configured address serves the OpenAI chat shape."""
         if self._checked is True or (self._checked is False
                                    and time.monotonic() < self._check_after):
             return self._checked
         # /health is the OpenATC server's liveness probe; /v1/models is the
-        # OpenAI shape most of the rest answer.
+        # OpenAI shape most of the rest answer. A 4xx means the endpoint is
+        # not there -- it does not prove the chat shape is served.
         for probe in (f"{self._origin}/health", f"{self._chat_base}/models"):
             try:
-                response = requests.get(probe, timeout=2.0)
+                response = self._session.get(probe, timeout=2.0)
             except Exception:
                 continue
-            if response.status_code < 500:
+            if response.status_code < 400:
                 self._checked = True
                 break
         else:
@@ -494,6 +501,17 @@ class LocalOpenAIProvider:
             log.info("local OpenAI server not reachable at %s", self._origin)
         return self._checked
 
+    def close(self) -> None:
+        self._session.close()
+
+    def _post(self, body: dict):
+        response = self._session.post(
+            self.url, json=body, timeout=self.timeout_s,
+            allow_redirects=False)
+        if 300 <= response.status_code < 400:
+            raise ValueError("AI endpoint redirect refused")
+        return response
+
     def _chat(self, messages: list[dict[str, str]], temperature: float,
               response_format: dict | None = None) -> str:
         body = {"model": self.model, "messages": messages,
@@ -501,16 +519,12 @@ class LocalOpenAIProvider:
                 "stream": False}
         if response_format:
             body["response_format"] = response_format
-        response = requests.post(self.url, json=body,
-                                 timeout=self.timeout_s)
+        response = self._post(body)
         if response_format and response.status_code == 400:
             # A server without structured-output support gets the same call
             # without the schema; parse_response still validates the answer.
-            response = requests.post(
-                self.url, timeout=self.timeout_s,
-                json={"model": self.model, "messages": messages,
-                      "temperature": temperature, "max_tokens": 256,
-                      "stream": False})
+            del body["response_format"]
+            response = self._post(body)
         response.raise_for_status()
         return (response.json()["choices"][0]["message"]["content"] or "").strip()
 
