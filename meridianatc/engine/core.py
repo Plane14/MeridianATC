@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ._shared import (
+    LOCAL_PROVIDER_NAMES,
     AircraftState,
     AirspaceWatch,
     AnnouncementLibrary,
@@ -223,10 +224,11 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         # A cloud provider named without consent (or in offline mode) is
         # built as "none": the deterministic parser then carries it all.
         ai_provider = self.config.ai.provider
-        # Everything but local Ollama can reach out (a "custom" endpoint can
-        # be anywhere and carries a bearer key), so everything but it wants
-        # the first-run consent before a key is sent.
-        cloud = ai_provider not in ("", "none", "ollama")
+        # Everything but a local provider can reach out (a "custom" endpoint
+        # can be anywhere and carries a bearer key), so everything but them
+        # wants the first-run consent before a key is sent.
+        cloud = ai_provider not in ("", "none") \
+            and ai_provider not in LOCAL_PROVIDER_NAMES
         if self.config.network.offline \
                 or (cloud and not self.config.network.cloud_consent):
             ai_provider = "none"
@@ -247,11 +249,11 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         # renderer is only built when the pilot asked for it and the
         # provider speaks.
         self.phrasing = None
-        # Consent gates cloud reach-out; a local Ollama phrasing is a local
-        # call and does not need it.
+        # Consent gates cloud reach-out; a local phrasing is a local call
+        # and does not need it.
         provider = self.understanding.provider
         is_cloud = provider is not None \
-            and getattr(provider, "name", "") != "ollama"
+            and getattr(provider, "name", "") not in LOCAL_PROVIDER_NAMES
         if self.config.ai.phrasing and not self.config.network.offline \
                 and (not is_cloud or self.config.network.cloud_consent) \
                 and provider is not None:

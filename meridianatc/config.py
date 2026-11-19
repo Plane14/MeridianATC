@@ -571,9 +571,10 @@ class AiConfig:
     from the phraseology templates, whatever this is set to.
     """
 
-    # none | ollama | anthropic
+    # none | ollama | local | openatc | anthropic | openai-compatible cloud
     provider: str = "none"
     # Ollama: a small instruction-tuned model is plenty. Claude: claude-opus-5.
+    # A local OpenAI server may leave it blank and serve its loaded model.
     model: str = ""
     host: str = "http://127.0.0.1:11434"
     api_key: str = ""
@@ -601,13 +602,15 @@ class AiConfig:
 describe(
     AiConfig,
     provider=Setting("understanding", "understanding",
-                     choices=("none", "ollama", "anthropic", "openrouter",
-                              "openai", "groq", "deepseek", "custom"),
+                     choices=("none", "ollama", "local", "openatc",
+                              "anthropic", "openrouter", "openai", "groq",
+                              "deepseek", "custom"),
                      restart=True),
     model=Setting("understanding", "understanding", restart=True,
                   when="ai.provider!=none"),
-    # Ollama's URL, and the custom provider's base URL the endpoint is
-    # built from -- both live on the same setting.
+    # Ollama's URL, the local server's base URL (OpenATC's AI server is
+    # http://127.0.0.1:8099), and the custom provider's base URL the
+    # endpoint is built from -- all live on the same setting.
     host=Setting("understanding", "understanding", restart=True,
                  advanced=True, when="ai.provider!=none"),
     # Never sent back to the panel: shown as set or not set.

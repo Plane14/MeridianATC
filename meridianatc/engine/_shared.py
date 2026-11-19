@@ -100,7 +100,7 @@ from ..integrations.servicepoints import SimServicePoints
 from ..integrations.simaircraft import SimAircraft
 from ..integrations.systems import SimSystems
 from ..integrations.xptraffic import XPlaneTraffic
-from ..llm.providers import build_provider
+from ..llm.providers import LOCAL_PROVIDER_NAMES, build_provider
 from ..llm.understanding import Understanding
 from ..logs import RADIO, decision, timed
 from ..navdata.channels import is_valid_channel, same_channel
@@ -333,6 +333,7 @@ __all__ = [
     "SimAircraft",
     "SimSystems",
     "XPlaneTraffic",
+    "LOCAL_PROVIDER_NAMES",
     "build_provider",
     "Understanding",
     "RADIO",
