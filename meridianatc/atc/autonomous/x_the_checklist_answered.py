@@ -125,7 +125,13 @@ class _The_checklist_answered:
             # while the wheels still carry the aeroplane.
             "gear_down": lambda: (
                 (want_on and self._gear_allowed(state))
-                or (not want_on and not getattr(state, "on_ground", True))
+                # Wheels up on the positive rate, the way the book has
+                # it: a landing bounce is airborne for a second without
+                # being a climb the gear comes up on.
+                or (not want_on
+                    and not getattr(state, "on_ground", True)
+                    and (getattr(state, "vertical_speed_fpm", 0.0)
+                         or 0.0) > 300.0)
             ) and d.gear(want_on),
             "landing_light": lambda: d.landing_light(want_on),
             "taxi_light": lambda: d.taxi_light(want_on),

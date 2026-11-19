@@ -178,6 +178,13 @@ class _Aeroplanes_somebody_else:
         for object_id, flight in known.items():
             if object_id not in here:
                 flight.done = True
+        # A held live aeroplane leaving the feed takes its hold with
+        # it: the roster keeps emitting the frozen pose for the rest of
+        # the session otherwise -- the statue the release paths exist
+        # to prevent.
+        for flight in self.flights:
+            if flight.done:
+                self._release_held(flight)
         self.flights = [f for f in self.flights if not f.done]
         self.observed_count = sum(1 for f in self.flights if f.observed)
 

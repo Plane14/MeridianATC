@@ -502,10 +502,17 @@ class _Helpers:
         decision("enroute_direct", station=station.callsign, fix=best.ident,
                  event="direct granted", granted=True,
                  reason=f"{best.ident} is ahead on the flight plan")
+        # The clearance the pilot read back is the clearance flown: the
+        # fix is stored where the FO's direct law watches for it, the
+        # same field the controller's own shortcut writes -- a grant
+        # that stayed only in the transcript was never flown.
+        session.route_direct = best.ident
+        session.route_direct_index = self.plan_fixes.index(best)
         spoken = best.name if best.name and best.name.upper() != best.ident else ""
         text = p.direct_to(aircraft, best.ident, fix_spoken=spoken)
         instruction = session.remember(
-            Instruction("direct", station_key(station), text, {},
+            Instruction("direct", station_key(station), text,
+                        {"fix": best.ident},
                         readback_required=False))
         return Reply(text, station, instruction=instruction)
 

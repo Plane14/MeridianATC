@@ -274,6 +274,93 @@ def test_a_chained_leg_keeps_the_aircrafts_hull():
     flight.use_route.assert_called_once()
 
 
+def test_a_go_around_drops_the_modes_the_approach_armed():
+    """A missed approach flown by hand fights an AP still in the
+    descent it was armed for: the modes go off with the TO/GA press."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+
+    flight = _flight()
+    flight.sim = Mock()
+    flight._dir = Mock()
+    flight._dir.sim = flight.sim
+    flight.state.phase = AutonomousPhase.APPROACH
+    flight.state.approach_recipe = SimpleNamespace(missed_alt_ft=4000.0)
+    flight.state.ap_master = True
+    flight.state.ap_vs_mode = True
+    flight.state.ap_speed_mode = True
+    flight.state.ap_nav_mode = True
+    flight._field_elevation = Mock(return_value=0.0)
+    flight.session = SimpleNamespace(assigned_altitude_ft=0.0)
+    flight._prop_levers = Mock()
+    flight._g_pull_cap = Mock(return_value=0.3)
+    flight._manage_radio = False
+    flight.on_event = Mock()
+    state = SimpleNamespace(altitude_ft=500.0, flaps_index=2,
+                            source="simconnect")
+
+    flight._start_go_around(state)
+
+    flight._dir.autopilot.assert_called_with(False)
+    flight._dir.vs_hold.assert_called_with(False)
+    flight._dir.airspeed_hold.assert_called_with(False)
+    assert flight.state.ap_master is False
+    assert flight.state.ap_vs_mode is False
+
+
+def test_a_dead_bus_at_zero_volts_is_the_collapse_it_looks_like():
+    """A fourteen-volt bus reads zero when it is gone in the air: the
+    'published' guard is the default -1, not the real reading."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+
+    flight = _flight()
+    flight.state.phase = AutonomousPhase.CRUISE
+    flight._declare_emergency = Mock()
+    flight._electrical_since = 100.0
+    flight._fuel_capacity_seen = 0.0
+    flight._fuel_needed_gal = Mock(return_value=None)
+    state = SimpleNamespace(on_ground=False, main_bus_volts=0.0)
+
+    flight._monitor_emergency(state, 120.0)
+    flight._declare_emergency.assert_called_with(
+        "electrical", state, mayday=True)
+
+    # A variable the model never publishes is not a collapse.
+    flight._declare_emergency.reset_mock()
+    flight._electrical_since = 0.0
+    quiet = SimpleNamespace(on_ground=False, main_bus_volts=-1.0,
+                            fuel_total_gal=100.0, fuel_capacity_gal=200.0)
+    flight._monitor_emergency(quiet, 120.0)
+    assert all(call.args[0] != "electrical"
+               for call in flight._declare_emergency.call_args_list)
+
+
+def test_a_granted_direct_is_the_one_flown():
+    """The direct the controller grants is the direct the FO flies:
+    the fix is stored where the direct law watches, not left in the
+    transcript."""
+    from meridianatc.atc.controller.core import ControllerBrain
+
+    ctl = ControllerBrain.__new__(ControllerBrain)
+    fix = SimpleNamespace(ident="ALPHA", name="", lat=0.0, lon=1.0)
+    ctl.plan_fixes = [fix]
+    session = SimpleNamespace(
+        aircraft=SimpleNamespace(), route_direct="",
+        route_direct_index=-1, remember=lambda i: i)
+    station = SimpleNamespace(callsign="CTR", ident="CTR",
+                              position="CTR", mhz=123.45)
+    p = Mock()
+    p.direct_to = Mock(return_value="direct ALPHA")
+    state = SimpleNamespace(latitude=0.0, longitude=0.0,
+                            heading_true=90.0)
+
+    reply = ctl._direct_on_the_plan({"fix": "ALPHA"}, session, station,
+                                    p, state)
+
+    assert session.route_direct == "ALPHA"
+    assert session.route_direct_index == 0
+    assert reply.text == "direct ALPHA"
+
+
 def test_the_first_officer_answers_to_his_first_name():
     """A backspace byte in the pattern where a word boundary was meant
     made the name branch match nothing -- the first officer only ever
