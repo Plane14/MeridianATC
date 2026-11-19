@@ -390,8 +390,12 @@ class _The_checklist_answered:
         err = ((want_hdg - hdg + 540.0) % 360.0 - 180.0)
         rate = self._turn_rate(hdg)
         lead = self._steer_lead(err, rate)
-        want_rate = max(-rate_cap, min(rate_cap, lead / 4.0))
-        want_rate *= max(0.6, min(1.35, demand))
+        # The situation's press is on the ask before the cap: a firmer
+        # demand reaches the cap sooner, a softer one sits under it --
+        # the cap itself is never the thing pressed.
+        want_rate = max(-rate_cap, min(
+            rate_cap,
+            lead / 4.0 * max(0.6, min(1.35, demand))))
         authority = self._yaw_authority_at(gs)
         pedal = max(-pedal_max,
                     min(pedal_max, (want_rate - rate) / authority))
@@ -668,13 +672,15 @@ class _The_checklist_answered:
         # The led error is the one the next write answers to -- the
         # swing is braked before the line is crossed, not corrected
         # after.
-        want_rate = max(-rate_cap, min(rate_cap,
-                                     self._steer_lead(err, rate) / 4.0))
-        # The situation's press on the ask: firmer for the caller's
-        # demand and for a committed turnaround, softer under a quarter
-        # of each, bounded so a firmer pass is the same law leaning,
-        # not a different one.
-        want_rate *= max(0.6, min(1.35, demand * (1.2 if commit else 1.0)))
+        # The situation's press is on the ask before the cap: firmer
+        # for the caller's demand and for a committed turnaround,
+        # softer under a quarter of each, bounded so a firmer pass is
+        # the same law leaning, not a different one -- and never past
+        # the authority the cap was just cut to.
+        want_rate = max(-rate_cap, min(
+            rate_cap,
+            self._steer_lead(err, rate) / 4.0
+            * max(0.6, min(1.35, demand * (1.2 if commit else 1.0)))))
         rudder = max(-0.5, min(0.5, (want_rate - rate) / authority))
         rudder = max(-limit, min(limit, rudder))
         if abs(err) < 1.5 and abs(rate) < 1.0:
