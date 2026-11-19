@@ -53,7 +53,10 @@ class AircraftState:
     title: str = ""                     # sim's own aircraft title
 
     # --- configuration ---
-    engines_running: bool = False
+    # Engine one's combustion flag (GENERAL ENG COMBUSTION:1). None is
+    # the same contract as the per-engine slots below: the source never
+    # answered, which is not evidence of a stopped engine.
+    engines_running: bool | None = None
     parking_brake: bool = False
     gear_down: bool = True
     # IS TAIL DRAGGER (SimConnect) / acf_is_taildragger (X-Plane). None

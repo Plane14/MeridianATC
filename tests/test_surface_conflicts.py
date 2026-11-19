@@ -594,6 +594,34 @@ def test_fo_rejects_below_v1_on_an_engine_out():
     assert fo.state.sub == "abort"
 
 
+def test_fo_rolls_past_ghost_combustion_flags():
+    """The C172's first SimConnect takeoff: the combustion indexes
+    past its single engine answer False, and the roll was rejected
+    for a triple engine failure that never happened. Slots past the
+    reported count are not engines."""
+    fo = _fo()
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo.state.phase = AutonomousPhase.TAKEOFF
+    fo.state.sub = "roll"
+    fo.state.runway_heading = 90.0
+    fo.state.sub_entered_at = time.monotonic()
+    fo.session = _fo_session(_path(), cleared_takeoff=True)
+    fo._compute_speeds = Mock()
+    fo._set_takeoff_power = Mock()
+    fo._steer_lead = Mock(return_value=0.0)
+    fo._turn_rate = Mock(return_value=0.0)
+    fo._pedal_dir = Mock(return_value=1.0)
+    fo._runway_blocked = Mock(return_value=False)
+    state = _state(51.15, -0.19, heading_true=90.0,
+                   indicated_airspeed_kt=20.0, engines_running=1,
+                   engine_count=1, eng2_combustion=0,
+                   eng3_combustion=0, eng4_combustion=0)
+    fo._phase_takeoff(state, 101.0)
+    assert fo.state.sub == "roll"
+    assert fo.state.rejected is False
+    fo._set_takeoff_power.assert_called()
+
+
 def test_prop_levers_forward_on_a_prop_aeroplane():
     # The Baron's stand was this: props left at low pitch governed the
     # engines down to propellers that could not move the aeroplane, and

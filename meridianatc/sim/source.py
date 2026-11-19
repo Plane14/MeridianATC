@@ -1415,6 +1415,15 @@ class SimConnectSource:
         # two are the same dial.
         state.transponder_mode = state.transponder_state
 
+        # A combustion index past the reported engine count still answers
+        # on SimConnect -- a False naming an engine that is not there,
+        # which the engine watch reads as the failure that never
+        # happened. Only slots inside the count are engines; the rest
+        # are unpublished, and unpublished is None.
+        if state.engine_count > 0:
+            for i in range(state.engine_count + 1, 5):
+                setattr(state, f"eng{i}_combustion", None)
+
     # ------------------------------------------------------------------
     # writing back: the panel is a radio too
     # ------------------------------------------------------------------

@@ -147,17 +147,32 @@ class _Emergencies:
 
         ``engines_running`` is engine one's combustion; a model that
         reports no combustion variables answers nothing, and nothing is
-        invented.
+        invented. A reported engine count is the roster: on SimConnect
+        an out-of-range index still answers, and it answers False --
+        ghost failures a single would otherwise never get past V1
+        with. Where the count is not reported, a slot past the first
+        is an engine once the sim has shown it combusting; a flag
+        that has never once been up is no evidence of a failure.
         """
+        flags = (getattr(state, "engines_running", None),
+                 getattr(state, "eng2_combustion", None),
+                 getattr(state, "eng3_combustion", None),
+                 getattr(state, "eng4_combustion", None))
+        live = getattr(self, "_engines_live", None)
+        if live is None:
+            live = self._engines_live = set()
+        live.update(i for i, flag in enumerate(flags, start=1) if flag)
+        count = int(getattr(state, "engine_count", 0) or 0)
+        if count > 0:
+            live.intersection_update(range(1, count + 1))
         out = 0
         seen = 0
-        for flag in (getattr(state, "engines_running", None),
-                     getattr(state, "eng2_combustion", None),
-                     getattr(state, "eng3_combustion", None),
-                     getattr(state, "eng4_combustion", None)):
-            if flag is not None:
-                seen += 1
-                if not flag:
-                    out += 1
+        for i, flag in enumerate(flags, start=1):
+            if flag is None or (count > 0 and i > count) \
+                    or (count <= 0 and i > 1 and i not in live):
+                continue
+            seen += 1
+            if not flag:
+                out += 1
         return out, seen
 

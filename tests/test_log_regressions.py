@@ -1835,6 +1835,79 @@ def test_an_engine_flag_blip_is_not_an_engine_emergency():
         "engine-out", state, mayday=False)
 
 
+def test_ghost_combustion_slots_are_not_an_engine_failure():
+    """The C172's first SimConnect roll: the combustion indexes past
+    the aeroplane's one engine still answer, and they answer False --
+    three "dead" engines on a healthy single, the takeoff rejected
+    below V1 every time. Slots past the reported count are not
+    engines at all."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _emergency_flight()
+    flight.state.phase = AutonomousPhase.CRUISE
+    state = SimpleNamespace(
+        main_bus_volts=28.0, on_ground=False, engine_count=1,
+        engines_running=True, eng2_combustion=False,
+        eng3_combustion=False, eng4_combustion=False, has_position=True,
+        fuel_total_gal=70.0, fuel_capacity_gal=200.0)
+    # The ghost flags hold for the whole watch, and nothing is said.
+    flight._monitor_emergency(state, 100.0)
+    flight._monitor_emergency(
+        state, 100.0 + flight.ENGINES_PERSIST_S + 1.0)
+    flight._declare_emergency.assert_not_called()
+    # The one real engine still counts: dark means out, all of them
+    # out is the MAYDAY.
+    state.engines_running = False
+    flight._monitor_emergency(state, 200.0)
+    flight._monitor_emergency(
+        state, 200.0 + flight.ENGINES_PERSIST_S + 1.0)
+    flight._declare_emergency.assert_called_once_with(
+        "engine", state, mayday=True)
+
+
+def test_a_twin_ignores_the_combustion_slots_it_does_not_have():
+    """Same ghost on the Baron: engines three and four answer False,
+    and two combusting engines still read no failure -- while the
+    second real engine going dark is the engine-out it always was."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _emergency_flight()
+    flight.state.phase = AutonomousPhase.CRUISE
+    state = SimpleNamespace(
+        main_bus_volts=28.0, on_ground=False, engine_count=2,
+        engines_running=True, eng2_combustion=True,
+        eng3_combustion=False, eng4_combustion=False, has_position=True,
+        fuel_total_gal=70.0, fuel_capacity_gal=200.0)
+    flight._monitor_emergency(state, 100.0)
+    flight._monitor_emergency(
+        state, 100.0 + flight.ENGINES_PERSIST_S + 1.0)
+    flight._declare_emergency.assert_not_called()
+    state.eng2_combustion = False
+    flight._monitor_emergency(state, 200.0)
+    flight._monitor_emergency(
+        state, 200.0 + flight.ENGINES_PERSIST_S + 1.0)
+    flight._declare_emergency.assert_called_once_with(
+        "engine-out", state, mayday=False)
+
+
+def test_an_unreported_slot_is_an_engine_once_it_has_fired():
+    """Where the model names no count, a combustion slot that has
+    never once fired is no evidence -- SimConnect answers the
+    out-of-range ones False by default. Once a slot has fired it is
+    an engine, and its going dark is a failure."""
+    flight = _emergency_flight()
+    state = SimpleNamespace(
+        engine_count=0, engines_running=True,
+        eng2_combustion=False, eng3_combustion=None,
+        eng4_combustion=None)
+    # Only engine one counts: the never-fired slot two is not there.
+    assert flight._engines_out(state) == (0, 1)
+    # It fires once -- it is now an engine the sim knows exists.
+    state.eng2_combustion = True
+    assert flight._engines_out(state) == (0, 2)
+    # ...and going dark after that is the failure it reports.
+    state.eng2_combustion = False
+    assert flight._engines_out(state) == (1, 2)
+
+
 def test_cannot_reach_the_field_settles_faster_than_minimum_fuel():
     """The MAYDAY tier still answers in under a minute: a fuel state
     below the bare leg is grave, but it is still priced on the moment's
