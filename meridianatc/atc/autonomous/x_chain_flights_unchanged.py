@@ -251,11 +251,16 @@ class _Chain_flights_unchanged:
         chain_index = self.state.chain_flight_index
         aircraft_type = self.state.aircraft_type
         aircraft_range_nm = self.state.aircraft_range_nm
+        aircraft_floats = self.state.aircraft_floats
         self.state = AutonomousState()
         self.state.chain_flights = chain_flights
         self.state.chain_flight_index = chain_index
         self.state.aircraft_type = aircraft_type
         self.state.aircraft_range_nm = aircraft_range_nm
+        # The hull it sits on is an aircraft figure too: a floatplane's
+        # next leg still lands on water, which the fresh state would
+        # have forgotten.
+        self.state.aircraft_floats = aircraft_floats
         self._reset_scratch()
         if self._dir is not None:
             self._dir.reset()

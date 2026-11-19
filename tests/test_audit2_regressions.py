@@ -124,6 +124,156 @@ def test_a_held_live_aeroplane_is_let_go_when_its_strip_goes():
     injector.hold_live.assert_not_called()
 
 
+def test_the_turnaround_believes_the_tanks_not_the_write():
+    """A tank write the model ignores is nobody bringing the fuel: the
+    uplift is checked against the gauges like a real turnaround, and a
+    write that changed nothing falls through to the shortfall rules."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+
+    flight = _flight()
+    flight._turnaround_service = True
+    flight._is_helicopter = False
+    flight._fuel_capacity_seen = 0.0
+    flight.navdb = SimpleNamespace(
+        airport=lambda ident: SimpleNamespace(ident=ident))
+    flight.session = SimpleNamespace(destination=None)
+    flight.brain = SimpleNamespace(ground=None)
+    flight._pick_alternate = Mock(return_value=None)
+    flight._fuel_needed_gal = Mock(return_value={
+        "leg_gal": 50.0, "divert_gal": 10.0, "reserve_gal": 15.0,
+        "total_gal": 75.0, "alternate": None})
+    flight._write_fuel = Mock(side_effect=lambda gal: (
+        setattr(flight.state, "fuel_wrote", True) or True))
+    flight.on_event = Mock()
+    flight.state.plan_flight = {"destination": "LFPG"}
+    state = SimpleNamespace(engines_running=False, rotor_rpm_pct=0.0,
+                            fuel_total_gal=10.0, fuel_capacity_gal=100.0)
+
+    # The write is accepted, but the answer comes from the gauges: the
+    # stand waits on them a moment.
+    assert flight._service_turnaround(state, 100.0) is False
+    flight._write_fuel.assert_called_once_with(75.0)
+    assert flight._service_turnaround(state, 105.0) is False
+    assert flight.state.phase != AutonomousPhase.SHUTDOWN
+
+    # Fuel that never arrives past the grace window is a shortfall like
+    # any other: the FO signs the aeroplane off, he does not guess.
+    assert flight._service_turnaround(state, 120.0) is False
+    assert flight.state.phase == AutonomousPhase.SHUTDOWN
+
+
+def test_the_turnaround_loads_the_leg_the_tanks_confirm():
+    """The write lands where the gauges say so: the leg is loaded on
+    the tanks' figure, and a fuller tank still covers a shorter leg."""
+    from meridianatc.atc.autonomous import AutonomousPhase  # noqa: F401
+
+    flight = _flight()
+    flight._turnaround_service = True
+    flight._is_helicopter = False
+    flight._fuel_capacity_seen = 0.0
+    flight.navdb = SimpleNamespace(
+        airport=lambda ident: SimpleNamespace(ident=ident))
+    flight.session = SimpleNamespace(destination=None)
+    flight.brain = SimpleNamespace(ground=None)
+    flight._pick_alternate = Mock(return_value=None)
+    flight._fuel_needed_gal = Mock(return_value={
+        "leg_gal": 50.0, "divert_gal": 10.0, "reserve_gal": 15.0,
+        "total_gal": 75.0, "alternate": None})
+    flight._write_fuel = Mock(side_effect=lambda gal: (
+        setattr(flight.state, "fuel_wrote", True) or True))
+    flight.on_event = Mock()
+    flight.state.plan_flight = {"destination": "LFPG"}
+    state = SimpleNamespace(engines_running=False, rotor_rpm_pct=0.0,
+                            fuel_total_gal=10.0, fuel_capacity_gal=100.0)
+
+    assert flight._service_turnaround(state, 200.0) is False
+    # The model takes the write: the next read carries the uplift.
+    state.fuel_total_gal = 76.0
+    assert flight._service_turnaround(state, 201.0) is True
+
+
+def test_the_turnaround_shuts_the_engines_at_blocks():
+    """A crew that sets the parking brake shuts the engines: the stand
+    delay is not spent burning the fuel the next leg was just loaded
+    with."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+
+    flight = _flight()
+    flight.state.phase = AutonomousPhase.CHAIN_NEXT
+    flight.state.sub = "delay"
+    flight.state.phase_entered_at = 100.0
+    flight._chain_delay = 120.0
+    flight._shutdown_engines = Mock()
+    state = SimpleNamespace(engines_running=True)
+
+    flight._phase_chain_next(state, 110.0)
+    flight._shutdown_engines.assert_called_once()
+
+    # Already shut, nothing more is sent.
+    state.engines_running = False
+    flight._phase_chain_next(state, 111.0)
+    flight._shutdown_engines.assert_called_once()
+
+
+def test_a_leg_change_arms_the_climbs_fms_direct_again():
+    """The present-position direct and the vector rewrite are spent on
+    the leg's climb: a new leg that inherits 'done' never gets its own
+    FMS write."""
+    flight = _flight()
+    flight._wind_z_hist = []
+    flight._adapt = None
+    flight._fms_direct_done = True
+    flight._vector_fms_hdg = 270.0
+    flight._fuel_leg_since = 9.0
+    flight._fuel_min_since = 4.0
+    flight._electrical_since = 8.0
+    flight._engines_since = 6.0
+    flight._nav_off_since = 7.0
+
+    flight._reset_scratch()
+
+    assert flight._fms_direct_done is False
+    assert flight._vector_fms_hdg is None
+    assert flight._fuel_leg_since == 0.0
+    assert flight._fuel_min_since == 0.0
+    assert flight._electrical_since == 0.0
+    assert flight._engines_since == 0.0
+    assert flight._nav_off_since == 0.0
+
+
+def test_a_chained_leg_keeps_the_aircrafts_hull():
+    """A floatplane's next leg still lands on water: the aircraft
+    figures survive the state reset like the aircraft field itself."""
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.config import Config
+
+    flight = _flight()
+    flight.state.aircraft_floats = True
+    flight.state.aircraft_type = "DHC2"
+    flight.state.aircraft_range_nm = 400.0
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    flight.session = session
+    flight.config = Config()
+    flight.navdb = SimpleNamespace(airport=lambda ident: SimpleNamespace(
+        ident=ident, lat=45.0, lon=-75.0))
+    flight._dir = None
+    flight._heli = None
+    flight._adapt = None
+    flight._wind_z_hist = []
+    flight.use_route = Mock()
+    flight.crew = SimpleNamespace(begin=Mock())
+    flight.on_event = Mock()
+
+    flight._load_next_flight({"origin": "CYAA", "destination": "CYZZ",
+                              "cruise_altitude_ft": 4000, "ifr": True})
+
+    assert flight.state.aircraft_floats is True
+    assert flight.state.aircraft_type == "DHC2"
+    flight.use_route.assert_called_once()
+
+
 def test_the_first_officer_answers_to_his_first_name():
     """A backspace byte in the pattern where a word boundary was meant
     made the name branch match nothing -- the first officer only ever

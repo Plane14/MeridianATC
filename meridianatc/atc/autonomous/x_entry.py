@@ -230,6 +230,20 @@ class _Entry:
         self._emergency_level = 0
         self._fuel_known = False
         self._fuel_capacity_seen = 0.0
+        # The debounce clocks a watch armed last leg belongs to last
+        # leg's sky: a shortage or a dead NAV still timing when the
+        # flight changed must not fall over the line on this leg's
+        # first tick.
+        self._fuel_leg_since = 0.0
+        self._fuel_min_since = 0.0
+        self._electrical_since = 0.0
+        self._engines_since = 0.0
+        self._nav_off_since = 0.0
+        # The FMS writes each departure wants -- the present-position
+        # direct on the climb's first NAV, and the vector rewrite --
+        # were spent on the last leg's climb; this leg's gets its own.
+        self._fms_direct_done = False
+        self._vector_fms_hdg = None
         self._checklist_item_id = 0
         self._checklist_item_since = 0.0
         self._checklist_perform_since = 0.0

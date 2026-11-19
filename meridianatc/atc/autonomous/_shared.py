@@ -298,6 +298,7 @@ class AutonomousState:
     gsx_asked: bool = False
     gsx_busy: bool = False
     fuel_wrote: bool = False
+    fuel_wrote_at: float = 0.0
     service_warned: bool = False
     alternate: Airport | None = None
     # The warnings a flight gets once: overweight at the hold, the flap

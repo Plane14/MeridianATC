@@ -1817,6 +1817,11 @@ class _The_phase_machine:
             return
 
         if sub == "delay":
+            # The stand's delay is run with the engines off -- they are
+            # shut at blocks in the real job, not idled through the
+            # turnaround, and the fuelling below wants them cold anyway.
+            if getattr(state, "engines_running", False):
+                self._shutdown_engines()
             if now - self.state.phase_entered_at < self._chain_delay:
                 return
             self._goto_sub("service")
