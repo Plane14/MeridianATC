@@ -2174,3 +2174,38 @@ def test_a_diversion_drops_the_old_fields_orbit(monkeypatch):
     fo._hold_level.reset_mock()
     assert not fo._fly_orbit(state)
     fo._hold_level.assert_not_called()
+def test_the_taxi_pursuit_is_bounded_to_the_leg():
+    """The hunt was the unbounded ask: beside the line the lookahead's
+    bearing is near-abreast, and every crossing swung the demand through
+    it. The pursuit is a rejoin angle off the leg's own direction now."""
+    from meridianatc.atc.autonomous.x_taxi import _bounded_intercept
+    # A near-abreast ask beside the line caps at forty-five off the leg.
+    assert _bounded_intercept(160.0, 90.0, rejoining=False) \
+        == pytest.approx(135.0)
+    # Rejoining from further out earns a firmer angle, still bounded.
+    assert _bounded_intercept(200.0, 90.0, rejoining=True) \
+        == pytest.approx(155.0)
+    # Inside the cap the ask passes through untouched.
+    assert _bounded_intercept(110.0, 90.0, rejoining=False) \
+        == pytest.approx(110.0)
+    # Across north: a leg at 350 asked 20 is a thirty-degree intercept.
+    assert _bounded_intercept(20.0, 350.0, rejoining=False) \
+        == pytest.approx(20.0)
+    # And over the cap it clamps through the wrap, not around it.
+    assert _bounded_intercept(80.0, 350.0, rejoining=False) \
+        == pytest.approx(35.0)
+
+
+def test_the_taxi_steer_law_brakes_on_the_lead_not_the_stale_read():
+    """The servo orders the turn the nose will already have made by the
+    next tick -- the overshoot each way off the line was the stale read
+    ordering a rate the aeroplane had already grown past."""
+    import inspect
+
+    import meridianatc.atc.autonomous as autonomous_mod
+    src = inspect.getsource(autonomous_mod.AutonomousFlight._steer)
+    assert "_steer_lead" in src
+    flight = _steerable()
+    flight._steer_dt = 2.0
+    # Six a second held for three seconds lands eighteen past the read.
+    assert flight._steer_lead(10.0, 6.0) == pytest.approx(-8.0)

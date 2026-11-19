@@ -166,9 +166,9 @@ def test_reset_clears_oscillation_evidence():
     pid = AdaptivePid("throttle", adapt,
                       PidTerms(kp=0.1, deadband=0.5, low=-1.0, high=1.0),
                       clock=Clock())
-    # Seven flips: one short of the oscillation verdict -- evidence on
-    # the tally that has not yet acted.
-    for i in range(8):
+    # Four flips: short of the oscillation verdict -- evidence on the
+    # tally that has not yet acted.
+    for i in range(5):
         pid.update(8.0 if i % 2 else -8.0, dt=0.25)
     assert pid._flips
     assert adapt.scale("throttle") == pytest.approx(1.0)
@@ -179,3 +179,68 @@ def test_reset_clears_oscillation_evidence():
     for _ in range(6):
         pid.update(5.0, dt=0.25)
     assert adapt.scale("throttle") == pytest.approx(1.0)
+
+
+def test_effort_firms_or_softens_a_pass():
+    terms = PidTerms(kp=0.1, low=-2.0, high=2.0)
+    firm = Pid(terms, clock=Clock())
+    soft = Pid(terms, clock=Clock())
+    assert firm.update(5.0, dt=0.25, effort=1.5) == pytest.approx(0.75)
+    assert soft.update(5.0, dt=0.25, effort=0.5) == pytest.approx(0.25)
+    # The ask is bounded: absurd effort is clamped, not trusted.
+    assert firm.update(5.0, dt=0.25, effort=9.0) == pytest.approx(1.25)
+    # The integrator never carries the press: the trim a firmer pass
+    # winds is the same one a neutral pass would.
+    integ = Pid(PidTerms(ki=0.5, low=-2.0, high=2.0), clock=Clock())
+    assert integ.update(5.0, dt=0.25, effort=2.0) == pytest.approx(0.625)
+
+
+def test_assist_presses_while_the_error_is_not_coming_in():
+    adapt = Adaptation()
+    pid = AdaptivePid("throttle", adapt,
+                      PidTerms(kp=0.1, deadband=0.5, low=-2.0, high=2.0),
+                      clock=Clock())
+    # An error holding its own for seconds: the pass presses harder
+    # each tick, leaning in long before the saturation verdict could.
+    first = pid.update(8.0, dt=0.25)
+    last = first
+    for _ in range(24):
+        last = pid.update(8.0, dt=0.25)
+    assert pid._assist > 1.0
+    assert last > first
+
+
+def test_assist_softens_as_the_error_collapses():
+    adapt = Adaptation()
+    pid = AdaptivePid("throttle", adapt,
+                      PidTerms(kp=0.1, deadband=0.5, low=-2.0, high=2.0),
+                      clock=Clock())
+    for _ in range(12):
+        pid.update(8.0, dt=0.25)           # build the trailing reference
+    outs = [pid.update(1.0, dt=0.25) for _ in range(6)]
+    assert pid._assist < 1.0
+    assert outs[0] > outs[-1]              # easing off, not stepping off
+    assert outs[-1] < 0.1                  # softer than the plain pass
+
+
+def test_assist_comes_home_when_there_is_nothing_to_press():
+    adapt = Adaptation()
+    pid = AdaptivePid("throttle", adapt,
+                      PidTerms(kp=0.1, deadband=0.5, low=-2.0, high=2.0),
+                      clock=Clock())
+    for _ in range(12):
+        pid.update(8.0, dt=0.25)
+    for _ in range(40):
+        pid.update(0.1, dt=0.25)           # inside the deadband: settled
+    assert pid._assist == pytest.approx(1.0)
+
+
+def test_assist_leaves_a_dead_tick_alone():
+    adapt = Adaptation()
+    pid = AdaptivePid("throttle", adapt,
+                      PidTerms(kp=0.1, deadband=0.5, low=-2.0, high=2.0),
+                      clock=Clock())
+    pid.update(8.0, dt=0.25)
+    before = pid._assist
+    pid.update(8.0, dt=60.0)               # a resumed tick, not a held one
+    assert pid._assist == before

@@ -87,7 +87,8 @@ class Pid:
 
     def update(self, error: float, dt: float | None = None,
                measurement: float | None = None,
-               rate: float | None = None) -> float:
+               rate: float | None = None,
+               effort: float = 1.0) -> float:
         t = self.terms
         now = self._clock()
         if dt is None:
@@ -97,9 +98,18 @@ class Pid:
         if dt > self.DT_MAX:
             dt = self.DT_MAX
 
+        # The pass's effort: how hard the hand presses right now. Over one
+        # is a firmer hand -- the correction the situation wants is made
+        # decisively rather than worked up to; under one is a soft one --
+        # the hand that is arriving does not drive through the target.
+        # It scales the proportional and derivative terms only: the
+        # integrator holds the model's learned trim, and an urgent pass
+        # must not inflate the figure a quiet one measured.
+        effort = max(0.25, min(2.5, effort)) if effort != 1.0 else effort
+
         # Proportional, deadbanded.
         err = 0.0 if abs(error) < t.deadband else error
-        out = t.kp * err
+        out = t.kp * err * effort
 
         # Integral, with anti-windup by conditional integration: once the
         # output sits on a clamp and the error would push it further onto
@@ -113,7 +123,7 @@ class Pid:
             # lever, not that _i itself may reach one.
             cap = t.integral_cap / t.ki
             trial = max(-cap, min(cap, trial))
-            would = t.kp * err + t.ki * trial
+            would = t.kp * err * effort + t.ki * trial
             saturating_up = t.high < math.inf and would >= t.high
             saturating_dn = t.low > -math.inf and would <= t.low
             pushing = (saturating_up and err > 0.0) \
@@ -140,7 +150,7 @@ class Pid:
                 d = _wrap_delta(error - self._prev_error, t.wrap) / dt
             else:
                 d = 0.0
-            out += t.kd * d
+            out += t.kd * d * effort
         self._prev_error = error
         if measurement is not None:
             self._prev_measure = measurement

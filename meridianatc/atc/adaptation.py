@@ -29,6 +29,15 @@ Scales
     less). Bounded both ways, so a bad model is met with firmer or
     gentler hands, never with an open loop or a dead one.
 
+Assist
+    The per-instant version of the same idea, working in ticks where
+    the scale works in flights. While an error is not coming in the
+    loop presses harder this pass; once it is coming in the hand eases
+    back, and an error that has just collapsed under its recent size
+    is met softly, so the arrival is braked before the crossing rather
+    than hunted after it. It is never written down -- the situation
+    that asked for it is gone the next tick.
+
 Signs
     Which way a control works. The taxi code already measures whether
     applying steering turns the nose left or right and flips the input
@@ -69,28 +78,48 @@ SCALE_LO, SCALE_HI = 0.4, 2.5
 
 #: How long a channel may sit on its clamp with the error still outside
 #: the deadband before its gains are grown a step.
-SAT_S = 4.0
+SAT_S = 2.5
 
-#: The gain step on saturation, and its inverse on oscillation.
-SCALE_UP, SCALE_DOWN = 1.15, 0.87
+#: The gain step on saturation, and its inverse on oscillation. The
+#: steps are decisive rather than timid: a model that answers badly is
+#: found quickly on the first flight, and the bounds below are what keep
+#: a fast verdict from overshooting into the next one.
+SCALE_UP, SCALE_DOWN = 1.25, 0.78
 
 #: Error sign flips inside this window while the lever is past half
 #: travel mean the loop is chasing itself; the gains come down a step.
-OSC_WINDOW_S, OSC_FLIPS = 20.0, 8
+OSC_WINDOW_S, OSC_FLIPS = 15.0, 6
 
 #: After a gain step the loop is left alone to show the new gain before
 #: another may be taken. Without it the saturation "ask more" and the
 #: oscillation "ask less" chase each other -- a lever swinging onto a
 #: rail looks saturated while it hunts, so the two verdicts must not be
 #: allowed to alternate in quick succession.
-BUMP_GAP_S = 12.0
+BUMP_GAP_S = 7.0
 
 #: How fast a trim observation is blended in: an exponential blend, so a
 #: single odd phase cannot move a trim that took a flight to learn.
-TRIM_BLEND = 0.05
+TRIM_BLEND = 0.10
 
 #: How fast a named scalar is blended in when a caller ``learn``s it.
-VALUE_BLEND = 0.4
+VALUE_BLEND = 0.5
+
+#: Bounds for the per-instant assist: harder than neutral, never past
+#: 1.8 times; softer, never below 0.55. It works in ticks where the
+#: learned scale works in flights -- a pass's press, not a model's
+#: figure, so it is never written down.
+ASSIST_LO, ASSIST_HI = 0.55, 1.8
+
+#: How fast the assist climbs while an error is not coming in, eases
+#: off once it has collapsed under its recent size, and drifts back to
+#: neutral between the two, per second of evidence.
+ASSIST_UP_S, ASSIST_DOWN_S, ASSIST_HOME_S = 0.45, 0.9, 1.5
+
+#: The trailing figure the "is the error coming in" question is asked
+#: against: an exponential of |error| at this per-second blend -- slow
+#: enough that a tick of noise is not a verdict, fast enough that an
+#: error holding its own is seen within a couple of seconds.
+ERR_REF_BLEND_S = 0.5
 
 #: The most aircraft models kept: enough for a large fleet, bounded so a
 #: pilot who flies everything does not grow the file without limit.
@@ -261,6 +290,10 @@ class AdaptivePid(Pid):
         self._flips: list[float] = []
         # The last gain step, well in the past so the first evidence may act.
         self._bump_t = -BUMP_GAP_S
+        # The instant assist and the error reference it is judged
+        # against: neutral and unreferenced until the first pass.
+        self._assist = 1.0
+        self._err_ref = 0.0
         if terms.ki:
             self.reset()
 
@@ -273,17 +306,58 @@ class AdaptivePid(Pid):
 
     def update(self, error: float, dt: float | None = None,
                measurement: float | None = None,
-               rate: float | None = None) -> float:
+               rate: float | None = None,
+               effort: float | None = None) -> float:
         now = self._clock()
         if dt is None:
             dt = 0.0 if self._prev_t is None else now - self._prev_t
-        out = super().update(error, dt=dt, measurement=measurement, rate=rate)
+        if effort is None:
+            effort = (self._assist_for(error, dt)
+                      if self._adapt.enabled and 0.0 < dt <= self.DT_MAX
+                      else 1.0)
+        out = super().update(error, dt=dt, measurement=measurement,
+                             rate=rate, effort=effort)
         if not self._adapt.enabled or not (0.0 < dt <= self.DT_MAX):
             return out
         self._learn(error, out, dt, now)
         return out
 
     __call__ = update
+
+    def _assist_for(self, error: float, dt: float) -> float:
+        """This pass's press: how hard the loop leans right now.
+
+        The learned scale is the model's answer over a flight; the
+        assist is the situation's answer this tick. An error that is
+        holding its own against the loop -- the aeroplane not coming
+        round, a stale read, an axis the model answers weakly -- is
+        pressed against harder now rather than after the saturation
+        verdict lands; an error that has collapsed well under its
+        recent size is met softly, the braking a weave needs before
+        the crossing and not the correction it chases after it.
+        """
+        t = self.terms
+        err = 0.0 if abs(error) < t.deadband else error
+        size = abs(err)
+        ref = self._err_ref
+        self._err_ref = (size if not ref
+                         else ref + (size - ref)
+                         * min(1.0, dt * ERR_REF_BLEND_S))
+        if not err:
+            # In the deadband: the hand is already neutral, no opinion.
+            self._assist += (1.0 - self._assist) * min(1.0, dt * 2.0)
+        elif ref > 0.0 and size <= ref * 0.45:
+            # Collapsed to under half of where it was: arriving -- ease
+            # off so it lands rather than drives through.
+            self._assist = max(ASSIST_LO, self._assist - ASSIST_DOWN_S * dt)
+        elif size >= ref * 0.92:
+            # Not coming in -- holding or growing: press harder now.
+            self._assist = min(ASSIST_HI, self._assist + ASSIST_UP_S * dt)
+        else:
+            # Coming in but not yet arrived: back toward a neutral hand.
+            self._assist += (1.0 - self._assist) \
+                * min(1.0, dt * ASSIST_HOME_S)
+        return self._assist
 
     def _learn(self, error: float, out: float, dt: float, now: float) -> None:
         t = self.terms
@@ -361,6 +435,8 @@ class AdaptivePid(Pid):
         self._sat_t = 0.0
         self._flips.clear()
         self._last_sign = 0
+        self._assist = 1.0
+        self._err_ref = 0.0
         # The learned trim preloads the integrator only: ``_out`` stays
         # cleared so a caller's bumpless transfer still wins, and the
         # loop's first real update opens near the trim the model wants

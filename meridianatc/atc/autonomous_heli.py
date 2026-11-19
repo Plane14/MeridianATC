@@ -328,12 +328,12 @@ def _pedal_check(self, demand: int, hdg: float, gs: float = 0.0) -> None:
                 bands = self._pedal_authority_b = {}
             learned = bands.get(band, 0.0)
             bands[band] = sample if learned <= 0.0 \
-                else 0.6 * learned + 0.4 * sample
+                else 0.5 * learned + 0.5 * sample
             adapt = getattr(self, "_adapt", None)
             if adapt is not None:
                 adapt.learn(f"pedals.authority.{band}",
-                            bands[band], blend=0.4)
-                adapt.learn("pedals.authority", bands[band], blend=0.4)
+                            bands[band], blend=0.5)
+                adapt.learn("pedals.authority", bands[band], blend=0.5)
     if abs(prev) < PEDAL_MAX * 0.3 or abs(rate) < 5.0 or streak < 3:
         return
     votes = getattr(self, "_pedal_votes", 0)

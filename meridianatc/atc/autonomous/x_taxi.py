@@ -10,6 +10,22 @@ from ._shared import (
 )
 
 
+def _bounded_intercept(heading: float, leg_hdg: float,
+                       rejoining: bool) -> float:
+    """The pursuit's ask, bounded against the leg's own direction.
+
+    A point beside the line is rejoined at a steady intercept, not
+    steered at whatever bearing the lookahead happens to publish: the
+    unbounded ask is what swung the demand ninety degrees a tick either
+    side of the line -- the hunt for the taxi target. Off the line the
+    intercept is a rejoin angle; on it, the ask stays inside a sweep
+    the nose can make without crossing back through it.
+    """
+    intercept = ((heading - leg_hdg + 540.0) % 360.0) - 180.0
+    cap = 65.0 if rejoining else 45.0
+    return (leg_hdg + max(-cap, min(cap, intercept))) % 360.0
+
+
 class _Taxi:
     # -- taxi -----------------------------------------------------------------
 
@@ -146,6 +162,16 @@ class _Taxi:
             if rejoin is not None and rejoin.get("heading") is not None:
                 steer["heading"] = rejoin["heading"]
 
+        # The pursuit's ask, bounded against the leg's own direction: a
+        # point beside the line is rejoined at a steady intercept, not
+        # steered at whatever bearing the lookahead happens to publish.
+        seg = min(steer["nearest"], len(remaining_path) - 2)
+        leg_hdg = auto_nav.bearing_deg(
+            remaining_path[seg][0], remaining_path[seg][1],
+            remaining_path[seg + 1][0], remaining_path[seg + 1][1])
+        steer["heading"] = _bounded_intercept(
+            steer["heading"], leg_hdg, rejoining)
+
         # The corridor the rest of the route runs through: whatever is on
         # it ahead -- head-on, crossing, or stopped -- is given way to
         # rather than met. The AI gives the pilot the same courtesy at
@@ -221,7 +247,17 @@ class _Taxi:
                     # taxis a slow S so the pilot sees past it.
                     desired = (desired
                                + _tw.s_turn_offset(now)) % 360.0
-            self._steer(state, desired, target_kt)
+            # The situation's press on the steering ask: coming back to
+            # the line from off it, or round a real corner, wants the
+            # nose moved now; tracking the centre of a straight leg
+            # wants the soft hand that does not chase the last degree.
+            if rejoining or turn > 45.0:
+                demand = 1.3
+            elif turn < 5.0 and off < 4.0:
+                demand = 0.8
+            else:
+                demand = 1.0
+            self._steer(state, desired, target_kt, demand=demand)
             if until:
                 self.director.throttle(0.0)
                 self.director.brakes_split(self.BRAKE_CHECK_PRESS,

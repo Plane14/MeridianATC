@@ -323,14 +323,14 @@ class _The_checklist_answered:
                     bands = self._yaw_authority_b = {}
                 learned = bands.get(band, 0.0)
                 bands[band] = sample if learned <= 0.0 \
-                    else 0.6 * learned + 0.4 * sample
+                    else 0.5 * learned + 0.5 * sample
                 self._yaw_authority = bands[band]
                 adapt = getattr(self, "_adapt", None)
                 if adapt is not None:
                     adapt.learn(f"steer.authority.{band}",
-                                bands[band], blend=0.4)
+                                bands[band], blend=0.5)
                     adapt.learn("steer.authority",
-                                bands[band], blend=0.4)
+                                bands[band], blend=0.5)
         if abs(prev) < 0.3 or abs(rate) < 3.0 or gs < 1.0 or streak < 3:
             return
         adapt = getattr(self, "_adapt", None)
@@ -372,8 +372,8 @@ class _The_checklist_answered:
         return got
 
     def _ground_directional(self, state, want_hdg: float, gs: float,
-                            rate_cap: float = 5.0,
-                            pedal_max: float = 0.4) -> float:
+                            rate_cap: float = 5.0, pedal_max: float = 0.4,
+                            demand: float = 1.0) -> float:
         """The signed pedal demand that holds a heading on a fast roll.
 
         The takeoff roll, the rollout and the flare's de-crab steer by
@@ -391,6 +391,7 @@ class _The_checklist_answered:
         rate = self._turn_rate(hdg)
         lead = self._steer_lead(err, rate)
         want_rate = max(-rate_cap, min(rate_cap, lead / 4.0))
+        want_rate *= max(0.6, min(1.35, demand))
         authority = self._yaw_authority_at(gs)
         pedal = max(-pedal_max,
                     min(pedal_max, (want_rate - rate) / authority))
@@ -582,13 +583,19 @@ class _The_checklist_answered:
         return max(0.15, 0.5 - gs * 0.012)
 
     def _steer(self, state, desired_hdg: float, target_kt: float,
-               max_aileron: float = 0.35) -> None:
+               max_aileron: float = 0.35, demand: float = 1.0) -> None:
         """Hand-fly a heading and a speed on the ground or in the air.
 
         The rudder (which is the nosewheel on the ground) takes the
         heading error; the throttle takes the speed. Used for taxi,
         line-up, the takeoff roll's directional control and the rollout --
         the places an autopilot's heading mode does not reach.
+
+        ``demand`` is the situation's press on the rate the law asks
+        for: over one where the caller wants the nose around now -- a
+        rejoin from far off the line, a corner -- under one where the
+        aeroplane is already tracking it, bounded so neither a firmer
+        nor a softer pass becomes a different law.
         """
         d = self.director
         d.parking_brake(False)
@@ -663,6 +670,11 @@ class _The_checklist_answered:
         # after.
         want_rate = max(-rate_cap, min(rate_cap,
                                      self._steer_lead(err, rate) / 4.0))
+        # The situation's press on the ask: firmer for the caller's
+        # demand and for a committed turnaround, softer under a quarter
+        # of each, bounded so a firmer pass is the same law leaning,
+        # not a different one.
+        want_rate *= max(0.6, min(1.35, demand * (1.2 if commit else 1.0)))
         rudder = max(-0.5, min(0.5, (want_rate - rate) / authority))
         rudder = max(-limit, min(limit, rudder))
         if abs(err) < 1.5 and abs(rate) < 1.0:
@@ -765,7 +777,7 @@ class _The_checklist_answered:
             adapt = getattr(self, "_adapt", None)
             if adapt is not None:
                 adapt.learn("taxi.breakaway",
-                            max(0.15, min(0.50, took)), blend=0.4)
+                            max(0.15, min(0.50, took)), blend=0.5)
         d.throttle(lever)
         if state.on_ground:
             # Fast is brought down on the brakes, not coasted out on the
