@@ -1,10 +1,14 @@
 """Where the AI layer's model runs.
 
-Two options, in the order most people will want them:
+The options, in the order most people will want them:
 
 *Ollama*, on this machine. Free, private, and needs no account. A small
 instruction-tuned model is entirely adequate for picking one label out of thirty
 and reading a couple of numbers out of a sentence.
+
+*A local OpenAI-compatible server* -- the OpenATC AI server, llama.cpp's,
+LM Studio -- on this machine or the LAN. Plain http, no key: the host is
+pinned to loopback or a private network address.
 
 *The Claude API*, in the cloud. More accurate on the awkward transmissions,
 costs a fraction of a cent each, and needs a key.
@@ -16,16 +20,24 @@ gets "say again", which is what a real controller would say anyway.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import math
 import os
 import time
+from urllib.parse import urlsplit
 
 import requests
 
 from .base import RESPONSE_SCHEMA
 
 log = logging.getLogger(__name__)
+
+#: Providers whose calls never leave the machine or the LAN: they send no
+#: credential, so they need neither cloud consent nor the endpoint pinning
+#: that guards the keyed providers. Used for the consent checks in
+#: engine/core.py.
+LOCAL_PROVIDER_NAMES = frozenset({"ollama", "local", "openatc"})
 
 
 def _timeout(value) -> float:
@@ -45,14 +57,14 @@ class OllamaProvider:
 
     Nothing leaves the machine. Install from ollama.com, then::
 
-        ollama pull llama3.2:3b
+        ollama pull qwen3:4b
     """
 
     name = "ollama"
 
     def __init__(
         self,
-        model: str = "llama3.2:3b",
+        model: str = "qwen3:4b",
         host: str = "http://127.0.0.1:11434",
         timeout_s: float = 12.0,
     ):
@@ -364,8 +376,19 @@ def build_provider(kind: str, **options):
         return None
     if kind == "ollama":
         return OllamaProvider(
-            model=options.get("model") or "llama3.2:3b",
+            model=options.get("model") or "qwen3:4b",
             host=options.get("host") or "http://127.0.0.1:11434",
+            timeout_s=float(options.get("timeout_s", 12.0)),
+        )
+    if kind in ("local", "openatc"):
+        host = options.get("host") or ""
+        if kind == "openatc" and host in ("", "http://127.0.0.1:11434"):
+            # An untouched host still carries Ollama's default; the OpenATC
+            # AI server listens on its own port.
+            host = LocalOpenAIProvider.DEFAULT_HOST
+        return LocalOpenAIProvider(
+            model=options.get("model") or "",
+            host=host,
             timeout_s=float(options.get("timeout_s", 12.0)),
         )
     if kind in ("anthropic", "claude"):
@@ -385,5 +408,141 @@ def build_provider(kind: str, **options):
     raise ValueError(f"Unknown AI provider {kind!r}")
 
 
+# --------------------------------------------------------------------------
+# local: an OpenAI-compatible server on this machine or the LAN
+# --------------------------------------------------------------------------
+
+
+def _is_local_host(hostname: str) -> bool:
+    """Loopback or private-network only -- the guarantee under which plain
+    http is acceptable here, since no credential ever crosses the wire."""
+    name = (hostname or "").strip().lower()
+    if name == "localhost":
+        return True
+    try:
+        address = ipaddress.ip_address(name)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_private
+
+
+class LocalOpenAIProvider:
+    """A local server speaking the OpenAI chat-completions shape: the
+    OpenATC AI server, llama.cpp's, LM Studio, vLLM -- anything on the LAN
+    that answers ``/v1/chat/completions``.
+
+    Plain ``http`` is fine *because* nothing secret crosses: the class sends
+    no key at all, and the host is pinned to a loopback or private address
+    so a settings file cannot aim pilot transmissions at an internet
+    endpoint. A remote server belongs behind ``custom``, which demands
+    https and a key.
+    """
+
+    name = "local"
+
+    #: The OpenATC AI server's port, which is what this provider exists for.
+    DEFAULT_HOST = "http://127.0.0.1:8099"
+
+    def __init__(self, model: str = "", host: str = "",
+                 timeout_s: float = 12.0):
+        self.model = model
+        self.timeout_s = _timeout(timeout_s)
+        base = (host or self.DEFAULT_HOST).rstrip("/")
+        try:
+            uri = urlsplit(base)
+            _ = uri.port  # forces validation of the port field
+        except ValueError as exc:
+            raise ValueError("local provider needs a valid URL") from exc
+        if (uri.scheme.lower() not in ("http", "https")
+                or not uri.hostname
+                or uri.username or uri.password
+                or uri.query or uri.fragment):
+            raise ValueError(
+                "local provider needs an http(s) URL without credentials, "
+                "query or fragment")
+        if not _is_local_host(uri.hostname):
+            raise ValueError(
+                "local provider host must be a loopback or private-network "
+                "address; use 'custom' (https + key) for a remote endpoint")
+        self._origin = f"{uri.scheme}://{uri.netloc}"
+        # A base already carrying /v1 keeps it; a bare origin gets it added.
+        self._chat_base = base if base.lower().endswith("/v1") \
+            else base + "/v1"
+        self.url = f"{self._chat_base}/chat/completions"
+        self._checked: bool | None = None
+        self._check_after = 0.0
+        # The same hardening the keyed provider carries: no redirects (a
+        # local server must not forward the conversation elsewhere), and no
+        # environment inheritance (netrc credentials, external proxies).
+        self._session = requests.Session()
+        self._session.max_redirects = 0
+        self._session.trust_env = False
+
+    def available(self) -> bool:
+        """Whether the configured address serves the OpenAI chat shape."""
+        if self._checked is True or (self._checked is False
+                                   and time.monotonic() < self._check_after):
+            return self._checked
+        # /health is the OpenATC server's liveness probe; /v1/models is the
+        # OpenAI shape most of the rest answer. A 4xx means the endpoint is
+        # not there -- it does not prove the chat shape is served.
+        for probe in (f"{self._origin}/health", f"{self._chat_base}/models"):
+            try:
+                response = self._session.get(probe, timeout=2.0)
+            except Exception:
+                continue
+            if response.status_code < 400:
+                self._checked = True
+                break
+        else:
+            self._checked = False
+        self._check_after = time.monotonic() + 10.0
+        if not self._checked:
+            log.info("local OpenAI server not reachable at %s", self._origin)
+        return self._checked
+
+    def close(self) -> None:
+        self._session.close()
+
+    def _post(self, body: dict):
+        response = self._session.post(
+            self.url, json=body, timeout=self.timeout_s,
+            allow_redirects=False)
+        if 300 <= response.status_code < 400:
+            raise ValueError("AI endpoint redirect refused")
+        return response
+
+    def _chat(self, messages: list[dict[str, str]], temperature: float,
+              response_format: dict | None = None) -> str:
+        body = {"model": self.model, "messages": messages,
+                "temperature": temperature, "max_tokens": 256,
+                "stream": False}
+        if response_format:
+            body["response_format"] = response_format
+        response = self._post(body)
+        if response_format and response.status_code == 400:
+            # A server without structured-output support gets the same call
+            # without the schema; parse_response still validates the answer.
+            del body["response_format"]
+            response = self._post(body)
+        response.raise_for_status()
+        return (response.json()["choices"][0]["message"]["content"] or "").strip()
+
+    def classify(self, prompt: str, system: str) -> str:
+        return self._chat(
+            [{"role": "system", "content": system},
+             {"role": "user", "content": prompt}],
+            temperature=0.0,
+            response_format={"type": "json_schema",
+                             "json_schema": {"name": "intent",
+                                             "schema": RESPONSE_SCHEMA}})
+
+    def complete(self, prompt: str, system: str) -> str:
+        return self._chat(
+            [{"role": "system", "content": system},
+             {"role": "user", "content": prompt}],
+            temperature=0.1)
+
+
 __all__ = ["OllamaProvider", "AnthropicProvider", "OpenAICompatibleProvider",
-           "build_provider"]
+           "LocalOpenAIProvider", "LOCAL_PROVIDER_NAMES", "build_provider"]

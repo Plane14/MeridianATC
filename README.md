@@ -84,7 +84,8 @@ program. On top of everything above it adds:
 * **Deepgram speech**, optionally — a cloud STT/TTS backend alongside the
   local Whisper/Kokoro engines, with the aviation keyterm profile StormATC
   shipped (pushback, squawk, localizer…) plus your own keyterms.
-* **Five LLM providers** for pilot-intent understanding: Ollama (local),
+* **LLM providers** for pilot-intent understanding: Ollama or a local
+  OpenAI-compatible server (the OpenATC AI server, llama.cpp, LM Studio),
   Anthropic, and OpenAI-compatible OpenRouter, OpenAI, Groq, DeepSeek or a
   custom endpoint. All optional; the rules parser is the default.
 * **Opt-in LLM phrasing**: the deterministic engine still composes every
@@ -2417,7 +2418,15 @@ ai:
 
 ```bash
 # install from ollama.com, then
-ollama pull llama3.2:3b
+ollama pull qwen3:4b
+```
+
+Or a local OpenAI-compatible server — the [OpenATC AI server](https://github.com/billpayne4x4/OpenATC-AI), llama.cpp, LM Studio — with plain http and no key; the host must be loopback or a private network address:
+
+```yaml
+ai:
+  provider: local         # or "openatc", which defaults the host for you
+  host: http://127.0.0.1:8099
 ```
 
 ```yaml
@@ -4412,7 +4421,7 @@ worth knowing about:
 | `traffic.handling_limit` | `24` | how many vehicles are on the apron at once, stairs and tugs aside; fewer on a machine that is working hard |
 | `toolbar.enabled` | `true` | `false` to stop serving the panel inside the simulator |
 | `toolbar.port` | `8787` | the fixed loopback port the panel finds the application on |
-| `ai.provider` | `none` | `ollama`, `anthropic`, or an OpenAI-compatible endpoint (`openrouter`, `openai`, `groq`, `deepseek`, `custom`) to understand non-standard phrasing |
+| `ai.provider` | `none` | `ollama`, `local`/`openatc` (a local OpenAI-compatible server), `anthropic`, or an OpenAI-compatible endpoint (`openrouter`, `openai`, `groq`, `deepseek`, `custom`) to understand non-standard phrasing |
 | `ai.phrasing` | `false` | `true` to let the model reword engine-composed transmissions, fact-checked before they're spoken |
 | `ai.decisions` | `false` | `true` to let the model propose among engine-enumerated options (traffic picks, FO notices, wording) — every proposal validated, deterministic fallback |
 | `ai.decisions_shadow` | `false` | `true` to log what the model would have picked while the deterministic answer goes out |

@@ -21,7 +21,11 @@ from meridianatc.integrations.deepgram import (
     DeepgramTTS,
     build_keyterms,
 )
-from meridianatc.llm.providers import OpenAICompatibleProvider, build_provider
+from meridianatc.llm.providers import (
+    LocalOpenAIProvider,
+    OpenAICompatibleProvider,
+    build_provider,
+)
 from meridianatc.llm.rendering import PhrasingRenderer, _facts
 from meridianatc.security.endpoints import is_allowed
 
@@ -97,6 +101,33 @@ class TestProviders:
                             host="https://llm.example.test/v1")
         assert ok.available()
         assert ok.url.endswith("/chat/completions")
+
+    def test_local_accepts_loopback_and_lan(self):
+        p = build_provider("local", host="http://127.0.0.1:8099")
+        assert isinstance(p, LocalOpenAIProvider)
+        assert p.url == "http://127.0.0.1:8099/v1/chat/completions"
+        p = build_provider("local", host="http://192.168.1.10:8080/v1")
+        assert p.url == "http://192.168.1.10:8080/v1/chat/completions"
+
+    def test_local_defaults_to_the_openatc_port(self):
+        assert build_provider("openatc").url \
+            == "http://127.0.0.1:8099/v1/chat/completions"
+        # An untouched host still holds Ollama's default; openatc overrides.
+        assert build_provider(
+            "openatc", host="http://127.0.0.1:11434").url \
+            == "http://127.0.0.1:8099/v1/chat/completions"
+
+    def test_local_refuses_remote_or_keyed_hosts(self):
+        # No credential crosses, but the host pin still holds: a settings
+        # file must not aim transmissions at an internet endpoint.
+        with pytest.raises(ValueError):
+            build_provider("local", host="https://llm.example.test/v1")
+        with pytest.raises(ValueError):
+            build_provider("local", host="http://8.8.8.8:8080")
+        with pytest.raises(ValueError):
+            build_provider("local", host="http://user:pw@127.0.0.1:8099")
+        with pytest.raises(ValueError):
+            build_provider("local", host="ftp://127.0.0.1")
 
     def test_unknown_provider(self):
         with pytest.raises(ValueError):

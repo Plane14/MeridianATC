@@ -393,7 +393,7 @@ def _ai(config: Config) -> Check:
                               host=config.ai.host, api_key=config.ai.api_key)
     if provider is None:
         return Check("ai", "AI understanding", "off",
-                     "rules only; set ai.provider to ollama or anthropic")
+                     "rules only; set ai.provider to ollama, local or anthropic")
     if provider.available():
         return Check("ai", "AI understanding", "ok",
                      f"{provider.name} ({getattr(provider, 'model', '?')})")
