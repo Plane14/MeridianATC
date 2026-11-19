@@ -5,6 +5,7 @@ from ._shared import (
     AutonomousState,
     FlightSession,
     Phase,
+    SimConnectSource,
     autofly_limit,
     log,
     time,
@@ -282,6 +283,14 @@ class _Entry:
         adapt = getattr(self, "_adapt", None)
         if adapt is not None and getattr(adapt, "enabled", False):
             self._pedal_flip = adapt.value("steer.flip", 0.0) > 0.5
+            # A flip learned on SimConnect before the axis values were
+            # turned round at the wire is the wire's mistake, not the
+            # model's: carried into a corrected session it steers the
+            # nose backwards. The transport is honest now, so a stored
+            # flip only counts where it could still be true.
+            if self._pedal_flip and isinstance(
+                    getattr(self, "sim", None), SimConnectSource):
+                self._pedal_flip = False
             self._pedal_votes = int(adapt.signs.get("steer", 0))
             self._yaw_authority = adapt.value("steer.authority", 0.0)
             # The authority measured at each speed is its own figure:

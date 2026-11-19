@@ -37,6 +37,7 @@ import math
 import time
 from dataclasses import dataclass
 
+from ..sim.source import SimConnectSource
 from .aircraft_class import HELICOPTER
 from .autonomous import AutonomousPhase
 from .autonomous._shared import _gs_band, _nws_fade
@@ -547,6 +548,12 @@ class RotorcraftFlight:
             self.state.cyclic_trim = adapt.value(
                 "cyclic.trim", CYCLIC_TRIM_AIRBORNE)
             self._pedal_flip = adapt.value("pedals.flip", 0.0) > 0.5
+            # A flip stored by a SimConnect session predates the axis
+            # values being turned round at the wire -- it is the wire's
+            # old mistake, not this model's wiring.
+            if self._pedal_flip and isinstance(
+                    getattr(self.owner, "sim", None), SimConnectSource):
+                self._pedal_flip = False
             self._pedal_votes = int(adapt.signs.get("pedals", 0))
             self._pedal_authority_b = {
                 i: v for i in range(6)

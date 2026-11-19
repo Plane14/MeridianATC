@@ -1447,10 +1447,27 @@ class SimConnectSource:
         self._events[name] = found
         return found
 
+    # The signed surface-axis events. SimConnect's axis events answer
+    # the surface's own sign: a positive ELEVATOR_SET drives ELEVATOR
+    # POSITION negative -- down. The app's convention everywhere is a
+    # pull or a right-wing demand being positive, so the value is
+    # turned round at the wire: what the model receives then means
+    # what the writer meant on either simulator.
+    _AXIS_EVENTS = frozenset((
+        b"ELEVATOR_SET", b"AXIS_ELEVATOR_SET",
+        b"AILERON_SET", b"AXIS_AILERONS_SET",
+        b"RUDDER_SET", b"AXIS_RUDDER_SET",
+        b"STEERING_SET", b"AXIS_STEERING_SET",
+        b"AXIS_CYCLIC_LATERAL_SET", b"AXIS_CYCLIC_LONGITUDINAL_SET",
+        b"ROTOR_AXIS_TAIL_ROTOR_SET", b"AXIS_TAIL_ROTOR_SET",
+    ))
+
     def _send(self, name: bytes, value: int) -> bool:
         event = self._event(name)
         if event is None or self._sim is None:
             return False
+        if name in self._AXIS_EVENTS:
+            value = -value
         try:
             from SimConnect.Enum import DWORD
         except Exception:                              # pragma: no cover

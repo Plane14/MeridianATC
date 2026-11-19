@@ -488,6 +488,47 @@ class _The_checklist_answered:
             d.takeoff_power()
         d.toga(True)
 
+    def _airborne_confirmed(self, state, now: float) -> bool:
+        """Whether the aeroplane is really off -- the flag held long
+        enough to mean it, not a read the surface flicked.
+
+        SIM ON GROUND flickers off over rough pavement and grass, and
+        the whole rotate-and-climb path hangs on one read of it: a blip
+        at forty knots walks the roll past every speed check to a
+        "climb" at ground level. The flag has to stay off for the
+        better part of a second before it is believed -- a liftoff
+        stays off; a bounce gets its ground read back.
+        """
+        if state.on_ground is not False:
+            self._off_ground_since = 0.0
+            return False
+        since = getattr(self, "_off_ground_since", 0.0)
+        if not since:
+            self._off_ground_since = now
+            return False
+        return now - since >= 0.8
+
+    def _roll_note(self, state, ias: float, rotate_at: float,
+                   sub: str) -> None:
+        """The takeoff roll's own telemetry line, every tick.
+
+        The roll answers to no steering law, so the steer line goes
+        quiet precisely when the aeroplane needs watching most: speed
+        against the speed owed, nose attitude, and how much pavement the
+        alignment reckons is left. A roll that ends in the overrun is
+        the accident the log has to explain.
+        """
+        gs = state.ground_speed_kt or 0.0
+        pitch = float(getattr(state, "pitch_deg", 0.0) or 0.0)
+        vs = float(getattr(state, "vertical_speed_fpm", 0.0) or 0.0)
+        along = getattr(self, "_roll_along", None)
+        left = getattr(self, "_roll_left", None)
+        dist = (f" along {along:.0f} m left {left:.0f} m"
+                if along is not None and left is not None else "")
+        log.info(
+            "%s: ias %.1f gs %.1f pitch %+.1f vs %+.0f rotate %.0f%s",
+            sub, ias, gs, pitch, vs, rotate_at, dist)
+
     def _ground_still(self, state, now: float) -> bool:
         """Whether the aeroplane has refused to move under power for a
         while -- chocked, braked, or boxed in. Taxi power against a

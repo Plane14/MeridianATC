@@ -721,7 +721,7 @@ class _The_phase_machine:
         self._compute_speeds(state)
 
         if sub == "wait_clearance":
-            if not state.on_ground:
+            if self._airborne_confirmed(state, now):
                 self.state.airborne_at = self.state.airborne_at or now
                 self._goto_sub("initial_climb")
                 return
@@ -760,7 +760,7 @@ class _The_phase_machine:
             return
 
         if sub == "roll":
-            if not state.on_ground:
+            if self._airborne_confirmed(state, now):
                 self.state.airborne_at = now
                 # The roll's into-wind aileron is a ground answer -- in
                 # the air a crossed yoke only banks it.
@@ -819,6 +819,13 @@ class _The_phase_machine:
                 # drives off the pavement side on any other runway.
                 keep_hdg = float(getattr(state, "heading_true", 0.0)
                                  or 0.0)
+            # The V-speeds first: the pavement checks below measure the
+            # distance left against the speed still owed.
+            rotate_at = (self.state.vr_kt
+                         or getattr(state, "min_rotation_kt", 0.0) or 0.0
+                         or self.performance.rotate_kt)
+            self.state.rotate_speed_kt = rotate_at
+            v1 = self.state.v1_kt or (rotate_at - 10.0)
             if self.state.runway_heading > 0 and self.state.runway_lat:
                 # Track the paint, not just the heading: a lineup can
                 # finish a few metres off the line and runway heading
@@ -832,6 +839,72 @@ class _The_phase_machine:
                     self.state.runway_heading, lookahead_m=200.0)
                 keep_hdg = (self.state.runway_heading + min(
                     8.0, max(-8.0, cl["correction_deg"]))) % 360.0
+                # The runway's own yardstick, from the point the roll
+                # began: past the far threshold on the wheels is an
+                # overrun whatever the clock said, and more than half
+                # the available pavement gone without seventy per cent
+                # of the rotate speed is the takeoff the books stop,
+                # not continue -- the 70/50 rule a crew keeps for a
+                # day the numbers do not feel right. Both stops are
+                # V1's: past the decision speed the takeoff is continued
+                # even off the end -- the books' answer to a reject that
+                # can no longer fit in the pavement.
+                length_m = (self.state.runway_length_ft or 0.0) * 0.3048
+                cleared_m = float(getattr(
+                    getattr(self, "session", None),
+                    "departure_remaining_m", 0.0) or 0.0)
+                if (length_m > 0.0 or cleared_m > 0.0) and state.on_ground:
+                    along = cl["along_m"]
+                    if getattr(self, "_roll_stamp", None) \
+                            != self.state.sub_entered_at:
+                        self._roll_stamp = self.state.sub_entered_at
+                        self._roll_along0 = along
+                        # The strip this roll may use is the shorter of
+                        # the pavement ahead and the distance the
+                        # clearance was read back for -- an intersection
+                        # departure joins short of the chart's full
+                        # length, and its own figure is the one the
+                        # tower's "eight hundred metres remaining"
+                        # promised.
+                        run = (length_m - along
+                               if length_m > 0.0 else float("inf"))
+                        self._roll_run0 = (min(run, cleared_m)
+                                           if cleared_m > 0.0 else run)
+                    run0 = self._roll_run0 or 0.0
+                    # ``end`` is infinite only where neither the chart
+                    # nor the clearance named a distance -- a stamp
+                    # taken already past the pavement makes it lie
+                    # behind the aeroplane, and the check still answers.
+                    end = self._roll_along0 + run0
+                    self._roll_along = along - self._roll_along0
+                    self._roll_left = end - along
+                    if along >= end:
+                        if ias >= v1:
+                            # Past V1 the stop no longer fits: the
+                            # takeoff is continued and the aeroplane
+                            # flown off the pavement that is left, the
+                            # way the books have it.
+                            self._goto_sub("rotate")
+                            self.state.rotate_at = now
+                            return
+                        self.state.rejected = True
+                        self._emit("error",
+                                   "Rejected takeoff: past the end of "
+                                   "the runway",
+                                   "autonomous.rejected_distance")
+                        self._goto_sub("abort")
+                        return
+                    if 0.0 < run0 < float("inf") \
+                            and self._roll_along > 0.5 * run0 \
+                            and ias < v1 and ias < 0.7 * rotate_at:
+                        self.state.rejected = True
+                        self._emit("error",
+                                   "Rejected takeoff: under rotation "
+                                   "speed at the midpoint of the "
+                                   "available runway",
+                                   "autonomous.rejected_distance")
+                        self._goto_sub("abort")
+                        return
             keep = self._ground_directional(
                 state, keep_hdg, gs, rate_cap=5.0)
             d.rudder(keep)
@@ -840,11 +913,7 @@ class _The_phase_machine:
             # the roll's crosswind aileron the AFH teaches, and on a
             # gusty day as lively as the gusts themselves.
             d.aileron(self._roll_aileron(state, gs, takeoff=True))
-            rotate_at = (self.state.vr_kt
-                         or getattr(state, "min_rotation_kt", 0.0) or 0.0
-                         or self.performance.rotate_kt)
-            self.state.rotate_speed_kt = rotate_at
-            v1 = self.state.v1_kt or (rotate_at - 10.0)
+            self._roll_note(state, ias, rotate_at, "roll")
             if ias < v1 and self._runway_blocked():
                 # Somebody on the strip below V1 is a stop, not a
                 # continued takeoff -- the same rule the engine gets.
@@ -872,7 +941,7 @@ class _The_phase_machine:
             return
 
         if sub == "rotate":
-            if not state.on_ground:
+            if self._airborne_confirmed(state, now):
                 # The attitude that actually flew the wheels off is
                 # this model's liftoff attitude -- written down, so the
                 # next rotation asks for it rather than only for the
@@ -890,11 +959,40 @@ class _The_phase_machine:
                 d.aileron(0.0)
                 self._goto_sub("initial_climb")
                 return
+            # Still on the wheels the pavement budget still applies,
+            # V1 still the line: below it an aeroplane reaching the end
+            # lowers the nose and stops; past it the takeoff is
+            # continued -- the pull into the fence a reject there would
+            # buy is the accident the rule exists for.
+            if state.on_ground and self.state.runway_heading > 0 \
+                    and self.state.runway_lat:
+                cl = auto_nav.align(
+                    state.latitude, state.longitude,
+                    self.state.runway_lat, self.state.runway_lon,
+                    self.state.runway_heading, lookahead_m=200.0)
+                run0 = getattr(self, "_roll_run0", 0.0) or 0.0
+                end = (getattr(self, "_roll_along0", 0.0) + run0
+                       if 0.0 < run0 < float("inf") else 0.0)
+                self._roll_along = cl["along_m"] \
+                    - getattr(self, "_roll_along0", 0.0)
+                self._roll_left = end - cl["along_m"] if end else 0.0
+                ias_now = state.indicated_airspeed_kt or 0.0
+                v1_now = (self.state.v1_kt
+                          or (self.state.rotate_speed_kt or 0.0) - 10.0)
+                if end > 0.0 and cl["along_m"] >= end and ias_now < v1_now:
+                    d.elevator(0.0)
+                    self.state.rejected = True
+                    self._emit("error",
+                               "Rejected takeoff: past the end of the "
+                               "runway", "autonomous.rejected_distance")
+                    self._goto_sub("abort")
+                    return
             # Pull to the rotation attitude and hold it until the wheels
             # are up. ELEVATOR_SET is proportional, so the FO can fly the
             # rotation the way a pilot does: a firm pull, then hands off.
             elapsed = now - self.state.rotate_at
             vs_now = float(state.vertical_speed_fpm or 0.0)
+            pitch = float(getattr(state, "pitch_deg", 0.0) or 0.0)
             if self._use_pids:
                 # The loop closes on the rate coming alive -- the cue a
                 # pilot's hand works off -- asking for a positive rate and
@@ -902,22 +1000,26 @@ class _The_phase_machine:
                 pull = self._pid("rotation").update(350.0 - vs_now,
                                                     measurement=vs_now)
             else:
-                # The pull is the class's too: a light single rotates with
-                # less back pressure than a loaded airliner.
+                # Without the loop the pull is the attitude gap's: the
+                # yoke answers how far the nose still has to come, easing
+                # itself off as the attitude arrives the way a hand does.
+                # A fixed fraction guesses the model's elevator; this asks
+                # for what the nose actually needs -- a weak-elevator
+                # model gets a real pull, a touchy one gets the taper.
                 pull_scale = (1.0
                               if self.performance.turn_rate < fly.RATE_LIGHT
                               else 0.8)
-                pull = (0.40 if elapsed < 2.5 else 0.28) * pull_scale
+                err_deg = max(0.0, self._pitch_target_deg() - pitch)
+                pull = min(1.0, 0.10 * err_deg) * pull_scale
                 # A pilot stops pulling as the aeroplane comes unstuck: the
                 # vertical speed coming alive is the cue, the way a hand
                 # comes off the yoke once the nose stops needing help.
                 if vs_now > 300.0:
-                    pull = 0.10 * pull_scale
+                    pull = min(pull, 0.10 * pull_scale)
             # The attitude, not just the rate: at the rotation attitude
             # the pull stops, the way a pilot's hand comes off once the
             # nose sits at the mark. A model that never publishes pitch
             # answers zero and the rate cue above carries it.
-            pitch = float(getattr(state, "pitch_deg", 0.0) or 0.0)
             if pitch >= self._pitch_target_deg():
                 pull = min(pull, 0.05)
             # The load watch's ceiling: a rotation that would pull past
@@ -932,6 +1034,8 @@ class _The_phase_machine:
                 # nose-heavy aeroplane is flown off, not a high-speed
                 # abort into the overrun.
                 pull = max(pull, min(0.65, 0.35 + 0.03 * (elapsed - 8.0)))
+            self._roll_note(state, ias,
+                            self.state.rotate_speed_kt or 0.0, "rotate")
             d.elevator(self._g_pull_cap(state, pull))
             d.takeoff_power()
             if late and (ias < v1 or elapsed > 25.0):

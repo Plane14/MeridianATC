@@ -12,6 +12,19 @@ from ._shared import (
 class _Plumbing:
     # -- plumbing ---------------------------------------------------------
 
+    def _type_code_now(self) -> str:
+        """The ICAO type the session currently believes the model is.
+
+        Read live: the identification settles a read or two after the
+        first state arrives -- a BE58 answer corrected to the C172 the
+        ramp actually holds is a normal session start. Caches stamped
+        with the early guess are dropped when the code changes, so the
+        figures a takeoff is flown with belong to the aeroplane's own
+        name, not the first guess's.
+        """
+        return getattr(getattr(getattr(self, "session", None),
+                               "aircraft", None), "type_code", "") or ""
+
     @property
     def director(self) -> FlightDirector:
         """The hands, made on first use so a missing sim is not an error.
@@ -25,10 +38,14 @@ class _Plumbing:
 
     @property
     def performance(self) -> fly.Performance:
-        if getattr(self, "_perf", None) is None:
+        code = self._type_code_now()
+        # An unstamped figure is trusted -- it was put there on purpose.
+        # Only a figure this property computed for another code is a
+        # wrong-aeroplane cache, dropped when the code moves on.
+        if getattr(self, "_perf", None) is None \
+                or (getattr(self, "_perf_code", "")
+                    and getattr(self, "_perf_code", "") != code):
             session = getattr(self, "session", None)
-            code = getattr(getattr(session, "aircraft", None),
-                           "type_code", "") or ""
             light = getattr(getattr(session, "profile", None),
                             "kind", "") in ("piston_single", "piston_twin",
                                             "light")
@@ -44,8 +61,19 @@ class _Plumbing:
             except Exception:
                 state = None
             if state is not None:
+                # A negative answer is the sim's "not set", not a speed:
+                # it must not stand in front of the takeoff fallback.
+                min_rot = float(getattr(state, "min_rotation_kt", 0.0)
+                                or 0.0)
+                takeoff = float(getattr(state, "design_takeoff_kt", 0.0)
+                                or 0.0)
                 declared = {
-                    # A design takeoff figure is the climb-away speed,\n                    # not the unstick: rotating at it flies the ground\n                    # run on. Borrowed, it is pulled back to the rotate\n                    # speed the aeroplane's own number is nearest to.\n                    "rotate_kt": float(getattr(state, "min_rotation_kt", 0.0)\n                                       or getattr(state,\n                                                  "design_takeoff_kt", 0.0)\n                                       * 0.9 or 0.0),
+                    # A design takeoff figure is the climb-away speed,
+                    # not the unstick: rotating at it flies the ground
+                    # run on. Borrowed, it is pulled back to the rotate
+                    # speed the aeroplane's own number is nearest to.
+                    "rotate_kt": (min_rot if min_rot > 0.0
+                                  else takeoff * 0.9),
                     # A design figure is the model's Vno, not its cruise
                     # speed: borrowed at face value a profile's owner was
                     # cruised at the top of the green arc. Pulled back to
@@ -67,6 +95,7 @@ class _Plumbing:
                 code, title, base,
                 aircraft_class=getattr(self, "_aircraft_class", "") or "",
                 declared=declared)
+        self._perf_code = code
         return self._perf
 
     @property
@@ -98,16 +127,18 @@ class _Plumbing:
         refined channel by channel where an autofly profile's handling
         block matches this add-on's title.
         """
-        if getattr(self, "_gains", None) is None:
+        code = self._type_code_now()
+        if getattr(self, "_gains", None) is None \
+                or (getattr(self, "_gains_code", "")
+                    and getattr(self, "_gains_code", "") != code):
             from ..autofly import handling
             from ..control_gains import fixed_wing_gains
-            code = getattr(getattr(self.session, "aircraft", None),
-                           "type_code", "") or ""
             title = getattr(getattr(self.session, "aircraft", None),
                             "title", "") or ""
             self._gains = handling(
                 code, title, fixed_wing_gains(self.performance),
                 aircraft_class=getattr(self, "_aircraft_class", "") or "")
+        self._gains_code = code
         return self._gains
 
     def _pid(self, channel: str):
@@ -131,10 +162,14 @@ class _Plumbing:
     def _compute_speeds(self, state=None) -> vspeeds.Speeds:
         """This leg's V-speeds, once: the model's own where it declares
         them, the table where it does not."""
-        if self._speeds is not None:
+        code = self._type_code_now()
+        # As with ``performance``: an unstamped figure is trusted, only a
+        # figure computed under another code is a wrong-aeroplane cache.
+        if getattr(self, "_speeds", None) is not None \
+                and not (getattr(self, "_speeds_code", "")
+                         and getattr(self, "_speeds_code", "") != code):
+            self._speeds_code = code
             return self._speeds
-        session = self.session
-        code = getattr(getattr(session, "aircraft", None), "type_code", "") or ""
         if state is None:
             state = self.get_state()
         cls = getattr(self, "_aircraft_class", "") or "airliner"
@@ -155,6 +190,7 @@ class _Plumbing:
         if vs1 > 0 and (not s.vapp_kt or s.vapp_kt < vs1 * 1.25):
             s.vapp_kt = vs1 * 1.25
         s.climb_kt = self.performance.climb_kt
+        self._speeds_code = code
         return self._speeds
 
     def _goto_sub(self, sub: str) -> None:

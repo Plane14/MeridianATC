@@ -238,9 +238,20 @@ def speeds_for(type_code: str, aircraft_class: str, *,
                design_takeoff_kt: float = 0.0) -> Speeds:
     """The speeds to call this flight, best evidence first."""
     found = table_speeds(type_code, aircraft_class)
-    sim_vr = min_rotation_kt or design_takeoff_kt
-    if sim_vr and sim_vr > 0:
-        which = ("DESIGN SPEED MIN ROTATION" if min_rotation_kt
+    # The model's own rotation figure stands where it says one --
+    # a simulator that publishes none answers a negative sentinel,
+    # and DESIGN TAKEOFF SPEED is the climb-away, not the unstick:
+    # rotating at it flies the ground run on, so it is pulled back
+    # to the rotate speed the way ``_perf``'s declared block does.
+    if min_rotation_kt and min_rotation_kt > 0.0:
+        sim_vr = float(min_rotation_kt)
+    elif design_takeoff_kt and design_takeoff_kt > 0.0:
+        sim_vr = float(design_takeoff_kt) * 0.9
+    else:
+        sim_vr = 0.0
+    if sim_vr:
+        which = ("DESIGN SPEED MIN ROTATION"
+                 if min_rotation_kt and min_rotation_kt > 0.0
                  else "DESIGN TAKEOFF SPEED")
         found = replace(found, vr=float(sim_vr), unverified=False,
                         source=f"the simulator: the model's {which}; "

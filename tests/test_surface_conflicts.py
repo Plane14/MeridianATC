@@ -213,7 +213,8 @@ def _fo(**attrs):
     fo._run_checklist_for_phase = Mock()
     fo._held_at_split = False
     fo._perf = SimpleNamespace(taxi_kt=12.0, rotate_kt=140.0,
-                               takeoff_kt_s=4.0)
+                               takeoff_kt_s=4.0, turn_rate=5.0,
+                               cruise_kt=180.0)
     fo.TAKEOFF_TIMEOUT = 240.0
     fo.brain = SimpleNamespace(contacts=lambda: [])
     for key, value in attrs.items():
@@ -844,10 +845,275 @@ def test_fo_rotate_stamps_the_liftoff_clock():
     fo.state.airborne_at = 0.0
     fo.session = _fo_session(_path())
     fo._compute_speeds = Mock()
+    # The flag already held a second: a liftoff, not a flicker.
+    fo._off_ground_since = time.monotonic() - 1.0
     state = _state(51.15, -0.19, on_ground=False, pitch_deg=8.0)
     fo._phase_takeoff(state, time.monotonic())
     assert fo.state.sub == "initial_climb"
     assert fo.state.airborne_at > 0.0
+
+
+def test_airborne_needs_the_flag_held_not_a_flicker():
+    """The C172's overrun: SIM ON GROUND blipped off for one read as
+    the aeroplane ran off the end, and the roll walked itself into a
+    "climb" at ground level. A flicker is not a liftoff -- the flag
+    has to stay off the better part of a second."""
+    fo = _fo()
+    state = _state(51.15, -0.19, on_ground=False)
+    assert fo._airborne_confirmed(state, 100.0) is False
+    # Still off inside the window: believed, not yet.
+    assert fo._airborne_confirmed(state, 100.5) is False
+    # Held: the flag means it.
+    assert fo._airborne_confirmed(state, 101.0) is True
+    # A bounce put the wheels back: the clock starts over.
+    ground = _state(51.15, -0.19, on_ground=True)
+    assert fo._airborne_confirmed(ground, 102.0) is False
+    assert fo._airborne_confirmed(state, 102.5) is False
+    assert fo._airborne_confirmed(state, 103.2) is False
+    assert fo._airborne_confirmed(state, 103.4) is True
+
+
+def test_roll_flicker_does_not_jump_to_rotate():
+    """The same blip inside the roll: one off read must not walk the
+    aeroplane past the speed gate into rotate."""
+    fo = _fo()
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo.state.phase = AutonomousPhase.TAKEOFF
+    fo.state.sub = "roll"
+    fo.state.runway_heading = 90.0
+    fo.state.sub_entered_at = time.monotonic()
+    fo.session = _fo_session(_path(), cleared_takeoff=True)
+    fo._compute_speeds = Mock()
+    fo._set_takeoff_power = Mock()
+    fo._steer_lead = Mock(return_value=0.0)
+    fo._turn_rate = Mock(return_value=0.0)
+    fo._pedal_dir = Mock(return_value=1.0)
+    fo._runway_blocked = Mock(return_value=False)
+    state = _state(51.15, -0.19, heading_true=90.0,
+                   indicated_airspeed_kt=20.0, engines_running=1,
+                   on_ground=False)
+    fo._phase_takeoff(state, time.monotonic())
+    assert fo.state.sub == "roll"
+
+
+def _roller():
+    """An FO mid-roll on a 2400 ft strip whose threshold is the
+    fixture's origin: the distance checks answer the pavement itself."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo = _fo()
+    fo.state.phase = AutonomousPhase.TAKEOFF
+    fo.state.sub = "roll"
+    fo.state.runway_heading = 90.0
+    fo.state.runway_lat = 51.15
+    fo.state.runway_lon = -0.19
+    fo.state.runway_length_ft = 2400.0
+    fo.state.sub_entered_at = time.monotonic()
+    fo.session = _fo_session(_path(), cleared_takeoff=True)
+    fo._compute_speeds = Mock()
+    fo._set_takeoff_power = Mock()
+    fo._steer_lead = Mock(return_value=0.0)
+    fo._turn_rate = Mock(return_value=0.0)
+    fo._pedal_dir = Mock(return_value=1.0)
+    fo._runway_blocked = Mock(return_value=False)
+    return fo
+
+
+def test_roll_aborts_past_the_far_threshold():
+    """The C172's overrun: still on the wheels beyond the far end is
+    an overrun whatever the clock or the speeds said."""
+    fo = _roller()
+    # ~800 m down a 731 m strip, and fast -- the crash's own numbers.
+    state = _state(51.15, -0.19 + 800.0 / 69900.0, heading_true=90.0,
+                   indicated_airspeed_kt=78.0, engines_running=1)
+    fo._phase_takeoff(state, time.monotonic())
+    assert fo.state.rejected is True
+    assert fo.state.sub == "abort"
+
+
+def test_roll_aborts_under_seventy_percent_at_the_midpoint():
+    """Half the pavement gone without seventy per cent of the rotate
+    speed is the takeoff the books stop, not continue -- the 70/50
+    rule a crew keeps for the day the numbers do not feel right."""
+    fo = _roller()
+    # The first pass only stamps where the roll began.
+    state = _state(51.15, -0.19 + 60.0 / 69900.0, heading_true=90.0,
+                   indicated_airspeed_kt=10.0, engines_running=1)
+    fo._phase_takeoff(state, time.monotonic())
+    assert fo.state.sub == "roll"
+    # Over halfway through the run-out and still under 0.7 * 140.
+    state.latitude, state.longitude = 51.15, -0.19 + 430.0 / 69900.0
+    fo._phase_takeoff(state, time.monotonic())
+    assert fo.state.rejected is True
+    assert fo.state.sub == "abort"
+
+
+def test_roll_continues_when_the_midpoint_speed_is_made():
+    """Same pavement, speed where it should be: the roll goes on --
+    the yardstick watches for a slow roll, not a healthy one."""
+    fo = _roller()
+    state = _state(51.15, -0.19 + 60.0 / 69900.0, heading_true=90.0,
+                   indicated_airspeed_kt=10.0, engines_running=1)
+    fo._phase_takeoff(state, time.monotonic())
+    state.latitude, state.longitude = 51.15, -0.19 + 430.0 / 69900.0
+    state.indicated_airspeed_kt = 110.0   # past 0.7 * 140
+    fo._phase_takeoff(state, time.monotonic())
+    assert fo.state.rejected is False
+    assert fo.state.sub == "roll"
+
+
+def test_roll_past_the_end_below_v1_rejects_above_v1_continues():
+    """The same overrun, two speeds: below the decision speed the
+    overrun is a stop; past it the stop no longer fits and the books
+    say fly it off -- the reject into the fence is the accident V1
+    exists to prevent."""
+    fo = _roller()
+    fo.state.v1_kt = 45.0
+    fo.state.vr_kt = 55.0
+    # Stamp the roll's start, then run past the far threshold still
+    # under the decision speed: a stop.
+    state = _state(51.15, -0.19 + 60.0 / 69900.0, heading_true=90.0,
+                   indicated_airspeed_kt=20.0, engines_running=1)
+    fo._phase_takeoff(state, time.monotonic())
+    state.longitude = -0.19 + 800.0 / 69900.0
+    state.indicated_airspeed_kt = 40.0
+    fo._phase_takeoff(state, time.monotonic())
+    assert fo.state.rejected is True
+    assert fo.state.sub == "abort"
+    # The same pavement, the speed made: committed -- the sub rotates,
+    # the levers stay in.
+    fo = _roller()
+    fo.state.v1_kt = 45.0
+    fo.state.vr_kt = 55.0
+    state = _state(51.15, -0.19 + 60.0 / 69900.0, heading_true=90.0,
+                   indicated_airspeed_kt=20.0, engines_running=1)
+    fo._phase_takeoff(state, time.monotonic())
+    state.longitude = -0.19 + 800.0 / 69900.0
+    state.indicated_airspeed_kt = 78.0
+    fo._phase_takeoff(state, time.monotonic())
+    assert fo.state.rejected is False
+    assert fo.state.sub == "rotate"
+
+
+def test_roll_intersection_measures_the_cleared_distance():
+    """A C1 join is not the chart's full length: the tower's "eight
+    hundred metres remaining" is the strip this roll may use, and
+    reaching its end still on the wheels is the overrun -- even with
+    the runway's own pavement continuing beyond it."""
+    fo = _roller()
+    fo.state.v1_kt = 45.0
+    fo.state.vr_kt = 55.0
+    # 731 m of runway, a 400 m intersection clearance: half of the
+    # cleared run is the midpoint, its end the reject line.
+    fo.session.departure_remaining_m = 400.0
+    state = _state(51.15, -0.19 + 60.0 / 69900.0, heading_true=90.0,
+                   indicated_airspeed_kt=10.0, engines_running=1)
+    fo._phase_takeoff(state, time.monotonic())
+    assert fo.state.sub == "roll"
+    # 460 m from the join -- inside the runway, outside the clearance.
+    state.longitude = -0.19 + 520.0 / 69900.0
+    state.indicated_airspeed_kt = 40.0
+    fo._phase_takeoff(state, time.monotonic())
+    assert fo.state.rejected is True
+    assert fo.state.sub == "abort"
+
+
+def test_rotate_past_the_end_committed_flies_the_pull():
+    """Rotating into the overrun at speed is a continued takeoff, not
+    a reject: the nose stays coming up. Tonight's crash was the
+    inverse -- a reject's calm elevator where a fly-off pull was
+    owed."""
+    fo = _roller()
+    fo.state.sub = "rotate"
+    fo.state.rotate_at = time.monotonic()
+    fo.state.rotate_speed_kt = 55.0
+    fo.state.v1_kt = 45.0
+    fo.state.vr_kt = 55.0
+    # The roll's stamp, as the roll sub left it.
+    fo._roll_stamp = fo.state.sub_entered_at
+    fo._roll_along0 = 60.0
+    fo._roll_run0 = 671.0          # the 731 m strip, joined 60 m in
+    state = _state(51.15, -0.19 + 800.0 / 69900.0, heading_true=90.0,
+                   indicated_airspeed_kt=70.0, engines_running=1,
+                   on_ground=True, pitch_deg=-2.0)
+    fo._phase_takeoff(state, time.monotonic())
+    assert fo.state.rejected is False
+    assert fo.state.sub == "rotate"
+    pull = fo._dir.elevator.call_args.args[0]
+    assert pull > 0.5
+
+
+def test_rotate_pull_answers_the_attitude_gap():
+    """The overrun's own picture: the fixed schedule fed the model a
+    polite third of a yoke and the C172 crawled to 4.6 degrees at
+    78 kt while the pavement ran out. The pull answers how far the
+    nose still has to come -- full early, tapering at the mark."""
+    fo = _fo()
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo.state.phase = AutonomousPhase.TAKEOFF
+    fo.state.sub = "rotate"
+    fo.state.rotate_at = time.monotonic()
+    fo.state.rotate_speed_kt = 55.0
+    fo.state.v1_kt = 45.0
+    fo.session = _fo_session(_path())
+    fo._compute_speeds = Mock()
+    # On the wheels, nose down, at Vr: the ask is nearly all of it.
+    state = _state(51.15, -0.19, on_ground=True, pitch_deg=-2.0,
+                   indicated_airspeed_kt=56.0)
+    fo._phase_takeoff(state, time.monotonic())
+    early = fo._dir.elevator.call_args.args[0]
+    assert early > 0.7
+    # Near the attitude it eases itself off, the way a hand does.
+    state.pitch_deg = 8.0
+    fo._phase_takeoff(state, time.monotonic())
+    late = fo._dir.elevator.call_args.args[0]
+    assert 0.0 < late < early
+
+
+def test_sim_rotation_speed_skips_the_negative_sentinel():
+    """MSFS answers DESIGN SPEED MIN ROTATION with -1 when the cfg
+    lacks it -- a truthy sentinel that used to stand in front of the
+    takeoff fallback. A negative read is no figure at all."""
+    from meridianatc.atc import vspeeds
+    got = vspeeds.speeds_for("C172", "light",
+                             min_rotation_kt=-1.0,
+                             design_takeoff_kt=60.0)
+    # The takeoff figure, pulled back to the unstick the way the
+    # declared block retunes it -- not the sentinel, not the climb-away.
+    assert got.vr == pytest.approx(54.0)
+    got = vspeeds.speeds_for("C172", "light",
+                             min_rotation_kt=-1.0,
+                             design_takeoff_kt=0.0)
+    # Nothing declared either way: the type's own table stands.
+    assert got.vr == pytest.approx(55.0)
+
+
+def test_a_re_identified_aircraft_recomputes_its_speeds():
+    """The sim names the ramp BE58 before it settles on the C172
+    parked in it -- every session tonight did exactly that. Speeds
+    resolved under the first guess would fly a Baron's Vr on the
+    Skyhawk's wing."""
+    from meridianatc.atc.autonomous import AutonomousFlight
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.state = SimpleNamespace(v1_kt=0.0, vr_kt=0.0, v2_kt=0.0,
+                               vapp_kt=0.0, climb_kt=0.0)
+    fo.session = SimpleNamespace(
+        aircraft=SimpleNamespace(type_code="BE58", title=""),
+        profile=SimpleNamespace(kind=""))
+    fo._perf = SimpleNamespace(climb_kt=180.0)
+    fo._perf_code = "BE58"
+    state = SimpleNamespace(min_rotation_kt=0.0, design_takeoff_kt=0.0,
+                            design_vs1_kt=0.0)
+    fo.get_state = lambda: state
+    fo._aircraft_class = "piston_twin"
+    speeds = fo._compute_speeds(state)
+    assert speeds.vr == pytest.approx(85.0)   # the Baron's figure
+    fo.session.aircraft.type_code = "C172"
+    fo._perf_code = "C172"     # the perf cache followed too
+    fo._perf = SimpleNamespace(climb_kt=80.0)
+    speeds = fo._compute_speeds(state)
+    # The aeroplane's own number, not the first guess's.
+    assert speeds.vr == pytest.approx(55.0)
+    assert fo.state.climb_kt == 80.0
 
 
 def test_fo_initial_climb_holds_power_and_flies_the_attitude():
