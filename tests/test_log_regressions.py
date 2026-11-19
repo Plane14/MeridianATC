@@ -1095,6 +1095,97 @@ def test_a_split_taxi_waits_for_the_rest_not_the_runway():
     flight._transition.assert_not_called()
 
 
+def _vigo_tower_setup():
+    """A tower brain over LEVX's real runway numbers, for the hold-short
+    cases: the sim's strip runs 42.2213,-8.6297 (01) to 42.2425,-8.6239
+    (19)."""
+    from meridianatc.atc.controller import ControllerBrain
+    from meridianatc.atc.phraseology import Phraseology
+    from meridianatc.navdata.db import NavDB, Runway, Station
+    navdb = Mock()
+    navdb.airport.return_value = SimpleNamespace(
+        ident="LEVX", lat=42.2318, lon=-8.6268)
+    runway = Runway(
+        ident="LEVX", le_ident="01", he_ident="19",
+        length_ft=7874.0, width_ft=148.0, surface="ASP", lighted=True,
+        closed=False,
+        le_lat=42.2213, le_lon=-8.62966, le_heading=11.4,
+        he_lat=42.2425, he_lon=-8.62389, he_heading=191.4)
+    navdb.runways.return_value = [runway]
+    navdb.runway_at.return_value = ""
+    navdb.at_the_runway = NavDB.at_the_runway.__get__(navdb)
+    brain = ControllerBrain(navdb, Phraseology())
+    brain.traffic = None
+    brain.realism = SimpleNamespace(
+        tower_continue=False, conditional_clearances=False,
+        ifr_departure=False)
+    tower = Station("LEVX", "TWR", 118.45, "Vigo", "Vigo Tower")
+    return brain, tower
+
+
+def _ready_ask(brain, tower, lat, lon):
+    """A "ready for departure runway one niner" asked of the tower from a
+    ground position, answered as the tower answers it."""
+    from meridianatc.atc.intents import Intent
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession, Phase
+    from meridianatc.atc.speech import parse_callsign
+    session = FlightSession(Aircraft(parse_callsign("ECXGS")))
+    session.departure_runway = "19"
+    session.phase = Phase.TAXI_OUT
+    session.ifr = True
+    parsed = SimpleNamespace(intent=Intent.REQUEST_TAKEOFF,
+                             get=lambda k, d=None: d)
+    weather = SimpleNamespace(qnh_hpa=1018, altimeter_inhg=29.92,
+                              wind_dir=270, wind_kt=8.0, gust_kt=0.0,
+                              variable=False, variation=-1.0)
+    state = SimpleNamespace(has_position=True, on_ground=True,
+                            latitude=lat, longitude=lon, heading_true=42.0)
+    reply = brain._tower(parsed, session, tower, weather,
+                         brain.for_station(tower), state)
+    return reply, session
+
+
+def test_the_bars_are_at_the_runway_for_the_takeoff_clearance():
+    """Held at the 19 hold is at the runway: a departure is supposed to
+    ask from there, outside the pavement runway_at reads. Asking "ready"
+    from the bars used to loop "taxi to the runway" forever."""
+    brain, tower = _vigo_tower_setup()
+    # 200 ft past the 19 threshold, 180 ft off the centreline: the hold.
+    reply, session = _ready_ask(brain, tower, 42.24294, -8.62309)
+    assert "cleared for takeoff" in reply.text.lower()
+    assert session.cleared_takeoff
+
+
+def test_a_midfield_hold_is_at_the_runway_for_the_takeoff_clearance():
+    """An intersection hold sits beside the pavement halfway down it --
+    at the runway the same way the threshold's bars are."""
+    brain, tower = _vigo_tower_setup()
+    reply, session = _ready_ask(brain, tower, 42.23180, -8.62612)
+    assert "cleared for takeoff" in reply.text.lower()
+    assert session.cleared_takeoff
+
+
+def test_the_apron_is_not_at_the_runway_for_the_takeoff_clearance():
+    """The audit's case stands: "ready" heard on the apron is sent to the
+    runway, not cleared off it."""
+    brain, tower = _vigo_tower_setup()
+    # Fifteen hundred feet off the centreline midfield: the apron.
+    reply, session = _ready_ask(brain, tower, 42.23108, -8.62132)
+    assert "taxi to the runway" in reply.text.lower()
+    assert not session.cleared_takeoff
+
+
+def test_the_far_ends_hold_is_not_at_the_runway_for_the_takeoff_clearance():
+    """Held at 01's bars asking for 19 is at the wrong end's runway, so
+    it is taxied to the right one rather than cleared the wrong way."""
+    brain, tower = _vigo_tower_setup()
+    # 200 ft past the 01 threshold: the reciprocal's hold, not 19's.
+    reply, session = _ready_ask(brain, tower, 42.22066, -8.62915)
+    assert "taxi to the runway" in reply.text.lower()
+    assert not session.cleared_takeoff
+
+
 def test_the_rules_are_decided_by_the_aircraft_and_the_weather():
     """A transport is always IFR; a light aeroplane files by the sky."""
     flight = _flier()

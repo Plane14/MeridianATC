@@ -260,16 +260,24 @@ class _Working_the_user:
 
         # A takeoff clearance is issued to an aeroplane at the runway, not
         # to one still taxiing to it -- "cleared for takeoff" heard on the
-        # apron is rolled onto wherever it happened to be pointing. Where
-        # position is not reported at all this cannot be told, so the ask
-        # is trusted the way it always was. `lined_up` skips the check:
-        # the aeroplane holds a line-up clearance, it is on it.
+        # apron is rolled onto wherever it happened to be pointing. At it
+        # reaches past the pavement runway_at reads: the bars a departure
+        # holds at are outside that rectangle, as are a CAT III point and
+        # the connector beside it, so the ask is whether the aeroplane is
+        # beside this runway, at its end of it -- not on it. Where position
+        # is not reported at all this cannot be told, so the ask is trusted
+        # the way it always was. `lined_up` and the engine's own holding
+        # point skip the check: the aeroplane's place is already known.
         if (state is not None and getattr(state, "has_position", False)
-                and airport is not None and not session.lined_up):
+                and airport is not None and not session.lined_up
+                and session.phase is not Phase.HOLDING_SHORT):
             standing = self.navdb.runway_at(
                 airport.ident, state.latitude, state.longitude,
                 heading=getattr(state, "heading_true", None))
-            if normalize_runway(standing or "") != normalize_runway(runway):
+            if (normalize_runway(standing or "") != normalize_runway(runway)
+                    and not self.navdb.at_the_runway(
+                        airport.ident, runway,
+                        state.latitude, state.longitude)):
                 instruction = session.remember(
                     Instruction("taxi", station_key(station), "",
                                 {"runway": runway}))

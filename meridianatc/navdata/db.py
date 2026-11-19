@@ -1411,6 +1411,50 @@ class NavDB:
                 best = rw.he_ident if apart > 90.0 else rw.le_ident
         return best
 
+    def at_the_runway(self, ident: str, runway: str,
+                      latitude: float, longitude: float,
+                      margin_ft: float = 500.0,
+                      past_end_ft: float = 650.0) -> bool:
+        """Whether a point is beside ``runway`` near enough to leave from it.
+
+        :meth:`runway_at` answers which pavement a point is on; this answers
+        the question a tower asks instead -- is the aeroplane at this runway,
+        the hold lines and the last metres of connector included. Those sit
+        outside the paved rectangle, which is where a departure is supposed
+        to be waiting, so a point correctly held at the bars reads as on no
+        runway at all. One still on the apron, or held at the *other* end's
+        bars, is not at it.
+
+        ``margin_ft`` is how far off the centreline the point may be -- a
+        CAT II/III holding point sits further out than an ordinary one.
+        ``past_end_ft`` is how far beyond the departure threshold a hold may
+        lie: the bars are ahead of the paved end, so "at the runway" reaches
+        a little past it -- but not past the far end, whose bars are the
+        reciprocal's.
+        """
+        key = normalize_runway(runway)
+        for rw in self.runways(ident):
+            dep_is_le = normalize_runway(rw.le_ident) == key
+            if not dep_is_le and normalize_runway(rw.he_ident) != key:
+                continue
+            if None in (rw.le_lat, rw.le_lon, rw.he_lat, rw.he_lon):
+                continue
+            along, offset = _segment_position(
+                latitude, longitude,
+                rw.le_lat, rw.le_lon, rw.he_lat, rw.he_lon)
+            length = max(float(rw.length_ft or 0.0), 1.0)
+            # How far past each end the point lies, signed by which end is
+            # the departure's: ahead of its threshold is where the holds
+            # are, ahead of the far one is the reciprocal's hold.
+            beyond_dep = (max(0.0, -along) if dep_is_le
+                          else max(0.0, along - 1.0)) * length
+            beyond_far = (max(0.0, along - 1.0) if dep_is_le
+                          else max(0.0, -along)) * length
+            if (offset <= margin_ft and beyond_dep <= past_end_ft
+                    and beyond_far <= 60.0):
+                return True
+        return False
+
     def runway_strip(self, ident: str, runway: str) -> str:
         """The runway a designator is one end of, as "06/24": the same for
         both ends, so a watch that keys on it sees one runway where a pilot
