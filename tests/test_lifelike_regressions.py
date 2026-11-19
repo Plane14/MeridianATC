@@ -483,8 +483,12 @@ def test_a_nav_stuck_on_a_stale_course_is_flown_to_the_fix():
         bearing_to=lambda lat, lon: 30.0)
     now = 1000.0
     assert flight._nav_fallback_heading(state, now) == -1.0
+    # The bug reads magnetic: the true bearing goes through the same
+    # conversion every other course the FO hands it does.
+    from meridianatc.navdata.magvar import to_magnetic, variation
+    want = to_magnetic(30.0, variation(41.2, -8.1)) % 360.0
     assert flight._nav_fallback_heading(state, now + 50.0) \
-        == pytest.approx(30.0)
+        == pytest.approx(want)
 
 
 def test_a_navless_route_falls_back_to_the_destination_bearing():
@@ -500,8 +504,10 @@ def test_a_navless_route_falls_back_to_the_destination_bearing():
         bearing_to=lambda lat, lon: 340.0)
     now = 2000.0
     assert flight._nav_fallback_heading(state, now) == -1.0
+    from meridianatc.navdata.magvar import to_magnetic, variation
+    want = to_magnetic(340.0, variation(40.7, -7.9)) % 360.0
     assert flight._nav_fallback_heading(state, now + 50.0) \
-        == pytest.approx(340.0)
+        == pytest.approx(want)
 
 
 # -- expedite -----------------------------------------------------------------

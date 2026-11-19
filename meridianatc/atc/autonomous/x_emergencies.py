@@ -53,7 +53,7 @@ class _Emergencies:
         # turbines' -- sits in the high teens as it dies, which a
         # twelve-volt floor alone never sees.
         volts = getattr(state, "main_bus_volts", -1.0)
-        collapsed = volts is not None and volts > 0.0 and (
+        collapsed = volts is not None and volts >= 0.0 and (
             volts < 12.0 or 15.0 < volts < 20.0)
         self._electrical_since = \
             (getattr(self, "_electrical_since", 0.0) or now) \

@@ -796,6 +796,12 @@ class _The_phase_machine:
             # gain.
             gs = state.ground_speed_kt or ias
             keep_hdg = self.state.runway_heading
+            if keep_hdg <= 0:
+                # No runway figure to keep: the heading the lineup left
+                # is the one the roll holds -- a steer for zero degrees
+                # drives off the pavement side on any other runway.
+                keep_hdg = float(getattr(state, "heading_true", 0.0)
+                                 or 0.0)
             if self.state.runway_heading > 0 and self.state.runway_lat:
                 # Track the paint, not just the heading: a lineup can
                 # finish a few metres off the line and runway heading
@@ -1075,14 +1081,17 @@ class _The_phase_machine:
                                         heading=assigned_hdg,
                                         speed_kt=self._speed_target(state))
         else:
+            # No SID to walk and no heading assigned is not "wings
+            # free": NAV flies the filed route until ATC says otherwise.
+            # It is armed first so the fallback course -- armed inside
+            # the director call where the plan steers nothing -- wins
+            # the engagement; NAV armed last flies the dead course.
+            self.director.nav(True)
+            self.state.ap_nav_mode = True
             self._apply_flight_director(
                 state, altitude=target, vs_fpm=vs,
                 heading=self._nav_fallback_heading(state, now),
                 speed_kt=self._speed_target(state))
-            # No SID to walk and no heading assigned is not "wings
-            # free": NAV flies the filed route until ATC says otherwise.
-            self.director.nav(True)
-            self.state.ap_nav_mode = True
 
         # A descent or approach clearance outranks the machine's own top
         # of climb: it is taken first, not after a tick spent thinking
@@ -1177,6 +1186,15 @@ class _The_phase_machine:
                     # heading read back is the readback not flown.
                     self.director.heading(vector)
                     self.state.ap_hdg_mode = True
+                else:
+                    # Level on the plan is where a dead NAV course is
+                    # most quietly wrong: the fallback bearing keeps
+                    # the aeroplane pointed at the leg until the track
+                    # comes round.
+                    fallback = self._nav_fallback_heading(state, now)
+                    if fallback >= 0.0:
+                        self.director.heading(fallback)
+                        self.state.ap_hdg_mode = True
             self._manage_throttle(state, self._speed_target(state))
             self.director.speed(self._speed_target(state))
 
@@ -1311,17 +1329,19 @@ class _The_phase_machine:
                 vs = self.performance.climb_fpm
             else:
                 vs = max(-300.0, min(300.0, -err * 4.0))
+            if assigned_hdg is None:
+                # A vector that has ended is not a heading kept for
+                # ever: with nothing assigned the route is the lateral
+                # plan again, the same ask the climb and the cruise
+                # make. It is armed first so the fallback course wins
+                # the engagement where the plan steers nothing.
+                self.director.nav(True)
+                self.state.ap_nav_mode = True
             self._apply_flight_director(
                 state, altitude=target, vs_fpm=vs,
                 heading=assigned_hdg if assigned_hdg is not None
                 else self._nav_fallback_heading(state, now),
                 speed_kt=speed)
-            if assigned_hdg is None:
-                # A vector that has ended is not a heading kept for
-                # ever: with nothing assigned the route is the lateral
-                # plan again, the same ask the climb and the cruise make.
-                self.director.nav(True)
-                self.state.ap_nav_mode = True
 
         # The approach's own navaid, tuned early enough that the needles
         # are alive by the time the final is flown.
@@ -1817,6 +1837,11 @@ class _The_phase_machine:
             return
 
         if sub == "delay":
+            # The stand's delay is run with the engines off -- they are
+            # shut at blocks in the real job, not idled through the
+            # turnaround, and the fuelling below wants them cold anyway.
+            if getattr(state, "engines_running", False):
+                self._shutdown_engines()
             if now - self.state.phase_entered_at < self._chain_delay:
                 return
             self._goto_sub("service")

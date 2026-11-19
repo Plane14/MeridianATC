@@ -342,8 +342,22 @@ class _Circling:
         self._last_lever = 1.0
         # What was tracking the approach's needles is done with them: a
         # go-around flown with APR still armed hunts the glide it just
-        # left.
+        # left. The modes it armed go with it -- a VS descent still
+        # engaged commands the elevator the go-around's own pull is
+        # fighting, the fight the stall monitor drops the AP for.
         d.approach(False)
+        if self.state.ap_master or self.state.ap_speed_mode \
+                or self.state.ap_vs_mode:
+            d.autopilot(False)
+            d.airspeed_hold(False)
+            d.vs_hold(False)
+            d.localizer(False)
+            self.state.ap_master = False
+            self.state.ap_speed_mode = False
+            self.state.ap_vs_mode = False
+            self.state.ap_alt_mode = False
+            self.state.ap_hdg_mode = False
+            self.state.ap_nav_mode = False
         # The flare's surface demands are the runway's, not the
         # climb's: a de-crab pedal or an into-wind wing still commanded
         # into the missed approach is a skid and a bank at fifty feet.
@@ -409,11 +423,11 @@ class _Circling:
         # the threshold's coordinates, so it is converted like every
         # other course this hands the autopilot.
         hdg = self.session.assigned_heading
-        if not hdg and self.state.runway_heading > 0:
+        if hdg is None and self.state.runway_heading > 0:
             hdg = self._magnetic(self.state.runway_heading, state)
         self._apply_flight_director(state, altitude=self.state.missed_alt_ft,
                                     vs_fpm=self.performance.climb_fpm,
-                                    heading=hdg if hdg and hdg > 0 else -1.0,
+                                    heading=hdg if hdg is not None else -1.0,
                                     speed_kt=(self.performance.goaround_kt
                                               or self.state.climb_kt
                                               or 180.0))

@@ -1517,7 +1517,7 @@ class RotorcraftFlight:
                 and getattr(self, "_land_hdg", None) is not None:
             return self._land_hdg
         assigned = getattr(self.session, "assigned_heading", None)
-        if assigned:
+        if assigned is not None:
             if getattr(state, "has_position", False):
                 from ..navdata.magvar import to_true, variation
                 return to_true(float(assigned),

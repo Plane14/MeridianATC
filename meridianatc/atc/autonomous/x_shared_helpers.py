@@ -90,7 +90,9 @@ class _Shared_helpers:
             return -1.0
         if now - self._nav_off_since < self.NAV_OFF_S:
             return -1.0
-        return want
+        # The bug it is handed to reads magnetic; the bearing is true,
+        # like the runway course the go-around converts the same way.
+        return self._magnetic(want, state)
 
     def _vector_fms(self, state) -> None:
         """A vectored plan, told to the FMS once per heading.

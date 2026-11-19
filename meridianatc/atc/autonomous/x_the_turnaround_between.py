@@ -82,9 +82,11 @@ class _The_turnaround_between:
                            "autonomous.service.gsx")
                 return False
             # No truck to ask: the tanks are written where the model's
-            # fuel system accepts a write.
+            # fuel system accepts a write. A write is not the fuel --
+            # it is verified against the gauges on the next beat below.
             if self._write_fuel(target):
-                return True
+                self.state.fuel_wrote_at = now
+                return False
             self._fuel_or_hold(state, needed, fuel_gal, target)
             return self.state.phase != AutonomousPhase.SHUTDOWN
 
@@ -96,11 +98,28 @@ class _The_turnaround_between:
                 self.state.gsx_busy = False
                 fuel_gal = float(getattr(state, "fuel_total_gal", 0.0)
                                  or 0.0)
-                if fuel_gal >= target - 0.5 or self._write_fuel(target):
+                if fuel_gal >= target - 0.5:
                     return True
+                if self._write_fuel(target):
+                    self.state.fuel_wrote_at = now
+                    return False
                 self._fuel_or_hold(state, needed, fuel_gal, target)
                 return self.state.phase != AutonomousPhase.SHUTDOWN
             return False
+
+        # A write the model accepted is believed once the tanks carry
+        # it: the uplifts are cross-checked against the gauges before
+        # the leg is signed for, and a write that changed nothing --
+        # an FMS-side fuel system, a read-only model -- is nobody
+        # bringing the fuel, with the same shortfall rules as a truck
+        # that never came.
+        if self.state.fuel_wrote:
+            if fuel_gal >= target - 0.5:
+                return True
+            if now - self.state.fuel_wrote_at < 15.0:
+                return False
+            self._fuel_or_hold(state, needed, fuel_gal, target)
+            return self.state.phase != AutonomousPhase.SHUTDOWN
         return False
 
     def _ask_gsx_refuel(self) -> str:

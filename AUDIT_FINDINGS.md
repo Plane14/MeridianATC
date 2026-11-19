@@ -3,6 +3,64 @@
 Line-by-line audit by 10 parallel readers + manual verification. Each finding:
 severity · status (CONFIRMED / SUSPECTED) · file:line · effect · real-world expectation.
 
+## Fixed (turnaround + verification pass, 2026-11-19)
+
+- **#54** Go-around releases armed AP/VS/SPD modes — `_start_go_around`
+  now drops `autopilot`/`airspeed_hold`/`vs_hold`/`localizer` when a mode
+  was armed, the same release the landing rollout and the stall monitor
+  make; the first 8 s stay hand-flown as intended.
+- **#55** NAV-fallback order corrected in climb and descent — NAV is
+  armed *before* `_apply_flight_director`, so a fallback heading
+  (plan steering nothing) wins the engagement; NAV armed last flew the
+  dead course and the fallback was dead code.
+- **#56** Level cruise now consults `_nav_fallback_heading` too — a dead
+  NAV course at altitude engages the fallback heading instead of
+  drifting on the last course.
+- **#58** `_nav_fallback_heading` converts its true bearing through
+  `_magnetic` before returning — the bug it is handed to reads magnetic.
+- **#59** The on-plan direct grant stores `session.route_direct` +
+  `route_direct_index`, so the FO's `_fly_direct` law flies the
+  clearance instead of the filed legs. (Off-plan `REQUEST_DIRECT`
+  grants remain unflown — no fix on the route to aim the law at.)
+- **#60** Takeoff roll falls back to `state.heading_true` when
+  `runway_heading <= 0` instead of steering for 000.
+- **#61** Electrical-collapse guard is `volts >= 0.0` — a fully dead bus
+  (0.0 V) now declares; the unpublished sentinel is -1.
+- **#62** `_reset_scratch` clears the fuel/electrical/engine/NAV-off
+  debounce clocks and the spent departure-FMS flags
+  (`_fms_direct_done`, `_vector_fms_hdg`) — leg 2+ gets its own watches
+  and its own FMS writes.
+- **#63** `if assigned:` → `is not None` in `autonomous_heli` pedal
+  heading, and the go-around heading pick treats `assigned_heading = 0`
+  (north) as assigned, not absent.
+- **#64** Checklist gear-retraction requires `not on_ground` **and**
+  `vs > 300 fpm` — a rollout bounce no longer retracts the gear.
+- **#65** `set_observed` calls `_release_held` on done flights before
+  filtering them — a held live aeroplane leaving the feed no longer
+  leaks its roster hold.
+- **#57** Already fixed before this pass — `_hold_hover` writes
+  `PEDAL_SET, 0` with a `TAIL_ROTOR_SET` fallback.
+- **#74** Verified already fixed — the stale-ATIS invalidation iterates
+  `_atis.items()` and matches `atis_key[0]` against the airport; no
+  3-tuple unpack remains.
+
+Still open (LOW/MEDIUM, verified or carried): #66–#73, #75–#76 — all
+recorded in place below.
+
+Also fixed this pass (new findings, not in the numbered list):
+
+- Turnaround never verified the fuel write: `_service_turnaround`
+  returned "done" on the write's say-so. Now the uplift is
+  cross-checked against the tanks (15 s grace) and a write the model
+  ignored falls through to the depart-short/shutdown rules.
+- Engines idled through the stand delay burning the next leg's fuel —
+  `_phase_chain_next` "delay" now sends `_shutdown_engines`.
+- `_load_next_flight` dropped `aircraft_floats` on the leg change — a
+  floatplane's next leg tried to land on the runway.
+- GSX-done path trusted the readback fuel figure before the write: now
+  verified the same way.
+
+
 ## HIGH
 
 1. **MSFS design speeds inflated ~3.28x** — CONFIRMED
