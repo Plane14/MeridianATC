@@ -40,6 +40,12 @@ severity · status (CONFIRMED / SUSPECTED) · file:line · effect · real-world 
   leaks its roster hold.
 - **#57** Already fixed before this pass — `_hold_hover` writes
   `PEDAL_SET, 0` with a `TAIL_ROTOR_SET` fallback.
+- **#74** Verified already fixed — the stale-ATIS invalidation iterates
+  `_atis.items()` and matches `atis_key[0]` against the airport; no
+  3-tuple unpack remains.
+
+Still open (LOW/MEDIUM, verified or carried): #66–#73, #75–#76 — all
+recorded in place below.
 
 Also fixed this pass (new findings, not in the numbered list):
 
