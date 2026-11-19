@@ -430,7 +430,14 @@ def menu_file() -> Path | None:
         return None
     if not found:
         return None
-    return max(found, key=lambda p: p.stat().st_mtime)
+
+    def _mtime(p) -> float:
+        try:
+            return p.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    return max(found, key=_mtime)
 
 
 def read_menu(path) -> list[str]:

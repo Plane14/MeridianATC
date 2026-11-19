@@ -1187,7 +1187,7 @@ class NavDB:
         rows = self._conn.execute(
             """
             SELECT f.*, a.lat AS alat, a.lon AS alon, a.size_rank AS rank,
-                   a.spoken AS aspoken, a.name AS aname
+                   a.spoken AS aspoken, a.name AS aname, a.elev_ft AS aelev
             FROM frequencies f
             JOIN airports a ON a.ident = f.ident
             WHERE f.mhz BETWEEN ? AND ?
@@ -1204,9 +1204,13 @@ class NavDB:
                 continue
             d = haversine_nm(lat, lon, r["alat"], r["alon"])
             base = STATION_RANGE_NM.get(r["position"], 40.0)
+            # Line of sight is above the field, not above the sea: a pilot
+            # at 500 ft over Denver is underground to the radio horizon.
+            los_here = 1.23 * math.sqrt(
+                max(0.0, altitude_ft - (r["aelev"] or 0.0)))
             # Airborne reception extends the usable range, but never for
             # ground-bound positions: you cannot raise Ground from 200 miles.
-            limit = base if r["position"] in ("DEL", "GND") else max(base, min(los, base * 4))
+            limit = base if r["position"] in ("DEL", "GND") else max(base, min(los_here, base * 4))
             if d > limit:
                 continue
             # Rank: closest wins, with a nudge for larger fields and for the

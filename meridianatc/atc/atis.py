@@ -116,8 +116,10 @@ class AtisGenerator:
             # broadcast named: with the runway kept until the wind takes it
             # away (ControllerBrain._wind_runway), the old weather no longer
             # gives the old runway, so comparing the two weathers missed it.
-            moved = (self.current.landing_runways[:1]
-                     != list(self._runway_choice(weather))[:1])
+            moved = (self.current.landing_runways
+                     != list(self._runway_choice(weather))
+                     or self.current.departing_runways
+                     != list(self._runway_choice(weather, True)))
             if not moved and not self._materially_changed(self.current.weather,
                                                           weather):
                 return self.current
@@ -139,13 +141,14 @@ class AtisGenerator:
             return True
         if _round_to(old.visibility_sm, 1) != _round_to(new.visibility_sm, 1):
             return True
-        if [c[0] for c in old.clouds] != [c[0] for c in new.clouds]:
+        # Ceilings, not just coverage: BKN008 to BKN045 is a new letter.
+        if [c[:2] for c in old.clouds] != [c[:2] for c in new.clouds]:
             return True
-        if abs(old.temperature_c - new.temperature_c) >= 2:
-            return True
-        # A runway change always forces a new letter.
-        return (self._runway_choice(old) != self._runway_choice(new)
-                or self._runway_choice(old, True) != self._runway_choice(new, True))
+        # A runway change always forces a new letter; update() already
+        # compares the broadcast's runways against the live choice, which
+        # this cannot do -- a stateful runways_for answers both weathers
+        # the same way.
+        return abs(old.temperature_c - new.temperature_c) >= 2
 
     def _runway_choice(self, weather: Weather,
                        departing: bool = False) -> tuple[str, ...]:

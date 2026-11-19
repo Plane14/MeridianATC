@@ -228,6 +228,7 @@ class _Where_it_is:
                                     need_m=need_m)
                 or layout.departure(stand, here, threshold, heading,
                                     length_m, avoid=extra or None,
+                                    closed=closed,
                                     need_m=need_m))
         # Joining the runway anywhere but the threshold is an
         # intersection departure: the taxiway it commits on is the edge

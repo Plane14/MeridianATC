@@ -40,7 +40,9 @@ def for_session(session, plan_known: bool, spoken_callsign: str,
     cs = spoken_callsign or "your callsign"
     phase = session.phase
     if phase == Phase.PREFLIGHT:
-        rules = getattr(session, "flight_rules", "ifr")
+        rules = getattr(session, "flight_rules", None)
+        if rules is None:
+            rules = "ifr" if getattr(session, "ifr", True) else "vfr"
         if rules == "vfr":
             return Guidance("Request VFR clearance",
                             "Call Delivery when you are ready to depart "

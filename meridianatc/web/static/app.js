@@ -1052,7 +1052,7 @@ function paintCraftCard() {
     <div class="craft-grid">
       ${cell(t("craft.altitude", "Altitude"), aircraft.on_ground ? "GND" : feet(aircraft.altitude_ft))}
       ${cell(t("craft.speed", "Speed"), `${Math.round(aircraft.ground_speed_kt || 0)} kt`)}
-      ${cell(t("craft.heading", "Heading"), `${String(Math.round(aircraft.heading || 0) % 360).padStart(3, "0")}°`)}
+      ${cell(t("craft.heading", "Heading"), `${String((Math.round(aircraft.heading || 0) % 360) || 360).padStart(3, "0")}°`)}
       ${cell(t("craft.vertical", "Climb"), aircraft.on_ground ? "—" : `${up > 0 ? "+" : ""}${up} fpm`)}
       ${cell(t("craft.runway", "Runway"), aircraft.runway || "—")}
       ${cell(t("craft.squawk", "Squawk"), aircraft.squawk || "—")}

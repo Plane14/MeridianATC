@@ -234,7 +234,12 @@ class OnlineNetwork:
     @property
     def controllers(self) -> list[OnlineController]:
         with self._lock:
-            return list(self._controllers)
+            # A picture this old is somebody else's sky: the feed's last
+            # success minutes ago tells nobody who is on the frequency now.
+            stale = (self._fetched_at
+                     and time.monotonic() - self._fetched_at
+                     > max(600.0, self.refresh_s * 5))
+            return [] if stale else list(self._controllers)
 
     @property
     def error(self) -> str:
@@ -264,8 +269,11 @@ class OnlineNetwork:
             return
         self._started = now
         self._busy = True
-        threading.Thread(target=self._fetch, name="MeridianATC-network",
-                         daemon=True).start()
+        try:
+            threading.Thread(target=self._fetch, name="MeridianATC-network",
+                             daemon=True).start()
+        except RuntimeError:
+            self._busy = False
 
     def refresh(self) -> list[OnlineController]:
         """Fetch now, on this thread. For the command line and the tests."""

@@ -103,7 +103,8 @@ def dry_run(config, navdb, ident: str, seconds: float, *,
         liveries = None
 
     out(f"live traffic, dry run round {field.ident} (runway {runway or '?'}),"
-        f" {live.radius_nm:.0f} nm, drawn {live.live_delay_s:.0f} s behind"
+        f" {(live.radius_nm or config.traffic.radius_nm):.0f} nm, drawn"
+        f" {live.live_delay_s:.0f} s behind"
         f" the feed; no simulator, so no taxiways or stands: those are shown"
         f" where the feed has them. FSLTL "
         f"{'found' if liveries is not None else 'not found'}.")

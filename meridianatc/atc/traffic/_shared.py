@@ -139,6 +139,10 @@ def _strips_parallel(a: str, b: str) -> bool:
     "09R/27L" share a heading pair, "09L/27R" and "16L/34R" do not.
     Crossing strips are left to the tower's spacing, which treats them
     as the same pavement anyway."""
+    if not a or not b:
+        # An unnamed runway is not parallel to anything: the spacing
+        # checks it would skip are the conservative thing to keep.
+        return False
     numbers = {key[:2] for key in (a, b) for key in key.split("/")}
     # Two strips share a heading when a number appears in both; with the
     # reciprocal pair inside each key that is "09" against "09".
@@ -587,6 +591,7 @@ def make_of(type_code: str) -> str:
 # taxi instructions and the tower frequency full of takeoff clearances.
 _POSITION_OF_PHASE: dict[str, str] = {
     "clearance": "DEL",
+    "pushback": "GND",
     "taxi": "GND",
     # At the holding point: asking for the runway, and waiting to hear.
     "holding": "TWR",

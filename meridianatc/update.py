@@ -290,7 +290,7 @@ def apply_script(pid: int) -> str:
         f'echo MeridianATC update, waiting for process {pid} > "%LOG%"',
         "set /a tries=0",
         ":wait",
-        f'tasklist /FI "PID eq {pid}" 2>NUL | find "{pid}" >NUL',
+        f'tasklist /FI "PID eq {pid}" /NH /FO LIST 2>NUL | find "PID:" >NUL',
         "if not errorlevel 1 (",
         "  set /a tries+=1",
         "  if %tries% GEQ 120 goto still_running",

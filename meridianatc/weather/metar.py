@@ -71,7 +71,8 @@ def hpa_from_inhg(inhg: float) -> float:
 # raw METAR parsing
 # --------------------------------------------------------------------------
 
-_RE_WIND = re.compile(r"\b(\d{3}|VRB)(\d{2,3})(?:G(\d{2,3}))?(KT|MPS|KMH)\b")
+_RE_WIND = re.compile(r"\b(\d{3}|VRB)(\d{2,3})(?:GP?(\d{2,3}))?(KT|MPS|KMH)\b")
+_RE_WIND_VAR = re.compile(r"\b\d{3}V\d{3}\b")
 _RE_VIS_SM = re.compile(r"\bM?(\d{1,2})?\s?(\d/\d)?SM\b")
 _RE_TEMP = re.compile(r"\b(M?\d{2})/(M?\d{2})\b")
 _RE_ALTIM_IN = re.compile(r"\bA(\d{4})\b")
@@ -147,6 +148,10 @@ def parse_metar(raw: str) -> Weather:
             # chose the northerly runway in every light variable wind.
             wx.variable = True
             wx.remarks = (wx.remarks + " variable").strip()
+    if _RE_WIND_VAR.search(body):
+        # "200V290": swinging between those two directions, which is a
+        # variable wind however strong the mean.
+        wx.variable = True
 
     if "CAVOK" in body:
         wx.visibility_sm = 10.0
@@ -381,10 +386,12 @@ class WeatherProvider:
         except Exception as exc:
             log.info("METAR fetch failed for %s: %s", station, exc)
             return None
-        if not rows:
+        if not isinstance(rows, list) or not rows:
             return None
 
         row = rows[0]
+        if not isinstance(row, dict):
+            return None
         raw = row.get("rawOb") or ""
         wx = parse_metar(raw)
 

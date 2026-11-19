@@ -60,6 +60,76 @@ Also fixed this pass (new findings, not in the numbered list):
 - GSX-done path trusted the readback fuel figure before the write: now
   verified the same way.
 
+## Fixed (second verification pass, 2026-11-19)
+
+Verified already fixed in code: #1, #2, #3, #4, #7, #8, #9, #13, #14,
+#15, #18, #24, #57, #74, #76, #77, #79, #80, #81, #82.
+
+Fixed this pass:
+
+- **#5** STANDBY carrying readback markers no longer parks the owed
+  readback forever: the en/local/fr reclassify now fires on markers
+  alone for STANDBY, and a no-owed pending is settled by
+  `Intent.READBACK` as well as ACKNOWLEDGE/AFFIRMATIVE.
+- **#6 (residual)** The panel's COM2 retune now writes `station2` /
+  `_last_com2` under `_text_lock`.
+- **#10** ATIS reissue covers departure-runway-only changes and ceiling
+  *heights*, not just coverage words; the dead stateful `_runway_choice`
+  comparison at the tail of `_materially_changed` is gone.
+- **#11** `_digit_runs` folds tens words: "heading two seventy" → 270,
+  "twenty three hundred" → "23 hundred" (2300).
+- **#12** A bare "going around" / "go around" is no longer consumed by
+  the interphone: it reaches the tower, and the FO still executes it via
+  `heard_on_the_radio`.
+- **#16 (partial)** A non-list/non-dict METAR API payload returns None
+  instead of crashing. Observation-time staleness (an hours-old
+  DDHHMMZ still counted fresh on fetch time) remains open.
+- **#17** Station line-of-sight is per-candidate AGL (airport `elev_ft`),
+  not MSL — a pilot at 500 ft over Denver is no longer "visible" to
+  stations over the horizon.
+- **#19** The updater's PID check matches the `PID:` label of LIST
+  output exactly instead of substring-matching the number (PID 12 no
+  longer keeps a wait loop alive for PID 1234). The robocopy /MIR
+  rollback risk is accepted.
+- **#20a** The visual-approach clearance carries the tower handoff in
+  the same transmission ("…, contact tower one one eight decimal
+  seven") instead of a silent `handoff_to`.
+- **#20b** An IFR "request frequency change" answers "frequency change
+  approved" — "radar service terminated" is VFR-only now.
+- **#21** `/api/ptt` and `/api/tune` run their blocking engine calls via
+  `asyncio.to_thread`, and the COM2 retune is lock-guarded.
+- **#23** Guidance's VFR/IFR pick now falls back to `session.ifr` when
+  `flight_rules` is absent — the live Session has `ifr`, so the VFR
+  prompt was unreachable before.
+- **#29** `network.poll()` unwedges `_busy` if the fetch thread fails to
+  start, and `controllers` reports an empty picture once the feed is
+  >10 min (or 5× refresh) stale.
+- **#30** GSX menu-file mtime comparison tolerates `stat()` failures.
+- **#33** TTS `_remember` mutates `_cache`/`_cache_order` under `_lock`.
+- **#35** `live_dry`'s banner prints the effective radius
+  (`live.radius_nm or config.traffic.radius_nm`), not the raw zero.
+- **#44** The panel shows heading 360 for 359.5–360° instead of 000.
+- **#47** `History.record` drops a line racing `close()` instead of
+  raising on the audio path.
+- **#51** METAR parsing marks `200V290`-style variable-direction groups
+  as `variable` and accepts `P`-prefixed gusts (`GP45KT`).
+- **#66** The third departure-route fallback now passes `closed=closed`
+  — a departure can no longer be routed through a closed taxiway.
+- **#67** `_live_flew` is cleared on field change like the other live
+  bookkeeping.
+- **#68** `"pushback"` is in `_POSITION_OF_PHASE` (GND) — pushback
+  strips sit in the ground column.
+- **#73** `_strips_parallel` returns False for unknown runway keys —
+  two unnamed runways no longer skip the spacing checks.
+
+Verified as intended (not defects): **#22** — CPDLC "roger" is pinned
+by `test_roger_acknowledges_without_applying` to acknowledge without
+applying.
+
+Still open or unverified: #16 (obs-time staleness), #19 (rollback
+risk), #20c/d/e, #25–#28, #31, #32, #34, #36–#43, #45, #46, #48–#50,
+#52, #53, #69–#72.
+
 
 ## HIGH
 

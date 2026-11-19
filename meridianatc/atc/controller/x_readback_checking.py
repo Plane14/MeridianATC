@@ -77,7 +77,8 @@ class _Readback_checking:
         # That is what "roger" and "wilco" are for, and demanding a readback of
         # something with no numbers in it is pedantry rather than safety.
         if not owed and parsed.intent in (Intent.ACKNOWLEDGE,
-                                          Intent.AFFIRMATIVE):
+                                          Intent.AFFIRMATIVE,
+                                          Intent.READBACK):
             pending.read_back = True
             session.apply(pending.values)
             session.clear_pending()

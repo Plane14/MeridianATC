@@ -259,14 +259,25 @@ _RUN_DIGITS = {
     "tree": "3", "fower": "4", "fife": "5",
 }
 
+# Tens words, for the compound style pilots actually use: "heading two
+# seventy", "flight level three five zero".
+_TENS = {
+    "twenty": 2, "thirty": 3, "forty": 4, "fifty": 5,
+    "sixty": 6, "seventy": 7, "eighty": 8, "ninety": 9,
+}
+
 
 def _digit_runs(text: str) -> str:
-    """Collapse runs of spoken digits into numerals.
+    """Collapse spoken numbers into numerals.
 
     ``"one two thousand"`` becomes ``"12 thousand"``; ``"three one left"``
-    becomes ``"31 left"``. Multi-digit words like "twelve" are left alone here
-    so the altitude parser can tell "one two thousand" from "twelve thousand"
-    -- both mean 12,000, but only the first is a digit run.
+    becomes ``"31 left"``. A tens word folded in reads the run so far as
+    hundreds -- ``"heading two seventy"`` is ``"heading 270"`` -- and a tens
+    word followed by a units word is the compound number itself:
+    ``"twenty three hundred"`` is ``"23 hundred"``. Multi-digit words like
+    "twelve" are left alone so the altitude parser can tell "one two
+    thousand" from "twelve thousand" -- both mean 12,000, but only the
+    first is a digit run.
     """
     tokens = text.split()
     out: list[str] = []
@@ -277,17 +288,29 @@ def _digit_runs(text: str) -> str:
             out.append("".join(run))
             run.clear()
 
-    for token in tokens:
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
         if token == ",":
             # A pause ends a number, and is not itself a word.
             flush()
-        elif token in _RUN_DIGITS:
-            run.append(_RUN_DIGITS[token])
-        elif token.isdigit() and len(token) == 1:
-            run.append(token)
+        elif token in _RUN_DIGITS or (token.isdigit() and len(token) == 1):
+            run.append(_RUN_DIGITS.get(token, token))
+        elif token in _TENS:
+            base = int("".join(run)) * 100 if run else 0
+            run.clear()
+            value = base + _TENS[token] * 10
+            if (i + 1 < len(tokens)
+                    and (tokens[i + 1] in _RUN_DIGITS
+                         or (tokens[i + 1].isdigit()
+                             and len(tokens[i + 1]) == 1))):
+                i += 1
+                value += int(_RUN_DIGITS.get(tokens[i], tokens[i]))
+            out.append(str(value))
         else:
             flush()
             out.append(token)
+        i += 1
     flush()
     return " ".join(out)
 
@@ -731,7 +754,7 @@ _RULES: list[tuple[Intent, str]] = [
     (Intent.URGENCY, r"\b(panpan|pan pan|declaring an urgency)\b"),
     (Intent.MINIMUM_FUEL, r"\b(minimum fuel|min fuel|fuel emergency)\b"),
 
-    (Intent.GOING_AROUND, r"\b(going around|go(ing)? missed|executing (the )?missed)\b"),
+    (Intent.GOING_AROUND, r"\b(going around|go around|go(ing)? missed|executing (the )?missed)\b"),
     (Intent.MISSED_APPROACH, r"\bmissed approach\b"),
 
     (Intent.SAY_AGAIN, r"\b(say again|repeat that|did ?n'?o?t (copy|catch)|"
@@ -1078,7 +1101,8 @@ class IntentParser:
         # keyword is still a readback if it has no request verb of its own.
         if (result.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE,
                         Intent.STANDBY)
-                and result.values and _READBACK_MARKERS.search(norm)):
+                and (result.values or result.intent is Intent.STANDBY)
+                and _READBACK_MARKERS.search(norm)):
             result.intent = Intent.READBACK
 
         _circuit_calls(result)
@@ -1121,7 +1145,8 @@ class IntentParser:
 
         if (result.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE,
                         Intent.STANDBY)
-                and result.values and re.search(grammar.readback, norm)):
+                and (result.values or result.intent is Intent.STANDBY)
+                and re.search(grammar.readback, norm)):
             result.intent = Intent.READBACK
 
         _circuit_calls(result)
@@ -1162,7 +1187,8 @@ class IntentParser:
 
         if (result.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE,
                         Intent.STANDBY)
-                and result.values and READBACK_MARKERS_FR.search(norm)):
+                and (result.values or result.intent is Intent.STANDBY)
+                and READBACK_MARKERS_FR.search(norm)):
             result.intent = Intent.READBACK
 
         _circuit_calls(result)

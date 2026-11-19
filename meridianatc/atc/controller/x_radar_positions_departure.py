@@ -266,7 +266,10 @@ class _Radar_positions_departure:
             session.vfr_ceiling_ft = 0.0
             if not session.ifr:
                 session.squawk = p.vfr_squawk
-            return Reply(p.radar_service_terminated(aircraft), station)
+                return Reply(p.radar_service_terminated(aircraft), station)
+            # IFR flights stay inside the system: the frequency change is
+            # approved, the radar service does not end.
+            return Reply(p.frequency_change_approved(aircraft), station)
 
         if parsed.intent is Intent.CANCEL_IFR:
             session.ifr = False
@@ -630,10 +633,16 @@ class _Radar_positions_departure:
 
         session.arrival_runway = runway
         session.phase = Phase.APPROACH
-        text = p.cleared_visual_approach(
+        clearance = p.cleared_visual_approach(
             aircraft, runway, destination.spoken if destination else ""
         )
         tower = self._destination_tower(session, station)
+        # One transmission, like the real call: "cleared visual approach
+        # runway 09L, contact tower one one eight decimal seven".
+        text = (p.handoff(aircraft,
+                          self._station_name(tower, p, short=True),
+                          tower.mhz, when=clearance)
+                if tower and tower.mhz else clearance)
         instruction = session.remember(
             Instruction("visual_approach", station_key(station), text,
                         {"runway": runway})

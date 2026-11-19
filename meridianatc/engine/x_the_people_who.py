@@ -136,6 +136,11 @@ class _The_people_who:
         RADIO.write("interphone", text=text, speaker=said.who,
                     intent=said.what, addressed=said.addressed,
                     language=self.crew.language)
+        if said.what == interphone.GO_AROUND and not said.addressed:
+            # A bare "going around" is the tower's business, not the first
+            # officer's: let the radio path have it. The FO still flies it
+            # through heard_on_the_radio.
+            return False
         if said.who == interphone.GROUND:
             self.ask_the_ground(said)
         else:

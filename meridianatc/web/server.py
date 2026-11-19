@@ -1116,9 +1116,9 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
     async def ptt(action: str) -> dict:
         """Key the microphone on the machine running the engine."""
         if action == "start":
-            engine.begin_transmission()
+            await asyncio.to_thread(engine.begin_transmission)
         elif action == "stop":
-            engine.end_transmission()
+            await asyncio.to_thread(engine.end_transmission)
         else:
             return {"ok": False, "error": "expected start or stop"}
         return {"ok": True, "recording": engine.microphone.recording}
@@ -1149,7 +1149,8 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         standby = bool(payload.get("standby"))
         radio = int(payload.get("radio") or 1)
 
-        ok, why = engine.set_radio(mhz, radio=radio, standby=standby)
+        ok, why = await asyncio.to_thread(
+            engine.set_radio, mhz, radio=radio, standby=standby)
         if not ok:
             return {"ok": False, "error": why}
         # Whether the aircraft's own radio moved, rather than only this
@@ -1158,14 +1159,19 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         # a yes that means nothing.
         in_sim = capabilities(engine.state.source).live and engine.state.connected
         if radio == 1 and not standby:
-            station = engine.tune(mhz)
+            station = await asyncio.to_thread(engine.tune, mhz)
             return {"ok": True, "station": station.callsign if station else "",
                     "in_simulator": in_sim}
         if radio == 2 and not standby:
             # The listen-only radio resolves its station the same way, so the
-            # panel can show who is on COM2 without asking.
-            engine.station2 = engine._resolve_com2(engine.state)
-            engine._last_com2 = engine.state.com2_active or 0.0
+            # panel can show who is on COM2 without asking. Under the text
+            # lock: the engine's own COM2 bookkeeping writes the same pair.
+            def _retune_com2() -> None:
+                with engine._text_lock:
+                    engine.station2 = engine._resolve_com2(engine.state)
+                    engine._last_com2 = engine.state.com2_active or 0.0
+
+            await asyncio.to_thread(_retune_com2)
             return {"ok": True,
                     "station": (engine.station2.callsign
                                 if engine.station2 else ""),

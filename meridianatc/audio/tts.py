@@ -726,10 +726,11 @@ class Synthesizer:
         return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()
 
     def _remember(self, key: str, value: Transmission) -> None:
-        self._cache[key] = value
-        self._cache_order.append(key)
-        while len(self._cache_order) > self._cache_size:
-            self._cache.pop(self._cache_order.pop(0), None)
+        with self._lock:
+            self._cache[key] = value
+            self._cache_order.append(key)
+            while len(self._cache_order) > self._cache_size:
+                self._cache.pop(self._cache_order.pop(0), None)
 
     def warm(self, keys: list[str] | None = None, piper: bool = True) -> None:
         """Pre-load models so the first transmission is not delayed.

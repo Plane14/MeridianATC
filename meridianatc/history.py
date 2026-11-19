@@ -10,6 +10,7 @@ corrupt history file costs the past, never the flight.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import sqlite3
@@ -125,12 +126,15 @@ class History:
             sid = session_id if session_id is not None else self._session_id
             if sid is None:
                 return
-            self._conn.execute(
-                "INSERT INTO transcript (session_id, at, who, station, text, "
-                "intent, meta) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (sid, time.time(), who, station, text, intent,
-                 json.dumps(meta or {})))
-            self._conn.commit()
+            # A close() on another thread leaves a transcript line
+            # unwritten -- dropped beats raising on the audio path.
+            with contextlib.suppress(sqlite3.Error):
+                self._conn.execute(
+                    "INSERT INTO transcript (session_id, at, who, station, "
+                    "text, intent, meta) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (sid, time.time(), who, station, text, intent,
+                     json.dumps(meta or {})))
+                self._conn.commit()
 
     def sessions(self, limit: int = 50, offset: int = 0) -> list[SessionRow]:
         with self._lock:
