@@ -531,13 +531,24 @@ class _The_phase_machine:
             lineup = list(getattr(self.session, "lineup_path", None) or [])
             on_path = False
             if len(lineup) >= 2:
+                # The walk only moves forward, the way the taxi pursuit
+                # does: a whole-path pick re-seats the nearest segment
+                # on whatever leg passes closest, and the pursuit
+                # teleporting between them is the swing through the
+                # numbers the lineup weaves on. A new plan re-seeds it.
+                if getattr(self, "_lineup_on", None) != lineup:
+                    self._lineup_progress = 0
+                    self._lineup_on = lineup
+                at = min(getattr(self, "_lineup_progress", 0),
+                         len(lineup) - 2)
                 paved = auto_nav.path_steering(
-                    state.latitude, state.longitude, lineup,
+                    state.latitude, state.longitude, lineup[at:],
                     lookahead_m=30.0)
                 if paved is not None \
                         and paved.get("heading") is not None \
                         and not paved.get("done") \
                         and abs(paved.get("cross_track_m") or 0.0) <= 60.0:
+                    self._lineup_progress = at + paved["nearest"]
                     steer_hdg = paved["heading"]
                     on_path = True
             # Cleared onto the runway while still on the taxi route to
@@ -554,12 +565,18 @@ class _The_phase_machine:
                         *taxi[-1], self.state.runway_lat,
                         self.state.runway_lon,
                         self.state.runway_heading)["offset_m"]) > 15.0
+                    # Same forward-only walk the taxi phase took here:
+                    # the pursuit cannot jump back onto a leg already
+                    # passed and start an orbit at the bars.
+                    at = min(getattr(self, "_taxi_progress", 0),
+                             len(taxi) - 2)
                     on_taxi = ends_at_the_bars and auto_nav.path_steering(
-                        state.latitude, state.longitude, taxi,
+                        state.latitude, state.longitude, taxi[at:],
                         lookahead_m=30.0)
                     if on_taxi \
                             and on_taxi.get("heading") is not None \
                             and not on_taxi.get("done"):
+                        self._taxi_progress = at + on_taxi["nearest"]
                         d.parking_brake(False)
                         self._steer(state, on_taxi["heading"],
                                     self.performance.taxi_kt)

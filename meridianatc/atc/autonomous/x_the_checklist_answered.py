@@ -561,13 +561,17 @@ class _The_checklist_answered:
         # The pursuit point can teleport between legs of the route --
         # where two taxiway edges sit close, the nearest-point pick
         # ping-pongs and the demanded heading jumps tens of degrees a
-        # tick, which no loop can converge on. The demand is eased
-        # toward each new answer along the arc, so a leg change reads
-        # as a brisk turn order rather than a teleport.
+        # tick, which no loop can converge on. A jump that size is still
+        # taken a share at a time, as a brisk turn order rather than a
+        # teleport; but a small jump is a real correction, and easing
+        # that was the trail the pursuit wove behind the turn -- so the
+        # step never comes in under what a tick of turning answers to.
         prev_want = getattr(self, "_steer_want", None)
         if prev_want is not None:
             jump = (desired_hdg - prev_want + 540.0) % 360.0 - 180.0
-            desired_hdg = (prev_want + 0.45 * jump) % 360.0
+            step = min(abs(jump), max(10.0, 0.45 * abs(jump)))
+            desired_hdg = (prev_want
+                           + (step if jump >= 0.0 else -step)) % 360.0
         self._steer_want = desired_hdg
         err = ((desired_hdg - hdg + 540.0) % 360.0 - 180.0)
         # A near-reversal is the shortest-path law's singular case: at
@@ -599,7 +603,6 @@ class _The_checklist_answered:
         # is a brisk ramp turn, and the same rate at twenty-five knots
         # is the swerve a fast taxi is lost to.
         rate_cap = _yaw_rate_cap(gs)
-        want_rate = max(-rate_cap, min(rate_cap, err / 4.0))
         # The gain autoadjusts to the airframe *at this speed*: the
         # degrees a second one unit of pedal buys on this model, learned
         # in ``_pedal_check`` per groundspeed band -- authority grows
@@ -607,9 +610,24 @@ class _The_checklist_answered:
         # is the weave, not the answer. Until a band has evidence the
         # nearest one -- or a middling guess -- corrects it.
         authority = self._yaw_authority_at(gs)
-        rudder = max(-0.5, min(0.5, (want_rate - rate) / authority))
         limit = self._ground_steer_limit(state)
+        # And the ask is capped at what this model's tiller still gives
+        # at the limit the ground allows: a rate ordered past that
+        # saturates the pedal, and the swing the rate term was meant to
+        # brake arrives as the weave itself. A tenth of the travel stays
+        # in hand as the counter-pedal that ends the turn.
+        rate_cap = min(rate_cap, max(2.0, authority * limit * 0.9))
+        # The led error is the one the next write answers to -- the
+        # swing is braked before the line is crossed, not corrected
+        # after.
+        want_rate = max(-rate_cap, min(rate_cap,
+                                     self._steer_lead(err, rate) / 4.0))
+        rudder = max(-0.5, min(0.5, (want_rate - rate) / authority))
         rudder = max(-limit, min(limit, rudder))
+        if abs(err) < 1.5 and abs(rate) < 1.0:
+            # On the heading with no swing: a twitch of tiller is a
+            # weave nobody feels, so nothing is written at all.
+            rudder = 0.0
         sent = rudder * self._pedal_dir()
         log.info(
             "steer: hdg %.0f want %.0f err %+.0f rate %+.1f "

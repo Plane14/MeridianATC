@@ -937,8 +937,8 @@ class SimConnectSource:
                     self._batch_names = tuple(
                         n for n in self._batch_names if n != refused)
                     self._batch_set = frozenset(self._batch_names)
-                    log.debug("simvar %s refused in the batched "
-                              "definition; reading without it", refused)
+                    log.info("simvar %s refused in the batched "
+                             "definition; reading without it", refused)
                 return False
             if data.contents.dwID not in _objectdata_ids():
                 return False

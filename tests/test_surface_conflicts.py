@@ -594,6 +594,124 @@ def test_fo_rejects_below_v1_on_an_engine_out():
     assert fo.state.sub == "abort"
 
 
+def _steerable_fo(**attrs):
+    """An FO whose ``_steer`` is real -- the fixture mocks the law
+    itself away, which is what these tests exercise."""
+    fo = _fo()
+    del fo._steer
+    fo._prop_levers = Mock()
+    fo._last_lever = 0.0
+    fo._stuck_probe = Mock(return_value=0)
+    for key, value in attrs.items():
+        setattr(fo, key, value)
+    return fo
+
+
+def test_steer_takes_a_small_correction_whole():
+    """The eased demand exists for pursuit teleports: a real
+    correction of a few degrees arriving at less than half per tick
+    was the trail the pursuit wove behind the turn. A jump inside a
+    tick of turning goes in whole."""
+    fo = _steerable_fo()
+    state = _state(51.15, -0.19, heading_true=90.0, ground_speed_kt=8.0)
+    fo._steer_want = 100.0
+    fo._steer(state, 108.0, 12.0)
+    assert fo._steer_want == pytest.approx(108.0, abs=1e-6)
+
+
+def test_steer_still_eases_a_pursuit_teleport():
+    """A hundred-degree re-pick is the segment flip, not a turn order
+    -- it still arrives a share at a time."""
+    fo = _steerable_fo()
+    state = _state(51.15, -0.19, heading_true=90.0, ground_speed_kt=8.0)
+    fo._steer_want = 100.0
+    fo._steer(state, 200.0, 12.0)
+    # 45% of +100.
+    assert fo._steer_want == pytest.approx(145.0, abs=1e-6)
+
+
+def test_steer_brakes_the_swing_before_the_line():
+    """The rollout law already brakes early; the taxi law had the rate
+    term but no lead, so the counter-pedal only came once the nose was
+    through the mark -- the overshoot the lineup hunts with. Nose
+    already swinging for the mark: the led demand brakes hard, not
+    the gentle bias the un-led error asked for."""
+    fo = _steerable_fo()
+    state = _state(51.15, -0.19, heading_true=90.0, ground_speed_kt=8.0)
+    fo._steer_dt = 2.0
+    fo._turn_rate = Mock(return_value=8.0)
+    fo._steer(state, 110.0, 12.0)
+    # err +20: the un-led ask was +5 deg/s; the led one is negative,
+    # so the pedal counters at ~-0.3, not -0.1.
+    assert fo._dir.rudder.call_args[0][0] < -0.2
+
+
+def test_steer_writes_nothing_on_the_heading():
+    """A degree of error and no swing is not a turn order: the
+    alternating two-per-cent pedal the lineup sat on for its last
+    half minute was twitch, not steering."""
+    fo = _steerable_fo()
+    state = _state(51.15, -0.19, heading_true=95.0, ground_speed_kt=8.0)
+    fo._steer(state, 95.0, 12.0)
+    assert fo._dir.rudder.call_args[0][0] == 0.0
+
+
+def test_steer_orders_only_what_the_tiller_has():
+    """A weak axis asked for the class's brisk turn is saturated
+    pedal with nothing left to brake the swing: the ask is capped at
+    the rate this model's measured authority still delivers at the
+    limit the ground allows."""
+    fo = _steerable_fo()
+    fo._yaw_authority_b = {1: 5.0}
+    state = _state(51.15, -0.19, heading_true=90.0, ground_speed_kt=8.0)
+    fo._steer(state, 130.0, 12.0)
+    # Authority 5, limit ~0.40: deliverable ~1.8, floored at 2 deg/s.
+    # err +40 wants 10; capped to 2 -> rudder 2/5 = 0.4.
+    assert fo._dir.rudder.call_args[0][0] == pytest.approx(0.4, abs=0.05)
+
+
+def test_lineup_pursuit_never_walks_backwards():
+    """On the connector the pursuit re-seated itself to the nearer of
+    two legs each tick -- the +140 degree teleport that swung the
+    aeroplane through the numbers and made it orbit. The walk only
+    moves forward, and a re-planned path re-seeds it."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo = _fo()
+    fo.state.phase = AutonomousPhase.LINE_UP
+    fo.state.sub = "align"
+    fo.state.runway_heading = 90.0
+    fo.state.runway_lat = 51.1505
+    fo.state.runway_lon = -0.1780
+    fo._runway_blocked = Mock(return_value=False)
+    fo._runway_half_m = Mock(return_value=20.0)
+    fo._clearance_strobes = Mock()
+    # An L of a connector: the north leg, then east onto the runway.
+    lineup = [(51.1500, -0.1800), (51.1505, -0.1800), (51.1505, -0.1780)]
+    fo.session = _fo_session([], lineup_path=lineup,
+                             cleared_takeoff=True)
+    # Beside the east leg: it is the nearer, so the walk seats there.
+    state = _state(51.1506, -0.1795, heading_true=90.0,
+                   ground_speed_kt=5.0)
+    fo._phase_line_up(state, 100.0)
+    assert fo._lineup_progress == 1
+    # Back beside the north leg -- a fresh whole-path pick would
+    # re-seat the pursuit onto the leg already passed. The walk holds,
+    # and the demand keeps pointing down the connector.
+    state2 = _state(51.1502, -0.1805, heading_true=90.0,
+                    ground_speed_kt=5.0)
+    fo._phase_line_up(state2, 102.0)
+    assert fo._lineup_progress == 1
+    desired = fo._steer.call_args[0][1]
+    assert 30.0 < desired < 90.0
+    # A re-planned connector re-seeds the walk instead of inheriting.
+    fo.session.lineup_path = [(51.1500, -0.1800), (51.1501, -0.1800),
+                              (51.1504, -0.1800)]
+    state3 = _state(51.15005, -0.1805, heading_true=90.0,
+                    ground_speed_kt=5.0)
+    fo._phase_line_up(state3, 104.0)
+    assert fo._lineup_progress == 0
+
+
 def test_fo_rolls_past_ghost_combustion_flags():
     """The C172's first SimConnect takeoff: the combustion indexes
     past its single engine answer False, and the roll was rejected
