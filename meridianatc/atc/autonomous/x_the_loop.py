@@ -153,7 +153,7 @@ class _The_loop:
         log.info(
             "telem: lat %.5f lon %.5f hdg %.0f trk %.0f "
             "gs %.1f ias %.0f vs %+.0f alt %.0f agl %.0f "
-            "pitch %+.1f bank %+.1f thr %.0f%% gnd %s ap %s "
+            "pitch %+.1f bank %+.1f thr %.0f%% v %.1f gnd %s ap %s "
             "wind %.0f@%.0f",
             g("latitude"), g("longitude"),
             g("heading_true"), g("track_true"),
@@ -161,6 +161,7 @@ class _The_loop:
             g("vertical_speed_fpm"), g("altitude_ft"),
             g("altitude_agl_ft"),
             g("pitch_deg"), g("bank_deg"), g("throttle_pct"),
+            g("main_bus_volts"),
             1 if g("on_ground") else 0, 1 if g("autopilot") else 0,
             g("ambient_wind_direction"), g("ambient_wind_velocity"),
             extra={
@@ -177,6 +178,7 @@ class _The_loop:
                     "pitch_deg": round(g("pitch_deg"), 1),
                     "bank_deg": round(g("bank_deg"), 1),
                     "throttle_pct": round(g("throttle_pct"), 1),
+                    "main_bus_volts": round(g("main_bus_volts"), 1),
                     "on_ground": bool(g("on_ground")),
                     "autopilot": bool(g("autopilot")),
                     "autothrottle": bool(g("autothrottle")),

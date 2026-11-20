@@ -15,6 +15,10 @@ class _The_checklist_answered:
     # The checklist vars whose control is a toggle rather than a set:
     # asking twice flips the switch back off, so each is asked once.
     _TOGGLED_ONCE = frozenset({"seatbelt_sign"})
+    # The most the pedal demand may move between writes: at the loop's
+    # quarter-second cadence the full throw takes under a second --
+    # the continuous correction a hand makes, rather than a kick.
+    _PEDAL_SLEW = 0.15
 
     # -- the checklist, answered by the FO flying ---------------------------
 
@@ -397,13 +401,21 @@ class _The_checklist_answered:
             rate_cap,
             lead / 4.0 * max(0.6, min(1.35, demand))))
         authority = self._yaw_authority_at(gs)
-        # As in _steer: the pedal that holds the wanted rate, plus the
-        # correction for the rate it differs by -- the bare difference
-        # settles halfway to the ask.
+        # The roll's pedal is a damper, not a rate-follower: the asks
+        # here are degrees, and the sharpness a feed-forward term adds
+        # at roll speed is the weave the sim's own veer is already
+        # feeding -- the droop a bare difference leaves is the price
+        # of a straight roll, not a wide corner.
         pedal = max(-pedal_max,
-                    min(pedal_max, (2.0 * want_rate - rate) / authority))
+                    min(pedal_max, (want_rate - rate) / authority))
         if abs(err) < 1.5 and abs(rate) < 1.0:
             pedal = 0.0
+        # Walked like the taxi wheel: a kick at roll speed is a swerve
+        # the sim's own veer is already providing.
+        prev_pedal = getattr(self, "_roll_pedal_out", 0.0)
+        step = pedal - prev_pedal
+        step = max(-self._PEDAL_SLEW, min(self._PEDAL_SLEW, step))
+        pedal = self._roll_pedal_out = prev_pedal + step
         self._pedal_check(pedal, rate, gs)
         return pedal * self._pedal_dir()
 
@@ -692,17 +704,28 @@ class _The_checklist_answered:
             self._steer_lead(err, rate) / 4.0
             * max(0.6, min(1.35, demand * (1.2 if commit else 1.0)))))
         # The pedal to make the rate, plus the correction for the rate
-        # it differs by: ``want_rate / authority`` alone is the trim a
-        # steady turn holds, and the bare difference this used to be
-        # settled halfway to the ask -- every corner twice as wide as
-        # its speed made necessary.
+        # it differs by: the bare difference this used to be settled
+        # halfway to the ask -- every corner twice as wide as its
+        # speed made necessary. The full feed-forward -- demand twice
+        # and damp once -- delivered the ask in the plant but wove in
+        # the sim, whose reads arrive a beat late: half that kick still
+        # kills the droop and keeps the extra gain under what the lag
+        # can ring.
         rudder = max(-0.5, min(0.5,
-                               (2.0 * want_rate - rate) / authority))
+                               (1.5 * want_rate - 0.5 * rate) / authority))
         rudder = max(-limit, min(limit, rudder))
         if abs(err) < 1.5 and abs(rate) < 1.0:
             # On the heading with no swing: a twitch of tiller is a
             # weave nobody feels, so nothing is written at all.
             rudder = 0.0
+        # The wheel is walked to the answer, not thrown: a demand that
+        # teleports between ticks is a kick the nose answers with a
+        # swing of its own, in whichever sim -- the slew is the
+        # continuous correction a hand makes, at the loop's own pace.
+        prev_pedal = getattr(self, "_pedal_out", 0.0)
+        step = rudder - prev_pedal
+        step = max(-self._PEDAL_SLEW, min(self._PEDAL_SLEW, step))
+        rudder = self._pedal_out = prev_pedal + step
         sent = rudder * self._pedal_dir()
         log.info(
             "steer: hdg %.0f want %.0f err %+.0f rate %+.1f "

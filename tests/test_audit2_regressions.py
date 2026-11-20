@@ -307,19 +307,30 @@ def test_a_go_around_drops_the_modes_the_approach_armed():
     assert flight.state.ap_vs_mode is False
 
 
-def test_a_dead_bus_at_zero_volts_is_the_collapse_it_looks_like():
-    """A fourteen-volt bus reads zero when it is gone in the air: the
-    'published' guard is the default -1, not the real reading."""
+def test_a_bus_never_seen_alive_is_not_a_collapse():
+    """The 2026-11-20 case: the model whose main-bus index read zero
+    from the ramp to the flare is a channel it never wired, not a bus
+    that died -- the watch learns a live figure first, and only then
+    knows what dead looks like."""
     from meridianatc.atc.autonomous import AutonomousPhase
 
     flight = _flight()
     flight.state.phase = AutonomousPhase.CRUISE
     flight._declare_emergency = Mock()
     flight._electrical_since = 100.0
+    flight._fuel_known = False
     flight._fuel_capacity_seen = 0.0
     flight._fuel_needed_gal = Mock(return_value=None)
-    state = SimpleNamespace(on_ground=False, main_bus_volts=0.0)
+    state = SimpleNamespace(on_ground=False, main_bus_volts=0.0,
+                            fuel_total_gal=100.0, fuel_capacity_gal=200.0)
 
+    flight._monitor_emergency(state, 120.0)
+    assert all(call.args[0] != "electrical"
+               for call in flight._declare_emergency.call_args_list)
+
+    # A bus that showed its volts and then lost them is the collapse.
+    flight._bus_volts_ref = 14.0
+    flight._electrical_since = 100.0
     flight._monitor_emergency(state, 120.0)
     flight._declare_emergency.assert_called_with(
         "electrical", state, mayday=True)

@@ -21,6 +21,10 @@ class _Emergencies:
     # failure does; a combustion flag is a slower read, so a blip of
     # that size is the one a frame of noise makes.
     ELECTRICAL_PERSIST_S = 8.0
+    # Height above the ground below which a declared emergency holds
+    # its heading and climbs: a diversion turn made below this is the
+    # stall the emergency did not cause.
+    DIVERT_MIN_AGL_FT = 400.0
     ENGINES_PERSIST_S = 5.0
 
     def _monitor_emergency(self, state, now: float) -> None:
@@ -33,6 +37,22 @@ class _Emergencies:
         it: under the leg alone is the MAYDAY; under leg + diversion +
         reserve is minimum fuel, a PAN PAN.
         """
+        # The healthiest figure the bus has ever shown is the healthy
+        # bus: a model whose main-bus index reads something else -- an
+        # aux bus, a battery -- sits at odd volts all flight, and a
+        # fixed band calls that healthy bus dead. Learned before the
+        # guards below so the ground phases, where the bus is well,
+        # are what teach it.
+        volts_now = getattr(state, "main_bus_volts", -1.0)
+        # Only a plausibly-live bus teaches: a rail that never once
+        # leaves zero is the channel the model does not wire, not a bus
+        # at all, and a spike past forty is no bus either. The odd rails
+        # between -- the aux bus a model maps here -- are welcome: their
+        # collapse is still the fraction of what they always showed.
+        if volts_now is not None and 8.0 <= volts_now <= 40.0:
+            self._bus_volts_ref = max(
+                getattr(self, "_bus_volts_ref", 0.0) or 0.0, volts_now)
+
         # ``emergency_declared`` does not end the watch: a PAN PAN can
         # still become a MAYDAY -- the minimum-fuel aeroplane that then
         # loses its last engine -- and ``_declare_emergency`` itself
@@ -48,13 +68,28 @@ class _Emergencies:
         if state.on_ground:
             return
 
-        # Electrical: the main bus collapsing in the air. A 14-volt bus
-        # reads under twelve when it is gone; a 28-volt bus -- most
-        # turbines' -- sits in the high teens as it dies, which a
-        # twelve-volt floor alone never sees.
-        volts = getattr(state, "main_bus_volts", -1.0)
-        collapsed = volts is not None and volts >= 0.0 and (
-            volts < 12.0 or 15.0 < volts < 20.0)
+        # A distress declared in the first seconds of flight has the
+        # call and the squawk, but the turn toward the divert waits for
+        # height: the aeroplane under the maneuvering floor climbs
+        # first -- aviate, navigate, communicate, in that order.
+        if getattr(self, "_divert_pending", False):
+            agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)
+            if agl >= self.DIVERT_MIN_AGL_FT:
+                self._divert_pending = False
+                self._execute_diversion(state)
+
+        # Electrical: the main bus collapsing in the air. The floor is
+        # the learned healthy figure's -- a collapse to sixty-five per
+        # cent of what the bus ran at is dying on any system, while a
+        # model whose index reads an odd rail stays legal at whatever
+        # number it always shows. A bus never once seen alive is not a
+        # collapsed bus, it is a channel the model does not publish --
+        # the model whose index sits at zero volts from the ramp to the
+        # flare would read a MAYDAY out of thin air, the same way the
+        # fuel watch waits for a nonzero figure before it counts.
+        ref = getattr(self, "_bus_volts_ref", 0.0) or 0.0
+        collapsed = ref > 0.0 and volts_now is not None \
+            and volts_now >= 0.0 and volts_now < 0.65 * ref
         self._electrical_since = \
             (getattr(self, "_electrical_since", 0.0) or now) \
             if collapsed else 0.0

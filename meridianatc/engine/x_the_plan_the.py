@@ -210,6 +210,22 @@ class _The_plan_the:
         if path == self._sim_plan_path and mtime == self._sim_plan_mtime:
             return
         try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                text = f.read(65536)
+        except OSError:
+            text = ""
+        if "Route loaded by MeridianATC" in text:
+            # The same echo as the ``_pln_uploaded`` path check, but
+            # carried inside the file: the simulator still names the
+            # upload the active plan when a new session starts, and
+            # ``_pln_uploaded`` died with the session that wrote it.
+            # Without this, the engine's own route lands back here as
+            # if the pilot had filed it -- a flight filed LEVX-LECO was
+            # cleared to LPPT this way.
+            self._sim_plan_path = path
+            self._sim_plan_mtime = mtime
+            return
+        try:
             described = self.load_route_file(path)
         except Exception as exc:
             log.info("simulator flight plan %s could not be loaded: %s",

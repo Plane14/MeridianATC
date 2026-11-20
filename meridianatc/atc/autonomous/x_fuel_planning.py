@@ -212,21 +212,39 @@ class _Fuel_planning:
         # own -- an aircraft on final does not climb back to cruise to
         # divert, it descends to the new one.
         if dest is not None:
-            self.session.destination = dest
-            # The filing is moot; the guidance is not: IFR stays so the
-            # diversion can still fly the new field's ILS, and the
-            # below-minima gate still stands, precisely when both are
-            # needed most.
-            # An emergency descent: get down to a survivable height now,
-            # the approach machinery handles the rest. On final the
-            # approach is waved off for the new field, with the cached
-            # runway geometry dropped so it resolves again.
-            self._route_diversion()
-            # Aviate: get down toward a height the field can be landed
-            # from, now -- a MAYDAY does not fly the plan's top of
-            # descent, it flies the ground it is over.
-            elev = (getattr(dest, "elev_ft", 0.0) or 0.0) \
-                or self._field_elevation(state)
-            self.session.assigned_altitude_ft = elev + 2500.0
-            self.state.emergency_descent = True
+            # Below the maneuvering floor the distress gets the call,
+            # the squawk and the filed divert -- but not the turn.
+            # "Aviate" at seventy feet is the departure flown straight
+            # ahead while the aeroplane climbs; a MAYDAY banked toward
+            # a new field at treetop height is the stall the emergency
+            # did not cause.
+            agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)
+            if agl >= self.DIVERT_MIN_AGL_FT:
+                self._execute_diversion(state)
+            else:
+                self._divert_pending = True
+
+    def _execute_diversion(self, state) -> None:
+        """Turn the filed divert into the flying: new destination,
+        direct route, emergency descent."""
+        dest = self.state.emergency_destination
+        if dest is None:
+            return
+        self.session.destination = dest
+        # The filing is moot; the guidance is not: IFR stays so the
+        # diversion can still fly the new field's ILS, and the
+        # below-minima gate still stands, precisely when both are
+        # needed most.
+        # An emergency descent: get down to a survivable height now,
+        # the approach machinery handles the rest. On final the
+        # approach is waved off for the new field, with the cached
+        # runway geometry dropped so it resolves again.
+        self._route_diversion()
+        # Aviate: get down toward a height the field can be landed
+        # from, now -- a MAYDAY does not fly the plan's top of
+        # descent, it flies the ground it is over.
+        elev = (getattr(dest, "elev_ft", 0.0) or 0.0) \
+            or self._field_elevation(state)
+        self.session.assigned_altitude_ft = elev + 2500.0
+        self.state.emergency_descent = True
 

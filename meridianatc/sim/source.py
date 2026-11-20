@@ -575,7 +575,7 @@ class SimConnectSource:
         # The callouts. The bank every read, because "bank" is about a
         # moment; the needles and the selected speed in the rotation, a
         # needle coming alive being worth a second or two of lag.
-        ("PLANE_BANK_DEGREES", "bank_deg", "signed_rad", "fast"),
+        ("PLANE_BANK_DEGREES", "bank_deg", "signed_rad_flip", "fast"),
         # The autonomous envelope protection (atc/autonomous/x_the_load):
         # the load factor every read like the bank -- a G excursion is
         # also about a moment -- and the pitch attitude with it, which
@@ -583,7 +583,7 @@ class SimConnectSource:
         # bank limit rides the slow rotation: it is read back after the
         # FO sets it, not chased.
         ("G_FORCE", "g_force", "raw", "fast"),
-        ("PLANE_PITCH_DEGREES", "pitch_deg", "signed_rad", "fast"),
+        ("PLANE_PITCH_DEGREES", "pitch_deg", "signed_rad_flip", "fast"),
         ("AUTOPILOT_MAX_BANK", "ap_max_bank_deg", "signed_rad", "slow"),
         # The stall watch's (atc/autonomous/x_the_stall): the horn where
         # the model wires one, and the angle of attack against the angle
@@ -1360,6 +1360,17 @@ class SimConnectSource:
             # is positive is UNVERIFIED and not relied on: the bank call is
             # about its size.
             return math.degrees(float(raw))
+        if kind == "signed_rad_flip":
+            # The sim's attitude angles arrive on the FSX-era body
+            # convention: pitch positive nose-DOWN, bank positive LEFT
+            # bank. The app's convention everywhere is the pilot's --
+            # nose-up positive, right-bank positive -- the same one the
+            # axis events in _send are negated into. A rotation that
+            # read -14 degrees was held for -14 short of the mark, and
+            # the pull that never came off is the stall the takeoff
+            # ended in; a bank read on the wrong side rolls the level
+            # command deeper into the turn.
+            return -math.degrees(float(raw))
         if kind == "deg":
             return normalize_angle(float(raw), source_is_radians=False)
         if kind == "pct_ratio":

@@ -1785,10 +1785,13 @@ def test_a_bus_spike_is_not_an_electrical_emergency():
     flight = _emergency_flight()
     flight.state.phase = AutonomousPhase.CRUISE
     state = SimpleNamespace(
-        main_bus_volts=4.0, on_ground=False, engine_count=2,
+        main_bus_volts=28.0, on_ground=False, engine_count=2,
         engines_running=True, eng2_combustion=True, eng3_combustion=None,
         eng4_combustion=None, has_position=True,
         fuel_total_gal=70.0, fuel_capacity_gal=200.0)
+    # The healthy bus teaches the watch its own figure first.
+    flight._monitor_emergency(state, 99.0)
+    state.main_bus_volts = 4.0
     flight._monitor_emergency(state, 100.0)
     flight._declare_emergency.assert_not_called()
     # A real failure stays collapsed.
@@ -1804,10 +1807,12 @@ def test_a_cleared_bus_never_declares():
     flight = _emergency_flight()
     flight.state.phase = AutonomousPhase.CRUISE
     state = SimpleNamespace(
-        main_bus_volts=4.0, on_ground=False, engine_count=2,
+        main_bus_volts=28.0, on_ground=False, engine_count=2,
         engines_running=True, eng2_combustion=True, eng3_combustion=None,
         eng4_combustion=None, has_position=True,
         fuel_total_gal=70.0, fuel_capacity_gal=200.0)
+    flight._monitor_emergency(state, 99.0)
+    state.main_bus_volts = 4.0
     flight._monitor_emergency(state, 100.0)
     state.main_bus_volts = 28.0
     flight._monitor_emergency(

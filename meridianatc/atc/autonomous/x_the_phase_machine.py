@@ -1110,6 +1110,24 @@ class _The_phase_machine:
             d.rudder(0.0)
             d.steering(0.0)
             self._set_takeoff_power(state)
+            # The roll is flown too: the rotation neutralised the yoke
+            # and until this nothing held a wing -- torque, a gust or a
+            # heavy tank put twenty-five degrees of bank in at forty
+            # feet, and the lift that bank took off the top is the
+            # descent into the trees off the end. Wings level toward
+            # the runway's heading, the departure every pilot holds
+            # until there is height to turn with.
+            bank = float(getattr(state, "bank_deg", 0.0) or 0.0)
+            runway_hdg = float(getattr(self.state, "runway_heading", 0.0)
+                               or 0.0)
+            hdg_err = (((runway_hdg
+                        - float(getattr(state, "heading_true", 0.0)
+                                or 0.0))
+                        + 180.0) % 360.0) - 180.0 \
+                if runway_hdg > 0.0 else 0.0
+            bank_want = max(-12.0, min(12.0, 0.3 * hdg_err))
+            d.aileron(max(-0.7, min(0.7,
+                                    (bank_want - bank) / 30.0 * 0.8)))
             # The climb attitude is flown, not left where the rotation
             # put it: held while the rate builds, eased once the VSI
             # agrees the aeroplane is climbing -- and the nose is lowered

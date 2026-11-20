@@ -64,6 +64,25 @@ class FlightDirector:
         # resend what the sim already has. Cleared by ``reset`` between
         # legs; individual modes are also dropped when disengaged.
         self._sent: set[str] = set()
+        # The last position each continuous axis was walked to: a
+        # surface or lever that teleports between writes is a kick the
+        # airframe answers with a swing of its own, in whichever sim --
+        # each channel's demand is slewed to the call's step, the
+        # continuous correction a hand makes.
+        self._axis_pos: dict[bytes, float] = {}
+
+    # The most a continuous axis may move per call: at the loop's
+    # quarter-second cadence a control reaches its stop in about a
+    # second, and callers at slower cadences simply walk slower.
+    _AXIS_SLEW = 0.2
+
+    def _slewing(self, axis: bytes, position: float) -> float:
+        """The demand walked toward, at most a step from the last one."""
+        prev = self._axis_pos.get(axis, position)
+        step = max(-self._AXIS_SLEW, min(self._AXIS_SLEW,
+                                       position - prev))
+        pos = self._axis_pos[axis] = prev + step
+        return pos
 
     # -- plumbing ---------------------------------------------------------
 
@@ -299,7 +318,8 @@ class FlightDirector:
         never written runs at whatever the pilot left it -- the shared
         axis event after it, so a model that takes the variables does
         not also get the event's step."""
-        position = max(0.0, min(1.0, position))
+        position = self._slewing(
+            b"THROTTLE", max(0.0, min(1.0, position)))
         ok = False
         for engine in range(1, 5):
             # The simulator's lever variable is "Percent over 100" --
@@ -401,16 +421,19 @@ class FlightDirector:
 
     def aileron(self, position: float) -> bool:
         """-1 full left .. +1 full right."""
-        return self.send(b"AILERON_SET", _axis(position))
+        return self.send(b"AILERON_SET",
+                         _axis(self._slewing(b"AILERON", position)))
 
     def elevator(self, position: float) -> bool:
         """-1 full down .. +1 full up (a pull is positive)."""
-        return self.send(b"ELEVATOR_SET", _axis(position))
+        return self.send(b"ELEVATOR_SET",
+                         _axis(self._slewing(b"ELEVATOR", position)))
 
     def rudder(self, position: float) -> bool:
         """-1 full left .. +1 full right; ignored where gyro controls
         are enabled, which is the pilot's own business then."""
-        return self.send(b"AXIS_RUDDER_SET", _axis(position))
+        return self.send(b"AXIS_RUDDER_SET",
+                         _axis(self._slewing(b"RUDDER", position)))
 
     def trim_elevator(self, position: float) -> bool:
         """-1 full nose-down .. +1 full nose-up.
@@ -458,6 +481,7 @@ class FlightDirector:
         the nosewheel is steered by ``STEERING_SET`` (-16383..16383),
         not by the rudder axis -- which is why taxi tracks wandered.
         """
+        position = self._slewing(b"STEERING", position)
         value = int(round(max(-1.0, min(1.0, position)) * 16383.0))
         ok = self.send(b"STEERING_SET", value)
         return self.send(b"AXIS_STEERING_SET", _axis(position)) or ok

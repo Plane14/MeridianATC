@@ -642,9 +642,9 @@ def test_steer_brakes_the_swing_before_the_line():
     fo._steer_dt = 2.0
     fo._turn_rate = Mock(return_value=8.0)
     fo._steer(state, 110.0, 12.0)
-    # err +20: the un-led ask was +5 deg/s; the led one is negative,
-    # so the pedal counters at ~-0.3, not -0.1.
-    assert fo._dir.rudder.call_args[0][0] < -0.2
+    # err +20: the un-led ask was ~-0.1; the led one counters, walked
+    # to the first slew step on this call.
+    assert fo._dir.rudder.call_args[0][0] <= -0.15 + 1e-9
 
 
 def test_steer_writes_nothing_on_the_heading():
@@ -667,7 +667,10 @@ def test_steer_orders_only_what_the_tiller_has():
     state = _state(51.15, -0.19, heading_true=90.0, ground_speed_kt=8.0)
     fo._steer(state, 130.0, 12.0)
     # Authority 5, limit ~0.40: deliverable ~1.8, floored at 2 deg/s.
-    # err +40 wants 10; capped to 2 -> rudder 2/5 = 0.4.
+    # err +40 wants 10; capped to 2 -> rudder 2/5 = 0.4, reached at the
+    # wheel's walked pace a few calls in.
+    for _ in range(4):
+        fo._steer(state, 130.0, 12.0)
     assert fo._dir.rudder.call_args[0][0] == pytest.approx(0.4, abs=0.05)
 
 
@@ -1138,6 +1141,24 @@ def test_fo_initial_climb_holds_power_and_flies_the_attitude():
     assert 0.0 < pull < 0.4
     from meridianatc.atc.autonomous import AutonomousPhase
     assert fo.state.phase == AutonomousPhase.TAKEOFF
+
+
+def test_fo_initial_climb_levels_the_wings_off_the_departure():
+    """The 2026-11-20 case: the yoke went neutral at liftoff and nothing
+    held a wing -- the bank read -25 degrees at forty feet and the
+    banked climb folded into the trees off the end. The sub levels the
+    wings toward the runway heading now."""
+    fo, state = _fo_in_initial_climb(bank_deg=-25.0, heading_true=157.0)
+    fo.state.runway_heading = 190.0
+    fo._phase_takeoff(state, time.monotonic())
+    aileron = fo._dir.aileron.call_args.args[0]
+    # A left bank and a heading left of the runway's both ask right.
+    assert aileron > 0.0
+    # A right wing already down asks the other way.
+    fo2, state2 = _fo_in_initial_climb(bank_deg=20.0, heading_true=190.0)
+    fo2.state.runway_heading = 190.0
+    fo2._phase_takeoff(state2, time.monotonic())
+    assert fo2._dir.aileron.call_args.args[0] < 0.0
 
 
 def test_fo_initial_climb_lowers_the_nose_below_the_safe_speed():

@@ -240,6 +240,7 @@ class _Entry:
         self._electrical_since = 0.0
         self._engines_since = 0.0
         self._nav_off_since = 0.0
+        self._divert_pending = False
         # The FMS writes each departure wants -- the present-position
         # direct on the climb's first NAV, and the vector rewrite --
         # were spent on the last leg's climb; this leg's gets its own.

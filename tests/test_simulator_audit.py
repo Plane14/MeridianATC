@@ -314,6 +314,31 @@ def test_msfs_refuses_standby_channel_bcd_cannot_say(monkeypatch):
     assert sent == []
 
 
+def test_msfs_attitude_arrives_on_the_pilots_convention():
+    """The 2026-11-20 case: SimConnect's attitude angles live on the
+    FSX-era body convention -- pitch positive nose-DOWN, bank positive
+    LEFT -- while every loop in the app flies nose-up and right-bank
+    positive, the convention the axis events are negated into. A
+    rotation that read -14 degrees spent the takeoff being pulled at
+    and a left bank read as right rolled the level command deeper;
+    the read is turned round at the wire like the write."""
+    import math
+
+    convert = sources.SimConnectSource._convert
+    # A +15-degree rotation is -0.26 rad on the sim's books; a left
+    # bank of 20 is +0.35.
+    assert convert(math.radians(-15.0), "signed_rad_flip",
+                   "pitch_deg") == pytest.approx(15.0)
+    assert convert(math.radians(20.0), "signed_rad_flip",
+                   "bank_deg") == pytest.approx(-20.0)
+    # The attitude rows ride it; the magnitudes do not need it.
+    kinds = {attr: kind for _var, attr, kind, _rate
+             in sources.SimConnectSource.REQUESTS}
+    assert kinds["pitch_deg"] == "signed_rad_flip"
+    assert kinds["bank_deg"] == "signed_rad_flip"
+    assert kinds["ap_max_bank_deg"] == "signed_rad"
+
+
 def test_route_from_fms_entries():
     pytest.importorskip("scipy")
     from meridianatc.engine.x_the_plan_the import _The_plan_the

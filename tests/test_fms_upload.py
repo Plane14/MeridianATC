@@ -283,6 +283,38 @@ def test_the_msfs_upload_echo_is_skipped(tmp_path):
     assert eng._sim_plan_path == path
 
 
+def test_the_upload_echo_is_skipped_across_sessions(tmp_path):
+    """The 2026-11-20 case: a session that ended left its upload as the
+    simulator's active plan; the next session had no ``_pln_uploaded``
+    to recognise it by, adopted it as the pilot's, and a flight filed
+    LEVX-LECO was cleared to LPPT. The file itself says who wrote it."""
+    eng = _engine(_route())
+    eng._sim_plan_path = eng._sim_plan_mtime = None
+    path = str(tmp_path / "meridianatc_plan.pln")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(to_pln(_route()))
+    eng.source = object()          # a fresh session: no _pln_uploaded
+    eng.load_route_file = lambda p: (_ for _ in ()).throw(
+        AssertionError("the echo must not be adopted"))
+    eng._use_pln_plan(path)
+    assert eng._sim_plan_path == path
+    assert eng.used == []
+
+
+def test_a_pilots_own_pln_is_still_adopted(tmp_path):
+    """The marker skips the engine's own files only: a .pln without it
+    is the pilot's plan and lands on the route like always."""
+    eng = _engine(_route())
+    eng._sim_plan_path = eng._sim_plan_mtime = None
+    path = str(tmp_path / "theirs.pln")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(to_pln(_route()).replace(
+            "Route loaded by MeridianATC", "the pilot's own"))
+    eng.load_route_file = lambda p: "the described route"
+    eng._use_pln_plan(path)
+    assert eng._sim_plan_path == path
+
+
 def test_msfs_load_records_the_upload_path(tmp_path, monkeypatch):
     import os
     source = SimConnectSource()
