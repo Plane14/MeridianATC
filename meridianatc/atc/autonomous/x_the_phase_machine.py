@@ -1142,16 +1142,22 @@ class _The_phase_machine:
             vs_now = float(state.vertical_speed_fpm or 0.0)
             pitch = float(getattr(state, "pitch_deg", 0.0) or 0.0)
             floor = self.state.v2_kt or self.state.vr_kt or 0.0
-            if floor and ias < floor - 5.0 or vs_now < -100.0:
+            if floor and ias < floor - 5.0:
                 pull = -0.10
             elif pitch >= self._pitch_target_deg():
                 pull = 0.05
+            elif escaping:
+                # The book's pull-up attitude -- but only when the wing
+                # can pay for it: the protections above own the stick
+                # first, because a pull below the safe speed or past
+                # the climb attitude is a stall, not an escape.
+                pull = 0.35
+            elif vs_now < -100.0:
+                pull = -0.10
             elif vs_now < 400.0:
                 pull = 0.25
             else:
                 pull = 0.10
-            if escaping:
-                pull = max(pull, 0.35)
             d.elevator(self._g_pull_cap(state, pull))
             # Flaps up once safely airborne and fast -- except through a
             # windshear escape, where the book's rule is to hold the
