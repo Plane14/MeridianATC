@@ -57,6 +57,20 @@ address table — `_addressed` tries every language's table on every
 transmission, and "platform" is a real apron word in English ATC speech
 (commit d1bdfb2).
 
+## Ordering & edge-case sweep (third pass)
+
+- **Edge cases**: 88 `[0]`/`[-1]`-on-comprehension sites checked — all
+  guarded or split-on-nonempty; 14 unguarded `min()`/`max()` on generators —
+  all behind non-empty checks; every `zip` uses `strict=`; no mutable
+  default arguments; all angle differences wrap-normalized.
+- **Ordering**: instruction/clause ordering fixed in the phraseology
+  changes above; phase writes happen alongside `session.remember(...)`;
+  sorted-key lambdas (79 sites) leave runtime coverage to the 1334-test
+  suite — no statically-provable crash found.
+- **Gaps**: no unimplemented stubs beyond interface no-ops; language parity
+  is now complete (nl in `_ADDRESS`, `_CABIN_ASKS`, `_GROUND_ASKS`,
+  `_ANSWER_WORDS`, crew_lines, numbers).
+
 Format: severity · file:line · what happens · what the real world does.
 
 ## Progress tracker (for context resets)
