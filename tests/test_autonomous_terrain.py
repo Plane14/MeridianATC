@@ -255,6 +255,23 @@ def test_the_level_cruise_answers_the_floor_too():
     assert fo._dir.vertical_speed.call_args.args[0] > 0.0
 
 
+def test_a_cruise_already_above_the_floor_keeps_its_level():
+    fo = _fo()
+    fo.crew = SimpleNamespace(checklists=None)
+    fo.brain = SimpleNamespace(route=None)
+    fo.state.phase = "cruise"
+    fo.state.tod_nm = 100.0
+    fo.session.phase = "cruise"
+    fo._terrain_samples = [(47.0, 11.0, 6000.0, time.monotonic())]
+    state = _airborne(altitude_ft=9000.0, altitude_agl_ft=3000.0,
+                      indicated_airspeed_kt=220.0)
+    fo._phase_cruise(state, time.monotonic())
+    # No level of its own and the floor is below it: the floor is a
+    # minimum, not a descent target -- the leg holds where it is.
+    fo._dir.vertical_speed.assert_not_called()
+    fo._dir.alt_hold.assert_called_with(True)
+
+
 def _initial_climb(fo):
     """The takeoff's hand-flown leg: speeds settled, airborne a moment."""
     fo.state.sub = "initial_climb"

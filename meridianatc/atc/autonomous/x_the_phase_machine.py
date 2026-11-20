@@ -1317,13 +1317,16 @@ class _The_phase_machine:
             # fired owns the bug outright, and short of it the
             # ground's floor is as low as the level may sit -- a
             # cruise that walked under it climbs back through the
-            # step-clearance branch below.
+            # step-clearance branch below. A floor is a minimum, not
+            # an instruction: with no level of its own to clip and the
+            # aeroplane already above the ground, the level it holds
+            # is the one it is at.
             if self._terrain_escaping():
                 target = max(target, getattr(
                     self.state, "terrain_escape_alt", 0.0) or 0.0)
             else:
                 floor = self._terrain_floor(state)
-                if floor:
+                if floor and (target or alt < floor):
                     target = max(target, floor)
             if target and abs(alt - target) > 200.0:
                 # A step clearance answered level is not answered at
