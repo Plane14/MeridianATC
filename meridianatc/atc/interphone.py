@@ -200,9 +200,8 @@ _ADDRESS: dict[str, dict[str, tuple[str, ...]]] = {
             "kombuis",
         ),
         GROUND: (
-            "grondpersoneel", "grondcrew", "platform", "afhandeling",
-            "afhandelaar", "duwploeg", "trekker", "marshaller", "headset",
-            "gsx",
+            "grondpersoneel", "grondcrew", "afhandeling", "afhandelaar",
+            "duwploeg", "trekker", "marshaller", "headset", "gsx",
         ),
         FIRST_OFFICER: ("eerste officier", "copiloot", "co piloot"),
     },

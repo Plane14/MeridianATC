@@ -2132,7 +2132,8 @@ def _ownship(engine: Engine) -> dict[str, Any] | None:
         "lat": round(state.latitude, 5),
         "lon": round(state.longitude, 5),
         "heading": round(state.heading_true),
-        "track": round(state.track_true or state.heading_true),
+        "track": round(state.track_true if state.track_true is not None
+                        else state.heading_true),
         "altitude_ft": round(state.altitude_ft),
         "ground_speed_kt": round(state.ground_speed_kt),
         "vertical_rate_fpm": round(state.vertical_speed_fpm),
