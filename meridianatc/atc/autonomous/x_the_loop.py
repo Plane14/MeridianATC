@@ -42,6 +42,7 @@ class _The_loop:
             self.state.ap_master = self.director.autopilot(True)
 
         now = time.monotonic()
+        self._log_telemetry(state, now)
 
         # A helicopter is flown by its own controller, on every pass of the
         # loop rather than the fixed-wing action interval: the cyclic,
@@ -129,6 +130,64 @@ class _The_loop:
         self._fly_avoidance(state)
 
         self.state.last_action_at = now
+
+    # How often the sim's own numbers are written down: dense enough to
+    # rebuild a ground track from, sparse enough to leave the rest of
+    # the log readable.
+    TELEMETRY_S = 5.0
+
+    def _log_telemetry(self, state, now: float) -> None:
+        """The simulator's own numbers, on a slow clock.
+
+        Every other line in this log is what the FO *asked for*; this
+        one is what the aeroplane *answered* -- where it is, how it is
+        moving, the switches the sim reports -- the half of the story a
+        "the model ignored the write" report is made of.
+        """
+        if now - getattr(self, "_telemetry_at", 0.0) < self.TELEMETRY_S:
+            return
+        self._telemetry_at = now
+
+        def g(name):
+            return getattr(state, name, 0.0) or 0.0
+        log.info(
+            "telem: lat %.5f lon %.5f hdg %.0f trk %.0f "
+            "gs %.1f ias %.0f vs %+.0f alt %.0f agl %.0f "
+            "pitch %+.1f bank %+.1f thr %.0f%% gnd %s ap %s "
+            "wind %.0f@%.0f",
+            g("latitude"), g("longitude"),
+            g("heading_true"), g("track_true"),
+            g("ground_speed_kt"), g("indicated_airspeed_kt"),
+            g("vertical_speed_fpm"), g("altitude_ft"),
+            g("altitude_agl_ft"),
+            g("pitch_deg"), g("bank_deg"), g("throttle_pct"),
+            1 if g("on_ground") else 0, 1 if g("autopilot") else 0,
+            g("ambient_wind_direction"), g("ambient_wind_velocity"),
+            extra={
+                "telem": {
+                    "lat": round(g("latitude"), 6),
+                    "lon": round(g("longitude"), 6),
+                    "hdg": round(g("heading_true"), 1),
+                    "trk": round(g("track_true"), 1),
+                    "gs_kt": round(g("ground_speed_kt"), 2),
+                    "ias_kt": round(g("indicated_airspeed_kt"), 1),
+                    "vs_fpm": round(g("vertical_speed_fpm")),
+                    "alt_ft": round(g("altitude_ft")),
+                    "agl_ft": round(g("altitude_agl_ft")),
+                    "pitch_deg": round(g("pitch_deg"), 1),
+                    "bank_deg": round(g("bank_deg"), 1),
+                    "throttle_pct": round(g("throttle_pct"), 1),
+                    "on_ground": bool(g("on_ground")),
+                    "autopilot": bool(g("autopilot")),
+                    "autothrottle": bool(g("autothrottle")),
+                    "flaps_index": int(g("flaps_index")),
+                    "gear_down": bool(g("gear_down")),
+                    "parking_brake": bool(g("parking_brake")),
+                    "paused": bool(g("paused")),
+                    "wind_dir": round(g("ambient_wind_direction")),
+                    "wind_kt": round(g("ambient_wind_velocity"), 1),
+                    "source": getattr(state, "source", "") or "",
+                }})
 
     def _can_fly_phase(self, state) -> bool:
         return capabilities(state.source).flight_axes or (

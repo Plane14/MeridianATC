@@ -24,6 +24,7 @@ from __future__ import annotations
 import math
 
 from ..navdata.build import bearing_deg, haversine_nm
+from ..navdata.build import project as project
 from ..navdata.db import normalize_runway
 
 # How far ahead along the path the taxi steers: far enough to smooth the
@@ -63,8 +64,34 @@ def _point_segment_distance(lat: float, lon: float,
     return along, side
 
 
+def _nearest_on_path(lat: float, lon: float,
+                     path: list[tuple[float, float]],
+                     skip_penalty_m: float = 0.0):
+    """The leg of ``path`` the aeroplane is closest to.
+
+    Returns ``(index, along_m, side_m, seg_len_m)`` -- the segment
+    index, metres along it, the signed cross-track (positive right of
+    it) and its length. ``skip_penalty_m`` is the hysteresis a later
+    segment must clear to take the pick from an earlier one, per
+    segment skipped: where the route doubles back past the aeroplane
+    the nearer-by-metres later leg no longer wins on its proximity
+    alone, which is the teleport the pursuit target used to take
+    between an apron's parallel lanes.
+    """
+    best = None
+    for i, (a, b) in enumerate(zip(path, path[1:], strict=False)):
+        along, side = _point_segment_distance(lat, lon, a, b)
+        # Distance to the segment itself, for picking the nearest one.
+        seg_len_m = haversine_nm(a[0], a[1], b[0], b[1]) * 1852.0
+        score = abs(side) + skip_penalty_m * i
+        if best is None or score < best[0]:
+            best = (score, i, along, side, seg_len_m)
+    return None if best is None else best[1:]
+
+
 def path_steering(lat: float, lon: float, path: list[tuple[float, float]],
-                  lookahead_m: float = TAXI_LOOKAHEAD_M) -> dict | None:
+                  lookahead_m: float = TAXI_LOOKAHEAD_M,
+                  skip_penalty_m: float = 0.0) -> dict | None:
     """Where on a path the aeroplane is, and where to point next.
 
     ``path`` is a list of (latitude, longitude) -- ``session.taxi_path``.
@@ -89,18 +116,11 @@ def path_steering(lat: float, lon: float, path: list[tuple[float, float]],
                 "nearest": 0, "done": haversine_nm(lat, lon, *path[0]) * 1852.0 < PATH_REACHED_M * 2}
 
     # The segment the aeroplane is closest to, and how far along it.
-    best = None
-    for i, (a, b) in enumerate(zip(path, path[1:], strict=False)):
-        along, side = _point_segment_distance(lat, lon, a, b)
-        # Distance to the segment itself, for picking the nearest one.
-        seg_len_m = haversine_nm(a[0], a[1], b[0], b[1]) * 1852.0
-        off = abs(side)
-        if best is None or off < best[0]:
-            best = (off, i, along, side, seg_len_m)
-    if best is None:
+    found = _nearest_on_path(lat, lon, path, skip_penalty_m)
+    if found is None:
         return {"heading": None, "cross_track_m": 0.0, "remaining_m": 0.0,
                 "nearest": 0, "done": True}
-    _, index, along_m, side_m, seg_len_m = best
+    index, along_m, side_m, seg_len_m = found
 
     # Walk forward from the closest point until the lookahead is reached.
     target = None
@@ -141,6 +161,46 @@ def path_steering(lat: float, lon: float, path: list[tuple[float, float]],
             "remaining_m": remaining,
             "nearest": index,
             "done": done}
+
+
+def turns_ahead(lat: float, lon: float, path: list[tuple[float, float]],
+                window_m: float,
+                skip_penalty_m: float = 0.0) -> list[tuple[float, float]]:
+    """The corners a path turns at within ``window_m``, nearest first.
+
+    Each entry is ``(metres_ahead, degrees)`` -- how far along the path
+    the vertex is, and the signed direction change there (+ = right).
+    The corner the speed law wants is each vertex's own change: a U
+    built of two right angles is arrived at slowed for the first, so
+    the second needs no bigger ask. The projection the distances are
+    measured from is the same pick ``path_steering`` makes, hysteresis
+    included.
+    """
+    if len(path) < 3:
+        return []
+    found = _nearest_on_path(lat, lon, path, skip_penalty_m)
+    if found is None:
+        return []
+    index, along_m, seg_len_m = found[0], found[1], found[3]
+    leg_in = bearing_deg(path[index][0], path[index][1],
+                         path[index + 1][0], path[index + 1][1])
+    ahead_m = seg_len_m - along_m
+    out = []
+    for j in range(index + 1, len(path) - 1):
+        if ahead_m > window_m:
+            break
+        seg_m = haversine_nm(path[j][0], path[j][1],
+                             path[j + 1][0], path[j + 1][1]) * 1852.0
+        leg_out = leg_in
+        if seg_m >= 0.5:
+            leg_out = bearing_deg(path[j][0], path[j][1],
+                                  path[j + 1][0], path[j + 1][1])
+        deg = (leg_out - leg_in + 540.0) % 360.0 - 180.0
+        if abs(deg) >= 1.0:
+            out.append((ahead_m, deg))
+        ahead_m += seg_m
+        leg_in = leg_out
+    return out
 
 
 def traffic_ahead(lat: float, lon: float, path: list[tuple[float, float]],
@@ -284,5 +344,6 @@ def align(lat: float, lon: float, threshold_lat: float, threshold_lon: float,
             "correction_deg": (correction + 540.0) % 360.0 - 180.0}
 
 
-__all__ = ["path_steering", "traffic_ahead", "runway_end", "glide", "align",
+__all__ = ["path_steering", "turns_ahead", "traffic_ahead", "runway_end",
+           "glide", "align",
            "TAXI_LOOKAHEAD_M", "PATH_REACHED_M", "STOPPED_KT"]

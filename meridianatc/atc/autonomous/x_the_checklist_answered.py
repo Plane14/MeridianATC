@@ -397,8 +397,11 @@ class _The_checklist_answered:
             rate_cap,
             lead / 4.0 * max(0.6, min(1.35, demand))))
         authority = self._yaw_authority_at(gs)
+        # As in _steer: the pedal that holds the wanted rate, plus the
+        # correction for the rate it differs by -- the bare difference
+        # settles halfway to the ask.
         pedal = max(-pedal_max,
-                    min(pedal_max, (want_rate - rate) / authority))
+                    min(pedal_max, (2.0 * want_rate - rate) / authority))
         if abs(err) < 1.5 and abs(rate) < 1.0:
             pedal = 0.0
         self._pedal_check(pedal, rate, gs)
@@ -587,7 +590,9 @@ class _The_checklist_answered:
         return max(0.15, 0.5 - gs * 0.012)
 
     def _steer(self, state, desired_hdg: float, target_kt: float,
-               max_aileron: float = 0.35, demand: float = 1.0) -> None:
+               max_aileron: float = 0.35, demand: float = 1.0,
+               brake_turn: bool = False,
+               brake_margin_kt: float = 4.0) -> None:
         """Hand-fly a heading and a speed on the ground or in the air.
 
         The rudder (which is the nosewheel on the ground) takes the
@@ -599,7 +604,12 @@ class _The_checklist_answered:
         for: over one where the caller wants the nose around now -- a
         rejoin from far off the line, a corner -- under one where the
         aeroplane is already tracking it, bounded so neither a firmer
-        nor a softer pass becomes a different law.
+        nor a softer pass becomes a different law. ``brake_turn`` says a
+        real corner is being made, so the inside wheel may help it
+        around the way it does for the castoring gears.
+        ``brake_margin_kt`` is how far over target the speed may drift
+        before the brakes answer it -- wide where speed only has to be
+        close, narrow where a slowdown is owed by a point on the map.
         """
         d = self.director
         d.parking_brake(False)
@@ -681,7 +691,13 @@ class _The_checklist_answered:
             rate_cap,
             self._steer_lead(err, rate) / 4.0
             * max(0.6, min(1.35, demand * (1.2 if commit else 1.0)))))
-        rudder = max(-0.5, min(0.5, (want_rate - rate) / authority))
+        # The pedal to make the rate, plus the correction for the rate
+        # it differs by: ``want_rate / authority`` alone is the trim a
+        # steady turn holds, and the bare difference this used to be
+        # settled halfway to the ask -- every corner twice as wide as
+        # its speed made necessary.
+        rudder = max(-0.5, min(0.5,
+                               (2.0 * want_rate - rate) / authority))
         rudder = max(-limit, min(limit, rudder))
         if abs(err) < 1.5 and abs(rate) < 1.0:
             # On the heading with no swing: a twitch of tiller is a
@@ -690,8 +706,11 @@ class _The_checklist_answered:
         sent = rudder * self._pedal_dir()
         log.info(
             "steer: hdg %.0f want %.0f err %+.0f rate %+.1f "
-            "pedal %+.2f gs %.1f->%.1f kt",
-            hdg, desired_hdg, err, rate, sent, gs, target_kt)
+            "pedal %+.2f gs %.1f->%.1f kt at %.5f %.5f thr %.0f",
+            hdg, desired_hdg, err, rate, sent, gs, target_kt,
+            getattr(state, "latitude", 0.0) or 0.0,
+            getattr(state, "longitude", 0.0) or 0.0,
+            getattr(state, "throttle_pct", 0.0) or 0.0)
         now = time.monotonic()
         self._pedal_check(rudder, rate, gs)
         d.rudder(sent)
@@ -790,7 +809,7 @@ class _The_checklist_answered:
             # idle: a squeeze that grows with how far over the speed is,
             # released again once it is not.
             brake = (min(0.5, 0.08 + (gs - target_kt) * 0.03)
-                     if gs > target_kt + 4.0 else 0.0)
+                     if gs > target_kt + brake_margin_kt else 0.0)
             # The inside wheel joins the steering where it can help: a
             # taildragger at taxi speed, whose free-castering tail and
             # unblown rudder have nothing to give; a castoring-nosewheel
@@ -798,7 +817,7 @@ class _The_checklist_answered:
             # POH's "minimum differential braking" is the whole answer
             # below rudder authority; and the apron pivot turn either
             # gear flies on the inside brake.
-            if tail or castor or self._turn_commit:
+            if tail or castor or self._turn_commit or brake_turn:
                 # The law's demand, not ``sent``: a model whose pedal
                 # axis answers backwards still wants the inside wheel
                 # for the turn it is making, not the wire's sign.

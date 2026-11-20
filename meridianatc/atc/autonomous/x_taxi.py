@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import math
+
 from ._shared import (
     AutonomousPhase,
     Phase,
+    _yaw_rate_cap,
     auto_nav,
     haversine_nm,
     log,
@@ -83,6 +86,32 @@ class _Taxi:
     BRAKE_CHECK_S = 1.5
     BRAKE_CHECK_PRESS = 0.4
 
+    # A corner this sharp is not shown to the pursuit until nearly under
+    # the nose -- a target seen around the bend early is the cut that
+    # leaves the pavement inside the turn -- and it is arrived at no
+    # faster than its entry in CORNER_SLOW: both sims shed nosewheel
+    # authority with the knots, so the turn radius is the speed's, not
+    # the tiller's. The hysteresis is what a later leg of the same route
+    # must clear to take the pick -- the teleport between an apron's
+    # parallel lanes that put the swing on in the first place.
+    CORNER_LOOK_M = 100.0
+    CORNER_CUT_DEG = 45.0
+    CORNER_LEAD_SCALE = 1.0
+    CORNER_MIN_LA_M = 18.0
+    CORNER_OVER_DEG = 25.0
+    CORNER_AIM_M = 20.0
+    NEAREST_SKIP_M = 6.0
+    # (degrees, knots): a vertex is arrived at this fast -- a hairpin at
+    # walking pace, a mild bend barely under taxi speed -- plus the run
+    # in metres at CORNER_BRAKE_KT_M sheds beforehand: shallow enough
+    # that the demand drops under the brakes' threshold well before the
+    # vertex, the way a crew is slowed before the turn, not in it. The
+    # last CORNER_FULL_M is owed the corner's figure itself, so the
+    # arrival is on the number, not still a knot or two over.
+    CORNER_SLOW = ((110.0, 2.5), (70.0, 4.0), (40.0, 6.0), (20.0, 8.0))
+    CORNER_BRAKE_KT_M = 0.1
+    CORNER_FULL_M = 8.0
+
     def _taxi_along_path(self, state, outbound: bool) -> None:
         """Follow ``session.taxi_path`` at taxi speed, or hold short.
 
@@ -133,8 +162,36 @@ class _Taxi:
         gs = state.ground_speed_kt or 0.0
         lookahead = max(30.0, min(auto_nav.TAXI_LOOKAHEAD_M,
                                 gs * 1.852 * 8.0 / 3.6))
-        steer = auto_nav.path_steering(state.latitude, state.longitude,
-                                       remaining_path, lookahead_m=lookahead)
+        # The corners the rest of the route turns at, nearest first:
+        # they set the speed the vertex is arrived at, and a sharp one
+        # is not shown to the pursuit early -- a target seen around the
+        # bend while still a taxiway off is the cut into whatever the
+        # corner holds.
+        corners = auto_nav.turns_ahead(
+            state.latitude, state.longitude, remaining_path,
+            self.CORNER_LOOK_M, skip_penalty_m=self.NEAREST_SKIP_M)
+        corner_at = next((d for d, deg in corners
+                          if abs(deg) >= self.CORNER_CUT_DEG), None)
+        if corner_at is not None:
+            # The pursuit may see around the corner by the radius the
+            # turn will actually be made at: a target further into the
+            # new leg only looks like a short cut -- taking it is what
+            # started the swing -- while one held nearer the vertex is
+            # answered so late the nose swings wide of the far leg.
+            rate_dps = _yaw_rate_cap(gs)
+            radius_m = ((gs * 1.852 / 3.6)
+                        / max(0.05, math.radians(rate_dps))
+                        if gs > 1.5 else 6.0)
+            lead = max(4.0, radius_m * self.CORNER_LEAD_SCALE)
+            # At the vertex itself the lead is a floor of its own: a
+            # target a handful of metres on can sit behind the
+            # aeroplane's own overshoot, and a pursuit point behind is
+            # the demand that drags the nose the wrong way round.
+            lookahead = min(lookahead, max(
+                self.CORNER_MIN_LA_M, corner_at + lead))
+        steer = auto_nav.path_steering(
+            state.latitude, state.longitude, remaining_path,
+            lookahead_m=lookahead, skip_penalty_m=self.NEAREST_SKIP_M)
         if steer is None or steer.get("heading") is None:
             self._stop(state)
             return
@@ -191,6 +248,47 @@ class _Taxi:
         steer["heading"] = _bounded_intercept(
             steer["heading"], leg_hdg, rejoining)
 
+        # And in a real corner the turn onto the new leg is ordered at
+        # the arc's tangent point, not waited for: a pursuit point held
+        # to the vertex is answered so late the nose is still a corner
+        # behind when the apex passes, and the recovery swings wide of
+        # the far leg. Through the corner the ask may not run further
+        # round than the exit leg plus a corner's width of over-swing --
+        # the chase for a target already astern is what drags the
+        # aeroplane across the new line instead of onto it.
+        if corner_at is not None:
+            near = min(steer["nearest"], len(remaining_path) - 2)
+            leg_now = auto_nav.bearing_deg(
+                remaining_path[near][0], remaining_path[near][1],
+                remaining_path[near + 1][0], remaining_path[near + 1][1])
+            leg_out, corner_deg, vtx_i = leg_now, 0.0, near + 1
+            for _, deg in corners:
+                leg_out = (leg_out + deg) % 360.0
+                if abs(deg) >= self.CORNER_CUT_DEG:
+                    corner_deg = deg
+                    break
+                vtx_i += 1
+            vtx = remaining_path[min(vtx_i, len(remaining_path) - 1)]
+            err = ((steer["heading"] - leg_out + 540.0) % 360.0) - 180.0
+            tangent_m = radius_m * min(
+                1.0, abs(math.tan(math.radians(corner_deg / 2.0))))
+            if corner_at <= tangent_m * 1.15 + 3.0:
+                # The vertex is inside the arc now: aim a corner's
+                # length down the new leg, the heading the turn exits
+                # on, and let the pursuit's own intercept pull it onto
+                # the line.
+                ahead = auto_nav.project(
+                    vtx[0], vtx[1], leg_out, self.CORNER_AIM_M / 1852.0)
+                steer["heading"] = auto_nav.bearing_deg(
+                    state.latitude, state.longitude, ahead[0], ahead[1])
+                err = ((steer["heading"] - leg_out + 540.0) % 360.0) \
+                    - 180.0
+            if corner_deg > 0.0:
+                err = min(err, self.CORNER_OVER_DEG)
+            else:
+                err = max(err, -self.CORNER_OVER_DEG)
+            steer["heading"] = (leg_out + err) % 360.0
+
         # The corridor the rest of the route runs through: whatever is on
         # it ahead -- head-on, crossing, or stopped -- is given way to
         # rather than met. The AI gives the pilot the same courtesy at
@@ -231,6 +329,22 @@ class _Taxi:
         if turn > 20.0:
             target_kt = min(target_kt, max(
                 4.0, target_kt * (1.0 - (turn - 20.0) / 80.0)))
+        # The corner's own ask: the knots it can be made at, paid out in
+        # the metres before it -- a sharp turn arrived at with taxi
+        # speed is the wide swing, not the corner. The ramp is shallow
+        # enough that the ask falls under the aeroplane early enough for
+        # the brakes to make it, not just to wish it.
+        corner_cap = None
+        for at_m, deg in corners:
+            for need_deg, corner_kt in self.CORNER_SLOW:
+                if abs(deg) >= need_deg:
+                    cap = corner_kt + max(0.0, at_m - self.CORNER_FULL_M) \
+                        * self.CORNER_BRAKE_KT_M
+                    corner_cap = cap if corner_cap is None \
+                        else min(corner_cap, cap)
+                    break
+        if corner_cap is not None:
+            target_kt = min(target_kt, corner_cap)
         if outbound:
             # Creep the last metres to the bars instead of stopping a
             # taxiway short of them.
@@ -276,7 +390,18 @@ class _Taxi:
                 demand = 0.8
             else:
                 demand = 1.0
-            self._steer(state, desired, target_kt, demand=demand)
+            # The inside wheel joins a real turn: at corner pace it is
+            # how both sims let the nose come around, and its drag is
+            # the corner's own slowing. And a slowdown that is owed is
+            # braked for, not coasted toward: the ordinary deadband
+            # would arrive still fast.
+            slowing = corner_cap is not None and corner_cap < \
+                self._expedite_kt(state, self.performance.taxi_kt)
+            cornering = rejoining or turn > 45.0 or (
+                corner_at is not None and corner_at < 25.0)
+            self._steer(state, desired, target_kt, demand=demand,
+                        brake_turn=cornering,
+                        brake_margin_kt=1.5 if slowing else 4.0)
             if until:
                 self.director.throttle(0.0)
                 self.director.brakes_split(self.BRAKE_CHECK_PRESS,
