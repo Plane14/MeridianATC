@@ -616,7 +616,7 @@ class _The_circuit:
     # Further out than this a tower says "continue approach" and clears the
     # aircraft later, because a clearance given at forty miles has to be
     # cancelled the moment anything changes.
-    LANDING_CLEARANCE_NM = 12.0
+    LANDING_CLEARANCE_NM = 10.0
 
     def _tower_check_in_on_final(self, parsed, session, station, weather, p,
                                  state) -> Reply:

@@ -2111,10 +2111,26 @@ class ManualSource:
 
     def update(self, **fields) -> AircraftState:
         for key, value in fields.items():
-            if hasattr(self._state, key):
-                setattr(self._state, key, value)
-            else:
+            if not hasattr(self._state, key):
                 raise AttributeError(f"AircraftState has no field {key!r}")
+            current = getattr(self._state, key)
+            if isinstance(value, str):
+                # A hand-typed token that merged ("270/where") would land as
+                # a string in a numeric field and take the whole read path
+                # down -- arithmetic and format failures everywhere the
+                # value is used. Coerce to what the field already holds, or
+                # refuse, rather than storing garbage.
+                if isinstance(current, bool):
+                    low = value.lower()
+                    if low not in ("true", "yes", "on", "false", "no", "off"):
+                        raise ValueError(
+                            f"{key} is a switch; got {value!r}")
+                    value = low in ("true", "yes", "on")
+                elif isinstance(current, int):
+                    value = int(float(value))
+                elif isinstance(current, float):
+                    value = float(value)
+            setattr(self._state, key, value)
         return self._state
 
     # The same writing surface the simulator has, so nothing above a source

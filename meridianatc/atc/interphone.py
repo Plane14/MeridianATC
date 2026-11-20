@@ -194,6 +194,15 @@ _ADDRESS: dict[str, dict[str, tuple[str, ...]]] = {
         FIRST_OFFICER: ("erster offizier", "kopilot", "copilot"),
     },
     "nl": {
+        CABIN: (
+            "cabinepersoneel", "cabinebemanning", "purser", "hoofdpurser",
+            "cabinechef", "cabinedienst", "steward", "stewardess", "cabine",
+            "kombuis",
+        ),
+        GROUND: (
+            "grondpersoneel", "grondcrew", "afhandeling", "afhandelaar",
+            "duwploeg", "trekker", "marshaller", "headset", "gsx",
+        ),
         FIRST_OFFICER: ("eerste officier", "copiloot", "co piloot"),
     },
 }
@@ -249,6 +258,19 @@ _CABIN_ASKS: dict[str, tuple[tuple[str, str], ...]] = {
         (STATUS, r"\b(wie|was)\b.*\b(kabine|boarding|passagiere)\b"),
         (THANKS, r"\b(danke|das (war|ist) alles|sonst nichts)\b"),
     ),
+    "nl": (
+        (SECURE, r"\b(klaar|voorbereid\w*|veilig)\b.*\b(cabine|landing|"
+                 r"vertrek|aankomst)\b"),
+        (SECURE, r"\bcabine\b.*\b(klaar|veilig)\b"),
+        (TURBULENCE, r"\b(turbulentie\w*|gordels?|schok\w*|onstuimig|"
+                     r"gaan zitten)\b"),
+        (MEAL, r"\b(maaltijd\w*|eten|diner|lunch|ontbijt|bakje\w*|"
+               r"snacks?\w*)\b"),
+        (DRINK, r"\b(koffie|thee|water|sap\w*|drinken|drank\w*|espresso)\b"),
+        (STATUS, r"\b(hoe|wat)\b.*\b(cabine|boarding|passagiers)\b"),
+        (STATUS, r"\b(status|alles (ok|goed)|rapport)\b"),
+        (THANKS, r"\b(bedankt|dank \w+|dat is alles|niets meer)\b"),
+    ),
 }
 
 _GROUND_ASKS: dict[str, tuple[tuple[str, str], ...]] = {
@@ -300,6 +322,21 @@ _GROUND_ASKS: dict[str, tuple[tuple[str, str], ...]] = {
         (DEICE, r"\b(enteis\w*)\b"),
         (GPU, r"\b(bodenstrom|gpu|stromversorgung)\b"),
         (STATUS, r"\b(status|wie lange|was ist los)\b"),
+    ),
+    "nl": (
+        (STOP_PUSHBACK, r"\b(stop|annuler\w*|afbreek|houd)\b.*\b(duw\w*|"
+                        r"push\w*|trekker)\b"),
+        (CONFIRM, r"\b(bevestig\w*|klaar|gereed|remmen (los|open))\b"),
+        (PUSHBACK, r"\b(push\w*|duw\w*|trekker|sleep)\b"),
+        (BOARDING, r"\b(board\w*|instapp\w*|passagiers|bus)\b"),
+        (DEBOARDING, r"\b(deboard\w*|uitstapp\w*|ontladen|eruit)\b"),
+        (REFUEL, r"\b(tank\w*|brandstof|kerosine|tankwagen)\b"),
+        (CATERING, r"\b(catering|verzorging|provia\w*)\b"),
+        (JETWAY, r"\b(luchtgatbrug|jetway|brug)\b"),
+        (STAIRS, r"\b(trap\w*|trapwagen)\b"),
+        (DEICE, r"\b(ontijzel\w*|de ?ic\w+)\b"),
+        (GPU, r"\b(gpu|grondstroom|externe stroom)\b"),
+        (STATUS, r"\b(status|hoelang|wat is er|rapport)\b"),
     ),
 }
 

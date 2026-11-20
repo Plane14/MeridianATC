@@ -1298,7 +1298,7 @@ class Phraseology:
                     self._legs(leg_minutes), f"maintain {level}",
                     f"expect further clearance {time_said}"]
         else:
-            body = [f"hold at {where}", f"maintain {level}",
+            body = [f"hold at {where} {level}",
                     f"inbound track {self.hdg(inbound)} degrees",
                     "right hand pattern",
                     f"outbound time {self._legs(leg_minutes)}",
@@ -1580,15 +1580,29 @@ class Phraseology:
         the pilot to descend on the glideslope.
         """
         spoken_fix = fix_name(fix, fix_spoken)
-        parts = [
-            aircraft.spoken(True),
-            f"{sp.distance(distance_nm, self.digit_dialect)} from {spoken_fix}",
-            f"turn {direction} heading {self.hdg(heading)}" if direction
-            else f"fly heading {self.hdg(heading)}",
-            f"maintain {self.alt(altitude_ft, transition_altitude)} until established "
-            f"on the localizer",
-            f"cleared {approach} runway {self.rwy(runway)} approach",
-        ]
+        turn = (f"turn {direction} heading {self.hdg(heading)}" if direction
+                else f"fly heading {self.hdg(heading)}")
+        if self.dialect == "faa":
+            parts = [
+                aircraft.spoken(True),
+                f"{sp.distance(distance_nm, self.digit_dialect)} from {spoken_fix}",
+                turn,
+                f"maintain {self.alt(altitude_ft, transition_altitude)} until established "
+                f"on the localizer",
+                f"cleared {approach} runway {self.rwy(runway)} approach",
+            ]
+        else:
+            # ICAO: the position, the heading, the level until established,
+            # then the clearance and the report a European approach asks for.
+            parts = [
+                aircraft.spoken(True),
+                f"{sp.distance(distance_nm, self.digit_dialect)} from {spoken_fix}",
+                turn,
+                f"maintain {self.alt(altitude_ft, transition_altitude)} until established "
+                f"on the localizer",
+                f"cleared {approach} approach runway {self.rwy(runway)}",
+                "report established",
+            ]
         return _join(*parts) + "."
 
     def cleared_approach(self, aircraft: Aircraft, approach: str, runway: str,
@@ -1630,7 +1644,9 @@ class Phraseology:
                 parts += [f"maintain {held} until established on {course}",
                           clearance]
             else:
-                parts += [clearance, f"maintain {held} until established"]
+                # ICAO puts the altitude condition before the clearance too
+                # (Doc 9432's example order), the same as the FAA branch.
+                parts += [f"maintain {held} until established", clearance]
         else:
             parts.append(clearance)
         return _join(*parts) + "."
@@ -2225,7 +2241,7 @@ class Phraseology:
         if self.dialect == "faa":
             return _sentence(f"attention all aircraft, {station}, "
                              f"runway {self.rwy(runway)} now in use")
-        return _sentence(f"all stations, {station}, runway in use now "
+        return _sentence(f"all stations, {station}, runway in use "
                          f"{self.rwy(runway)}")
 
     def information_current(self, letter: str, pressure: float) -> str:
@@ -2245,8 +2261,14 @@ class Phraseology:
                          f"{self.pressure(pressure)}")
 
     def no_reply(self, aircraft: Aircraft, station: str) -> str:
-        """Controller calling an aircraft that has not answered."""
-        return _join(aircraft.spoken(False), station, "how do you hear") + "?"
+        """Controller calling an aircraft that has not answered.
+
+        AIM Pilot/Controller Glossary: "how do you hear me"; the ICAO
+        standard word (Doc 4444, CAP 413) is "how do you read".
+        """
+        ask = ("how do you hear me" if self.dialect == "faa"
+               else "how do you read")
+        return _join(aircraft.spoken(False), station, ask) + "?"
 
     # ------------------------------------------------------------------
     # when the aircraft and the request do not agree
@@ -2454,7 +2476,9 @@ class Phraseology:
         return f"a {self.d(int(round(nm)))} mile final"
 
     def pushback_approved(self, aircraft: Aircraft) -> str:
-        return _join(aircraft.spoken(True), "push and start approved",
+        body = ("pushback approved" if self.dialect == "faa"
+                else "push and start approved")
+        return _join(aircraft.spoken(True), body,
                      "advise ready to taxi") + "."
 
     def maintain_visual_separation(self, aircraft: Aircraft) -> str:
@@ -2462,8 +2486,10 @@ class Phraseology:
                      "follow that traffic") + "."
 
     def ifr_cancelled(self, aircraft: Aircraft) -> str:
+        code = ("squawk VFR" if self.dialect == "faa"
+                else f"squawk {sp.squawk(self.vfr_squawk, self.digit_dialect)}")
         return _join(aircraft.spoken(True), "IFR cancellation received",
-                     "squawk VFR", "frequency change approved") + "."
+                     code, "frequency change approved") + "."
 
     def unable_lower(self, aircraft: Aircraft) -> str:
         return self.unable(aircraft, "maintain your present altitude")

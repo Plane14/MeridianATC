@@ -27,7 +27,7 @@ from .final import CONE_DEG, final_for
 # of those, and a wider one is taken only for an aeroplane pointing along
 # the runway -- lined up or rolling, not waiting at the side of it.
 ACROSS_NM = 0.015
-ACROSS_ALIGNED_NM = 0.04
+ACROSS_ALIGNED_NM = 0.03
 ALIGNED_DEG = 30.0
 # Off the ground but still over the strip: a departure that has just
 # rotated is still the runway's until it is past this.
