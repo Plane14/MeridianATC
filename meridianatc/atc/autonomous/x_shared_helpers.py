@@ -587,12 +587,23 @@ class _Shared_helpers:
         if ias <= 20.0:
             return
         lever = self._lever_position(state)
+        # A climb that still owes height keeps climb power: the speed is
+        # the pitch's and the bug's to mind up there -- a servo that
+        # idles the engine six hundred feet up for being ten knots fast
+        # is the mush into the trees off the end.
+        climb_floor = 0.0
+        if self.state.phase == AutonomousPhase.CLIMB:
+            target_alt = self._altitude_target(state)
+            if target_alt and float(getattr(state, "altitude_ft", 0.0)
+                                    or 0.0) < target_alt - 200.0:
+                climb_floor = 0.75
         barber = float(getattr(state, "barber_pole_kt", 0.0) or 0.0)
         max_mach = float(getattr(state, "mach_max_operate", 0.0)
                          or getattr(state, "barber_pole_mach", 0.0) or 0.0)
         mach = float(getattr(state, "airspeed_mach", 0.0) or 0.0)
-        if (barber > 0.0 and ias >= barber * 0.97) \
-                or (max_mach > 0.0 and mach >= max_mach - 0.005):
+        overspeed = (barber > 0.0 and ias >= barber * 0.97) \
+            or (max_mach > 0.0 and mach >= max_mach - 0.005)
+        if overspeed:
             # At the red line -- knots low down, mach high up -- the lever
             # comes down, whatever the target.
             lever = min(lever - 0.10, 0.40)
@@ -607,9 +618,9 @@ class _Shared_helpers:
         else:
             err = ias - target_kt
             if err > 8.0:
-                lever -= min(0.20, 0.02 + err * 0.006)
+                lever -= min(0.06, 0.02 + err * 0.003)
             elif err < -15.0:
-                lever += min(0.15, 0.02 + (-err) * 0.006)
+                lever += min(0.06, 0.02 + (-err) * 0.003)
             elif self._engine_limit_cap(state) >= 1.0:
                 # On target and no gauge over its red line: nothing to
                 # move. An exceedance inside the deadband is NOT a
@@ -619,6 +630,8 @@ class _Shared_helpers:
         # The engine watch's ceiling: a gauge past its published red line
         # gets power off, whatever the speed loop wanted.
         lever = min(lever, self._engine_limit_cap(state))
+        if not overspeed:
+            lever = max(lever, climb_floor)
         self._last_lever = lever
         self.director.throttle(lever)
 

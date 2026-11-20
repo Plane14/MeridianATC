@@ -167,6 +167,23 @@ def test_deadband_does_not_hide_an_engine_over_limit():
     fo2._dir.throttle.assert_not_called()
 
 
+def test_a_climb_owes_height_keeps_the_lever_up():
+    """The 2026-11-20 mush: ten knots fast in a climb that still owed
+    six thousand feet walked the lever to single digits at six hundred
+    AGL and the aeroplane sank. A climb is flown at climb power -- the
+    pitch bug answers the speed, not the throttle."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo = _fo()
+    fo.state.phase = AutonomousPhase.CLIMB
+    fo.session.assigned_altitude_ft = 7000
+    fo._manage_throttle(AircraftState(
+        on_ground=False, engines_running=True,
+        indicated_airspeed_kt=98.0, altitude_ft=1100.0,
+        altitude_agl_ft=600.0, throttle_pct=95.0), 85.0)
+    lever = fo._dir.throttle.call_args.args[0]
+    assert lever >= 0.75
+
+
 def test_heli_watch_judges_departure_on_the_takeoff_rating():
     """The rotorcraft's sub-phase is never "roll": without its own stage
     the watch would hold a legal takeoff power to the continuous line --
