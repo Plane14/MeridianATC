@@ -16,8 +16,7 @@ def _fo(perf=AIRLINER, **kw):
     """A First Officer built by hand: the state, the director mock the
     axes go through, and no helicopter."""
     pytest.importorskip("scipy")
-    from meridianatc.atc.autonomous import (
-        AutonomousFlight, AutonomousState)
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
     fo = AutonomousFlight.__new__(AutonomousFlight)
     fo.state = AutonomousState()
     fo.sim = None
