@@ -412,6 +412,30 @@ class FlightDirector:
         are enabled, which is the pilot's own business then."""
         return self.send(b"AXIS_RUDDER_SET", _axis(position))
 
+    def trim_elevator(self, position: float) -> bool:
+        """-1 full nose-down .. +1 full nose-up.
+
+        A positive value trims the nose up, the convention both
+        simulators' trim indicators use -- it is not turned round at
+        the wire the way a yoke position is.
+        """
+        position = max(-1.0, min(1.0, position))
+        value = int(round(position * 16383.0))
+        return (self.send(b"ELEVATOR_TRIM_SET", value)
+                or self.send(b"AXIS_ELEV_TRIM_SET", value))
+
+    def trim_aileron(self, position: float) -> bool:
+        """-1 full left .. +1 full right."""
+        position = max(-1.0, min(1.0, position))
+        return self.send(b"AILERON_TRIM_SET",
+                         int(round(position * 16383.0)))
+
+    def trim_rudder(self, position: float) -> bool:
+        """-1 full left .. +1 full right."""
+        position = max(-1.0, min(1.0, position))
+        return self.send(b"RUDDER_TRIM_SET",
+                         int(round(position * 16383.0)))
+
     def steering(self, position: float) -> bool:
         """The nosewheel, -1 full left .. +1 full right.
 

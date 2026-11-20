@@ -563,6 +563,13 @@ class SimConnectSource:
         ("RECIP_ENG_COWL_FLAP_POSITION:1", "eng_cowl_pct", "pct", "slow"),
         ("ROTOR_LATERAL_TRIM_PCT", "rotor_lateral_trim_pct", "pct",
          "slow"),
+        # The fixed-wing trims: what a trim write reads back as and what
+        # a "set for takeoff" checklist answer is checked against. Each
+        # is per cent of the trim's own travel; the pitch convention is
+        # nose-down negative, nose-up positive, on either simulator.
+        ("ELEVATOR_TRIM_PCT", "elevator_trim_pct", "pct", "slow"),
+        ("AILERON_TRIM_PCT", "aileron_trim_pct", "pct", "slow"),
+        ("RUDDER_TRIM_PCT", "rudder_trim_pct", "pct", "slow"),
         # The callouts. The bank every read, because "bank" is about a
         # moment; the needles and the selected speed in the rotation, a
         # needle coming alive being worth a second or two of lag.
@@ -1100,6 +1107,18 @@ class SimConnectSource:
         "PUSHBACK_ATTACHED": [
             "Whether the pushback tug is attached to the aircraft",
             b"PUSHBACK ATTACHED", b"Bool", "N"],
+        # The trims, per cent of their own travel -- the names the
+        # wrapper's table does not carry, defined here so the batched
+        # read can reach them (SDK "Aircraft Controls Variables").
+        "ELEVATOR_TRIM_PCT": [
+            "Elevator trim, per cent, nose-up positive",
+            b"ELEVATOR TRIM PCT", b"Percent", "N"],
+        "AILERON_TRIM_PCT": [
+            "Aileron trim, per cent, right positive",
+            b"AILERON TRIM PCT", b"Percent", "N"],
+        "RUDDER_TRIM_PCT": [
+            "Rudder trim, per cent, right positive",
+            b"RUDDER TRIM PCT", b"Percent", "N"],
     }
 
     # Entries in the wrapper's own tables whose unit the simulator has

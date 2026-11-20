@@ -147,6 +147,13 @@ class AircraftState:
     # UNVERIFIED on a running 2024.
     eng_torque_pct: float = 0.0
     rotor_lateral_trim_pct: float = 0.0
+    # The fixed-wing trims, per cent of their travel: pitch -100 nose
+    # down to +100 nose up, aileron and rudder negative left to positive
+    # right. What a trim write reads back as, and the figure a checklist
+    # "trim ... set for takeoff" is checked against.
+    elevator_trim_pct: float = 0.0
+    aileron_trim_pct: float = 0.0
+    rudder_trim_pct: float = 0.0
     # The engine-instrument reads the autonomous engine watch
     # (atc.powerplant + autonomous/x_the_engines) works against: the
     # gas-producer/fan per cent (TURB ENG N1), the power-turbine per

@@ -136,6 +136,18 @@ BRAKES = {
 # "steer_deg", acf_nw_steerdeg1) scales the -1..1 the caller means.
 STEER_DREFS = ("sim/flightmodel2/gear/tire_steer_command_deg[0]",
                "sim/flightmodel/parts/tire_steer_cmd[0]")
+# The trims. The same names and -16383..16384 range the MSFS link
+# accepts, on the cockpit's own trim actuators -- the trim wheels and
+# tabs, not the yoke's override inputs, so no override flag applies and
+# a write holds until the pilot's own trim hardware next moves. +1 is
+# nose up or right, the convention the datarefs and the FlightDirector
+# both use.
+TRIMS = {
+    "ELEVATOR_TRIM_SET": "sim/cockpit2/controls/elevator_trim",
+    "AXIS_ELEV_TRIM_SET": "sim/cockpit2/controls/elevator_trim",
+    "AILERON_TRIM_SET": "sim/cockpit2/controls/aileron_trim",
+    "RUDDER_TRIM_SET": "sim/cockpit2/controls/rudder_trim",
+}
 SWITCHES = {
     "PARKING_BRAKE_SET": "BRAKE PARKING POSITION",
     "GEAR_SET": "GEAR HANDLE POSITION",
@@ -478,6 +490,11 @@ class XPlaneControls:
             # without it loses to the pilot's hardware the same frame.
             source._dref(OVR + flag, 1)
             return source._dref(JSTICK + axis, ratio)
+        if name in TRIMS:
+            # No override latch: the cockpit2 trim actuators are the
+            # wheel's own stops, writable beside the pilot's input.
+            return source._dref(TRIMS[name],
+                                max(-1.0, min(1.0, value / 16383.0)))
         if name in BRAKES:
             if not -16384 <= value <= 16384:
                 return False

@@ -43,6 +43,10 @@ def xp():
     ("AP_NAV_SELECT_SET", 2, HSI, 1),
     ("SPOILERS_ARM_ON", 0, "sim/cockpit2/controls/speedbrake_ratio", -.5),
     ("THROTTLE_FULL", 0, THROTTLE + "_all", 1),
+    ("ELEVATOR_TRIM_SET", 8191, "sim/cockpit2/controls/elevator_trim", 8191 / 16383),
+    ("AXIS_ELEV_TRIM_SET", -16383, "sim/cockpit2/controls/elevator_trim", -1),
+    ("AILERON_TRIM_SET", 16384, "sim/cockpit2/controls/aileron_trim", 1),
+    ("RUDDER_TRIM_SET", -8192, "sim/cockpit2/controls/rudder_trim", -8192 / 16383),
 ])
 def test_event_datarefs(xp, event, value, path, expected):
     peer, source = xp
@@ -246,6 +250,22 @@ def test_flight_axes_drive_yoke_ratios_and_overrides(xp, event, value, axis, ove
     expected = max(-1.0, min(1.0, value / 16383.0))
     eventually(lambda: (f"sim/joystick/{axis}", pytest.approx(expected)) in peer.writes)
     assert (f"sim/operation/override/{override}", 1) in peer.writes
+
+
+def test_director_trims_drive_the_trim_actuators(xp):
+    peer, source = xp
+    director = FlightDirector(source)
+    assert director.trim_elevator(.5)
+    assert director.trim_aileron(-.25)
+    assert director.trim_rudder(1.0)
+    eventually(lambda: ("sim/cockpit2/controls/elevator_trim",
+                        pytest.approx(.5, abs=1e-3)) in peer.writes)
+    assert ("sim/cockpit2/controls/aileron_trim",
+            pytest.approx(-.25, abs=1e-3)) in peer.writes
+    assert ("sim/cockpit2/controls/rudder_trim",
+            pytest.approx(1.0, abs=1e-3)) in peer.writes
+    # Trims are the cockpit's own actuators: no joystick override latches.
+    assert not any("override_joystick" in path for path, _v in peer.writes)
 
 
 def test_center_controls_releases_every_override(xp):

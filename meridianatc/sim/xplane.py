@@ -76,6 +76,12 @@ DATAREFS = {
     "nav1_freq": (RADIOS + "nav1_frequency_hz", .01),
     "ap_airspeed_kt": ("sim/cockpit2/autopilot/airspeed_dial_kts", 1),
     "throttle_pct": ("sim/cockpit2/engine/actuators/throttle_ratio[0]", 100),
+    # The trim actuators, ratio of their travel to per cent -- the
+    # figures a trim write reads back as (xpcontrols.TRIMS writes the
+    # same datarefs).
+    "elevator_trim_pct": ("sim/cockpit2/controls/elevator_trim", 100),
+    "aileron_trim_pct": ("sim/cockpit2/controls/aileron_trim", 100),
+    "rudder_trim_pct": ("sim/cockpit2/controls/rudder_trim", 100),
     "airspeed_mach": ("sim/flightmodel/misc/machno", 1),
     "total_weight_lb": ("sim/flightmodel/weight/m_total", LB),
     "max_gross_weight_lb": ("sim/aircraft/weight/acf_m_max", LB),
