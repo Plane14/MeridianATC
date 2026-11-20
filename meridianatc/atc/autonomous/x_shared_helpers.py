@@ -273,6 +273,18 @@ class _Shared_helpers:
                                            0.5 * target + 0.5 * learned))
         return target
 
+    @staticmethod
+    def _flown_altitude_ft(state) -> float:
+        """The level the altimeter reads -- what a clearance is flown to.
+
+        ``altitude_ft`` is true MSL; the pilot flies the Kollsman window,
+        and the radar's corrected mode-C agrees with it. On a QNH-1018
+        day the two are a hundred-plus feet apart, and a level held on
+        the true figure is the wrong one on every gauge that matters.
+        """
+        return float(getattr(state, "indicated_altitude_ft", 0.0)
+                     or getattr(state, "altitude_ft", 0.0) or 0.0)
+
     def _altitude_target(self, state) -> float:
         """The level to fly now: what ATC last assigned, else the plan's.
 
@@ -597,6 +609,19 @@ class _Shared_helpers:
             if target_alt and float(getattr(state, "altitude_ft", 0.0)
                                     or 0.0) < target_alt - 200.0:
                 climb_floor = 0.90
+        # And the mirror: a descent that still owes height is flown at
+        # descent power -- near idle for a light aeroplane -- the pitch
+        # holding the rate and the lever the speed. Left where the
+        # climb set it, the lever stayed at ninety-odd percent down the
+        # whole descent: speed on target meant the servo never moved,
+        # and the shallow powered descent ended in a chopped dive.
+        descent_cap = 0.0
+        if self.state.phase == AutonomousPhase.DESCENT:
+            target_alt = self._altitude_target(state)
+            if target_alt and self._flown_altitude_ft(state) \
+                    > target_alt + 250.0 \
+                    and ias > target_kt - 5.0:
+                descent_cap = 0.20
         barber = float(getattr(state, "barber_pole_kt", 0.0) or 0.0)
         max_mach = float(getattr(state, "mach_max_operate", 0.0)
                          or getattr(state, "barber_pole_mach", 0.0) or 0.0)
@@ -621,15 +646,18 @@ class _Shared_helpers:
                 lever -= min(0.06, 0.02 + err * 0.003)
             elif err < -15.0:
                 lever += min(0.06, 0.02 + (-err) * 0.003)
-            elif self._engine_limit_cap(state) >= 1.0:
+            elif self._engine_limit_cap(state) >= 1.0 \
+                    and (not descent_cap or lever <= descent_cap):
                 # On target and no gauge over its red line: nothing to
-                # move. An exceedance inside the deadband is NOT a
-                # deadband case -- it falls through to the cap below.
+                # move -- unless a descent owes the lever back, which a
+                # deadband return left riding at climb power forever.
                 return
         lever = max(0.05, min(0.97, lever))
         # The engine watch's ceiling: a gauge past its published red line
         # gets power off, whatever the speed loop wanted.
         lever = min(lever, self._engine_limit_cap(state))
+        if descent_cap:
+            lever = min(lever, descent_cap)
         if not overspeed:
             lever = max(lever, climb_floor)
         self._last_lever = lever

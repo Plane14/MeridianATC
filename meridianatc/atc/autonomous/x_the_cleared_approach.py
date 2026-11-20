@@ -419,14 +419,6 @@ class _The_cleared_approach:
         off_course = abs((course - track + 540.0) % 360.0 - 180.0)
         length_nm = (self.state.runway_length_ft or 0.0) / 6076.0
         on_final = abs(side) <= max(0.0, out) + 0.5 and off_course <= 100.0
-        # Out on the approach side inside the cone -- or already down the
-        # last of it and over the runway itself, where the final's own
-        # gates (and the go-around) own what happens next.
-        if on_final and (out >= 0.7 or (out > -max(length_nm, 0.5)
-                                        and off_course <= 45.0
-                                        and abs(side) <= 0.3)):
-            self._rejoin_path = None
-            return False
 
         light = self.performance.cruise_kt < 140.0
         fast = self.performance.cruise_kt >= 230.0
@@ -438,6 +430,34 @@ class _The_cleared_approach:
         if speed != float(self.session.assigned_speed_kt or 0.0):
             speed += 10.0
         assigned = self.session.assigned_heading
+
+        # Out on the approach side inside the cone -- or already down the
+        # last of it and over the runway itself, where the final's own
+        # gates (and the go-around) own what happens next.
+        if on_final and (out >= 0.7 or (out > -max(length_nm, 0.5)
+                                        and off_course <= 45.0
+                                        and abs(side) <= 0.3)):
+            if assigned is not None and assigned > 0:
+                # A vector survives the cone's edge: "right two nine
+                # zero, cleared the approach" is flown until the final
+                # is actually joined -- on the centreline, roughly on
+                # course -- the way the intercept is flown by hand. An
+                # angle that never gets there, past sixty off the
+                # course, is released instead and the final joined.
+                joined = abs(side) <= 0.5 and off_course <= 45.0
+                cut = abs((assigned - course + 540.0) % 360.0 - 180.0)
+                if not joined and cut <= 60.0:
+                    target = max(self.session.assigned_altitude_ft
+                                 or 0.0, pattern_ft)
+                    self._rejoin_path = None
+                    self._hold_level(state, target, assigned, speed)
+                    return True
+                # Joined -- or it never could be: the vector is spent,
+                # and with it the watch's reason to ask for it back.
+                self.session.assigned_heading = None
+            self._rejoin_path = None
+            return False
+
         if assigned is not None and assigned > 0:
             # Being vectored: the controller owns the heading and the
             # altitude until the final is there to be joined.
@@ -497,7 +517,7 @@ class _The_cleared_approach:
         if self.state.ap_apr_mode:
             d.approach(False)
             self.state.ap_apr_mode = False
-        alt = state.altitude_ft or 0.0
+        alt = self._flown_altitude_ft(state)
         vs = 0.0
         if alt > target_ft + 100.0:
             vs = -500.0

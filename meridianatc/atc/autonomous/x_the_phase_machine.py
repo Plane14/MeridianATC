@@ -1395,7 +1395,7 @@ class _The_phase_machine:
         if agl < 8000 and self.state.configured == "":
             self._set_flaps(state, 0.25)
             self.state.configured = "flaps_1"
-        if (agl < 3000 or (distance is not None and distance < 8.0)) \
+        if (agl < 2200 or (distance is not None and distance < 6.0)) \
                 and self.state.configured in ("", "flaps_1"):
             self._set_flaps(state, 0.5)
             self.state.configured = "flaps_approach"
@@ -1460,7 +1460,7 @@ class _The_phase_machine:
             # rate is proportional to the error, so the level is
             # captured on the bug rather than at its edge -- and a
             # porpoise has nothing to swing about.
-            alt = state.altitude_ft or 0.0
+            alt = self._flown_altitude_ft(state)
             err = alt - target
             if err > 250.0:
                 vs = -descent_fpm

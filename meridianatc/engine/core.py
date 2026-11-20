@@ -827,7 +827,12 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         phase = session.phase
         if kind == "check_in":
             vs = getattr(self.state, "vertical_speed_fpm", 0.0) or 0.0
-            alt = session.assigned_altitude_ft \
+            # The level reported is the level the aeroplane is AT, the
+            # one the radar screen shows -- not the level the clearance
+            # names. Reporting the assigned nine thousand while still
+            # through one thousand had the controller verifying an
+            # altitude that was never claimed.
+            alt = getattr(self.state, "indicated_altitude_ft", 0.0) \
                 or getattr(self.state, "altitude_ft", 0.0) or 0.0
             if abs(vs) < 300.0:
                 return speech.maintaining(aircraft, name, alt), ""

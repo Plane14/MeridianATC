@@ -644,12 +644,15 @@ class DeviationAssistWatch:
 
     def _off_now(self, session: FlightSession, state) -> list[str]:
         out = []
-        # Mode C is QNH-corrected by the radar, so what the controller sees
-        # is true altitude whatever the Kollsman window says -- a mis-set
-        # altimeter is a deviation here exactly as it would be on a scope.
+        # The scope shows the mode-C return corrected by the local QNH --
+        # approximately what the pilot's altimeter reads, not true MSL.
+        # Judging against true altitude flags a correctly-flown level a
+        # hundred-plus feet off on a high- or low-pressure day, exactly
+        # the "verify altitude" calls a clean flight did not earn.
         if session.assigned_altitude_ft:
             delta = (session.assigned_altitude_ft
-                     - (getattr(state, "altitude_ft", 0.0) or 0.0))
+                     - (getattr(state, "indicated_altitude_ft", 0.0)
+                        or getattr(state, "altitude_ft", 0.0) or 0.0))
             if abs(delta) > self.ALT_FT:
                 # A leg climbing or descending *toward* the assigned
                 # level is doing exactly what it was cleared to do --
