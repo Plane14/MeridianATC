@@ -1736,9 +1736,12 @@ class ArrivalWatch:
         """The next level down, in the steps a controller actually uses.
 
         Large ones in the flight levels and smaller ones underneath, rounded
-        to a thousand so what is issued is a level rather than a number.
+        to a thousand so what is issued is a level rather than a number. The
+        figures are what a centre and an approach control reach for: a big
+        bite while the arrival is still high, three thousand at a time
+        underneath.
         """
-        step = 10000.0 if current > 24000.0 else 4000.0
+        step = 8000.0 if current > 24000.0 else 3000.0
         target = int((current - step) / 1000.0) * 1000.0
         return float(max(floor, target))
 

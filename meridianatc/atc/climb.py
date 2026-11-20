@@ -42,9 +42,10 @@ INITIAL_STEPS_FT = (0, 1000, 2000, 4000, 5000)
 
 # Departure works a flight this high and no higher; the centres do the rest.
 DEPARTURE_TOP_FT = 17000
-# Departure's steps, added to where the flight is (after LocalTC: 6,000 to
-# 12,000; 3,000 at a time "would really congest" the frequency).
-DEPARTURE_STEPS_FT = (6000, 8000, 10000, 12000)
+# Departure's steps, added to where the flight is: three to six thousand
+# at a time, the increments a TRACON really hands out before handing the
+# flight to the centre.
+DEPARTURE_STEPS_FT = (3000, 4000, 5000, 6000)
 # A step this short of departure's top is given as the top itself.
 LAST_STEP_FT = 4000
 # This close below its altitude, still climbing, a departure gets the next

@@ -241,7 +241,7 @@ class _Helpers:
         current = getattr(state, "altitude_ft", 0.0) or session.assigned_altitude_ft
         if current <= 0:
             return 10000.0
-        step = 10000 if current > 24000 else 4000
+        step = 8000 if current > 24000 else 3000
         target = current - step
         # A level, not a number: whole, and valid for the direction above
         # the transition.
@@ -528,7 +528,7 @@ class _Helpers:
             return heard, ""
 
         candidates = self.navdb.nearest_navaids(
-            state.latitude, state.longitude, limit=40, max_nm=250.0
+            state.latitude, state.longitude, limit=40, max_nm=150.0
         )
         best_ident, best_name, best_score = heard, "", 0.0
         for navaid, _d in candidates:
