@@ -39,6 +39,24 @@ hold EFC wording, circuit constants, heli speed table, vector step-down
 250 ft/NM, overhead join, _procedure_default +2500, flight-following
 workload refusal, orbit to non-circuit side.
 
+## Logic sweep (bugs and gaps, second pass)
+
+AST scan of all ~280 files: zero unreachable statements after
+return/raise/break/continue, zero duplicate conditions in if/elif chains,
+no NotImplementedError stubs (empty bodies are all interface defaults:
+backend `warm`/`close`/`available` no-ops, sim source methods). All 29
+`except: pass` sites are at sim/IO boundaries (OSError, WebSocketDisconnect,
+decode failures) where swallowing is the contract. All `heading/track/course
+or fallback` sites follow the codebase's 0-means-unset convention except
+web/server.py `_ownship` track — fixed (`track_true is not None` so a
+due-north track isn't replaced by the heading). `find_heading`/`known_track`
+in final.py already handles the north-track case deliberately.
+
+Post-review fix (Devin Review): `platform` removed from the nl GROUND
+address table — `_addressed` tries every language's table on every
+transmission, and "platform" is a real apron word in English ATC speech
+(commit d1bdfb2).
+
 Format: severity · file:line · what happens · what the real world does.
 
 ## Progress tracker (for context resets)
