@@ -125,7 +125,7 @@ class _The_radios:
         leaves before keying. Nobody transmits on the same breath the
         last voice lets go on; a call that does is a machine that was
         waiting on the edge of it, and it reads exactly that."""
-        return (time.monotonic() - getattr(self, "_last_busy_at", 0.0)
+        return (time.monotonic() - getattr(self, "_last_busy_at", float("-inf"))
                 >= UNKEY_BEAT_S)
 
     def _manage_comms(self, state, now: float) -> None:
@@ -501,9 +501,9 @@ class _The_radios:
         current = getattr(session, "current_station", None)
         fresh = bool(current) \
             and station_key(current) != getattr(self, "_call_on", "")
-        tried = getattr(self, "_call_tried_at", 0.0)
+        tried = getattr(self, "_call_tried_at", float("-inf"))
         if not fresh \
-                and now - getattr(session, "told_to_wait_at", 0.0) \
+                and now - getattr(session, "told_to_wait_at", float("-inf")) \
                 < READY_REASK_S:
             # The last word the frequency had for this flight was
             # "standby"/"hold position": it is on the list and the

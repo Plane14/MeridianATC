@@ -289,7 +289,9 @@ class AutonomousState:
     checked_in_with: str = ""
     squawk_dialled: str = ""
     altimeter_dialled: float = 0.0
-    last_radio_at: float = 0.0
+    # -inf: a 0.0 seed reads as "radio just now" while the host uptime
+    # is still inside any of the quiet beats below it.
+    last_radio_at: float = float("-inf")
     # The turnaround between chained legs: the plan being serviced for,
     # whether the engines were shut and the fuel asked for, and where the
     # diversion field is that the fuel figure was built on.

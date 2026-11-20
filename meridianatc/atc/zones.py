@@ -91,6 +91,8 @@ def _spread(corners, axis) -> tuple[float, float]:
 
 def overlap(a: tuple[Point, ...], b: tuple[Point, ...]) -> bool:
     """Whether two convex polygons share any ground (touching does not)."""
+    if not a or not b:
+        return False
     for axis in list(_axes(a)) + list(_axes(b)):
         if axis == (0.0, 0.0):
             continue

@@ -249,11 +249,11 @@ class _Entry:
         self._checklist_item_since = 0.0
         self._checklist_perform_since = 0.0
         self._checklist_sent = set()
-        self._dialled_at = 0.0
+        self._dialled_at = float("-inf")
         self._comms_settled = True
-        self._call_tried_at = 0.0
+        self._call_tried_at = float("-inf")
         self._call_on = ""
-        self._last_busy_at = 0.0
+        self._last_busy_at = float("-inf")
         self._last_lever = 0.0
         self._flaps_asked = 0.0
         self._lever_at = 0.0
@@ -264,7 +264,7 @@ class _Entry:
         self._taxi_reask = False
         self._taxi_reasks = 0
         self._off_path_since = 0.0
-        self._self_plan_at = 0.0
+        self._self_plan_at = float("-inf")
         # The brake check belongs to a leg's first roll: a new flight
         # gets the pedal squeeze its taxi deserves.
         self._brake_checked = False

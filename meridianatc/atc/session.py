@@ -468,7 +468,7 @@ class FlightSession:
     # The last "standby"/"hold position" this flight was given
     # (time.monotonic): a crew told to wait does not keep asking -- the
     # controller has it on the list and calls back.
-    told_to_wait_at: float = 0.0
+    told_to_wait_at: float = float("-inf")
     # A literal "hold position" still standing: the aeroplane stops
     # where it is until the next movement instruction -- a taxi route,
     # a crossing grant, a line-up or a takeoff clearance -- releases it.

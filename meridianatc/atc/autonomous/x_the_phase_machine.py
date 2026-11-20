@@ -134,7 +134,7 @@ class _The_phase_machine:
             # moment for it on the air the departure is the flight's own
             # under whatever rules it is filed. A call that never goes
             # out at all is still bounded by the phase clock.
-            if (self.state.last_radio_at
+            if (self.state.last_radio_at > 0.0
                     and now - self.state.last_radio_at >= 12.0) \
                     or now - self.state.phase_entered_at > self.CLEARANCE_TIMEOUT:
                 self._emit("info",

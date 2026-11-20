@@ -120,12 +120,15 @@ class AutonomousFlight(_Plumbing, _Entry, _The_loop, _Shared_helpers, _The_envel
         # dial that does not take is retried on a clock, not every tick;
         # and whether COM1 is showing the frequency it should, which is
         # what holds an ask across a retune still settling.
-        self._dialled_at = 0.0
+        # -inf rather than 0.0: time.monotonic counts from boot, so a
+        # zero reads as "just now" on a host that has been up seconds --
+        # -inf reads as the never-happened it is.
+        self._dialled_at = float("-inf")
         self._comms_settled = True
-        self._call_tried_at = 0.0
+        self._call_tried_at = float("-inf")
         # When the frequency was last heard busy, so a call keys a beat
         # after it lets go rather than on the same breath.
-        self._last_busy_at = 0.0
+        self._last_busy_at = float("-inf")
         self._dir: FlightDirector | None = None
         self._perf: fly.Performance | None = None
         self._speeds: vspeeds.Speeds | None = None
@@ -153,7 +156,7 @@ class AutonomousFlight(_Plumbing, _Entry, _The_loop, _Shared_helpers, _The_envel
         self._taxi_reask = False
         self._taxi_reasks = 0
         self._off_path_since = 0.0
-        self._self_plan_at = 0.0
+        self._self_plan_at = float("-inf")
         # The closed-loop axes. Gains are resolved per aircraft like the
         # performance figures (class bundle, autofly profile refinements);
         # the controllers are made lazily, one per channel, and the

@@ -523,7 +523,7 @@ class _Taxi:
         session for ``_taxi_along_path`` to pick up.
         """
         now = time.monotonic()
-        if now - getattr(self, "_self_plan_at", 0.0) < self.SELF_PLAN_RETRY_S:
+        if now - getattr(self, "_self_plan_at", float("-inf")) < self.SELF_PLAN_RETRY_S:
             return False
         self._self_plan_at = now
         ask = getattr(getattr(self, "brain", None), "ground_layout", None)
