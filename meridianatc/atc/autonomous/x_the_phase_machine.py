@@ -1312,6 +1312,19 @@ class _The_phase_machine:
                 elif filed > target + 500.0:
                     self.session.cruise_altitude_ft = int(filed)
                     target = self._under_vfr_ceiling(filed, state)
+            # The terrain watch binds the level leg the same as the
+            # legs flown through the director: a pull-up that has
+            # fired owns the bug outright, and short of it the
+            # ground's floor is as low as the level may sit -- a
+            # cruise that walked under it climbs back through the
+            # step-clearance branch below.
+            if self._terrain_escaping():
+                target = max(target, getattr(
+                    self.state, "terrain_escape_alt", 0.0) or 0.0)
+            else:
+                floor = self._terrain_floor(state)
+                if floor:
+                    target = max(target, floor)
             if target and abs(alt - target) > 200.0:
                 # A step clearance answered level is not answered at
                 # all: the bug moves and the aeroplane climbs or
