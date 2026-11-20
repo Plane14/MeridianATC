@@ -415,26 +415,41 @@ class FlightDirector:
     def trim_elevator(self, position: float) -> bool:
         """-1 full nose-down .. +1 full nose-up.
 
-        A positive value trims the nose up, the convention both
-        simulators' trim indicators use -- it is not turned round at
-        the wire the way a yoke position is.
+        ``AXIS_ELEV_TRIM_SET`` is the bipolar form both SDK eras
+        document; the named ``ELEVATOR_TRIM_SET`` is the legacy
+        unipolar 0..16383 event, kept as the fallback. A positive value
+        trims the nose up -- the convention the sims' indicators and
+        this app's yoke demand share, so unlike a yoke write the value
+        is not turned round at the wire.
         """
         position = max(-1.0, min(1.0, position))
-        value = int(round(position * 16383.0))
-        return (self.send(b"ELEVATOR_TRIM_SET", value)
-                or self.send(b"AXIS_ELEV_TRIM_SET", value))
+        return (self.send(b"AXIS_ELEV_TRIM_SET",
+                          int(round(position * 16383.0)))
+                or self.send(b"ELEVATOR_TRIM_SET",
+                             int(round((position + 1.0) * 8191.5))))
 
     def trim_aileron(self, position: float) -> bool:
-        """-1 full left .. +1 full right."""
+        """-1 full left .. +1 full right.
+
+        The trim's own percent variable is the settable path; the
+        event the SimConnect ABI names takes -100..100, not the 16K
+        scale the surfaces use, and the X-Plane link translates that
+        for its own actuators.
+        """
         position = max(-1.0, min(1.0, position))
-        return self.send(b"AILERON_TRIM_SET",
-                         int(round(position * 16383.0)))
+        value = int(round(position * 100.0))
+        return (self.write("AILERON TRIM PCT", position * 100.0,
+                           unit="Percent")
+                or self.send(b"AILERON_TRIM_SET", value))
 
     def trim_rudder(self, position: float) -> bool:
-        """-1 full left .. +1 full right."""
+        """-1 full left .. +1 full right, same percent plumbing as the
+        aileron trim."""
         position = max(-1.0, min(1.0, position))
-        return self.send(b"RUDDER_TRIM_SET",
-                         int(round(position * 16383.0)))
+        value = int(round(position * 100.0))
+        return (self.write("RUDDER TRIM PCT", position * 100.0,
+                           unit="Percent")
+                or self.send(b"RUDDER_TRIM_SET", value))
 
     def steering(self, position: float) -> bool:
         """The nosewheel, -1 full left .. +1 full right.

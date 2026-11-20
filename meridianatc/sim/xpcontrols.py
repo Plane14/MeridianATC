@@ -136,17 +136,23 @@ BRAKES = {
 # "steer_deg", acf_nw_steerdeg1) scales the -1..1 the caller means.
 STEER_DREFS = ("sim/flightmodel2/gear/tire_steer_command_deg[0]",
                "sim/flightmodel/parts/tire_steer_cmd[0]")
-# The trims. The same names and -16383..16384 range the MSFS link
-# accepts, on the cockpit's own trim actuators -- the trim wheels and
+# The trims, on the cockpit's own actuators -- the trim wheels and
 # tabs, not the yoke's override inputs, so no override flag applies and
-# a write holds until the pilot's own trim hardware next moves. +1 is
-# nose up or right, the convention the datarefs and the FlightDirector
-# both use.
+# a write holds until the pilot's own trim hardware next moves. Each
+# event carries its own documented range, which is not the axes' 16K
+# one: AXIS_ELEV_TRIM_SET is bipolar, the named ELEVATOR_TRIM_SET is
+# the unipolar 0..16383 legacy form, and the aileron and rudder trims
+# are percent. name: (dataref, lo, hi); lo..hi maps onto the dataref's
+# -1..1, nose up or right positive.
 TRIMS = {
-    "ELEVATOR_TRIM_SET": "sim/cockpit2/controls/elevator_trim",
-    "AXIS_ELEV_TRIM_SET": "sim/cockpit2/controls/elevator_trim",
-    "AILERON_TRIM_SET": "sim/cockpit2/controls/aileron_trim",
-    "RUDDER_TRIM_SET": "sim/cockpit2/controls/rudder_trim",
+    "AXIS_ELEV_TRIM_SET": ("sim/cockpit2/controls/elevator_trim",
+                           -16383.0, 16383.0),
+    "ELEVATOR_TRIM_SET": ("sim/cockpit2/controls/elevator_trim",
+                          0.0, 16383.0),
+    "AILERON_TRIM_SET": ("sim/cockpit2/controls/aileron_trim",
+                         -100.0, 100.0),
+    "RUDDER_TRIM_SET": ("sim/cockpit2/controls/rudder_trim",
+                        -100.0, 100.0),
 }
 SWITCHES = {
     "PARKING_BRAKE_SET": "BRAKE PARKING POSITION",
@@ -493,8 +499,10 @@ class XPlaneControls:
         if name in TRIMS:
             # No override latch: the cockpit2 trim actuators are the
             # wheel's own stops, writable beside the pilot's input.
-            return source._dref(TRIMS[name],
-                                max(-1.0, min(1.0, value / 16383.0)))
+            path, lo, hi = TRIMS[name]
+            if not lo <= value <= hi:
+                return False
+            return source._dref(path, (value - lo) / (hi - lo) * 2.0 - 1.0)
         if name in BRAKES:
             if not -16384 <= value <= 16384:
                 return False

@@ -43,10 +43,14 @@ def xp():
     ("AP_NAV_SELECT_SET", 2, HSI, 1),
     ("SPOILERS_ARM_ON", 0, "sim/cockpit2/controls/speedbrake_ratio", -.5),
     ("THROTTLE_FULL", 0, THROTTLE + "_all", 1),
-    ("ELEVATOR_TRIM_SET", 8191, "sim/cockpit2/controls/elevator_trim", 8191 / 16383),
+    # Trim events keep their own documented ranges: the named elevator
+    # event is unipolar 0..16383, the AXIS_ form bipolar, and aileron
+    # and rudder trims are percent -- none of them the axes' 16K scale.
+    ("AXIS_ELEV_TRIM_SET", 8191, "sim/cockpit2/controls/elevator_trim", 8191 / 16383),
     ("AXIS_ELEV_TRIM_SET", -16383, "sim/cockpit2/controls/elevator_trim", -1),
-    ("AILERON_TRIM_SET", 16384, "sim/cockpit2/controls/aileron_trim", 1),
-    ("RUDDER_TRIM_SET", -8192, "sim/cockpit2/controls/rudder_trim", -8192 / 16383),
+    ("ELEVATOR_TRIM_SET", 8191, "sim/cockpit2/controls/elevator_trim", 8191 / 8191.5 - 1),
+    ("AILERON_TRIM_SET", 50, "sim/cockpit2/controls/aileron_trim", .5),
+    ("RUDDER_TRIM_SET", -50, "sim/cockpit2/controls/rudder_trim", -.5),
 ])
 def test_event_datarefs(xp, event, value, path, expected):
     peer, source = xp
