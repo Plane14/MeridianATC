@@ -18,7 +18,7 @@ approximations that are documented as such in code.
 
 | Finding | Fix |
 | --- | --- |
-| `ifr_cancelled` hardcoded "squawk VFR" | now issues the regional conspicuity code (7000 ICAO / 1200 FAA) via `vfr_squawk` |
+| `ifr_cancelled` hardcoded "squawk VFR" | ICAO now issues the numeric conspicuity code (7000) via `vfr_squawk`; FAA keeps "squawk VFR" — the AIM idiom, verified live |
 | `no_reply` "how do you hear" for all dialects | FAA "how do you hear me" (AIM glossary) / ICAO "how do you read" (Doc 4444, CAP 413) |
 | `runway_change` ICAO "runway in use now X" | "runway in use X" |
 | `pushback_approved` "push and start" for all | FAA "pushback approved" / ICAO "push and start approved" |

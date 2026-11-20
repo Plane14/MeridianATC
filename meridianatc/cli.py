@@ -1688,7 +1688,7 @@ def _set_fields(source, rest: str, engine) -> None:
         return
     try:
         source.update(**fields)
-    except AttributeError as exc:
+    except (AttributeError, ValueError) as exc:
         console.print(f"[red]{exc}[/red]")
         return
     engine.refresh_state()
