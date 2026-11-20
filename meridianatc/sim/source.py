@@ -566,10 +566,12 @@ class SimConnectSource:
         # The fixed-wing trims: what a trim write reads back as and what
         # a "set for takeoff" checklist answer is checked against. Each
         # is per cent of the trim's own travel; the pitch convention is
-        # nose-down negative, nose-up positive, on either simulator.
-        ("ELEVATOR_TRIM_PCT", "elevator_trim_pct", "pct", "slow"),
-        ("AILERON_TRIM_PCT", "aileron_trim_pct", "pct", "slow"),
-        ("RUDDER_TRIM_PCT", "rudder_trim_pct", "pct", "slow"),
+        # nose-down negative, nose-up positive, on either simulator. The
+        # wrapper's own table asks for them in "Percent over 100", so the
+        # answer arrives a hundred times small -- hence "pct_ratio".
+        ("ELEVATOR_TRIM_PCT", "elevator_trim_pct", "pct_ratio", "slow"),
+        ("AILERON_TRIM_PCT", "aileron_trim_pct", "pct_ratio", "slow"),
+        ("RUDDER_TRIM_PCT", "rudder_trim_pct", "pct_ratio", "slow"),
         # The callouts. The bank every read, because "bank" is about a
         # moment; the needles and the selected speed in the rotation, a
         # needle coming alive being worth a second or two of lag.
@@ -1107,18 +1109,6 @@ class SimConnectSource:
         "PUSHBACK_ATTACHED": [
             "Whether the pushback tug is attached to the aircraft",
             b"PUSHBACK ATTACHED", b"Bool", "N"],
-        # The trims, per cent of their own travel -- the names the
-        # wrapper's table does not carry, defined here so the batched
-        # read can reach them (SDK "Aircraft Controls Variables").
-        "ELEVATOR_TRIM_PCT": [
-            "Elevator trim, per cent, nose-up positive",
-            b"ELEVATOR TRIM PCT", b"Percent", "N"],
-        "AILERON_TRIM_PCT": [
-            "Aileron trim, per cent, right positive",
-            b"AILERON TRIM PCT", b"Percent", "N"],
-        "RUDDER_TRIM_PCT": [
-            "Rudder trim, per cent, right positive",
-            b"RUDDER TRIM PCT", b"Percent", "N"],
     }
 
     # Entries in the wrapper's own tables whose unit the simulator has
@@ -1372,6 +1362,12 @@ class SimConnectSource:
             return math.degrees(float(raw))
         if kind == "deg":
             return normalize_angle(float(raw), source_is_radians=False)
+        if kind == "pct_ratio":
+            # Asked for in "Percent over 100": the honest answer is a
+            # fraction, 0.5 being 50 per cent. A magnitude over one can
+            # only be a wrapper that answered plain percent anyway.
+            value = float(raw)
+            return value * 100.0 if abs(value) <= 1.0 else value
         if kind == "pct":
             # Percent-over-100 variables can come back on the 0-16384
             # scale when a wrapper or a version ignores the requested
