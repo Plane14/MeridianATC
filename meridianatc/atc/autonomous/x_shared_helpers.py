@@ -462,11 +462,18 @@ class _Shared_helpers:
         if self._terrain_escaping():
             altitude = max(altitude or 0.0,
                            self.state.terrain_escape_alt)
-            vs_fpm = max(vs_fpm, self.performance.climb_fpm)
+            vs_fpm = max(vs_fpm or 0.0, self.performance.climb_fpm)
         else:
             floor = self._terrain_floor(state)
             if altitude and floor:
                 altitude = max(altitude, floor)
+                if altitude > (state.altitude_ft or 0.0) \
+                        and (vs_fpm or 0.0) <= 0.0:
+                    # The floor just put the bug over the aeroplane:
+                    # a rate still down is a descent ordered from
+                    # under the minimum, so the answer is the climb
+                    # back to it -- never the rate the phase asked.
+                    vs_fpm = self.performance.climb_fpm
         if altitude:
             d.altitude(self._safe_altitude(state, altitude, lim))
         avoid = self._avoid_heading_bug(state)
