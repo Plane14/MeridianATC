@@ -220,3 +220,80 @@ def test_the_escape_flies_a_climb_whatever_the_phase_asked():
     assert fo._dir.altitude.call_args.args[0] == pytest.approx(12000.0)
     vs = fo._dir.vertical_speed.call_args.args[0]
     assert vs > 0.0
+
+
+def test_a_floor_above_the_aeroplane_turns_the_descent_into_a_climb():
+    fo = _fo()
+    fo.state.phase = "descent"
+    fo._terrain_samples = [(47.0, 11.0, 9800.0, time.monotonic())]
+    fo.state.vs_bug_at = time.monotonic() - 10.0
+    state = _airborne(altitude_ft=9000.0, altitude_agl_ft=3000.0,
+                      indicated_airspeed_kt=220.0)
+    fo._apply_flight_director(state, altitude=4000.0, vs_fpm=-800.0,
+                              heading=100.0)
+    # The bug went to the 10600 floor -- and the rate was made the
+    # climb back to it, not left a descent under the minimum.
+    assert fo._dir.altitude.call_args.args[0] == pytest.approx(10600.0)
+    assert fo._dir.vertical_speed.call_args.args[0] > 0.0
+
+
+def test_the_level_cruise_answers_the_floor_too():
+    fo = _fo()
+    fo.crew = SimpleNamespace(checklists=None)
+    fo.brain = SimpleNamespace(route=None)
+    fo.state.phase = "cruise"
+    fo.state.tod_nm = 100.0
+    fo.state.vs_bug_at = time.monotonic() - 10.0
+    fo.session.phase = "cruise"
+    fo._terrain_samples = [(47.0, 11.0, 9800.0, time.monotonic())]
+    state = _airborne(altitude_ft=9000.0, altitude_agl_ft=3000.0,
+                      indicated_airspeed_kt=220.0)
+    fo._phase_cruise(state, time.monotonic())
+    # The level leg bypassed the director before, holding its bug into
+    # the rising ground: the floor owns the level the same way.
+    assert fo._dir.altitude.call_args.args[0] == pytest.approx(10600.0)
+    assert fo._dir.vertical_speed.call_args.args[0] > 0.0
+
+
+def _initial_climb(fo):
+    """The takeoff's hand-flown leg: speeds settled, airborne a moment."""
+    fo.state.sub = "initial_climb"
+    fo.state.airborne_at = time.monotonic() - 5.0
+    fo._speeds = SimpleNamespace(v1=140.0, vr=145.0, v2=150.0,
+                                 vapp=140.0)
+    fo.state.v2_kt = 150.0
+
+
+def test_the_pull_up_pulls_when_the_wing_can_pay_for_it():
+    fo = _fo()
+    _initial_climb(fo)
+    fo.state.terrain_escape_until = time.monotonic() + 20.0
+    state = _airborne(altitude_agl_ft=300.0, indicated_airspeed_kt=170.0,
+                      vertical_speed_fpm=150.0, pitch_deg=8.0)
+    fo._phase_takeoff(state, time.monotonic())
+    assert fo._dir.elevator.call_args.args[0] == pytest.approx(0.35)
+
+
+def test_the_pull_up_never_outranks_the_stall_guard():
+    fo = _fo()
+    _initial_climb(fo)
+    fo.state.terrain_escape_until = time.monotonic() + 20.0
+    # Below V2 - 5 with the escape live: the nose still comes down for
+    # speed -- a pull that ignores the guard is the stall, not the
+    # escape.
+    state = _airborne(altitude_agl_ft=300.0, indicated_airspeed_kt=138.0,
+                      vertical_speed_fpm=150.0, pitch_deg=8.0)
+    fo._phase_takeoff(state, time.monotonic())
+    assert fo._dir.elevator.call_args.args[0] == pytest.approx(-0.10)
+
+
+def test_the_pull_up_holds_the_climb_attitude_not_past_it():
+    fo = _fo()
+    _initial_climb(fo)
+    fo.state.terrain_escape_until = time.monotonic() + 20.0
+    # Already at the jet's 15-degree target the escape does not rotate
+    # further: past the attitude is the secondary stall.
+    state = _airborne(altitude_agl_ft=300.0, indicated_airspeed_kt=170.0,
+                      vertical_speed_fpm=150.0, pitch_deg=16.0)
+    fo._phase_takeoff(state, time.monotonic())
+    assert fo._dir.elevator.call_args.args[0] == pytest.approx(0.05)
