@@ -260,10 +260,10 @@ def test_director_trims_drive_the_trim_actuators(xp):
     assert director.trim_rudder(1.0)
     eventually(lambda: ("sim/cockpit2/controls/elevator_trim",
                         pytest.approx(.5, abs=1e-3)) in peer.writes)
+    eventually(lambda: ("sim/cockpit2/controls/rudder_trim",
+                        pytest.approx(1.0, abs=1e-3)) in peer.writes)
     assert ("sim/cockpit2/controls/aileron_trim",
             pytest.approx(-.25, abs=1e-3)) in peer.writes
-    assert ("sim/cockpit2/controls/rudder_trim",
-            pytest.approx(1.0, abs=1e-3)) in peer.writes
     # Trims are the cockpit's own actuators: no joystick override latches.
     assert not any("override_joystick" in path for path, _v in peer.writes)
 
