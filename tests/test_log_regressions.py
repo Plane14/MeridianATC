@@ -3092,7 +3092,7 @@ def test_the_pushback_toggle_is_not_sent_twice_for_one_tug():
     from meridianatc.sim.source import SimConnectSource
     source = SimConnectSource.__new__(SimConnectSource)
     source._connected = True
-    source._push_sent_at = 0.0
+    source._push_sent_at = float("-inf")
     source._state = SimpleNamespace(
         pushback_wait=False, pushback_attached=False)
     sent = []

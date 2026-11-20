@@ -691,7 +691,7 @@ class SimConnectSource:
         # When the pushback toggle was last sent: the event is a toggle,
         # so a second press while the first tug is still on its way sends
         # the tug home rather than hurry it up.
-        self._push_sent_at = 0.0
+        self._push_sent_at = float("-inf")
         # The two tiers, split once rather than on every read.
         self._fast = tuple((n, a, k) for n, a, k, tier in self.REQUESTS
                            if tier == "fast")
@@ -1029,7 +1029,7 @@ class SimConnectSource:
             self._next_slow = 0
             self._full_sweep = True
             self._seen_running = False
-            self._push_sent_at = 0.0
+            self._push_sent_at = float("-inf")
             log.info("connected to the simulator")
             return True
         except Exception as exc:
