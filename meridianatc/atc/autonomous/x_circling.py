@@ -142,7 +142,22 @@ class _Circling:
         # or the needles captured.
         route = getattr(getattr(self, "brain", None), "route", None)
         filed_floor = float(getattr(route, "arrival_floor_ft", 0.0) or 0.0)
-        return max(elev + 3000.0, filed_floor)
+        floor = max(elev + 3000.0, filed_floor)
+        dest = getattr(self.session, "destination", None)
+        if dest is not None and getattr(state, "has_position", False) \
+                and state.distance_to(dest.lat, dest.lon) > 30.0:
+            # Still outside the approach's own protection, the descent
+            # holds what the controller's minimum holds arrivals to:
+            # the highest terrain round the field and round the
+            # aeroplane on the way in. Three thousand over the runway
+            # is pattern height on a plain and the inside of a ridge
+            # at Innsbruck or Aspen.
+            from ...navdata import terrain
+            floor = max(floor,
+                        terrain.floor_ft(dest.lat, dest.lon, elev),
+                        terrain.floor_ft(state.latitude,
+                                         state.longitude, elev))
+        return floor
 
     def _configure_final(self, state) -> None:
         """The approach configuration, by distance to the threshold."""
@@ -322,6 +337,11 @@ class _Circling:
         recipe = self.state.approach_recipe
         floor = max(self._field_elevation(state) + 2000.0,
                     (state.altitude_ft or 0.0) + 500.0)
+        # And never below the ground the sim itself just read along the
+        # track: off a mountain field the missed climb goes over the
+        # same terrain the arrival was threading.
+        floor = max(floor, self._terrain_seen_ft()
+                    + self.TERRAIN_MARGIN_FT)
         self.state.missed_alt_ft = max(
             floor,
             self.session.assigned_altitude_ft or 0.0,

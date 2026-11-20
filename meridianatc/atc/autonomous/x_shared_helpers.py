@@ -453,6 +453,20 @@ class _Shared_helpers:
         # system answers nothing to the event and flies as it did.
         d.yaw_damper(True)
         lim = self._limits(state)
+        # A terrain pull-up outranks the phase's own numbers: whatever
+        # was being flown, the escape's climb is the bug until the
+        # moment is past. Short of it, the level the sim's own ground
+        # reads have set is as low as any phase may walk the aeroplane
+        # -- except where the approach's own path is the terrain
+        # answer, the way into a valley field is by the final's wedge.
+        if self._terrain_escaping():
+            altitude = max(altitude or 0.0,
+                           self.state.terrain_escape_alt)
+            vs_fpm = max(vs_fpm, self.performance.climb_fpm)
+        else:
+            floor = self._terrain_floor(state)
+            if altitude and floor:
+                altitude = max(altitude, floor)
         if altitude:
             d.altitude(self._safe_altitude(state, altitude, lim))
         avoid = self._avoid_heading_bug(state)
@@ -1051,6 +1065,170 @@ class _Shared_helpers:
                 or self.state.avoid_heading < 0.0:
             return -1.0
         return self._magnetic(self.state.avoid_heading, state)
+
+    # Below ten thousand feet the landing light is on; above the line
+    # it is off, and the taxi light is a ground light that is off for
+    # the whole flight -- the after-takeoff flow's answer, the same
+    # line the traffic code's LANDING_LIGHTS_BELOW_FT already flies.
+    LIGHTS_OFF_ABOVE_FT = 10000.0
+
+    def _manage_lights(self, state) -> None:
+        """Fly the lights the way a crew's memory items do.
+
+        Airborne, the landing light follows the ten-thousand line --
+        on below it, off above -- and the taxi light is off whenever
+        the wheels are free. Neither has a phase of its own: a crew
+        works them by height, so this runs every tick rather than
+        inside a step.
+        """
+        if getattr(state, "on_ground", True) \
+                or self.state.phase in (AutonomousPhase.PARKED,
+                                        AutonomousPhase.SHUTDOWN,
+                                        AutonomousPhase.COMPLETE,
+                                        AutonomousPhase.ERROR):
+            return
+        d = self.director
+        if getattr(state, "taxi_light", False):
+            d.taxi_light(False)
+        above = float(getattr(state, "pressure_altitude_ft", 0.0) or 0.0) \
+            or float(getattr(state, "altitude_ft", 0.0) or 0.0)
+        want_landing = above < self.LIGHTS_OFF_ABOVE_FT
+        if getattr(state, "landing_light", False) != want_landing:
+            d.landing_light(want_landing)
+
+    # How the FO keeps off the ground the sim is rendering: the
+    # elevation under the aeroplane -- altitude less the sim's own
+    # AGL -- sampled along the track; the AGL and sink that make a
+    # pull-up; the height kept over everything seen in the last two
+    # minutes; and how far inside the final's wedge the approach path
+    # itself is the terrain answer instead.
+    TERRAIN_SAMPLE_S = 2.0
+    TERRAIN_MEMORY_S = 120.0
+    TERRAIN_WARN_AGL_FT = 600.0
+    TERRAIN_WARN_VS_FPM = 400.0
+    TERRAIN_MARGIN_FT = 800.0
+    TERRAIN_ESCAPE_S = 20.0
+    TERRAIN_CONE_NM = 10.0
+
+    def _watch_terrain(self, state, now: float) -> None:
+        """Watch the ground the simulator reports under the aeroplane.
+
+        Both sims give the height above the terrain directly below, so
+        the surface's elevation is the altitude less that -- the
+        scenery's real surface rather than a database's, which is why a
+        LOWI or a VQPR the charts barely model still reads itself. The
+        numbers along the last two minutes' track set the level a
+        flight may not be walked below, and low without a climb over
+        ground away from the approach path is a pull-up on its own.
+
+        The final's wedge, the landing and the go-around are exempt on
+        purpose: there the approach path itself is the terrain answer,
+        and a watch that cannot be told down is a watch that cannot
+        land -- LOWI's ridges either side of the valley included. A
+        declared emergency's descent is its own business as well.
+        """
+        st = self.state
+        if getattr(state, "on_ground", True) \
+                or getattr(state, "paused", False) \
+                or not getattr(state, "has_position", False) \
+                or getattr(self, "_is_helicopter", False):
+            st.terrain_escape_until = 0.0
+            self._terrain_samples = []
+            return
+        alt = float(getattr(state, "altitude_ft", 0.0) or 0.0)
+        agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)
+        if 0.0 < agl < 25000.0:
+            samples = getattr(self, "_terrain_samples", None)
+            if samples is None:
+                samples = self._terrain_samples = []
+            if not samples \
+                    or now - samples[-1][3] >= self.TERRAIN_SAMPLE_S:
+                samples.append((state.latitude, state.longitude,
+                                alt - agl, now))
+                while now - samples[0][3] > self.TERRAIN_MEMORY_S:
+                    samples.pop(0)
+        if self._terrain_protected(state):
+            st.terrain_escape_until = 0.0
+            return
+        vs = float(getattr(state, "vertical_speed_fpm", 0.0) or 0.0)
+        # Low is trouble only when nothing is climbing away from it: a
+        # departure clawing past the local ridges at a healthy rate is
+        # flying, not striking.
+        if 0.0 < agl < self.TERRAIN_WARN_AGL_FT \
+                and vs < self.TERRAIN_WARN_VS_FPM:
+            if st.terrain_escape_until <= now:
+                self._emit(
+                    "info",
+                    f"Terrain warning: {agl:.0f} ft AGL away from the "
+                    "approach path, climbing away",
+                    "autonomous.terrain_escape")
+            st.terrain_escape_until = now + self.TERRAIN_ESCAPE_S
+            st.terrain_escape_alt = max(alt + 1500.0,
+                                        self._terrain_seen_ft() + 1500.0)
+
+    def _terrain_seen_ft(self) -> float:
+        """The highest ground elevation the sim has read under the
+        track lately, or zero while nothing has been sampled."""
+        samples = getattr(self, "_terrain_samples", None) or ()
+        return max((s[2] for s in samples), default=0.0)
+
+    def _terrain_escaping(self) -> bool:
+        """Whether the pull-up the watch demanded is still being flown."""
+        return time.monotonic() < self.state.terrain_escape_until
+
+    def _terrain_protected(self, state) -> bool:
+        """Whether the approach's own path, not this watch, owns the
+        height here: the flare and the rollout, the go-around's own
+        escape, the circle's deliberate low work, a declared
+        emergency's descent, and the wedge the final's course opens to
+        the field."""
+        st = self.state
+        if st.phase == AutonomousPhase.LANDING \
+                or st.sub in ("flare", "rollout", "go_around") \
+                or st.circling or st.emergency or st.emergency_descent:
+            return True
+        final = self._arrival_final()
+        return final is not None \
+            and final.in_cone(state, self.TERRAIN_CONE_NM, aligned=False)
+
+    def _terrain_floor(self, state) -> float:
+        """The level the ground seen lately keeps the aeroplane at or
+        above, or zero where the approach's own protection is what it
+        is flying."""
+        if self._terrain_protected(state):
+            return 0.0
+        seen = self._terrain_seen_ft()
+        return seen + self.TERRAIN_MARGIN_FT if seen else 0.0
+
+    def _arrival_final(self):
+        """The destination runway's final wedge, or None while nobody
+        knows the runway: built from the nav database where it can be,
+        and from the numbers the lineup measured where it cannot."""
+        session = getattr(self, "session", None)
+        dest = getattr(session, "destination", None)
+        runway = getattr(session, "arrival_runway", "") \
+            or (self.state.runway_key[1] if self.state.runway_key else "")
+        ident = getattr(dest, "ident", "") or ""
+        key = (ident, runway)
+        if getattr(self, "_arrival_final_key", ()) == key:
+            return self._arrival_final_value
+        final = None
+        if ident and runway:
+            try:
+                from ..final import final_for
+                final = final_for(getattr(self, "navdb", None),
+                                  ident, runway)
+            except Exception:
+                final = None
+        if final is None and runway and self.state.runway_heading > 0.0 \
+                and self.state.runway_lat:
+            from ..final import Final
+            final = Final(runway, self.state.runway_lat,
+                          self.state.runway_lon,
+                          self.state.runway_heading)
+        self._arrival_final_key = key
+        self._arrival_final_value = final
+        return final
 
     # Over the fix: this close is "crossed" to a crew timing a hold by
     # hand; and the turns are to the right, the standard pattern the

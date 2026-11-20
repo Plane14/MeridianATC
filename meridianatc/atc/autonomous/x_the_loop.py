@@ -80,6 +80,12 @@ class _The_loop:
         # See-and-avoid rides the same watch: a meeting a minute out is
         # a turn made now, not a go-around made at the merge.
         self._watch_traffic(state, now)
+        # The lights and the ground underneath ride the same pass: the
+        # ten-thousand line on the switches, and the sim's own elevation
+        # read under the aeroplane setting the level none of the phases
+        # may walk it below.
+        self._manage_lights(state)
+        self._watch_terrain(state, now)
         # The stall watch runs on the same cadence: a trigger held past
         # a gust hands the axes to the recovery, which flies them every
         # tick until the wing is flying again -- no mode selection waits

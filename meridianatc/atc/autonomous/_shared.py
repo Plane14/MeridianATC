@@ -359,6 +359,12 @@ class AutonomousState:
     stall_recovering: bool = False
     stall_warned: bool = False
     stall_count: int = 0
+    # The terrain watch (x_shared_helpers): how long a pull-up off low
+    # ground owns the climb, and the level it climbs to -- worked out
+    # from the elevation the sim itself reports under the aeroplane,
+    # not a database.
+    terrain_escape_until: float = 0.0
+    terrain_escape_alt: float = 0.0
     # The VS bug as last commanded, and when, for the slew-limited
     # descent entries of _apply_flight_director; and the AP bank cap
     # last asked for, so it is not re-sent every pass.

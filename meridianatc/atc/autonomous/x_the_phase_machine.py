@@ -1125,7 +1125,13 @@ class _The_phase_machine:
                                 or 0.0))
                         + 180.0) % 360.0) - 180.0 \
                 if runway_hdg > 0.0 else 0.0
+            escaping = now < getattr(
+                self.state, "terrain_escape_until", 0.0)
             bank_want = max(-12.0, min(12.0, 0.3 * hdg_err))
+            if escaping:
+                # The book's pull-up: wings level and the nose at the
+                # climb, not at the departure heading.
+                bank_want = 0.0
             d.aileron(max(-0.7, min(0.7,
                                     (bank_want - bank) / 30.0 * 0.8)))
             # The climb attitude is flown, not left where the rotation
@@ -1144,6 +1150,8 @@ class _The_phase_machine:
                 pull = 0.25
             else:
                 pull = 0.10
+            if escaping:
+                pull = max(pull, 0.35)
             d.elevator(self._g_pull_cap(state, pull))
             # Flaps up once safely airborne and fast -- except through a
             # windshear escape, where the book's rule is to hold the
