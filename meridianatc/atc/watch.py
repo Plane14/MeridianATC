@@ -567,12 +567,18 @@ class DeviationAssistWatch:
     # crew weaving in and out in bursts would otherwise start a fresh
     # settle on every one and never be warned at all.
     HOLD_S = 60.0
+    # The converging judge sees the trend, not the gust: a light single
+    # averaging three hundred a minute still dips under a hundred for
+    # seconds at a time, and each dip read alone is a "verify altitude".
+    VS_TAU_S = 10.0
 
     def __init__(self, navdb: NavDB, brain: ControllerBrain):
         self.navdb = navdb
         self.brain = brain
         # kind -> (since, last said, said so far)
         self._seen: dict[str, list] = {}
+        self._vs_avg = 0.0
+        self._vs_at = 0.0
 
     def look(self, session: FlightSession, station: Station | None, state,
              language: str = "en") -> Reply | None:
@@ -580,8 +586,17 @@ class DeviationAssistWatch:
             return None
         if station.position == "GND" or state is None or state.on_ground:
             self._seen.clear()
+            self._vs_at = 0.0
+            self._vs_avg = 0.0
             return None
         now = time.monotonic()
+        vs = float(getattr(state, "vertical_speed_fpm", 0.0) or 0.0)
+        if self._vs_at:
+            span = min(now - self._vs_at, self.VS_TAU_S)
+            self._vs_avg += (vs - self._vs_avg) * (span / self.VS_TAU_S)
+        else:
+            self._vs_avg = vs
+        self._vs_at = now
         off = self._off_now(session, state)
         p = self.brain.for_station(station, language)
         session.aircraft.language = language_of(p)
@@ -645,7 +660,10 @@ class DeviationAssistWatch:
                 # a descent: a light single near its ceiling makes two
                 # hundred a minute, and the last few hundred feet onto a
                 # level are flown at three hundred or less by anybody.
-                vs = getattr(state, "vertical_speed_fpm", 0.0) or 0.0
+                # The smoothed figure is what the call judges -- the
+                # instantaneous one dips under the bar in every gust.
+                vs = self._vs_avg if self._vs_at else \
+                    float(getattr(state, "vertical_speed_fpm", 0.0) or 0.0)
                 closing = (delta > 0.0 and vs >= 100.0) \
                     or (delta < 0.0 and vs <= -100.0)
                 if not closing:

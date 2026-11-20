@@ -596,7 +596,7 @@ class _Shared_helpers:
             target_alt = self._altitude_target(state)
             if target_alt and float(getattr(state, "altitude_ft", 0.0)
                                     or 0.0) < target_alt - 200.0:
-                climb_floor = 0.75
+                climb_floor = 0.90
         barber = float(getattr(state, "barber_pole_kt", 0.0) or 0.0)
         max_mach = float(getattr(state, "mach_max_operate", 0.0)
                          or getattr(state, "barber_pole_mach", 0.0) or 0.0)

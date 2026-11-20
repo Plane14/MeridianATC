@@ -110,6 +110,42 @@ def test_a_slow_climb_towards_the_level_is_not_a_deviation():
     assert not off(8900.0, 0.0)
 
 
+def test_a_gusty_slow_climb_is_still_converging():
+    """The 2026-11-20 climb: a Baron averaging three hundred a minute to
+    its cleared nine thousand, dipping under a hundred in the gusts, was
+    called for "verify altitude" every minute of the way. The trend
+    counts, not the gust."""
+    from unittest.mock import Mock
+
+    from meridianatc.atc.controller import ControllerBrain
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.atc.watch import DeviationAssistWatch
+    from meridianatc.navdata.db import Station
+    from meridianatc.sim.state import AircraftState
+
+    brain = ControllerBrain(Mock(), Phraseology())
+    brain.staffed = lambda station: True
+    watch = DeviationAssistWatch(Mock(), brain)
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    session.assigned_altitude_ft = 9000.0
+    station = Station("TEST", "APP", 124.5, "Approach")
+    session.establish(station)
+    alt = 6000.0
+    for _ in range(120):
+        alt += 10.0
+        state = AircraftState(altitude_ft=alt, on_ground=False,
+                              latitude=42.0, longitude=-8.0,
+                              vertical_speed_fpm=600.0)
+        watch._vs_at -= 0.5
+        assert watch.look(session, station, state) is None
+        state.vertical_speed_fpm = 30.0
+        watch._vs_at -= 0.5
+        assert watch.look(session, station, state) is None
+    assert "altitude" not in watch._seen
+
+
 def test_a_short_approach_read_back_tightens_the_base_turn():
     """"Make short approach" was said, read back, and the circuit flown
     exactly as wide as before: no command of that kind was carried out."""
