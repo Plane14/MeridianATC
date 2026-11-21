@@ -4,6 +4,7 @@ from ._shared import (
     LANGUAGE_NAMES,
     RADIO,
     Intent,
+    Phase,
     Reply,
     SpeechModelMissing,
     as_written,
@@ -494,6 +495,11 @@ class _Transmission:
         # approved" and then leaves the pilot to go and find the tug in a
         # menu has broken the one thing this program is for.
         if reply.ground == "pushback":
+            # The session's move past "cleared" is how the first officer
+            # knows the call was answered: an approval is asked for once,
+            # and the push it sends is what the wait on the tug watches.
+            if session.phase in (Phase.PREFLIGHT, Phase.CLEARED):
+                session.phase = Phase.PUSHBACK
             self._start_pushback()
 
         # And the other seat says the numbers back to you, on the interphone.

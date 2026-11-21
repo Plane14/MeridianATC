@@ -1545,6 +1545,76 @@ def test_the_brake_holds_until_the_tug_is_on():
     flight._dir.parking_brake.assert_called_once_with(False)
 
 
+def test_an_approved_pushback_is_not_asked_for_again():
+    """"Push and start approved" ends the asking: the session's move
+    past "cleared" is the answer heard, and a tug that never shows is
+    pressed for directly rather than asked for a second time."""
+    import time as _time
+
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _taxi_flight(stations=[_gnd()], phase="pushback")
+    flight.state.phase = AutonomousPhase.PUSHBACK
+    flight.state.sub = "wait"
+    flight.state.push_radio = True
+    flight.state.sub_entered_at = _time.monotonic() - 50.0
+    flight._fo_say = Mock(return_value=True)
+    flight._request_pushback = Mock()
+    state = SimpleNamespace(
+        pushback_wait=False, pushback_attached=False,
+        ground_speed_kt=0.0, on_ground=True)
+    flight._phase_pushback(state, 50.0)
+    flight._fo_say.assert_not_called()
+    assert not flight.state.push_radio
+    # Past the long wait the tug is pressed for, not asked for again.
+    flight.state.sub_entered_at = _time.monotonic() - 130.0
+    flight._phase_pushback(state, 130.0)
+    flight._request_pushback.assert_called_once()
+    flight._fo_say.assert_not_called()
+
+
+def test_an_unanswered_pushback_is_still_asked_again():
+    """The call nobody answered is the one repeated with patience:
+    still "cleared" on the session means the frequency heard nothing."""
+    import time as _time
+
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _taxi_flight(stations=[_gnd()], phase="cleared")
+    flight.state.phase = AutonomousPhase.PUSHBACK
+    flight.state.sub = "wait"
+    flight.state.push_radio = True
+    flight.state.sub_entered_at = _time.monotonic() - 50.0
+    flight._fo_say = Mock(return_value=True)
+    flight._request_pushback = Mock()
+    state = SimpleNamespace(
+        pushback_wait=False, pushback_attached=False,
+        ground_speed_kt=0.0, on_ground=True)
+    flight._phase_pushback(state, 50.0)
+    flight._fo_say.assert_called_once_with("pushback")
+    flight._request_pushback.assert_not_called()
+
+
+def test_the_fos_own_hold_marks_the_session():
+    """Stopped at the bars is the report the session waits on: a hold
+    reached on the route can sit far from the published end, the tower
+    works off the session, and a flight still "taxiing" was sent the
+    taxi instruction again every time it called ready."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    from meridianatc.atc.session import Phase
+    flight = _taxi_flight(stations=[_gnd()], phase="taxi_out")
+    flight.state.phase = AutonomousPhase.HOLDING_SHORT
+    flight.session.lined_up = False
+    flight.session.cleared_takeoff = False
+    flight.session.current_station = None
+    state = SimpleNamespace(ground_speed_kt=0.0, on_ground=True)
+    flight._phase_holding_short(state, 10.0)
+    assert flight.session.phase == Phase.HOLDING_SHORT
+    # A session already past the hold is not walked back to it.
+    flight._departure_possible = lambda s: True
+    flight.session.phase = Phase.LINED_UP
+    flight._phase_holding_short(state, 11.0)
+    assert flight.session.phase == Phase.LINED_UP
+
+
 def test_the_final_call_is_the_clearance_nobody_gives():
     """On a broadcast frequency each leg is announced; final clears."""
     from meridianatc.atc.autonomous import AutonomousPhase

@@ -280,6 +280,15 @@ class _The_phase_machine:
                     # A call on the frequency is repeated with patience,
                     # not streamed -- and one never answered falls back
                     # to the simulator's own tug before it is a failure.
+                    # An answered call is finished being a radio call:
+                    # the session's move past "cleared" is the approval,
+                    # and a tug that never shows is pressed for directly
+                    # rather than asked for on the radio a second time.
+                    if self.state.push_radio and getattr(
+                            getattr(self, "session", None), "phase", None) \
+                            not in (None, Phase.PREFLIGHT, Phase.CLEARED):
+                        self.state.push_radio = False
+                        self.state.push_retries = 0
                     retry_after = 40.0 if self.state.push_radio else 120.0
                     if self._sub_age() > retry_after \
                             and self.state.push_retries < 3:
@@ -352,6 +361,13 @@ class _The_phase_machine:
 
     def _phase_holding_short(self, state, now: float) -> None:
         """Holding short of runway, run before-takeoff checklist."""
+        # Stopped at the bars is itself the report the session's position
+        # guess could not make: a hold reached on the route can sit far
+        # from the published end, and the tower works off the session --
+        # a flight still "taxiing" is sent the taxi instruction forever.
+        if self.session.phase in (Phase.PREFLIGHT, Phase.CLEARED,
+                                  Phase.PUSHBACK, Phase.TAXI_OUT):
+            self.session.phase = Phase.HOLDING_SHORT
         # The clearance is the switch: a "line up and wait" or a takeoff
         # while the nose is still at the bars is strobes on already.
         self._clearance_strobes(state)

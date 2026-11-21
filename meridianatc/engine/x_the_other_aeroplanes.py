@@ -1119,6 +1119,14 @@ class _The_other_aeroplanes:
                                  if reply.instruction is not None else ""),
                     held=True)
         self.speak(reply.text, station, language=spoken)
+        if reply.ground == "pushback":
+            # The approval that waited out the congestion is still the one
+            # that calls the tug -- and the one the first officer reads as
+            # answered, so it is never asked for again.
+            if session is not None and session.phase in (
+                    Phase.PREFLIGHT, Phase.CLEARED):
+                session.phase = Phase.PUSHBACK
+            self._start_pushback()
         self._frequency_clear_at = now + 0.6
         return True
 
