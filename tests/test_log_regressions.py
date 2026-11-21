@@ -3423,6 +3423,40 @@ def test_the_roll_rejects_the_swing_it_cannot_save(monkeypatch):
     assert flight2.state.rejected
 
 
+def test_the_roll_leads_with_the_right_foot(monkeypatch):
+    """The engine's left-turning moment is the roll's standing load --
+    the capped damper spent the heading finding it, so the takeoff leads
+    with the right foot the way the books teach: full ask as the power
+    comes in, stood down by the speed the rudder is flying at, and the
+    damper's own reach on top of it past the old four-tenths."""
+    import meridianatc.atc.auto_nav as auto_nav
+    flight = _roll_flight()
+    spool = SimpleNamespace(throttle_pct=100.0,
+                            indicated_airspeed_kt=0.0,
+                            ground_speed_kt=0.0)
+    assert flight._right_foot(spool) > 0.25
+    fast = SimpleNamespace(throttle_pct=100.0,
+                           indicated_airspeed_kt=70.0,
+                           ground_speed_kt=70.0)
+    assert flight._right_foot(fast) == 0.0
+    monkeypatch.setattr(
+        auto_nav, "align",
+        lambda *a, **k: {"offset_m": -4.0, "along_m": 120.0,
+                         "correction_deg": 2.0})
+    flight.state.sub = "roll"
+    flight.state.sub_entered_at = 998.0
+    # Thirty off the strip's own heading: short of the reject, long past
+    # the lean a drooping damper alone ever asked.
+    veering = SimpleNamespace(
+        on_ground=True, ground_speed_kt=30.0, indicated_airspeed_kt=30.0,
+        parking_brake=False, latitude=41.235, longitude=-8.679,
+        heading_true=140.0, throttle_pct=100.0)
+    flight._ground_directional = Mock(return_value=0.55)
+    flight._phase_takeoff(veering, 1000.0)
+    sent = flight._dir.rudder.call_args[0][0]
+    assert sent > 0.5
+
+
 # ---------------------------------------------------------------------
 # the handoff landed, but the call that was owed on it never came --
 # and the pushback tug nobody ever called

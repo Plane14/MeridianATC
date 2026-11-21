@@ -474,6 +474,28 @@ class _The_checklist_answered:
         # the whole roll.
         return pedal * self._pedal_dir()
 
+    def _right_foot(self, state) -> float:
+        """The standing right-rudder a prop takeoff is flown with.
+
+        The engine's left-turning moment -- torque, the prop's
+        slipstream, P-factor where the tail is low -- is the roll's
+        standing load, and a damper that only answers the yaw it makes
+        has already spent the heading it was bought to keep. A pilot
+        leads with the right foot as the power comes in and stands it
+        down as the airflow builds; this is that, full ask below the
+        speed the rudder flies at, faded to nothing by two-thirds of
+        rotate where the correction alone is plenty.
+        """
+        throttle = max(0.0, min(1.0,
+                                (getattr(state, "throttle_pct", 0.0)
+                                 or 0.0) / 100.0))
+        ias = (getattr(state, "indicated_airspeed_kt", 0.0)
+               or getattr(state, "ground_speed_kt", 0.0) or 0.0)
+        rotate = (getattr(self.state, "rotate_speed_kt", 0.0) or 0.0) \
+            or 55.0
+        return 0.30 * throttle * max(
+            0.0, 1.0 - ias / max(1.0, rotate * 0.66))
+
     def _roll_aileron(self, state, gs_kt: float, takeoff: bool) -> float:
         """Aileron into the wind on the ground roll -- the AFH technique.
 

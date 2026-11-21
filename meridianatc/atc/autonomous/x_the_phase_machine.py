@@ -1024,7 +1024,14 @@ class _The_phase_machine:
                         self._goto_sub("abort")
                         return
             keep = self._ground_directional(
-                state, keep_hdg, gs, rate_cap=5.0)
+                state, keep_hdg, gs, rate_cap=5.0, pedal_max=0.6)
+            # The right foot a prop takeoff is flown with: the engine's
+            # left-turning moment is the roll's standing load, led
+            # before the heading can leave -- a damper that waits for
+            # the error spends the error first, and the capped share it
+            # was spending was half the foot the model wanted.
+            keep = max(-1.0, min(1.0, keep + self._right_foot(state)
+                                 * self._pedal_dir()))
             d.rudder(keep)
             d.steering(keep * _nws_fade(gs))
             # The yoke into the wind, eased off as the speed builds --
