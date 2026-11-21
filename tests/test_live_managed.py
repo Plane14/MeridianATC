@@ -168,6 +168,28 @@ def test_a_flight_bound_elsewhere_is_not_this_arrival():
     assert not injector._taken_over
 
 
+def test_a_transit_the_feed_calls_ground_is_still_an_overflight():
+    """TAP36RC, Lisbon to Porto, was called on_ground by the feed on
+    the low pass over Vigo, and having been seen flying here it was
+    adopted a taxi-in and sent to a ramp at a field it never filed.
+    The route outranks the wheels' word too: bound for somewhere the
+    feed knows, it is an overflight whatever the flags say."""
+    ground = Mock()
+    ground.to_xy.return_value = (100.0, 50.0)
+    ground.stand_at.return_value = None
+    ground.to_stand.return_value = object()
+    injector = _injector(
+        ground=ground,
+        _free_stand=Mock(return_value=SimpleNamespace(index=7)))
+    injector._live_flew.add("abc123")
+    flight = _flight(origin="LPPT", destination="LPPR", on_ground=True)
+    one = _seen(on_ground=True, ground_speed_kt=15.0,
+                vertical_speed_fpm=0.0, origin="LPPT", destination="LPPR")
+    assert injector._adopt_live(flight, one, 100.0) is False
+    assert flight.observed is True
+    assert not injector._taken_over
+
+
 def test_a_parked_live_aeroplane_is_left_to_the_feed():
     """Adopted when the real one starts moving, not on its stand."""
     stand = SimpleNamespace(index=3)

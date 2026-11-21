@@ -1112,16 +1112,19 @@ class _The_live_ones:
             return False
         if (flight.destination or "").upper() == ident:
             return True
-        if one.on_ground:
-            # Taxiing in or taxiing out: the one it flew here for first.
-            return one.hex in self._live_flew
         if flight.destination:
             # Bound for somewhere the feed knows: a transit whose
             # descent happens to read like this final is still the
             # other field's arrival -- the route outranks the
             # coincidence of shape, or every Porto approach over Vigo
-            # would be worked to a ramp it never filed for.
+            # would be worked to a ramp it never filed for. The wheels'
+            # word is no stronger: the feed calls a low pass on_ground
+            # often enough that the same transit, hex already seen
+            # flying, was taxied to a ramp at a field it overflew.
             return None
+        if one.on_ground:
+            # Taxiing in or taxiing out: the one it flew here for first.
+            return one.hex in self._live_flew
         if self._final_distance(one) is not None:
             return True                     # lined up and closing
         if (one.altitude_ft

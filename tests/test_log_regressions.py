@@ -1697,6 +1697,39 @@ def test_the_roll_decays_authority_the_plant_will_not_answer():
     assert flight._yaw_authority_b[3] < 30.0
 
 
+def test_the_rolls_pedal_holds_the_weaves_slow_half():
+    """The measured rate the roll's demand answers is the weave itself:
+    a pedal that chases it beat for beat pumps the swing the law exists
+    to damp -- each hard ask arriving in time to be the next overshoot's
+    push. The foot a roll is flown with is the demand's slow half: the
+    standing pressure the drift costs, held while the alternating part
+    is taken off. The asks here alternate the plant's full swing; what
+    leaves holds their mean and damps the pump."""
+    flight = _flier()
+    flight._turn_rate = Mock(side_effect=[-6.0, 6.0] * 8)
+    state = SimpleNamespace(heading_true=30.0, ground_speed_kt=40.0)
+    out = [flight._ground_directional(state, 50.0, 40.0,
+                                      rate_cap=5.0, pedal_max=0.8)
+           for _ in range(12)]
+    swing = max(out[-4:]) - min(out[-4:])
+    assert swing < 0.4
+    # The drift correction itself is not damped away: the mean of the
+    # alternating asks still reaches the pedal as a standing lean.
+    assert sum(out[-4:]) / 4.0 > 0.1
+
+
+def test_a_new_roll_does_not_inherit_the_last_rolls_pedal():
+    """The demand a rejected roll walked toward its stop was the next
+    roll's opening ask -- the memory carried through ``_goto_sub``, so
+    a fresh roll answers its first seconds with a foot nobody asked
+    for. A roll starts on the demand it is given, not the one the last
+    roll ended on."""
+    flight = _flier()
+    flight._roll_pedal_out = 0.9
+    flight._goto_sub("roll")
+    assert flight._roll_pedal_out == 0.0
+
+
 def _gsx(**kw):
     """A GsxLink stub: the state GSX reports, and the asks it takes."""
     state = SimpleNamespace(

@@ -350,13 +350,22 @@ class _The_checklist_answered:
         # reaches it, so the shortfall is measured straight: sustained
         # weak answers decay the band's figure until the asks bite.
         est = self._yaw_authority_at(gs)
+        # A weave is not a weak answer: the measured rate spends half of
+        # every swing crossing zero, and each crossing scores as the
+        # shortfall this decay exists to correct -- the figure decays,
+        # the asks grow, and the hunt the bigger pedal excites deepens.
+        # Weak is only counted while the answer is actually absent --
+        # the rate opposing the demand or the nose dead -- and the
+        # streak is longer than the half of a weave's cycle that can
+        # fake it, never while the rate swings the demand's own way.
         if abs(prev) >= 0.15 and gs >= 1.0 \
-                and abs(rate) < 0.30 * abs(prev) * est:
+                and abs(rate) < 0.30 * abs(prev) * est \
+                and (rate * prev <= 0.0 or abs(rate) <= 0.5):
             weak = getattr(self, "_weak_streak", 0) + 1
         else:
             weak = 0
         self._weak_streak = weak
-        if weak >= 4:
+        if weak >= 6:
             self._weak_streak = 0
             band = _gs_band(gs)
             bands = getattr(self, "_yaw_authority_b", None)
@@ -459,9 +468,17 @@ class _The_checklist_answered:
                 pedal_max, pedal + max(-0.3, min(0.3, err * 0.02))))
         if abs(err) < 1.5 and abs(rate) < 1.0:
             pedal = 0.0
-        # Walked like the taxi wheel: a kick at roll speed is a swerve
-        # the sim's own veer is already providing.
+        # Walked like the taxi wheel, and smoothed harder than it: the
+        # measured rate this demand answers is itself the weave, and a
+        # pedal that chases it beat for beat pumps the swing it exists
+        # to damp -- every hard ask arriving in time to be the next
+        # overshoot's push. The foot a takeoff roll is flown with is
+        # the demand's slow half: the standing pressure the drift
+        # costs, held while the fast counter-swings are taken off. A
+        # real excursion still arrives -- a beat later, at the pace a
+        # leg makes one.
         prev_pedal = getattr(self, "_roll_pedal_out", 0.0)
+        pedal = prev_pedal + 0.35 * (pedal - prev_pedal)
         step = pedal - prev_pedal
         step = max(-self._PEDAL_SLEW, min(self._PEDAL_SLEW, step))
         pedal = self._roll_pedal_out = prev_pedal + step
