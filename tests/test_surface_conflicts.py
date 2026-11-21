@@ -503,6 +503,30 @@ def test_fo_rejected_takeoff_recovers_to_a_fresh_lineup():
     assert fo.session.cleared_takeoff is False
 
 
+def test_fo_await_is_not_trapped_by_the_taxi_out_route():
+    """The taxi-out route stays on the session after the roll, and a
+    session still in TAKEOFF matches no taxi branch: the await used to
+    return on the stale route every tick and the rejected aeroplane sat
+    where it stopped for the rest of the session."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    from meridianatc.atc.session import Phase
+    fo = _fo()
+    fo.state.phase = AutonomousPhase.TAKEOFF
+    fo.state.sub = "await"
+    fo.state.sub_entered_at = 0.0          # long past the hold
+    fo.state.rejected = True
+    fo.state.abort_announced = True
+    fo.session = _fo_session(_path(), phase=Phase.TAKEOFF)
+    fo._compute_speeds = Mock()
+    state = _state(51.15, -0.19, ground_speed_kt=0.0)
+    fo._phase_takeoff(state, 100.0)
+    assert fo.state.phase == AutonomousPhase.LINE_UP
+    assert fo.state.sub == "align"
+    # The spent clearance no longer reads as one to roll on.
+    assert fo.session.phase == Phase.LINED_UP
+    assert fo.session.cleared_takeoff is False
+
+
 def test_fo_wait_clearance_holds_and_never_errors():
     fo = _fo()
     from meridianatc.atc.autonomous import AutonomousPhase

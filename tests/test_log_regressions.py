@@ -1366,13 +1366,13 @@ def test_takeoff_power_is_advanced_not_slammed():
     flight._lever_at = 0.0
     flight._set_takeoff_power()
     assert flight.director.throttle.call_args[0][0] == 0.0
+    flight._lever_at -= 1.0
+    flight._set_takeoff_power()
+    lever = flight.director.throttle.call_args[0][0]
+    assert 0.3 < lever < 1.0
     for _ in range(4):
         flight._lever_at -= 1.0
         flight._set_takeoff_power()
-    lever = flight.director.throttle.call_args[0][0]
-    assert 0.5 < lever < 1.0
-    flight._lever_at -= 1.0
-    flight._set_takeoff_power()
     assert flight.director.throttle.call_args[0][0] == 1.0
     flight.director.takeoff_power.assert_called()
 

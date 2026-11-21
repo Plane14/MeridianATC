@@ -511,6 +511,14 @@ class _The_checklist_answered:
         flipped banks the wrong way the same gentle amount, not into
         the weeds.
         """
+        # ``aircraft_wind_x_kt`` is the wind's velocity on the body
+        # axis: positive blows toward the right wing -- a crosswind
+        # from the left. The yoke goes *into* the wind, the wing down
+        # on the side it comes from -- the opposite sign of the drift
+        # it is fighting. Held the other way the deflection's adverse
+        # yaw leans on the same side the prop's turning moment does,
+        # which is how a left-quartering wind ends a roll off the
+        # runway's left edge.
         xwind = float(getattr(state, "aircraft_wind_x_kt", 0.0) or 0.0)
         rotate = max(40.0, float(self.performance.rotate_kt or 60.0))
         if takeoff:
@@ -519,7 +527,7 @@ class _The_checklist_answered:
         else:
             # Light at touchdown speed, full at a fast walk.
             scale = max(0.15, min(1.0, 1.5 - gs_kt / 60.0))
-        return max(-0.3, min(0.3, xwind * 0.02)) * scale
+        return max(-0.3, min(0.3, -xwind * 0.02)) * scale
 
     def _breakaway_lever(self) -> float:
         """The momentary lever that starts the aeroplane rolling.
@@ -579,7 +587,7 @@ class _The_checklist_answered:
         self._prop_levers()
         cap = (self._engine_limit_cap(state, takeoff=True)
                if state is not None else 1.0)
-        lever = self._slew_lever(min(1.0, cap))
+        lever = self._slew_lever(min(1.0, cap), up_per_s=0.45)
         d.throttle(lever)
         if lever >= 1.0:
             d.takeoff_power()
@@ -620,11 +628,13 @@ class _The_checklist_answered:
         vs = float(getattr(state, "vertical_speed_fpm", 0.0) or 0.0)
         along = getattr(self, "_roll_along", None)
         left = getattr(self, "_roll_left", None)
+        pedal = getattr(self, "_roll_demand", None)
         dist = (f" along {along:.0f} m left {left:.0f} m"
                 if along is not None and left is not None else "")
+        ask = f" pedal {pedal:+.2f}" if pedal is not None else ""
         log.info(
-            "%s: ias %.1f gs %.1f pitch %+.1f vs %+.0f rotate %.0f%s",
-            sub, ias, gs, pitch, vs, rotate_at, dist)
+            "%s: ias %.1f gs %.1f pitch %+.1f vs %+.0f rotate %.0f%s%s",
+            sub, ias, gs, pitch, vs, rotate_at, dist, ask)
 
     def _ground_still(self, state, now: float) -> bool:
         """Whether the aeroplane has refused to move under power for a

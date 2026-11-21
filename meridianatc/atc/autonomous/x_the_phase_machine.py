@@ -1024,7 +1024,7 @@ class _The_phase_machine:
                         self._goto_sub("abort")
                         return
             keep = self._ground_directional(
-                state, keep_hdg, gs, rate_cap=5.0, pedal_max=0.6)
+                state, keep_hdg, gs, rate_cap=5.0, pedal_max=0.8)
             # The right foot a prop takeoff is flown with: the engine's
             # left-turning moment is the roll's standing load, led
             # before the heading can leave -- a damper that waits for
@@ -1032,6 +1032,7 @@ class _The_phase_machine:
             # was spending was half the foot the model wanted.
             keep = max(-1.0, min(1.0, keep + self._right_foot(state)
                                  * self._pedal_dir()))
+            self._roll_demand = keep
             d.rudder(keep)
             d.steering(keep * _nws_fade(gs))
             # The yoke into the wind, eased off as the speed builds --
@@ -1199,9 +1200,14 @@ class _The_phase_machine:
             if getattr(self.session, "taxi_path", None):
                 if self.session.phase == Phase.TAXI_IN:
                     self._transition(AutonomousPhase.TAXI_IN)
-                elif self.session.phase == Phase.TAXI_OUT:
+                    return
+                if self.session.phase == Phase.TAXI_OUT:
                     self._transition(AutonomousPhase.TAXI_OUT)
-                return
+                    return
+                # A route still on the session from the taxi out is not
+                # the way off -- the tower's phase never left the roll's
+                # for it, so the hold falls through to the reject reset
+                # below rather than wait on a route nobody gave.
             # Nobody's route came -- a rejected takeoff does not park
             # the aeroplane mid-strip. Once it has been held a breath,
             # the reject is worked off like a crew works it: the
@@ -1214,6 +1220,13 @@ class _The_phase_machine:
                 self.state.abort_announced = False
                 self.state.aligned = False
                 self.session.cleared_takeoff = False
+                # The roll's clearance was spent on the roll that was
+                # refused: the session's TAKEOFF would be read back as
+                # the clearance it came with, and the next lineup would
+                # roll on a word nobody re-gave. The tower's book says
+                # what is true -- an aeroplane that stopped on the strip
+                # -- until a fresh clearance or a vacate route moves it.
+                self.session.phase = Phase.LINED_UP
                 self._transition(AutonomousPhase.LINE_UP)
                 self._goto_sub("align")
             return
@@ -1836,7 +1849,7 @@ class _The_phase_machine:
                         rate_cap=4.0))
                 xwind = float(getattr(state, "aircraft_wind_x_kt", 0.0)
                               or 0.0)
-                d.aileron(max(-0.15, min(0.15, xwind * 0.02)))
+                d.aileron(max(-0.15, min(0.15, -xwind * 0.02)))
                 # Touchdown must come; a flare that floats is a go-around.
                 if now - self.state.flare_at > 15.0 and agl > 10.0:
                     self._start_go_around(state)

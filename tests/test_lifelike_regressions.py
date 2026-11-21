@@ -444,12 +444,15 @@ def _roll_state(xwind_kt: float):
 
 
 def test_the_takeoff_roll_holds_aileron_into_the_wind_and_relaxes():
+    # aircraft_wind_x_kt positive is the wind blowing toward the right
+    # wing -- a crosswind from the left. The yoke leans into the wind:
+    # left wing down, a negative roll demand.
     flight = _flight()
     flight._perf = SimpleNamespace(rotate_kt=110.0)
     state = _roll_state(15.0)
     start = flight._roll_aileron(state, 0.0, takeoff=True)
     near_vr = flight._roll_aileron(state, 105.0, takeoff=True)
-    assert start == pytest.approx(0.3)
+    assert start == pytest.approx(-0.3)
     assert abs(near_vr) < abs(start) * 0.3
 
 
@@ -460,7 +463,7 @@ def test_the_landing_roll_grows_the_into_wind_aileron_as_it_slows():
     fast = flight._roll_aileron(state, 100.0, takeoff=False)
     slow = flight._roll_aileron(state, 25.0, takeoff=False)
     assert abs(fast) == pytest.approx(0.3 * 0.15)
-    assert slow == pytest.approx(0.3)
+    assert slow == pytest.approx(-0.3)
 
 
 def test_a_nav_stuck_on_a_stale_course_is_flown_to_the_fix():
