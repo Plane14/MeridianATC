@@ -54,6 +54,11 @@ struct FollowMe {
 struct NativeAssign {
     std::string id, type;
     int slot = 0;
+    // Where the flight is when the slot is claimed, degrees and feet,
+    // so a fresh plane starts at the controller's position, not wherever
+    // the slot was left. Missing numbers mean "no seed".
+    bool pos = false;
+    double lat = 0, lon = 0, ele = 0;
 };
 
 struct Packet {
@@ -143,6 +148,12 @@ inline Packet Parse(const std::string& wire) {
             if (assign.slot < 1 || assign.slot > 63 ||
                 !slots.insert(assign.slot).second)
                 throw std::invalid_argument("slot");
+            if (a.contains("lat") || a.contains("lon") || a.contains("alt")) {
+                assign.lat = Number(a, "lat", -90, 90);
+                assign.lon = Number(a, "lon", -180, 180);
+                assign.ele = Number(a, "alt", -2000, 100000);
+                assign.pos = true;
+            }
             p.native.push_back(std::move(assign));
         }
         return p;
