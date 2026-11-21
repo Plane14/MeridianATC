@@ -483,6 +483,11 @@ class _Shared_helpers:
             self.state.ap_speed_mode = True
             self._manage_throttle(state, speed_kt)
         now = time.monotonic()
+        flc = False
+        # The demand, not the bug: the slew opens at zero on its first
+        # tick, and a mode released on the slewed figure is released in
+        # the same breath it was asked for.
+        vs_demanded = bool(vs_fpm)
         if vs_fpm:
             vs_fpm = max(lim["vs_dn_fpm"], min(float(vs_fpm),
                                              lim["vs_up_fpm"]))
@@ -491,8 +496,19 @@ class _Shared_helpers:
             # pitch answer follows a ramp instead of a stair.
             vs_fpm = self._vs_slew(state, vs_fpm, now)
             d.vertical_speed(vs_fpm)
-            d.vs_hold(True)
-            self.state.ap_vs_mode = True
+            if self._ap_mode == "managed" and self.state.phase in (
+                    AutonomousPhase.CLIMB, AutonomousPhase.DESCENT,
+                    AutonomousPhase.CRUISE):
+                flc = self._flc_owning(state, now)
+            # One vertical mode at a time: where level-change has been
+            # confirmed on the axis the VS hold stays out of it -- the
+            # two are exclusive, and both asserted is the autopilot
+            # flipping FL and VS a write apart, the flicker a descent
+            # flew the whole way down. ``None`` is the probe still out:
+            # VS is held off so it cannot knock the asked-for mode back
+            # off before its status answers.
+            d.vs_hold(flc is False)
+            self.state.ap_vs_mode = flc is False
         else:
             self.state.vs_bug_cmd = 0.0
             self.state.vs_bug_at = now
@@ -513,7 +529,10 @@ class _Shared_helpers:
         if own > 0.0:
             cap = min(cap, own)
         self._cap_bank(cap)
-        if self._ap_mode == "managed":
+        if self._ap_mode == "managed" and not vs_demanded \
+                and self.state.phase in (AutonomousPhase.CLIMB,
+                                         AutonomousPhase.DESCENT,
+                                         AutonomousPhase.CRUISE):
             # Managed legs climb and descend on the flight-level-change
             # mode where the model has it -- a step inside the cruise
             # too, the way the real mode flies a small level change on
@@ -522,15 +541,55 @@ class _Shared_helpers:
             # holds the levers at the climb/descent extreme it was
             # flying and the speed decays toward the stall before the
             # holds pull it back.
-            if vs_fpm and self.state.phase in (
-                    AutonomousPhase.CLIMB, AutonomousPhase.DESCENT,
-                    AutonomousPhase.CRUISE):
-                d.level_change(True)
-            elif self.state.phase in (AutonomousPhase.CLIMB,
-                                      AutonomousPhase.DESCENT,
-                                      AutonomousPhase.CRUISE) \
-                    and abs(vs_fpm) < 1:
-                d.level_change(False)
+            d.level_change(False)
+            self._flc_asked_at = 0.0
+
+    # Where the mode's own status is readable, this long is an engage
+    # asked for and never taken -- the model has no level-change, and
+    # asking again every tick knocks the VS hold it does have off the
+    # axis a write at a time.
+    _FLC_PROBE_S = 2.0
+
+    def _flc_owning(self, state, now: float) -> bool:
+        """Whether flight-level-change owns the vertical axis this tick.
+
+        ``True`` -- the mode is read back engaged and owns the axis;
+        ``None`` -- the engage is still out and nothing else may assert
+        the axis while its answer is waited on; ``False`` -- the VS
+        hold is the vertical mode to fly, either because the model
+        showed it has no level-change or because there is no source to
+        read the mode back from at all (the legacy both-asked ordering,
+        where the last write wins on models that have the mode and VS
+        simply persists on those that do not).
+        """
+        sim = getattr(getattr(self, "director", None), "sim", None)
+        read = getattr(sim, "value", None)
+        if read is None:
+            # No source or no readback on it at all: the legacy
+            # both-asked ordering -- FLC where the model takes it, VS
+            # asserted alongside and winning where it does not.
+            self.director.level_change(True)
+            return False
+        if getattr(self, "_flc_refused", False):
+            return False
+        engaged = bool((read("control:speed_status") or 0.0) >= 1.0)
+        if engaged:
+            # Keep it up -- the mode write is idempotent once engaged;
+            # a later drop re-opens the probe below on a fresh clock.
+            self._flc_asked_at = 0.0
+            self.director.level_change(True)
+            return True
+        # Still asking: the answer lands on the next reads or it does
+        # not. While the probe is out the VS hold stays OFF the axis --
+        # asserted alongside, its engage knocks the level-change off a
+        # write later and the probe can never see the mode it asked
+        # for. A model that never shows the mode is called refused.
+        self._flc_asked_at = getattr(self, "_flc_asked_at", 0.0) or now
+        self.director.level_change(True)
+        if now - self._flc_asked_at > self._FLC_PROBE_S:
+            self._flc_refused = True
+            return False
+        return None
 
     def _climb_within_speed(self, state, vs_fpm: float, lim) -> float:
         """A climb rate the aeroplane has the airspeed for.

@@ -243,6 +243,96 @@ def test_the_bank_cap_is_sent_once_per_change():
     assert fo._dir.max_bank.call_count == 2
 
 
+# -- the vertical-mode exclusivity ---------------------------------------------
+
+
+def _managed_fo():
+    """A first officer in managed AP mode, descending."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo = _fo()
+    fo._ap_mode = "managed"
+    fo.state.phase = AutonomousPhase.DESCENT
+    return fo
+
+
+def _probe_sim(fo, status):
+    """A sim source with a mode-status readback, on both the officer
+    and the director so the director property keeps the mock."""
+    sim = Mock()
+    sim.value = Mock(return_value=status)
+    fo.sim = sim
+    fo._dir.sim = sim
+    return sim
+
+
+def test_managed_flc_keeps_the_vs_hold_off_the_axis():
+    """Level-change read back engaged: it owns the vertical axis and the
+    VS hold stays off -- both asserted was the FL/VS flicker the
+    descent flew the whole way down."""
+    fo = _managed_fo()
+    _probe_sim(fo, 1.0)                            # speed_status: FLC on
+    state = AircraftState(on_ground=False, autopilot=True)
+    fo._apply_flight_director(state, altitude=3000.0, vs_fpm=-800.0,
+                              speed_kt=180.0)
+    fo._dir.vs_hold.assert_called_with(False)
+    fo._dir.level_change.assert_called_with(True)
+    assert fo.state.ap_vs_mode is False
+
+
+def test_the_probe_holds_vs_off_until_the_mode_answers():
+    """While the engage is still out nothing asserts the axis beside it
+    -- a VS engage now would knock the asked-for mode off before its
+    status could ever read back."""
+    fo = _managed_fo()
+    _probe_sim(fo, 0.0)                            # nothing engaged yet
+    state = AircraftState(on_ground=False, autopilot=True)
+    fo._apply_flight_director(state, altitude=3000.0, vs_fpm=-800.0,
+                              speed_kt=180.0)
+    fo._dir.vs_hold.assert_called_with(False)
+    fo._dir.level_change.assert_called_with(True)
+
+
+def test_a_model_without_level_change_is_flown_on_vs():
+    """The probe times out refused: the engage stops knocking the VS
+    hold off the axis and VS is the vertical mode from then on."""
+    import time
+    fo = _managed_fo()
+    _probe_sim(fo, 0.0)
+    state = AircraftState(on_ground=False, autopilot=True)
+    now = time.monotonic()
+    assert fo._flc_owning(state, now) is None          # probe armed
+    assert fo._flc_owning(state, now + 0.5) is None    # still asking
+    assert fo._flc_owning(state, now + 3.0) is False   # refused
+    asks = fo._dir.level_change.call_count
+    assert fo._flc_owning(state, now + 4.0) is False   # the VS era
+    assert fo._dir.level_change.call_count == asks     # asked no more
+
+
+def test_no_readback_keeps_the_both_asked_ordering():
+    """A source with no mode readback at all keeps the legacy path --
+    VS asserted alongside the level-change ask, and the last write wins
+    on models that have the mode."""
+    fo = _managed_fo()
+    # fo._dir.sim is None -- no source, no readback on it.
+    state = AircraftState(on_ground=False, autopilot=True)
+    fo._apply_flight_director(state, altitude=3000.0, vs_fpm=-800.0,
+                              speed_kt=180.0)
+    fo._dir.vs_hold.assert_called_with(True)
+    fo._dir.level_change.assert_called_with(True)
+    assert fo.state.ap_vs_mode is True
+
+
+def test_the_direct_mode_still_flies_the_vs_bug():
+    """Direct AP mode never touches the level-change mode."""
+    fo = _fo()
+    state = AircraftState(on_ground=False, autopilot=True)
+    fo._apply_flight_director(state, altitude=3000.0, vs_fpm=-800.0,
+                              speed_kt=180.0)
+    fo._dir.vs_hold.assert_called_with(True)
+    fo._dir.level_change.assert_not_called()
+    assert fo.state.ap_vs_mode is True
+
+
 # -- the rotorcraft ------------------------------------------------------------
 
 

@@ -501,6 +501,14 @@ class SimConnectSource:
         ("GENERAL_ENG_MIXTURE_LEVER_POSITION:1", "mixture_pct", "raw", "slow"),
         ("AUTOPILOT_MASTER", "autopilot", "bool", "slow"),
         ("GPS_DRIVES_NAV1", "gps_drives_nav1", "bool", "slow"),
+        # The level-change mode's own status, for the first officer's
+        # probe: X-Plane reads the same fact back as
+        # ``control:speed_status``, and the probe asks for it under that
+        # name on either simulator. Fast, not slow -- the probe gives
+        # the mode two seconds to show engaged, and a slow rotation's
+        # three-second answer would refuse a mode that engaged on time.
+        ("AUTOPILOT_FLIGHT_LEVEL_CHANGE", "control:speed_status",
+         "bool", "fast"),
         ("PITOT_HEAT", "pitot_heat", "bool", "slow"),
         ("FUEL_TOTAL_QUANTITY", "fuel_total_gal", "raw", "slow"),    # Gallons
         ("SPOILERS_ARMED", "spoilers_armed", "bool", "slow"),
@@ -1156,6 +1164,14 @@ class SimConnectSource:
                     return self._values[attr]
                 return None
         return None
+
+    def value(self, attribute):
+        """One subscribed variable's last answer, without asking again --
+        the batched read's own figure. For the mode probes the first
+        officer makes every pass, which want the freshest answer the
+        rotation already carries and no fetch of their own.
+        """
+        return self._values.get(attribute)
 
     # ------------------------------------------------------------------
 
