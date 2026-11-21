@@ -1790,6 +1790,80 @@ def test_the_fos_own_hold_marks_the_session():
     assert flight.session.phase == Phase.LINED_UP
 
 
+def _hold_point_engine():
+    """The phase driver with LEVX's 01 threshold behind the hold test.
+
+    The south stands sit three hundred metres from the 01 threshold --
+    inside the hold radius -- which is how a parked aeroplane was marked
+    at the holding point and sent to the tower before it had ever moved.
+    """
+    from meridianatc.engine.x_the_other_aeroplanes import (
+        _The_other_aeroplanes)
+    engine = _The_other_aeroplanes.__new__(_The_other_aeroplanes)
+    ends = [("01", 11.4, SimpleNamespace(
+        le_ident="01", he_ident="19",
+        le_lat=42.221298, le_lon=-8.629660,
+        he_lat=42.242500, he_lon=-8.623890))]
+    engine.navdb = SimpleNamespace(runway_ends=lambda ident: ends)
+    return engine
+
+
+def _departure_session(phase):
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    session = FlightSession(Aircraft(parse_callsign("CS-TSP")))
+    session.departure = SimpleNamespace(ident="LEVX")
+    session.departure_runway = "01"
+    session.phase = phase
+    return session
+
+
+def test_a_parked_stand_near_the_end_is_not_a_holding_point():
+    """Cleared on a south stand at Vigo, never rolled: the stand sits
+    inside the hold radius, but a holding point is reached by taxiing,
+    so the session stays cleared and ground keeps the flight."""
+    from meridianatc.atc.session import Phase
+    from meridianatc.sim.state import AircraftState
+    engine = _hold_point_engine()
+    session = _departure_session(Phase.CLEARED)
+    parked = AircraftState(latitude=42.22342, longitude=-8.63195,
+                           altitude_ft=837.0, on_ground=True,
+                           ground_speed_kt=0.0)
+    engine._update_phase(parked, parked, session)
+    assert session.phase == Phase.CLEARED
+    # The instruction's phase is no witness either: taxi_out written by
+    # the issued taxi, the aeroplane still on its brakes.
+    session.phase = Phase.TAXI_OUT
+    engine._update_phase(parked, parked, session)
+    assert session.phase == Phase.TAXI_OUT
+
+
+def test_the_hold_is_marked_only_after_the_taxi_rolls():
+    """The same point counts once the aeroplane has been seen moving:
+    rolled off the stand, then stopped at the bars, is a hold reached
+    the way a hold is reached."""
+    from meridianatc.atc.session import Phase
+    from meridianatc.sim.state import AircraftState
+    engine = _hold_point_engine()
+    session = _departure_session(Phase.PREFLIGHT)
+    rolling = AircraftState(latitude=42.22342, longitude=-8.63195,
+                            altitude_ft=837.0, on_ground=True,
+                            ground_speed_kt=8.0)
+    engine._update_phase(rolling, rolling, session)
+    assert session.phase == Phase.TAXI_OUT
+    assert session.left_the_stand
+    at_the_bars = AircraftState(latitude=42.22450, longitude=-8.63050,
+                                altitude_ft=837.0, on_ground=True,
+                                ground_speed_kt=0.0)
+    engine._update_phase(rolling, at_the_bars, session)
+    assert session.phase == Phase.HOLDING_SHORT
+    # The witness is spent with the journey it counted for: the phase
+    # has left the taxiing set, so the next look clears it.
+    engine._update_phase(at_the_bars, at_the_bars, session)
+    assert not session.left_the_stand
+
+
 def test_the_final_call_is_the_clearance_nobody_gives():
     """On a broadcast frequency each leg is announced; final clears."""
     from meridianatc.atc.autonomous import AutonomousPhase

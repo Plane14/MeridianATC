@@ -489,6 +489,13 @@ class FlightSession:
     # --- airport operations ---
     departure_runway: str = ""
     arrival_runway: str = ""
+    # Seen rolling on the way out -- the ground-speed readings have shown
+    # the aeroplane moving since this outbound journey began. It is what
+    # separates a holding point reached by taxiing from a stand that
+    # happens to sit near the runway end: the distance to the threshold
+    # alone cannot tell the two apart (a south stand at Vigo is three
+    # hundred metres from the 01 threshold).
+    left_the_stand: bool = False
     taxi_route: list[str] = field(default_factory=list)
     hold_short_of: str = ""
     # The same route on the simulator's own taxiways, where it came from

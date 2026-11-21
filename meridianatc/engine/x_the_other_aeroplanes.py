@@ -1834,6 +1834,16 @@ class _The_other_aeroplanes:
 
     def _update_phase(self, previous: AircraftState, state: AircraftState,
                       session: FlightSession) -> None:
+        # Rolled on the way out: the only witness that separates a holding
+        # point reached by taxiing from a stand that happens to sit near
+        # the runway end -- the distance to the threshold cannot tell the
+        # two apart, so the mark below is made only on its strength.
+        # Leaving the taxiing phases ends the journey it counted for.
+        if session.phase in self._TAXIING_OUT:
+            if state.on_ground and state.ground_speed_kt > 5:
+                session.left_the_stand = True
+        else:
+            session.left_the_stand = False
         if previous.on_ground and not state.on_ground and session.rollout_liftoff_at:
             # Off the rollout, not a takeoff: back to the approach, and the
             # "landed without a clearance" advisory stays spent so a bounce
@@ -1912,11 +1922,15 @@ class _The_other_aeroplanes:
             # no.
             session.phase = Phase.TAXI_OUT
         elif (state.on_ground and session.phase in self._TAXIING_OUT
+                and session.left_the_stand
                 and self._reached_the_holding_point(state, session)):
             # Nothing ever set this phase, which is why nobody was sent to the
             # tower and why the cabin was never told to sit down: a flight went
             # from taxiing to airborne with the holding point in between and no
-            # name for the part in the middle.
+            # name for the part in the middle. The hold still has to be
+            # reached by taxiing, though -- a stand near the departure end is
+            # inside the same radius, and an aeroplane that has not rolled yet
+            # is parked, whatever the map says.
             session.phase = Phase.HOLDING_SHORT
         elif not state.on_ground:
             if session.phase is Phase.DEPARTURE and self._enroute_now(state,
