@@ -302,7 +302,8 @@ class _The_loop:
         and the descent gets an AGL floor so a sim AI's late level-off
         cannot sail the aeroplane past the approach it never starts.
         """
-        if self.session.phase == Phase.DESCENT:
+        if self.session.phase == Phase.DESCENT \
+                and self.state.phase != AutonomousPhase.DESCENT:
             self._transition(AutonomousPhase.DESCENT)
             return
         if self.session.phase == Phase.APPROACH:
