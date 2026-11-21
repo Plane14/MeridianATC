@@ -27,6 +27,7 @@ from ._shared import (
     LIVE_TAXIWAY_M,
     M_PER_DEG,
     OBSERVED_CEILING_FT,
+    PARKED_RANGE_NM,
     PILOT_FINAL_NM,
     PUSHBACK_DEG,
     PUSHBACK_KT,
@@ -392,6 +393,11 @@ class _The_live_ones:
         if not one.on_ground:
             return (one.altitude_ft - self.field.elevation_ft
                     ) <= OBSERVED_CEILING_FT
+        if not known and distance > PARKED_RANGE_NM:
+            # Moving on the ground this far out is taxiing at the next
+            # airport, not on this one's taxiways: the feed hears much
+            # further than a field's own ground is its business.
+            return False
         return (known or one.ground_speed_kt >= TAXIING_KT
                 or self._on_runway(one))
 
@@ -1111,6 +1117,15 @@ class _The_live_ones:
             return one.hex in self._live_flew
         if self._final_distance(one) is not None:
             return True                     # lined up and closing
+        if (one.altitude_ft
+                > self.field.elevation_ft + self.OUT_OF_SIGHT_FT
+                or haversine_nm(self.field.latitude, self.field.longitude,
+                                one.latitude, one.longitude)
+                > self.radius_nm):
+            # Already past where a worked departure is kept: adopted
+            # anyway, it would be handed straight back at its next
+            # word -- nobody's to fly it.
+            return None
         if (one.vertical_speed_fpm > 300.0
                 and flight.phase in ("taxi", "holding", "lineup",
                                      "takeoff", "departed")):
@@ -1228,6 +1243,7 @@ class _The_live_ones:
                 flight.phase = "final" if to_run is not None else "inbound"
             else:
                 flight.phase = "departed"
+                flight.live_airborne = True
                 flight.distance_nm = haversine_nm(
                     self.field.latitude, self.field.longitude,
                     flight.latitude, flight.longitude)
@@ -1296,6 +1312,7 @@ class _The_live_ones:
         flight.assigned_speed_kt = None
         flight.target.clear()
         flight.extending = False
+        flight.live_airborne = False
         flight.held_since = 0.0
         flight.step = 0
         flight.next_at = 0.0

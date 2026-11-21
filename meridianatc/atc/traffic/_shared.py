@@ -277,6 +277,10 @@ class Flight:
     lead_distance_nm: float = 0.0
     lead_at: tuple | None = None   # (lat, lon) of the real one now
     live_held: str = ""          # "" | "runway" | "give way"
+    # Adopted off the feed already flying (_adopt_live): it keeps its own
+    # course and keeps climbing, rather than being drawn down the field's
+    # departure profile underneath its real altitude.
+    live_airborne: bool = False
     cleared: bool = False        # delivery has given it its clearance
 
     # The procedures it is flying, picked the way the controller picks

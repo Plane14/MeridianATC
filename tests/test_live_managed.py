@@ -607,3 +607,107 @@ def test_a_live_aeroplane_the_sim_cannot_draw_is_handed_back():
     assert flight in injector.flights
     assert dropped == []
     assert injector._materialising == []
+
+
+def test_a_departure_adopted_already_flying_keeps_climbing():
+    """UAL145 was adopted off the feed at altitude and drawn back down
+    to five thousand over the field -- the invented departure profile.
+    A live one keeps climbing the way the real one is, until it is out
+    of sight and the feed's copy of it takes over again."""
+    injector = _injector()
+    flight = _flight(observed=False, source="live", phase="departed",
+                     arriving=False, live_airborne=True,
+                     altitude_ft=8000.0, heading=120.0, airborne_model=True,
+                     hold=None, procedure_pair=None, procedure_nav=None,
+                     performance=SimpleNamespace(cruise_kt=430.0),
+                     target=SimpleNamespace())
+    injector._aim(flight)
+    assert flight.target.altitude_ft > flight.altitude_ft
+    assert flight.target.altitude_ft > (
+        injector.field.elevation_ft + injector.OUT_OF_SIGHT_FT)
+    # And on its own course, not the departure runway's heading it
+    # never took off from.
+    assert flight.target.heading == pytest.approx(120.0)
+
+
+def test_a_live_departure_off_the_strip_flies_the_runway_out():
+    """Adopted on the centreline it did take off here: the runway's
+    course is its own. It still climbs out of sight rather than
+    levelling at the invented five thousand."""
+    injector = _injector()
+    flight = _flight(observed=False, source="live", phase="departed",
+                     arriving=False, live_airborne=False, heading=247.0,
+                     airborne_model=True, hold=None, procedure_pair=None,
+                     procedure_nav=None,
+                     performance=SimpleNamespace(cruise_kt=430.0),
+                     target=SimpleNamespace())
+    injector._aim(flight)
+    assert flight.target.heading == pytest.approx(247.0)
+    assert flight.target.altitude_ft > (
+        injector.field.elevation_ft + injector.OUT_OF_SIGHT_FT)
+
+
+def test_an_invented_departure_still_levels_at_five_thousand():
+    injector = _injector()
+    flight = _flight(observed=False, source="", phase="departed",
+                     arriving=False, heading=247.0, airborne_model=True,
+                     hold=None, procedure_pair=None, procedure_nav=None,
+                     performance=SimpleNamespace(cruise_kt=430.0),
+                     target=SimpleNamespace())
+    injector._aim(flight)
+    assert flight.target.altitude_ft == pytest.approx(5184.0)
+
+
+def test_a_departure_adopted_already_past_keeping_is_the_feeds():
+    """ANE1114 was adopted above the out-of-sight height and handed
+    straight back seven seconds later -- flown by nobody in between.
+    One already past where a worked aeroplane is kept stays the
+    feed's."""
+    injector = _injector()
+    flight = _flight(origin="", destination="", arriving=False,
+                     altitude_ft=11500.0)
+    one = _seen(origin="", destination="", altitude_ft=11500.0,
+                vertical_speed_fpm=1500.0)
+    assert injector._adopt_live(flight, one, 100.0) is False
+    assert flight.observed is True
+    assert not injector._taken_over
+    # Too far out is the same answer.
+    lat, lon = _on_strip(THRESHOLD_25R, along_nm=15.0)
+    flight = _flight(origin="", destination="", arriving=False,
+                     altitude_ft=5000.0)
+    one = _seen(origin="", destination="", altitude_ft=5000.0,
+                vertical_speed_fpm=1500.0, latitude=lat, longitude=lon)
+    assert injector._adopt_live(flight, one, 100.0) is False
+    assert flight.observed is True
+
+
+def test_a_ground_aeroplane_at_the_next_airport_is_not_ours():
+    """SWR20D and BEL8HR were taxiing at Porto and each got a Vigo
+    strip sixty miles from its runways -- the feed hears that far,
+    but a field's own ground is only its own."""
+    injector = _injector()
+    lat, lon = _on_strip(THRESHOLD_25R, along_nm=6.0)
+    far = _seen(on_ground=True, ground_speed_kt=12.0,
+                vertical_speed_fpm=0.0, latitude=lat, longitude=lon)
+    far.positioned = True
+    assert not injector._works_here(far)
+    # A strip it already has it keeps; a moving one close in is a strip.
+    assert injector._works_here(far, known=True)
+    near = _seen(on_ground=True, ground_speed_kt=12.0,
+                 vertical_speed_fpm=0.0)
+    near.positioned = True
+    assert injector._works_here(near)
+
+
+def test_an_airborne_adoptee_gets_out_of_sight_on_its_own_course():
+    """Across the runway's axis the old along-the-strip measure never
+    grew -- ours stayed "in sight" at zero miles however far the real
+    one went. Its distance is how far it is from the field."""
+    injector = _injector()
+    lat, lon = _on_strip(THRESHOLD_25R, along_nm=0.0, across_nm=15.0)
+    flight = _flight(observed=False, source="live", phase="departed",
+                     arriving=False, live_airborne=True,
+                     latitude=lat, longitude=lon, runway="25R",
+                     altitude_ft=8000.0)
+    injector._after_flying(flight)
+    assert flight.distance_nm == pytest.approx(15.0, abs=0.5)

@@ -197,6 +197,20 @@ class _Flying_them:
             target.speed_kt = performance.cruise_kt
             target.altitude_ft = elevation + CLIMB_TO_FT
             target.intent = "climbing out"
+            if getattr(flight, "source", "") == "live":
+                # A live departure keeps climbing the way the real one
+                # is, until it is out of sight and the feed's copy of
+                # it takes over again. Levelling five thousand feet
+                # over the field is an invented one's answer; adopted
+                # above that, the same target was a descent out of a
+                # real climb.
+                target.altitude_ft = (elevation + self.OUT_OF_SIGHT_FT
+                                      + 1000.0)
+                if getattr(flight, "live_airborne", False):
+                    # Adopted already flying, it is on its own course
+                    # to wherever the real one is going -- not up the
+                    # runway's heading, which it never took off from.
+                    target.heading = flight.heading
         elif phase in _CIRCUIT_PHASES:
             self._circuit(flight, heading, elevation)
         elif phase == "go_around":
@@ -580,6 +594,12 @@ class _Flying_them:
         along, _across = self._runway_frame(flight, end[2])
         if flight.arriving or flight.phase in _CIRCUIT_PHASES:
             flight.distance_nm = max(0.0, -along)
+        elif getattr(flight, "live_airborne", False):
+            # Keeping its own course rather than the runway's axis:
+            # how far it has gone is how far it is from the field.
+            flight.distance_nm = haversine_nm(
+                self.field.latitude, self.field.longitude,
+                flight.latitude, flight.longitude)
         else:
             flight.distance_nm = max(0.0, along)
 
