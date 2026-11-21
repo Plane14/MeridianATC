@@ -932,6 +932,31 @@ class _The_phase_machine:
                     self.state.runway_heading, lookahead_m=200.0)
                 keep_hdg = (self.state.runway_heading + min(
                     8.0, max(-8.0, cl["correction_deg"]))) % 360.0
+                # The roll the books abandon: a heading forty-odd
+                # degrees off the strip's own is the swing a takeoff
+                # is lost to -- the wheel and rudder demand never asks
+                # for it, so its answer is the plant's, and a plant
+                # that answers with a swing is not one the aeroplane
+                # is flown off behind. The wheels past the pavement's
+                # edge is the same verdict measured the other way. A
+                # reject is for while the wheels still touch: past
+                # liftoff the aeroplane is flown, not stopped.
+                if state.on_ground:
+                    hdg_off = abs(((state.heading_true or 0.0)
+                                   - self.state.runway_heading + 540.0)
+                                  % 360.0 - 180.0)
+                    off_side = (abs(cl["offset_m"])
+                                > self._runway_half_m() + 10.0)
+                    if hdg_off > 45.0 or off_side:
+                        self.state.rejected = True
+                        self._emit("error",
+                                   "Rejected takeoff: "
+                                   + ("off the side of the runway"
+                                      if off_side else
+                                      "could not keep runway heading"),
+                                   "autonomous.rejected_direction")
+                        self._goto_sub("abort")
+                        return
                 # The runway's own yardstick, from the point the roll
                 # began: past the far threshold on the wheels is an
                 # overrun whatever the clock said, and more than half

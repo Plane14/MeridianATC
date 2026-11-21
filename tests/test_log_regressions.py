@@ -1660,6 +1660,22 @@ def test_the_rollout_holds_the_line_on_the_rudder_alone():
     assert rudder != 0.0
 
 
+def test_the_roll_does_not_relearn_the_pedals_sign():
+    """A takeoff roll's yaw is not the wheel's own answer -- at takeoff
+    power the prop's left-turning moment disagrees with a right demand
+    under either sign, and the vote read each as the axis inverted:
+    four flips in nine seconds, the inverted half of the flapping
+    feeding the veer it was meant to cure. The sign is the taxi law's
+    business, where the wheel owns the yaw; the roll keeps what taxi
+    learned and asks nothing more."""
+    flight = _flier()
+    flight._pedal_check = Mock(
+        side_effect=AssertionError("voted on the roll"))
+    state = SimpleNamespace(heading_true=30.0, ground_speed_kt=40.0)
+    for _ in range(6):
+        flight._ground_directional(state, 50.0, 40.0, rate_cap=5.0)
+
+
 def _gsx(**kw):
     """A GsxLink stub: the state GSX reports, and the asks it takes."""
     state = SimpleNamespace(
@@ -1935,6 +1951,113 @@ def test_the_routes_own_bars_are_the_holding_point():
                                 ground_speed_kt=0.0)
     engine._update_phase(rolling, at_the_bars, session)
     assert session.phase == Phase.HOLDING_SHORT
+
+
+def _rolling_read(on_ground, kt=45.0):
+    from meridianatc.sim.state import AircraftState
+    return AircraftState(latitude=42.232, longitude=-8.627,
+                         altitude_ft=840.0, on_ground=on_ground,
+                         ground_speed_kt=kt)
+
+
+def test_the_gears_word_on_the_roll_is_not_a_landing():
+    """A takeoff roll at speed unloads and touches its gear again, and a
+    skipped frame reads the same: taken at face value the pair spent the
+    takeoff clearance on the bounce and wrote a touchdown on the roll --
+    which is how a departure that never left its strip got sent around.
+    One airborne read is the gear answering; the re-touch after it is the
+    bounce's other half, not a landing nobody flew."""
+    from meridianatc.atc.session import Phase
+    engine = _hold_point_engine()
+    session = _departure_session(Phase.TAKEOFF)
+    session.cleared_takeoff = True
+    engine._update_phase(_rolling_read(True, 40.0),
+                         _rolling_read(False), session)
+    assert session.phase == Phase.TAKEOFF
+    engine._update_phase(_rolling_read(False),
+                         _rolling_read(True, 48.0), session)
+    assert session.phase == Phase.TAKEOFF
+    assert not session.touchdown_at
+    assert session.cleared_takeoff
+
+
+def test_liftoff_is_the_airborne_read_that_persists():
+    """Flight on the way out is the airborne read still airborne on the
+    next poll: the first read keeps the roll's phase, the second makes
+    the departure and spends the clearance the way a liftoff does."""
+    from meridianatc.atc.session import Phase
+    engine = _hold_point_engine()
+    session = _departure_session(Phase.TAKEOFF)
+    session.cleared_takeoff = True
+    ground = _rolling_read(True, 40.0)
+    air1 = _rolling_read(False)
+    air2 = _rolling_read(False, 52.0)
+    engine._update_phase(ground, air1, session)
+    assert session.phase == Phase.TAKEOFF
+    assert session.cleared_takeoff
+    engine._update_phase(air1, air2, session)
+    assert session.phase == Phase.DEPARTURE
+    assert not session.cleared_takeoff
+
+
+def test_a_roll_liftoff_is_never_off_a_landing_rollout():
+    """Nothing on the way out rolls out of a landing: a stale touchdown
+    from the last circuit cannot turn the roll's airborne read into a
+    touch-and-go, so the rollout liftoff stays unarmed while the session
+    is still the takeoff it was cleared for."""
+    import time as _time
+    from meridianatc.atc.session import Phase
+    engine = _hold_point_engine()
+    engine.station = None
+    session = _departure_session(Phase.TAKEOFF)
+    session.touchdown_at = _time.monotonic() - 3.0
+    session.touchdown_runway = "01"
+    session.rollout_min_kt = 60.0
+    engine._note_rollout_liftoff(_rolling_read(True),
+                                 _rolling_read(False, 55.0), session)
+    assert not session.rollout_liftoff_at
+    # The same read off a real rollout is the thing it is for.
+    session.phase = Phase.LANDED
+    engine._note_rollout_liftoff(_rolling_read(True),
+                                 _rolling_read(False, 55.0), session)
+    assert session.rollout_liftoff_at
+
+
+def test_the_surface_watch_does_not_call_the_roll_a_landing():
+    """The advisory is a controller looking out of the window: an
+    aeroplane still in its takeoff phase has not landed, whatever the
+    gear's word just did at speed."""
+    from meridianatc.atc.session import Phase
+    from meridianatc.atc.watch import SurfaceWatch
+    station = SimpleNamespace(ident="LEVX", position="TWR",
+                              callsign="Vigo Tower",
+                              callsign_in=lambda lang: "Vigo Tower")
+    p = SimpleNamespace(language="en")
+    p.landed_without_clearance = Mock(return_value="landed no clearance")
+    brain = SimpleNamespace(
+        issues_clearances=lambda s: True,
+        rest_of_taxi=lambda *a, **k: None,
+        for_station=lambda *a, **k: p)
+    navdb = SimpleNamespace(
+        airport=lambda ident: SimpleNamespace(
+            ident="LEVX", lat=42.232, lon=-8.627),
+        runway_at=lambda *a, **k: "01",
+        runway_strip=lambda *a, **k: "01",
+        station_for=lambda *a, **k: None)
+    watch = SurfaceWatch(navdb, brain)
+    session = _departure_session(Phase.TAKEOFF)
+    session.cleared_runway = "01"
+    reply = watch.look(session, station,
+                       _rolling_read(True, 50.0),
+                       _rolling_read(False, 50.0))
+    assert reply is None
+    p.landed_without_clearance.assert_not_called()
+    # A departure that comes back down is the landing it watches for.
+    session.phase = Phase.DEPARTURE
+    reply = watch.look(session, station,
+                       _rolling_read(True, 50.0),
+                       _rolling_read(False, 50.0))
+    assert reply is not None
 
 
 def test_the_final_call_is_the_clearance_nobody_gives():
@@ -3258,6 +3381,46 @@ def test_a_healthy_roll_is_not_rejected_for_a_lagging_read():
     assert flight2.state.rejected
     assert ("abort",) in [c.args for c in
                           flight2._goto_sub.call_args_list]
+
+
+def test_the_roll_rejects_the_swing_it_cannot_save(monkeypatch):
+    """The keep demand never asked for the swing -- it is capped at the
+    correction the paint is owed -- so a roll answering with one is the
+    plant's doing, and the books' takeoff it loses is stopped on the
+    pavement that is left, not flown off pointed across the grass. The
+    crash in the log rotated at fifty-five knots a hundred and thirty
+    degrees off the strip's own heading."""
+    import meridianatc.atc.auto_nav as auto_nav
+    flight = _roll_flight()
+    flight.state.sub = "roll"
+    flight.state.sub_entered_at = 998.0
+    monkeypatch.setattr(
+        auto_nav, "align",
+        lambda *a, **k: {"offset_m": -4.0, "along_m": 120.0,
+                         "correction_deg": 2.0})
+    veering = SimpleNamespace(
+        on_ground=True, ground_speed_kt=38.0, indicated_airspeed_kt=38.0,
+        parking_brake=False, latitude=41.235, longitude=-8.679,
+        heading_true=110.0)
+    flight._phase_takeoff(veering, 1000.0)
+    assert flight.state.rejected
+    assert ("abort",) in [c.args for c in
+                          flight._goto_sub.call_args_list]
+    # The wheels off the pavement's edge is the same verdict measured
+    # the other way.
+    flight2 = _roll_flight()
+    flight2.state.sub = "roll"
+    flight2.state.sub_entered_at = 998.0
+    monkeypatch.setattr(
+        auto_nav, "align",
+        lambda *a, **k: {"offset_m": 40.0, "along_m": 120.0,
+                         "correction_deg": 2.0})
+    off = SimpleNamespace(
+        on_ground=True, ground_speed_kt=38.0, indicated_airspeed_kt=38.0,
+        parking_brake=False, latitude=41.235, longitude=-8.679,
+        heading_true=170.0)
+    flight2._phase_takeoff(off, 1000.0)
+    assert flight2.state.rejected
 
 
 # ---------------------------------------------------------------------

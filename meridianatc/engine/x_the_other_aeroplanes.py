@@ -1743,6 +1743,12 @@ class _The_other_aeroplanes:
         surface watch reads it as a takeoff."""
         if not (previous.on_ground and not state.on_ground):
             return
+        # Outbound has no rollout to lift off: while the session is the takeoff
+        # roll the airborne read is a gear bounce or a liftoff, never the end
+        # of a landing -- and a stale touchdown from the last circuit must not
+        # say otherwise.
+        if session.phase in (Phase.LINED_UP, Phase.TAKEOFF):
+            return
         if not session.touchdown_at:
             return
         elapsed = time.monotonic() - session.touchdown_at
@@ -1862,6 +1868,18 @@ class _The_other_aeroplanes:
                 session.left_the_stand = True
         else:
             session.left_the_stand = False
+        # The gear's word on a roll is not a landing's: at takeoff speed the
+        # struts unload and touch again, a skipped sim frame reads the same,
+        # and taken at face value the pair spends the takeoff clearance on a
+        # bounce and writes a touchdown on a roll -- which is how a departure
+        # that never left its strip got sent around. Outbound, flight is only
+        # the airborne read that is still airborne on the next poll; a single
+        # read is the gear answering, and a re-touch inside the roll is the
+        # other half of the same bounce, not a landing nobody flew.
+        rolling_out = session.phase in (Phase.LINED_UP, Phase.TAKEOFF)
+        session.roll_air_ticks = 0 if (
+            state.on_ground or not rolling_out
+        ) else session.roll_air_ticks + 1
         if previous.on_ground and not state.on_ground and session.rollout_liftoff_at:
             # Off the rollout, not a takeoff: back to the approach, and the
             # "landed without a clearance" advisory stays spent so a bounce
@@ -1869,7 +1887,8 @@ class _The_other_aeroplanes:
             session.phase = Phase.APPROACH
             session.occupying_runway = ""
             return
-        if previous.on_ground and not state.on_ground:
+        if (previous.on_ground and not state.on_ground and not rolling_out) \
+                or (rolling_out and session.roll_air_ticks >= 2):
             if session.phase.outbound:
                 session.phase = Phase.DEPARTURE
             # The clearance was for this departure and is now spent. Leaving
@@ -1886,7 +1905,7 @@ class _The_other_aeroplanes:
             # and the last one is no longer the one being taxied in from.
             session.advisories.discard("landed_without_clearance")
             session.landed_cleared = False
-        elif not previous.on_ground and state.on_ground:
+        elif not previous.on_ground and state.on_ground and not rolling_out:
             session.phase = Phase.LANDED
             session.going_around = False
             # Remembered, so a liftoff straight off this rollout can be told

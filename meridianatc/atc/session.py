@@ -496,6 +496,12 @@ class FlightSession:
     # alone cannot tell the two apart (a south stand at Vigo is three
     # hundred metres from the 01 threshold).
     left_the_stand: bool = False
+    # Consecutive airborne readings while the session is still the takeoff
+    # roll: at speed the gear's own word is noisy -- the struts unload and
+    # touch again, a skipped sim frame reads the same -- so outbound, one
+    # airborne read is a bounce and only the one that keeps answering is a
+    # liftoff. Counted only in the roll phases; zero everywhere else.
+    roll_air_ticks: int = 0
     taxi_route: list[str] = field(default_factory=list)
     hold_short_of: str = ""
     # The same route on the simulator's own taxiways, where it came from

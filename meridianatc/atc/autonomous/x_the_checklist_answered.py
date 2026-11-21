@@ -464,7 +464,14 @@ class _The_checklist_answered:
         step = pedal - prev_pedal
         step = max(-self._PEDAL_SLEW, min(self._PEDAL_SLEW, step))
         pedal = self._roll_pedal_out = prev_pedal + step
-        self._pedal_check(pedal, rate, gs)
+        # No ``_pedal_check`` here: the roll's yaw is not the wheel's
+        # own answer. At takeoff power the prop's left-turning moment
+        # disagrees with a right demand under either sign, and the
+        # vote read that as an inverted axis four times in nine
+        # seconds -- the inverted half of the flapping doubling the
+        # veer it was meant to cure. The axis's sign is learned where
+        # the wheel owns the yaw -- the taxi law's -- and stands for
+        # the whole roll.
         return pedal * self._pedal_dir()
 
     def _roll_aileron(self, state, gs_kt: float, takeoff: bool) -> float:
