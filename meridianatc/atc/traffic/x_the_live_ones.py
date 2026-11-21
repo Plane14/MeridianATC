@@ -1115,6 +1115,13 @@ class _The_live_ones:
         if one.on_ground:
             # Taxiing in or taxiing out: the one it flew here for first.
             return one.hex in self._live_flew
+        if flight.destination:
+            # Bound for somewhere the feed knows: a transit whose
+            # descent happens to read like this final is still the
+            # other field's arrival -- the route outranks the
+            # coincidence of shape, or every Porto approach over Vigo
+            # would be worked to a ramp it never filed for.
+            return None
         if self._final_distance(one) is not None:
             return True                     # lined up and closing
         if (one.altitude_ft

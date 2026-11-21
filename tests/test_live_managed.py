@@ -153,6 +153,21 @@ def test_an_overflight_is_left_to_the_feed():
     assert not injector._taken_over
 
 
+def test_a_flight_bound_elsewhere_is_not_this_arrival():
+    """RYR893Z, LIMC to Porto, descended over Vigo inside the shape a
+    final makes and was adopted, landed, and sent to the ramp -- for a
+    field it never filed. The route the feed looked up outranks the
+    coincidence of geometry: bound for somewhere it knows, it is an
+    overflight whatever it is lined up on."""
+    injector = _injector(_final_distance=Mock(return_value=5.0))
+    flight = _flight(origin="LIMC", destination="LPPR", arriving=False)
+    one = _seen(origin="LIMC", destination="LPPR",
+                vertical_speed_fpm=-1200.0)
+    assert injector._adopt_live(flight, one, 100.0) is False
+    assert flight.observed is True
+    assert not injector._taken_over
+
+
 def test_a_parked_live_aeroplane_is_left_to_the_feed():
     """Adopted when the real one starts moving, not on its stand."""
     stand = SimpleNamespace(index=3)
