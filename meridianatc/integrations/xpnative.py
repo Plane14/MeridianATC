@@ -181,8 +181,11 @@ class NativePilot:
         if (m.get("lat") is not None and m.get("lon") is not None
                 and t_lat is not None and t_lon is not None):
             dlat = math.radians(t_lat - m["lat"])
-            dlon = math.radians(t_lon - m["lon"]) * math.cos(
-                math.radians(t_lat))
+            # The antimeridian turns a tiny eastward gap into nearly a
+            # full circle west -- wrap before measuring.
+            dlon = math.radians(
+                (t_lon - m["lon"] + 180.0) % 360.0 - 180.0
+            ) * math.cos(math.radians(t_lat))
             dnm = math.hypot(dlat, dlon) * 3440.065
             if dnm > 0.02:
                 bearing = math.degrees(math.atan2(dlon, dlat)) % 360
