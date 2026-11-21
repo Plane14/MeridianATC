@@ -172,6 +172,24 @@ class NativePilot:
             return out
         out[f"{_CONTROLS}/parking_brake[{slot}]"] = 0.0
 
+        # Position recovery: what the tower sequenced is the target
+        # point, not the target heading. A plane that fell behind on an
+        # acceleration or drifted on a turn steers back toward the point
+        # -- gradually blended in over ~2.8 km of separation.
+        t_lat = motion.get("lat", target.get("lat"))
+        t_lon = motion.get("lon", target.get("lon"))
+        if (m.get("lat") is not None and m.get("lon") is not None
+                and t_lat is not None and t_lon is not None):
+            dlat = math.radians(t_lat - m["lat"])
+            dlon = math.radians(t_lon - m["lon"]) * math.cos(
+                math.radians(t_lat))
+            dnm = math.hypot(dlat, dlon) * 3440.065
+            if dnm > 0.02:
+                bearing = math.degrees(math.atan2(dlon, dlat)) % 360
+                mix = _clamp(dnm / 1.5, 0.0, 0.8)
+                t_hdg = (t_hdg + ((bearing - t_hdg + 180.0) % 360 - 180.0)
+                         * mix) % 360
+
         gs, vs = self._estimate(m, now)
         psi = m.get("psi")
         phi = m.get("phi") or 0.0
