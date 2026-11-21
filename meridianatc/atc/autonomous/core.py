@@ -79,6 +79,13 @@ class AutonomousFlight(_Plumbing, _Entry, _The_loop, _Shared_helpers, _The_envel
         self._chain_delay = config.immersion.autonomous_chain_delay_s
         self._request_ifr = config.immersion.autonomous_request_ifr
         self._use_sim_ai = config.immersion.autonomous_use_sim_ai
+        # Whether the sim's own pilot currently holds the leg: true while
+        # ``sim/operation/prefs/ai_flies_aircraft`` (or MSFS's delegate
+        # event) was last sent on, false otherwise.
+        self._delegated = False
+        # The "not available" line is said once per flight, not once per
+        # tick spent in a delegable phase on a source that cannot do it.
+        self._sim_ai_said = False
         # The FO's own jobs while it flies: the radios, the turnaround
         # fuelling between legs, and the reserve the legs are planned to.
         self._manage_radio = getattr(
