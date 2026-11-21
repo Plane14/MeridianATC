@@ -1454,6 +1454,9 @@ function paintSettings() {
   }
   chips("callsign-chips", "callsigns", config.traffic.callsigns || "auto");
   chips("source-chips", "source", config.traffic.source_resolved || "meridianatc");
+  // X-Plane only: which fleet draws the traffic. Ignored under MSFS.
+  chips("renderer-chips", "renderer",
+        config.traffic.xplane_renderer || "csl");
   toggle("set-traffic-live", config.traffic.live ? config.traffic.live.enabled : false);
   if ($("set-traffic-live")) {
     // With FSLTL flying the traffic there is no live feed to switch on.
@@ -2920,6 +2923,11 @@ function wire() {
   for (const chip of $("source-chips").querySelectorAll(".chip")) {
     on(chip, "click", () =>
       save({ "traffic.source": chip.dataset.source }, "saved-traffic"));
+  }
+  for (const chip of $("renderer-chips").querySelectorAll(".chip")) {
+    on(chip, "click", () =>
+      save({ "traffic.xplane_renderer": chip.dataset.renderer },
+           "saved-traffic"));
   }
   const switches = {
     "set-strict-digits": "atc.strict_icao_digits",

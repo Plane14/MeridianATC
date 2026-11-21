@@ -766,6 +766,17 @@
             <div class="why" data-i18n="set.source_fsltl_why">FSLTL: its aircraft are the traffic and the controllers work them; no live feed.</div>
             <div class="why" data-i18n="set.source_next">Takes effect at the next session.</div>
           </div>
+          <!-- How X-Plane draws the traffic (traffic.xplane_renderer):
+               opt-in; instanced CSL stays the default. -->
+          <div class="field-block">
+            <div class="label" data-i18n="set.xplane_renderer">How X-Plane draws the traffic</div>
+            <div class="chips" id="renderer-chips">
+              <button class="chip" data-renderer="csl" data-i18n="set.renderer_csl">Lightweight models (CSL)</button>
+              <button class="chip" data-renderer="native" data-i18n="set.renderer_native">X-Plane's own aircraft, sim-flown</button>
+            </div>
+            <div class="why" data-i18n="set.xplane_renderer_why"></div>
+            <div class="why" data-i18n="set.source_next">Takes effect at the next session.</div>
+          </div>
           <div class="setting">
             <div class="text">
               <div class="name" data-i18n="set.traffic_live">Live traffic (adsb.lol, adsb.fi)</div>
