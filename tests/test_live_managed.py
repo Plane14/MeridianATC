@@ -4,7 +4,21 @@ invented ones, and handed back to the feed when the switch goes off."""
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import math
+
 import pytest
+
+THRESHOLD_25R = (50.901, 4.484, 247.0)
+
+
+def _on_strip(threshold, along_nm=0.0, across_nm=0.0):
+    """lat/lon ``along_nm`` down the strip and ``across_nm`` right of it."""
+    lat0, lon0, course = threshold
+    rad = math.radians(course)
+    north = along_nm * math.cos(rad) - across_nm * math.sin(rad)
+    east = along_nm * math.sin(rad) + across_nm * math.cos(rad)
+    return (lat0 + north / 60.0,
+            lon0 + east / (60.0 * math.cos(math.radians(lat0))))
 
 
 def _injector(**over):
@@ -14,7 +28,9 @@ def _injector(**over):
     injector = TrafficInjector.__new__(TrafficInjector)
     injector.field = SimpleNamespace(
         ident="EBBR", latitude=50.9, longitude=4.48, elevation_ft=184.0,
-        arrival_runway="25R", departure_runway="25R", stations={})
+        arrival_runway="25R", departure_runway="25R", stations={},
+        thresholds={"25R": THRESHOLD_25R},
+        surfaces={"25R": (184.0, 184.0, 2.0)})
     injector.radius_nm = TrafficInjector.OUT_OF_SIGHT_NM
     injector.observed_nm = 30.0
     injector.ground = None
@@ -35,7 +51,6 @@ def _injector(**over):
     injector.pending = []
     injector._stands_filled = False
     injector._final_distance = Mock(return_value=None)
-    injector._on_runway = Mock(return_value=False)
     injector._free_stand = Mock(return_value=None)
     injector._threshold = Mock(return_value=(50.901, 4.484, 247.0))
     injector._route_end = Mock(return_value=("Malaga", "LEMG"))
@@ -209,13 +224,94 @@ def test_a_departure_without_a_route_is_given_one():
 
 
 def test_a_landed_aeroplane_rolls_out_under_the_model():
-    injector = _injector(_on_runway=Mock(return_value=True))
+    injector = _injector()
     flight = _flight(on_ground=True)
+    lat, lon = _on_strip(THRESHOLD_25R, along_nm=0.3)
     one = _seen(on_ground=True, ground_speed_kt=80.0,
-                vertical_speed_fpm=0.0)
+                vertical_speed_fpm=0.0, latitude=lat, longitude=lon,
+                heading=247.0)
     assert injector._adopt_live(flight, one, 100.0)
     assert flight.phase == "landed"
     assert flight.airborne_model is True
+
+
+def test_a_live_departure_lined_up_is_adopted_on_the_centreline():
+    """A departure holding on the runway is adopted -- snapped onto the
+    centreline it was read near, not at the receiver's read off it."""
+    injector = _injector()
+    flight = _flight(on_ground=True, arriving=False,
+                     origin="EBBR", destination="EGLL")
+    lat, lon = _on_strip(THRESHOLD_25R, along_nm=0.05, across_nm=0.02)
+    one = _seen(on_ground=True, ground_speed_kt=0.0,
+                vertical_speed_fpm=0.0, latitude=lat, longitude=lon,
+                heading=247.0, origin="EBBR", destination="EGLL")
+    assert injector._adopt_live(flight, one, 100.0)
+    assert flight.phase == "lineup"
+    assert flight.runway == "25R"
+    expected_lat, expected_lon = _on_strip(THRESHOLD_25R, along_nm=0.05)
+    assert flight.latitude == pytest.approx(expected_lat, abs=1e-5)
+    assert flight.longitude == pytest.approx(expected_lon, abs=1e-5)
+
+
+def test_a_live_departure_read_off_the_side_is_left_to_the_feed():
+    """On the runway's wide box but eighty metres off the centreline --
+    where what it is really on is a parallel taxiway this read cannot
+    tell apart. Adopted, ours rolled the runway's heading down the
+    taxiway; the feed's own drawing of it stays instead."""
+    injector = _injector()
+    flight = _flight(on_ground=True, arriving=False,
+                     origin="EBBR", destination="EGLL")
+    lat, lon = _on_strip(THRESHOLD_25R, along_nm=0.05, across_nm=0.045)
+    one = _seen(on_ground=True, ground_speed_kt=0.0,
+                vertical_speed_fpm=0.0, latitude=lat, longitude=lon,
+                heading=247.0, origin="EBBR", destination="EGLL")
+    assert injector._adopt_live(flight, one, 100.0) is False
+    assert flight.observed is True
+    assert not injector._taken_over
+
+
+def test_a_live_aeroplane_crossing_the_runway_is_left_to_the_feed():
+    """On the pavement but pointed across it is crossing, not lined up."""
+    injector = _injector()
+    flight = _flight(on_ground=True, arriving=False,
+                     origin="EBBR", destination="EGLL")
+    lat, lon = _on_strip(THRESHOLD_25R, along_nm=0.5)
+    one = _seen(on_ground=True, ground_speed_kt=15.0,
+                vertical_speed_fpm=0.0, latitude=lat, longitude=lon,
+                heading=157.0, origin="EBBR", destination="EGLL")
+    assert injector._adopt_live(flight, one, 100.0) is False
+    assert flight.observed is True
+
+
+def test_a_live_departure_too_far_down_the_strip_is_left_to_the_feed():
+    """Adopted this far along, ours ran its whole roll off what little
+    runway was left and out over the far end: a backtracker on the
+    feed's own picture stays the feed's."""
+    injector = _injector()
+    flight = _flight(on_ground=True, arriving=False,
+                     origin="EBBR", destination="EGLL")
+    lat, lon = _on_strip(THRESHOLD_25R, along_nm=1.8)
+    one = _seen(on_ground=True, ground_speed_kt=0.0,
+                vertical_speed_fpm=0.0, latitude=lat, longitude=lon,
+                heading=247.0, origin="EBBR", destination="EGLL")
+    assert injector._adopt_live(flight, one, 100.0) is False
+    assert flight.observed is True
+    assert not injector._taken_over
+
+
+def test_a_live_departure_rolling_is_adopted_as_takeoff():
+    """Already rolling, it needs only what is left of its own roll --
+    that fits wherever the feed caught it."""
+    injector = _injector()
+    flight = _flight(on_ground=True, arriving=False,
+                     origin="EBBR", destination="EGLL")
+    lat, lon = _on_strip(THRESHOLD_25R, along_nm=1.2)
+    one = _seen(on_ground=True, ground_speed_kt=120.0,
+                vertical_speed_fpm=0.0, latitude=lat, longitude=lon,
+                heading=247.0, origin="EBBR", destination="EGLL")
+    assert injector._adopt_live(flight, one, 100.0)
+    assert flight.phase == "takeoff"
+    assert flight.runway == "25R"
 
 
 def test_an_adopted_aeroplane_goes_back_to_the_feed():

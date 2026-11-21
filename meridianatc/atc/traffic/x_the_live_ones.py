@@ -11,6 +11,7 @@ from ._shared import (
     HOLD_SHORT_EVERY_S,
     INITIAL_CLIMB_FT,
     LANDING_CLEARANCE_NM,
+    LIFTOFF_AFTER_S,
     LINED_UP_DEG,
     LIVE_AHEAD_DEG,
     LIVE_ALIGNED_DEG,
@@ -90,7 +91,7 @@ class _The_live_ones:
         snapped = ""
         runway = self._on_a_centreline(lat, lon, heading)
         if runway is not None:
-            lat, lon, course = runway
+            _, lat, lon, course = runway
             if one.on_ground:
                 heading = course
             snapped = "runway"
@@ -129,10 +130,11 @@ class _The_live_ones:
         return pressure_ft + (float(qnh) - 1013.25) * FT_PER_HPA
 
     def _on_a_centreline(self, lat: float, lon: float, heading: float):
-        """(lat, lon, course) on the centreline of the runway it is lined up
-        with -- on it, or on its final -- when it is within
+        """(runway, lat, lon, course) on the centreline of the runway it is
+        lined up with -- on it, or on its final -- when it is within
         LIVE_CENTRELINE_M of it; else None."""
-        for runway, (lat0, lon0, course) in self.field.thresholds.items():
+        for runway, (lat0, lon0, course) in (
+                getattr(self.field, "thresholds", None) or {}).items():
             if abs(livemod._wrap(heading - course)) > LIVE_ALIGNED_DEG:
                 continue
             north = (lat - lat0) * M_PER_DEG
@@ -140,14 +142,16 @@ class _The_live_ones:
             rad = math.radians(course)
             along = north * math.cos(rad) + east * math.sin(rad)
             across = -north * math.sin(rad) + east * math.cos(rad)
-            surface = self.field.surfaces.get(runway)
+            surface = (getattr(self.field, "surfaces", None)
+                       or {}).get(runway)
             length_m = (surface[2] * 1852.0 if surface else LIVE_RUNWAY_M)
             if not (-LIVE_FINAL_M <= along <= length_m + 300.0):
                 continue
             if abs(across) > LIVE_CENTRELINE_M:
                 continue
             north_c, east_c = along * math.cos(rad), along * math.sin(rad)
-            return (lat0 + north_c / M_PER_DEG,
+            return (runway,
+                    lat0 + north_c / M_PER_DEG,
                     lon0 + east_c / (M_PER_DEG * math.cos(math.radians(lat0))),
                     course)
         return None
@@ -611,6 +615,53 @@ class _The_live_ones:
     def _on_runway(self, one) -> bool:
         """Whether an observed aeroplane is on any runway."""
         return bool(self._runway_under(one))
+
+    def _on_the_strip(self, one):
+        """(runway, lat, lon, along_nm, length_nm) when it is on a
+        runway's centreline and on the pavement; else None.
+
+        Where :meth:`_on_runway` is deliberately generous -- an aeroplane
+        on a strip our configuration did not pick is still an aeroplane on
+        a strip -- adopting is the narrower question: ours is drawn on the
+        centreline and rolled down it, so a read off the edge is not an
+        aeroplane to adopt on it.
+        """
+        if not one.on_ground or one.heading is None:
+            return None
+        centreline = self._on_a_centreline(
+            one.latitude, one.longitude, one.heading)
+        if centreline is None:
+            return None
+        name, lat, lon, _course = centreline
+        end = self._threshold(name)
+        if end is None:
+            return None
+        along, _across = offset_from_track(
+            lat, lon, end[0], end[1], end[2])
+        surface = (getattr(self.field, "surfaces", None) or {}).get(name)
+        length_nm = surface[2] if surface else RUNWAY_LENGTH_NM
+        if not (0.0 <= along <= length_nm):
+            return None
+        return name, lat, lon, along, length_nm
+
+    def _room_to_roll(self, one, flight: Flight, ahead_nm: float) -> bool:
+        """Whether the runway left ahead of it can still take the roll.
+
+        From its own speed to rotation at the type's takeoff push, plus
+        the beat the wheels stay on the ground after the nose comes up --
+        the same figures the model rolls with, so a strip too short for
+        the one is too short for the other.
+        """
+        performance = perftable.traffic_performance(
+            flight.type_code,
+            light=livemod.flight_category(flight) == livemod.GA)
+        rotate = performance.rotate_kt or 120.0
+        accel = performance.takeoff_kt_s or 3.0
+        gs = min(max(0.0, one.ground_speed_kt or 0.0), rotate)
+        t_s = (rotate - gs) / accel
+        roll_nm = (gs * t_s + 0.5 * accel * t_s * t_s
+                   + rotate * LIFTOFF_AFTER_S) / 3600.0
+        return roll_nm <= ahead_nm
 
     def _advance_observed(self, flight: Flight, now: float) -> None:
         """What the controller says to an aeroplane it cannot instruct.
@@ -1092,10 +1143,19 @@ class _The_live_ones:
         arriving = self._live_arriving(flight, one)
         if arriving is None:
             return False
+        strip = self._on_the_strip(one)
         layout = self.ground
         stand = None
         taxi = None
-        if one.on_ground and not self._on_runway(one):
+        if one.on_ground and strip is None:
+            if self._on_runway(one):
+                # On the runway's wide box but not on a centreline:
+                # crossing the strip, or far enough to its side that
+                # what it is really on -- a parallel taxiway -- this
+                # read cannot tell apart. Nobody's to fly it from here;
+                # the feed's own drawing stays, where an adopted one
+                # rolled the runway's heading off whatever it was on.
+                return False
             if layout is None:
                 return False
             x, z = layout.to_xy(one.latitude, one.longitude)
@@ -1119,6 +1179,14 @@ class _The_live_ones:
                         flight.runway or self.field.arrival_runway))
                 if not taxi:
                     return False            # nowhere to send it
+        if (strip is not None and not arriving
+                and not self._room_to_roll(one, flight,
+                                           strip[4] - strip[3])):
+            # This far down the strip the real one was taxiing it or
+            # already most of the way down its roll: adopted anyway,
+            # ours runs the whole roll off what is left and out over
+            # the far end, where the feed's picture of it stays right.
+            return False
         # Committed. Ours now, the feed's copy suppressed.
         self._taken_over.add(flight.observed_id)
         self._adopted_live.add(flight.observed_id)
@@ -1163,7 +1231,14 @@ class _The_live_ones:
                 flight.distance_nm = haversine_nm(
                     self.field.latitude, self.field.longitude,
                     flight.latitude, flight.longitude)
-        elif self._on_runway(one):
+        elif strip is not None:
+            runway, lat, lon, _along, _length = strip
+            # The strip it is actually on, not the one the
+            # configuration picked -- and on its centreline, the way
+            # _live_pose draws it, rather than at the receiver's
+            # hundred-foot read off to the side.
+            flight.runway = runway
+            flight.latitude, flight.longitude = lat, lon
             flight.airborne_model = True
             flight.on_ground = True
             if arriving:
