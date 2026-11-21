@@ -528,8 +528,24 @@ class XPHybridTraffic(XPNativeTraffic):
             bool(self._status.get("native_cap"))
             or self._status.get("csl_models", 0) > 0)
 
+    def _is_native(self, callsign):
+        """Whether the callsign rides a native slot rather than a drawing.
+
+        A slot is claimed locally before the plugin can prove the plane
+        exists; when it never materializes -- slots held by another
+        plugin, an .acf the load refused -- the callsign is a CSL
+        drawing's, not a slot's, or it never shows at all.
+        """
+        if callsign not in self._slots:
+            return False
+        if callsign in self._confirmed:
+            return True
+        return (time.monotonic()
+                - self._assigned_at.get(callsign, 0.0)
+                < self.ANSWER_WITHIN_S)
+
     def has(self, callsign):
-        if callsign in self._slots:
+        if self._is_native(callsign):
             return super().has(callsign)
         return (self.available and callsign in self._wanted
                 and callsign in self._drawn
@@ -538,7 +554,7 @@ class XPHybridTraffic(XPNativeTraffic):
     def failed(self, callsign):
         # Over the slot cap is not a failure here -- the callsign falls
         # through to the CSL drawing instead.
-        if callsign in self._slots:
+        if self._is_native(callsign):
             return super().failed(callsign)
         self.on_frame()
         asked = self._wanted.get(callsign)
@@ -593,7 +609,10 @@ class XPHybridTraffic(XPNativeTraffic):
         with self._lock:
             if self._socket is None:
                 return
-            native_ids = set(self._slots)
+            # Slots hold a callsign for the window it has to prove it
+            # made the plane; past it, the drawing path gets it instead
+            # so a blocked slot does not turn the aeroplane invisible.
+            native_ids = {c for c in self._slots if self._is_native(c)}
             csl = [p for p in positions
                    if p.get("callsign") not in native_ids]
             self._sync_csl(csl, time.monotonic())
