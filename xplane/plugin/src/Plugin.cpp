@@ -250,6 +250,7 @@ std::string ModelFor(const std::string& type) {
         {"A10", "Aerolite"}, {"F14", "Tomcat"},
         {"ASK", "ASK"}, {"GLI", "ASK"},
         {"R22", "R22"}, {"R44", "R22"}, {"S76", "S-76"},
+        {"EVT", "ALIA"}, {"ALI", "ALIA"},
         {"C17", "172"}, {"C15", "172"}, {"C18", "172"},
         {"PA2", "172"}, {"P28", "172"},
     };
@@ -257,11 +258,15 @@ std::string ModelFor(const std::string& type) {
         if (type.find(key) == 0)
             if (auto p = FindAcf(needle); !p.empty()) return p.string();
     static const std::set<std::string> heli = {
-        "R22", "R44", "R66", "S76", "B407", "B429", "B06", "AS50",
-        "AS55", "EC35", "EC45", "A139", "MD52", "UH1", "H500",
+        "R22", "R44", "R66", "S76", "B407", "B429", "B06", "B412",
+        "AS50", "AS55", "AS32", "EC30", "EC35", "EC45", "A109",
+        "A139", "MD52", "MD60", "UH1", "H500", "H160", "H145",
+        "H47", "H53", "H64",
     };
     if (heli.count(type)) {
-        for (const char* needle : {"S-76", "R22"})
+        // Wheeled default rotorcraft first, the skids after, and XP12.1's
+        // eVTOL last -- its flight model is the least like a helicopter's.
+        for (const char* needle : {"S-76", "R22", "ALIA"})
             if (auto p = FindAcf(needle); !p.empty()) return p.string();
     }
     // Stand-in by class: anything airliner-sized wears the 737, light

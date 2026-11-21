@@ -227,6 +227,7 @@
   "set.xplane_renderer_why": "Lightweight models need the CSL packs installed but carry real airline liveries and as many aeroplanes as the field wants. X-Plane's own aircraft need nothing installed — the sim's flight model flies them, rotorcraft included — but there are at most 19, they wear no airline colours, and their taxiing is less precise.",
   "set.renderer_csl": "Lightweight models (needs CSL packs)",
   "set.renderer_native": "X-Plane's own aircraft, sim-flown",
+  "set.renderer_hybrid": "Sim-flown up close, CSL beyond",
   "log.xplane_traffic_unavailable": "X-Plane traffic is not available. Install or enable MeridianATC-XP and its CSL models; see xplane/README.md. Traffic stays radio-only.",
   "log.autofly_unavailable": "Full aircraft control is unavailable here. X-Plane supports airborne fixed-wing autopilot assistance only; radio and checklists remain available.",
   "log.autofly_manual": "Take manual control: X-Plane supports airborne fixed-wing autopilot assistance only, not taxi, takeoff, landing, go-around or rotorcraft controls.",

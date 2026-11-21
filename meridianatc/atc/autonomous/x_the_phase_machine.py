@@ -1855,9 +1855,7 @@ class _The_phase_machine:
                 d.elevator(self._g_pull_cap(state, pull))
                 # Still aligned with the runway: the de-crab kick of
                 # rudder, and the wing held a touch into the wind so the
-                # alignment does not buy a drift across the centreline
-                # (the wind component's sign is the sim's, UNVERIFIED --
-                # a wrong one shows as a slow bank, not a departure).
+                # alignment does not buy a drift across the centreline.
                 if self.state.runway_heading > 0:
                     # The de-crab kick runs the same rate servo the
                     # ground steering does -- a few degrees a second of
@@ -1874,9 +1872,19 @@ class _The_phase_machine:
                         state.ground_speed_kt
                         or (state.indicated_airspeed_kt or 0.0),
                         rate_cap=4.0))
-                xwind = float(getattr(state, "aircraft_wind_x_kt", 0.0)
-                              or 0.0)
-                d.aileron(max(-0.15, min(0.15, -xwind * 0.02)))
+                # The into-wind wing from the crab the approach is
+                # wearing: nose-left-of-track is the wind from the left,
+                # which names the bank's side without trusting the sim's
+                # body-axis sign convention. A model that gave no drift
+                # to read falls back to the reported component.
+                crab = getattr(self, "_crab_deg", 0.0)
+                if abs(crab) > 0.5:
+                    bias = crab * 0.03
+                else:
+                    xwind = float(getattr(state, "aircraft_wind_x_kt", 0.0)
+                                  or 0.0)
+                    bias = -xwind * 0.02
+                d.aileron(max(-0.15, min(0.15, bias)))
                 # Touchdown must come; a flare that floats is a go-around.
                 if now - self.state.flare_at > 15.0 and agl > 10.0:
                     self._start_go_around(state)

@@ -105,6 +105,10 @@ class _Entry:
                 heli.handoff()
             except Exception:
                 log.debug("rotorcraft handoff raised", exc_info=True)
+        # A leg the sim's own pilot was flying comes back with the rest:
+        # handing off with the AI still engaged leaves an aeroplane
+        # nobody is managing.
+        self._sim_ai_release(self._last_state)
         d = self._dir
         if d is None:
             return
@@ -345,13 +349,11 @@ class _Entry:
 
             self._heli = RotorcraftFlight(self)
             self._heli.begin(session)
-        if self._use_sim_ai:
-            # There is no SimConnect path to the simulator's own AI pilot;
-            # the flag is kept for the config surface, and the flight is
-            # flown on the First Officer's own autopilot regardless.
-            self._emit("info", "Simulator AI assist is not available; "
-                       "flying with the First Officer's own autopilot",
-                       "autonomous.sim_ai.unused")
+        # A leg handed to the sim's own pilot on the last flight is taken
+        # back before this one starts: the delegation flag belongs to a
+        # leg, never to the aeroplane.
+        self._sim_ai_release(self._last_state)
+        self._sim_ai_said = False
         # The engine calls this for every new session, engaged or not --
         # only the engaged machine gets to announce itself.
         if self._enabled:

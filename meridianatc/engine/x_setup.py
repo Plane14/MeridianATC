@@ -10,6 +10,7 @@ from ._shared import (
     Phraseology,
     PushToTalk,
     SimTraffic,
+    XPHybridTraffic,
     XPlaneTraffic,
     XPNativeTraffic,
     as_written,
@@ -236,9 +237,12 @@ class _Setup:
         # models, or the simulator's own .acf fleet flown by its flight
         # model (traffic.xplane_renderer). A renderer switch rebuilds the
         # link; the setting is restart-gated, so this is the cold path.
-        native = xplane and self.config.traffic.xplane_renderer == "native"
+        renderer = self.config.traffic.xplane_renderer
+        native = xplane and renderer in ("native", "hybrid")
         if (xplane != isinstance(self.simtraffic, XPlaneTraffic)
-                or (xplane and native != getattr(self.simtraffic, "native", False))):
+                or (xplane and native != getattr(self.simtraffic, "native", False))
+                or (xplane and (renderer == "hybrid")
+                    != isinstance(self.simtraffic, XPHybridTraffic))):
             self.simtraffic.detach()
             options = dict(
                 enabled=self.config.traffic.enabled and self.config.traffic.in_simulator,
@@ -247,7 +251,12 @@ class _Setup:
                 settle_s=self.config.traffic.lod.settle_s,
                 smooth=self.config.traffic.smooth_motion,
             )
-            if native:
+            if renderer == "hybrid":
+                self.simtraffic = XPHybridTraffic(
+                    **options, host=self.config.traffic.xplane_plugin_host,
+                    port=self.config.traffic.xplane_plugin_port,
+                    source=self.source)
+            elif native:
                 self.simtraffic = XPNativeTraffic(
                     **options, host=self.config.traffic.xplane_plugin_host,
                     port=self.config.traffic.xplane_plugin_port,
@@ -305,7 +314,7 @@ class _Setup:
         if getattr(self, "_xptraffic_notice", False):
             return
         self._xptraffic_notice = True
-        if self.config.traffic.xplane_renderer == "native":
+        if self.config.traffic.xplane_renderer in ("native", "hybrid"):
             self.emit("info",
                       "X-Plane traffic is not available. Install or update "
                       "MeridianATC-XP; see xplane/README.md. Traffic stays radio-only.",

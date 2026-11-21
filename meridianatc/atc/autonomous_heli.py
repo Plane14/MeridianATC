@@ -286,6 +286,56 @@ def _pedal_dir(self) -> int:
     return -1 if getattr(self, "_pedal_flip", False) else 1
 
 
+def _cyclic_dir(self) -> int:
+    """The sign this model's longitudinal cyclic axis answers in."""
+    return -1 if getattr(self, "_cyclic_flip", False) else 1
+
+
+def _cyclic_check(self, demand: int, pitch_deg: float) -> None:
+    """Flip the longitudinal cyclic's sign when the axis answers
+    backwards.
+
+    The same scheme as the pedal check: aft cyclic is a positive axis
+    and raises the nose, so a sustained demand answered by the opposite
+    pitch rate is the inverted-axis model -- the UNVERIFIED cyclic sign
+    made self-correcting, the way the pedal's already is.
+    """
+    prev = getattr(self, "_cyc_demand", None)
+    prev_pitch = getattr(self, "_cyc_pitch", None)
+    prev_at = getattr(self, "_cyc_at", 0.0)
+    now = time.monotonic()
+    streak = getattr(self, "_cyc_streak", 0)
+    streak = streak + 1 if prev and (demand > 0) == (prev > 0) else 0
+    self._cyc_streak = streak
+    self._cyc_demand = demand
+    self._cyc_pitch = pitch_deg
+    self._cyc_at = now
+    if prev is None or prev_pitch is None or not prev_at:
+        return
+    dt = now - prev_at
+    if dt <= 0.5:
+        return
+    rate = (pitch_deg - prev_pitch) / dt
+    if abs(prev) < CYCLIC_MAX * 0.3 or abs(rate) < 1.5 or streak < 3:
+        return
+    votes = getattr(self, "_cyclic_votes", 0)
+    votes += 1 if (rate > 0.0) == (prev > 0) else -1
+    adapt = getattr(self, "_adapt", None)
+    if votes <= -5:
+        self._cyclic_flip = not getattr(self, "_cyclic_flip", False)
+        votes = 3
+        log.warning("cyclic axis answers backwards on this model; "
+                    "cyclic sign flipped")
+        if adapt is not None:
+            adapt.set("cyclic.flip", 1.0 if self._cyclic_flip else 0.0)
+            # The same verdict the pedals bank immediately.
+            from . import adaptation
+            adaptation.save(force=True)
+    self._cyclic_votes = votes
+    if adapt is not None:
+        adapt.learn_votes("cyclic", votes)
+
+
 #: The yaw figure the tuned gains assume a full pedal buys: the store
 #: learns the real one per speed band, and the demand is scaled against
 #: it -- a model answering at half the assumed bite gets twice the ask.
@@ -619,6 +669,8 @@ class RotorcraftFlight:
                     getattr(self.owner, "sim", None), SimConnectSource):
                 self._pedal_flip = False
             self._pedal_votes = int(adapt.signs.get("pedals", 0))
+            self._cyclic_flip = adapt.value("cyclic.flip", 0.0) > 0.5
+            self._cyclic_votes = int(adapt.signs.get("cyclic", 0))
             self._pedal_authority_b = {
                 i: v for i in range(6)
                 if (v := adapt.value(f"pedals.authority.{i}", 0.0)) > 0.0}
@@ -630,6 +682,8 @@ class RotorcraftFlight:
             self._pedal_votes = 0
             self._pedal_authority_b = {}
             self._pedal_authority = 0.0
+            self._cyclic_flip = False
+            self._cyclic_votes = 0
         # The type's own envelope where the table knows it -- an R44 and
         # an S-76 do not share a transition speed or a ceiling.
         self._profile = heli_profile_for(
@@ -1352,8 +1406,10 @@ class RotorcraftFlight:
                 self.state.cyclic_trim = _clamp(
                     self.state.cyclic_trim - _clamp(err, -20.0, 20.0) * 1.5,
                     -CYCLIC_MAX * 0.8, CYCLIC_MAX * 0.8)
-            self._send(CYCLIC_LONG_SET, int(_clamp(axis, -axis_max,
-                                                 axis_max)))
+            demand = int(_clamp(axis, -axis_max, axis_max))
+            _cyclic_check(self, demand,
+                          float(getattr(state, "pitch_deg", 0.0) or 0.0))
+            self._send(CYCLIC_LONG_SET, demand * _cyclic_dir(self))
         elif not airborne:
             self._send(CYCLIC_LONG_SET, CYCLIC_TRIM_HOVER)
         # Cyclic lateral: the model's trim, plus a drift correction the

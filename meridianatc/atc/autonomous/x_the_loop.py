@@ -86,6 +86,9 @@ class _The_loop:
         # on the one-second interval for that.
         self._monitor_stall(state, now)
         if self.state.stall_recovering:
+            # The recovery flies the axes itself -- a sim AI left
+            # engaged underneath it is two pilots on one yoke.
+            self._sim_ai_release(state)
             self._fly_stall_recovery(state, now)
             return
         if self._heli is not None:
@@ -123,6 +126,20 @@ class _The_loop:
                 self.state.still_since = now
             elif self.state.moved_since_push and self.state.still_since == 0.0:
                 self.state.still_since = now
+
+        # The flag's delegation, where it applies: the quiet en-route
+        # legs are handed to the sim's own AI pilot while the FO keeps
+        # the radios, the watch and the mission; every other moment --
+        # taxi, takeoff, the approach, the flare, an emergency, a stall
+        # -- is the FO's own loops, delegation or not. A leg the write
+        # could not engage is flown like any other.
+        if self._sim_ai_wanted(state):
+            self._sim_ai_hold(state, now)
+            if self._delegated:
+                self.state.last_action_at = now
+                return
+        else:
+            self._sim_ai_release(state)
 
         self._execute_phase(state, now)
         self._fly_direct(state)
@@ -190,6 +207,120 @@ class _The_loop:
                     "wind_kt": round(g("ambient_wind_velocity"), 1),
                     "source": getattr(state, "source", "") or "",
                 }})
+
+    # -- sim-AI delegation ---------------------------------------------------
+
+    # The legs a sim's own pilot can be asked to fly: en-route, where
+    # holding a heading, a level and a descent rate is the whole job.
+    # Everything closer to the ground stays the FO's -- X-Plane's
+    # ai_flies_aircraft does a straight-and-level job it cannot taxi or
+    # land, and MSFS's delegate is not trusted below the approach gate.
+    DELEGABLE_PHASES = (AutonomousPhase.CLIMB,
+                        AutonomousPhase.CRUISE,
+                        AutonomousPhase.DESCENT)
+
+    def _sim_ai_wanted(self, state) -> bool:
+        """Whether this tick should hand the flying to the sim's AI."""
+        return bool(getattr(self, "_use_sim_ai", False)
+                    and not self._is_helicopter
+                    and self.state.phase in self.DELEGABLE_PHASES
+                    and self.state.sub != "go_around"
+                    and not self.state.stall_recovering
+                    and not self.state.emergency
+                    and not self.state.emergency_descent)
+
+    def _sim_ai_set(self, state, on: bool) -> bool:
+        """Ask the sim to fly the leg itself (or stop), source by source.
+
+        X-Plane: ``sim/operation/prefs/ai_flies_aircraft`` -- the sim's
+        internal pilot flies the user's aircraft while it stands, and a
+        zero hands the flying model back cleanly. MSFS: ``DELEGATE
+        CONTROLS TO AI`` -- a toggle sent only on the transitions, and
+        unverified on the models that ignore it (the FO's own control
+        law picks the leg back up regardless, which a dead write leaves
+        the sim's AI still nominally flying: a bug the FO's own writes
+        fight -- so a failed or unverifiable send does not delegate).
+        """
+        try:
+            if state.source == "xplane":
+                return bool(self.sim.dref(
+                    "sim/operation/prefs/ai_flies_aircraft",
+                    1.0 if on else 0.0))
+            if state.source == "simconnect":
+                return self._send_event(b"DELEGATE CONTROLS TO AI", 1)
+        except Exception:
+            log.debug("sim AI delegation write failed", exc_info=True)
+        return False
+
+    def _sim_ai_hold(self, state, now: float) -> None:
+        """Engage the delegation once, then keep the mission honest."""
+        if not getattr(self, "_delegated", False):
+            if not self._sim_ai_set(state, True):
+                # No delegation path on this source (or the write fell
+                # off): the flag stops asking and the leg is flown like
+                # any other -- the not-available line once per flight.
+                self._use_sim_ai = False
+                if not getattr(self, "_sim_ai_said", False):
+                    self._sim_ai_said = True
+                    self._emit("info",
+                               "Simulator AI assist is not available; "
+                               "flying with the First Officer's own "
+                               "autopilot",
+                               "autonomous.sim_ai.unused")
+                return
+            self._delegated = True
+            self._emit("info",
+                       "Flying delegated to the simulator's AI for this "
+                       "leg",
+                       "autonomous.sim_ai.delegated")
+        if self._delegated:
+            self._delegate_mission(state, now)
+
+    def _sim_ai_release(self, state) -> None:
+        """Take the leg back from the sim's pilot, if it had one."""
+        if not getattr(self, "_delegated", False):
+            return
+        self._delegated = False
+        if state is not None:
+            self._sim_ai_set(state, False)
+            self._emit("info",
+                       "First Officer flying again",
+                       "autonomous.sim_ai.resumed")
+
+    def _delegate_mission(self, state, now: float) -> None:
+        """The mission bookkeeping a delegated leg still owes.
+
+        The sim's pilot holds heading, level and rate; it owns no
+        clearance, no checklist, no top of descent. The phase advances
+        on the same terms the flown legs do -- an assigned approach or
+        descent, the level-off at the climb's target, the plan's TOD --
+        and the descent gets an AGL floor so a sim AI's late level-off
+        cannot sail the aeroplane past the approach it never starts.
+        """
+        if self.session.phase == Phase.DESCENT:
+            self._transition(AutonomousPhase.DESCENT)
+            return
+        if self.session.phase == Phase.APPROACH:
+            self._transition(AutonomousPhase.APPROACH)
+            return
+        if self.state.emergency_descent:
+            self._transition(AutonomousPhase.DESCENT)
+            return
+        if self.state.phase == AutonomousPhase.CLIMB:
+            target = self._altitude_target(state)
+            if target and abs((state.altitude_ft or 0.0) - target) < 200:
+                self._transition(AutonomousPhase.CRUISE)
+        elif self.state.phase == AutonomousPhase.CRUISE:
+            if not self.state.tod_nm:
+                self._plan_tod(state)
+            distance = self._distance_to_destination_nm(state)
+            if distance is not None and self.state.tod_nm > 0.0 \
+                    and distance <= self.state.tod_nm:
+                self._transition(AutonomousPhase.DESCENT)
+        elif self.state.phase == AutonomousPhase.DESCENT:
+            agl = state.altitude_agl_ft or 0.0
+            if 0.0 < agl < 1500.0:
+                self._transition(AutonomousPhase.APPROACH)
 
     def _can_fly_phase(self, state) -> bool:
         return capabilities(state.source).flight_axes or (

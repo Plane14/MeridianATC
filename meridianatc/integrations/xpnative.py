@@ -15,6 +15,7 @@ callsign each slot is. An empty roster hands the planes back.
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import time
@@ -22,7 +23,7 @@ import time
 from ..atc.control import Pid, PidTerms
 from ..atc.control_gains import fixed_wing_gains, rotor_gains
 from ..atc.flying import RATE_LIGHT, Performance
-from .xptraffic import XPlaneTraffic, _number, _text
+from .xptraffic import XPlaneTraffic, _number, _text, aircraft_packet
 
 log = logging.getLogger(__name__)
 
@@ -37,8 +38,16 @@ HELICOPTER_TYPES = frozenset({
     "MD52", "MD60", "UH1", "H500", "H160", "H145", "H47", "H53", "H64",
 })
 
-# The channels one slot is fed back over RREF. ``ele`` arrives in metres.
-_FEEDBACK = ("lat", "lon", "ele", "psi", "phi")
+# Rotorcraft types whose gear is wheels rather than skids. Everything
+# else in HELICOPTER_TYPES hover-taxis because it cannot roll.
+WHEELED_HELICOPTERS = frozenset({
+    "S76", "A109", "A139", "H160", "H47", "H53", "H64", "AS32",
+})
+
+# The channels one slot is fed back over RREF. ``ele`` arrives in metres,
+# ``v_*`` the slot's cartesian velocities in m/s (x east, y up, z south),
+# ``the``/``phi`` its pitch and roll in degrees.
+_FEEDBACK = ("lat", "lon", "ele", "psi", "phi", "the", "v_x", "v_y", "v_z")
 
 _MPS_TO_KT = 1.94384
 _M_TO_FT = 3.28084
@@ -61,10 +70,19 @@ class NativePilot:
 
     # A grounded target asks for parking brake under this speed.
     HOLD_KT = 0.5
+    # Skid-equipped rotorcraft taxi on a low hover: this much altitude
+    # above the surface keeps the skids clear of it.
+    HOVER_TAXI_FT = 5.0
+    # Rotorcraft climb away vertically this high before the forward
+    # speed demand is allowed to open up.
+    TRANSLATE_FT = 40.0
+    TRANSLATE_KT = 25.0
 
     def __init__(self, type_code, helicopter=False):
         self.type_code = type_code
         self.helicopter = helicopter
+        self._skids = helicopter and type_code not in WHEELED_HELICOPTERS
+        self._surface_ft = None  # last ele seen on the ground, for AGL
         # The loops advance on the caller's clock -- the engine's tick --
         # not on wall time, so a paused or slow sim does not poison the
         # integrals either.
@@ -101,10 +119,26 @@ class NativePilot:
         self._prev_geo = None      # (lat, lon, ele_m, t) for gs/vs estimates
         self._est_gs_kt = 0.0
         self._est_vs_fpm = 0.0
+        self._est_track = None     # deg, from the cartesian velocities
 
     def _estimate(self, m, now):
-        """GS (kt) and VS (fpm) from position samples; the slots carry no
-        speed datarefs."""
+        """GS (kt) and VS (fpm). The ``v_x/v_y/v_z`` datarefs report the
+        slot's motion exactly; when they have not arrived yet the
+        position samples are differentiated as before."""
+        vx, vy, vz = m.get("v_x"), m.get("v_y"), m.get("v_z")
+        if vx is not None and vy is not None and vz is not None:
+            gs = math.hypot(vx, vz) * _MPS_TO_KT
+            vs = vy * _M_TO_FT * 60.0
+            if gs > 2.0:
+                # +x is east, +z is south: north is -z.
+                self._est_track = \
+                    math.degrees(math.atan2(vx, -vz)) % 360
+            # New samples are halved in, so one jump does not jerk the
+            # levers.
+            self._est_gs_kt += (gs - self._est_gs_kt) * 0.5
+            self._est_vs_fpm += \
+                (_clamp(vs, -6000.0, 6000.0) - self._est_vs_fpm) * 0.5
+            return self._est_gs_kt, self._est_vs_fpm
         lat, lon, ele = m.get("lat"), m.get("lon"), m.get("ele")
         if lat is None or lon is None or ele is None:
             return self._est_gs_kt, self._est_vs_fpm
@@ -118,7 +152,6 @@ class NativePilot:
         east = (lon - prev[1]) * 111320.0 * math.cos(math.radians(lat))
         gs = math.hypot(north, east) / dt * _MPS_TO_KT
         vs = (ele - prev[2]) * _M_TO_FT / dt * 60.0
-        # New samples are halved in, so one jump does not jerk the levers.
         self._est_gs_kt += (gs - self._est_gs_kt) * 0.5
         self._est_vs_fpm += (_clamp(vs, -6000.0, 6000.0) - self._est_vs_fpm) * 0.5
         return self._est_gs_kt, self._est_vs_fpm
@@ -196,7 +229,13 @@ class NativePilot:
         gs, vs = self._estimate(m, now)
         psi = m.get("psi")
         phi = m.get("phi") or 0.0
+        pitch_deg = m.get("the")
         ele_ft = (m.get("ele") or 0.0) * _M_TO_FT if m.get("ele") is not None else None
+        if ground and ele_ft is not None:
+            self._surface_ft = ele_ft
+        agl_ft = (ele_ft - self._surface_ft
+                  if ele_ft is not None and self._surface_ft is not None
+                  else None)
         have_heading = psi is not None
         hdg_err = ((t_hdg - psi) + 180.0) % 360 - 180.0 if have_heading else 0.0
         alt_err = 0.0 if ele_ft is None else t_alt - ele_ft
@@ -206,7 +245,7 @@ class NativePilot:
                                      t_hdg, t_gs, t_vs, hdg_err,
                                      alt_err, gs, have_heading,
                                      throttle, yoke_pitch, yoke_roll,
-                                     yoke_hdg)
+                                     yoke_hdg, pitch_deg, agl_ft, phase)
 
         if ground:
             # Taxi: heading error to the nosewheel/rudder channel, speed
@@ -223,30 +262,67 @@ class NativePilot:
 
         # Airborne: heading error to a bank demand, bank error to the
         # roll lever; height error to a VS demand, VS error to the pitch
-        # lever; speed to the throttle.
-        bank = _clamp(hdg_err * 1.5, -25.0, 25.0)
+        # lever; speed to the throttle. With the velocity datarefs live
+        # the bank loop flies the ground track -- the course that leaves
+        # no wind-drift error -- rather than the nose's heading.
+        steer_ref = psi
+        if self._est_track is not None and gs > 20.0:
+            steer_ref = self._est_track
+        trk_err = ((t_hdg - steer_ref) + 180.0) % 360 - 180.0 \
+            if steer_ref is not None else hdg_err
+        bank = _clamp(trk_err * 1.5, -25.0, 25.0)
         out[yoke_roll] = self._roll.update(bank - phi) \
             if have_heading else 0.0
         vs_demand = self._vert.update(alt_err) if ele_ft is not None else t_vs
-        out[yoke_pitch] = self._pitch.update(vs_demand - vs)
+        out[yoke_pitch] = _clamp(
+            self._pitch.update(vs_demand - vs)
+            - (pitch_deg or 0.0) * self.PITCH_DAMP,
+            -1.0, 1.0)
         out[throttle] = self._throttle.update(t_gs - gs)
         return out
 
+    # A degree of unwanted pitch is worth this much lever: the damper
+    # that keeps the VS loop from porpoising.
+    PITCH_DAMP = 0.01
+
     def _heli_writes(self, out, slot, ground, parked, t_hdg, t_gs, t_vs,
                      hdg_err, alt_err, gs, have_heading,
-                     throttle, yoke_pitch, yoke_roll, yoke_hdg):
+                     throttle, yoke_pitch, yoke_roll, yoke_hdg, pitch_deg,
+                     agl_ft, phase):
         """Rotorcraft law: altitude to the collective (the throttle
-        channel, percent of lever), forward speed to longitudinal cyclic,
-        heading to the pedals with a little cyclic roll to help the turn."""
+        channel, percent of lever), forward speed to a pitch-attitude
+        demand flown by longitudinal cyclic, heading to the pedals with
+        a little cyclic roll to help the turn.
+
+        Skid-equipped types hover-taxi -- a few feet over the surface,
+        pedals steering -- because they cannot roll. After liftoff the
+        forward-speed demand stays capped until the climb clears
+        TRANSLATE_FT, so a departure climbs away vertically before it
+        translates."""
+        hover_taxi = (ground and self._skids
+                      and t_gs > self.HOLD_KT and agl_ft is not None)
+        if hover_taxi:
+            alt_err += self.HOVER_TAXI_FT
         collective = self._collective.update(alt_err) / 100.0
         out[throttle] = _clamp(0.5 + collective, 0.0, 1.0) \
-            if not ground else _clamp(collective, 0.0, 0.4)
-        out[yoke_pitch] = -_clamp((t_gs - gs) * 0.008, -0.25, 0.25)
+            if not ground else _clamp(collective, 0.0, 0.9 if hover_taxi
+                                     else 0.4)
+        if not ground and phase == "takeoff" and agl_ft is not None \
+                and agl_ft < self.TRANSLATE_FT:
+            t_gs = min(t_gs, self.TRANSLATE_KT)
+        if pitch_deg is not None:
+            # Forward cyclic is nose-down: a speed deficit wants a lower
+            # attitude, and the lever chases the attitude error.
+            want_pitch = -_clamp((t_gs - gs) * 0.3, -12.0, 12.0)
+            out[yoke_pitch] = _clamp((want_pitch - pitch_deg) * 0.05,
+                                     -0.4, 0.4)
+        else:
+            out[yoke_pitch] = -_clamp((t_gs - gs) * 0.008, -0.25, 0.25)
         out[yoke_hdg] = _clamp(self._pedals.update(hdg_err) / 5000.0,
                                -0.5, 0.5) if have_heading else 0.0
         out[yoke_roll] = _clamp(hdg_err * 0.004, -0.15, 0.15) \
             if have_heading else 0.0
-        if ground and t_gs <= self.HOLD_KT:
+        if ground and t_gs <= self.HOLD_KT and not hover_taxi:
             out[f"{_CONTROLS}/parking_brake[{slot}]"] = 1.0
         return out
 
@@ -430,3 +506,94 @@ class XPNativeTraffic(XPlaneTraffic):
             self._assigned_at.clear()
             self._roster = ()
         super().detach()
+
+
+class XPHybridTraffic(XPNativeTraffic):
+    """Native physics for the planes that can get a slot, CSL drawings
+    for the rest.
+
+    The positions arrive nearest-first, so the nineteen slots seat the
+    traffic that matters up close -- departures, arrivals, the stand next
+    door -- and everything beyond the cap is drawn by XPMP2 instead of
+    being dropped. The plugin takes both payloads over the same channel:
+    ``native`` rosters are not session packets, so no protocol change is
+    needed.
+    """
+
+    @property
+    def drawing(self):
+        # Either fleet standing is enough to draw: native slots when the
+        # plugin can drive them, CSL instances when it has models.
+        return self.available and (
+            bool(self._status.get("native_cap"))
+            or self._status.get("csl_models", 0) > 0)
+
+    def has(self, callsign):
+        if callsign in self._slots:
+            return super().has(callsign)
+        return (self.available and callsign in self._wanted
+                and callsign in self._drawn
+                and callsign not in self._unmatched)
+
+    def failed(self, callsign):
+        # Over the slot cap is not a failure here -- the callsign falls
+        # through to the CSL drawing instead.
+        if callsign in self._slots:
+            return super().failed(callsign)
+        self.on_frame()
+        asked = self._wanted.get(callsign)
+        if asked is None:
+            return False
+        if not self.available:
+            return time.monotonic() - asked >= self.ANSWER_WITHIN_S
+        if callsign in self._unmatched:
+            return True
+        return (not self.has(callsign)
+                and time.monotonic() - asked >= self.ANSWER_WITHIN_S)
+
+    def _sync_csl(self, positions, now):
+        """The XPlaneTraffic drawing path for the unslotted callsigns,
+        sharing this object's socket, sequence and status."""
+        aircraft = []
+        seen = set()
+        live_room, room = self.live_limit, self.limit
+        for position in positions:
+            try:
+                packet = aircraft_packet(position)
+            except (ValueError, TypeError, KeyError, OverflowError):
+                continue
+            if packet["id"] in seen:
+                continue
+            if position.get("source") == "live":
+                if not live_room:
+                    continue
+                live_room -= 1
+            elif room:
+                room -= 1
+            else:
+                continue
+            aircraft.append(packet)
+            seen.add(packet["id"])
+        message = {"v": 1, "t": "traffic", "seq": self._sequence,
+                   "ac": aircraft}
+        while len(json.dumps(message, separators=(",", ":")).encode()) > 65507:
+            aircraft.pop()
+        if self._send(message):
+            self._sequence += 1
+            wanted = {a["id"]: self._wanted.get(a["id"], now)
+                      for a in aircraft}
+            self._drawn.intersection_update(wanted)
+            self._unmatched.intersection_update(wanted)
+            self._wanted.update(wanted)
+
+    def sync(self, positions, now=None):
+        # The native path claims the slots first; whatever it could not
+        # seat goes to the drawings.
+        super().sync(positions, now)
+        with self._lock:
+            if self._socket is None:
+                return
+            native_ids = set(self._slots)
+            csl = [p for p in positions
+                   if p.get("callsign") not in native_ids]
+            self._sync_csl(csl, time.monotonic())
