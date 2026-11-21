@@ -1059,7 +1059,18 @@ class _The_phase_machine:
                            "autonomous.rejected_engine")
                 self._goto_sub("abort")
                 return
-            if ias >= rotate_at:
+            # The rotate is an airspeed's, not the optimistic figure the
+            # aborts are measured with: lift is made of air, and a
+            # groundspeed that leads the pitot through the spool --
+            # tailwind, a lagging system -- pulls the aeroplane into
+            # the air a dozen knots under the speed its wing flies at,
+            # which is a balloon and a settle, not a liftoff. A pitot
+            # that reads nothing at all is the exception: ground speed
+            # is the only speed there is, so it is the one used.
+            indicated = float(state.indicated_airspeed_kt or 0.0)
+            flying_speed = (indicated if indicated >= 8.0
+                            else float(state.ground_speed_kt or 0.0))
+            if flying_speed >= rotate_at:
                 self._goto_sub("rotate")
                 self.state.rotate_at = now
             elif self._sub_age() > self.TAKEOFF_TIMEOUT:

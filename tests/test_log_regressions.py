@@ -2081,6 +2081,144 @@ def test_the_surface_watch_does_not_call_the_roll_a_landing():
     assert reply is not None
 
 
+def test_a_departures_settling_touch_is_not_a_landing():
+    """The struts' settle straight off the runway reads as a touchdown
+    to a watcher taking the gear at its word: at Vigo a low rotation
+    settled back a second after liftoff, and the touch wrote a
+    touchdown, armed the liftoff-after-touchdown verdict, and a
+    departure still climbing out was sent around the circuit and
+    stalled into the ground. Inside the settling window the touch is
+    the takeoff's own contact -- nothing is recorded of it."""
+    from meridianatc.atc.session import Phase
+    engine = _hold_point_engine()
+    session = _departure_session(Phase.TAKEOFF)
+    session.cleared_takeoff = True
+    ground = _rolling_read(True, 50.0)
+    air = _rolling_read(False, 58.0)
+    engine._update_phase(ground, air, session)
+    engine._update_phase(air, _rolling_read(False, 60.0), session)
+    assert session.phase == Phase.DEPARTURE
+    # A second later the struts touch again: still the takeoff.
+    down = _rolling_read(True, 55.0)
+    engine._update_phase(air, down, session)
+    assert session.phase == Phase.DEPARTURE
+    assert not session.touchdown_at
+    # And the climb back off it is the same departure, not a second
+    # landing's pending verdict.
+    engine._update_phase(down, _rolling_read(False, 62.0), session)
+    assert session.phase == Phase.DEPARTURE
+    assert not session.touchdown_at
+
+
+def test_a_departure_that_comes_back_lands():
+    """The window is for the struts, not a reprieve: a departure that
+    stays down once it has had time to mean it has landed, and the
+    session says so."""
+    import time as _time
+    from meridianatc.atc.session import Phase
+    engine = _hold_point_engine()
+    session = _departure_session(Phase.DEPARTURE)
+    session.departed_at = _time.monotonic() - 30.0
+    engine._update_phase(_rolling_read(False, 58.0),
+                         _rolling_read(True, 55.0), session)
+    assert session.phase == Phase.LANDED
+    assert session.touchdown_at
+
+
+def test_a_departures_liftoff_is_never_off_a_landing_rollout():
+    """The settle gate keeps the phantom touchdown out of the record,
+    and this is the belt to its braces: even with a touchdown figure
+    still warm from somewhere else, a liftoff the session counts
+    outbound is the departure's own and arms no go-around verdict."""
+    import time as _time
+    from meridianatc.atc.session import Phase
+    engine = _hold_point_engine()
+    engine.station = None
+    session = _departure_session(Phase.DEPARTURE)
+    session.departed_at = _time.monotonic()
+    session.touchdown_at = _time.monotonic() - 3.0
+    session.touchdown_runway = "01"
+    session.rollout_min_kt = 60.0
+    engine._note_rollout_liftoff(_rolling_read(True),
+                                 _rolling_read(False, 55.0), session)
+    assert not session.rollout_liftoff_at
+
+
+def test_the_watch_stays_quiet_through_the_settling_touch():
+    """The tower's window on the same touch: inside the settling window
+    it is the takeoff's own contact and no landing was watched, so no
+    pilot hears he landed without a clearance on the climb-out."""
+    import time as _time
+    from meridianatc.atc.session import Phase
+    from meridianatc.atc.watch import SurfaceWatch
+    station = SimpleNamespace(ident="LEVX", position="TWR",
+                              callsign="Vigo Tower",
+                              callsign_in=lambda lang: "Vigo Tower")
+    p = SimpleNamespace(language="en")
+    p.landed_without_clearance = Mock(return_value="landed no clearance")
+    brain = SimpleNamespace(
+        issues_clearances=lambda s: True,
+        rest_of_taxi=lambda *a, **k: None,
+        for_station=lambda *a, **k: p)
+    navdb = SimpleNamespace(
+        airport=lambda ident: SimpleNamespace(
+            ident="LEVX", lat=42.232, lon=-8.627),
+        runway_at=lambda *a, **k: "01",
+        runway_strip=lambda *a, **k: "01",
+        station_for=lambda *a, **k: None)
+    watch = SurfaceWatch(navdb, brain)
+    session = _departure_session(Phase.DEPARTURE)
+    session.cleared_runway = "01"
+    session.departed_at = _time.monotonic()
+    reply = watch.look(session, station,
+                       _rolling_read(True, 55.0),
+                       _rolling_read(False, 60.0))
+    assert reply is None
+    p.landed_without_clearance.assert_not_called()
+    # Past the window the same touch is the landing it watches for.
+    session.departed_at = _time.monotonic() - 30.0
+    reply = watch.look(session, station,
+                       _rolling_read(True, 55.0),
+                       _rolling_read(False, 60.0))
+    assert reply is not None
+
+
+def test_the_rotate_is_airspeeds_not_the_grounds():
+    """The books' rotation is flown on the needle: at Vigo the roll
+    spooled the groundspeed twelve knots ahead of the indicated
+    reading, and rotating on the higher figure pulled it into the air
+    at forty-four -- a balloon, a settle back onto the strip, and the
+    mush that stalled it. The abort gates keep the optimistic figure;
+    the rotate waits on the pitot instead."""
+    flight = _roll_flight()
+    flight.state.sub = "roll"
+    flight.state.sub_entered_at = 998.0
+    state = SimpleNamespace(
+        on_ground=True, ground_speed_kt=95.0, indicated_airspeed_kt=44.0,
+        parking_brake=False, latitude=41.235, longitude=-8.679,
+        heading_true=170.0)
+    flight._phase_takeoff(state, 1000.0)
+    assert not any(c.args == ("rotate",) for c in
+                   flight._goto_sub.call_args_list)
+    # The needle at the mark is the rotate.
+    state.indicated_airspeed_kt = 91.0
+    flight._phase_takeoff(state, 1000.0)
+    assert ("rotate",) in [c.args for c in
+                           flight._goto_sub.call_args_list]
+    # A pitot that reads nothing at all leaves the wheels' figure the
+    # only speed there is -- the roll still flies itself off.
+    flight2 = _roll_flight()
+    flight2.state.sub = "roll"
+    flight2.state.sub_entered_at = 998.0
+    dead = SimpleNamespace(
+        on_ground=True, ground_speed_kt=95.0, indicated_airspeed_kt=0.0,
+        parking_brake=False, latitude=41.235, longitude=-8.679,
+        heading_true=170.0)
+    flight2._phase_takeoff(dead, 1000.0)
+    assert ("rotate",) in [c.args for c in
+                           flight2._goto_sub.call_args_list]
+
+
 def test_the_final_call_is_the_clearance_nobody_gives():
     """On a broadcast frequency each leg is announced; final clears."""
     from meridianatc.atc.autonomous import AutonomousPhase

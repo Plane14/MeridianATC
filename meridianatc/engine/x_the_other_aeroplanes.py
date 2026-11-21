@@ -1743,11 +1743,12 @@ class _The_other_aeroplanes:
         surface watch reads it as a takeoff."""
         if not (previous.on_ground and not state.on_ground):
             return
-        # Outbound has no rollout to lift off: while the session is the takeoff
-        # roll the airborne read is a gear bounce or a liftoff, never the end
-        # of a landing -- and a stale touchdown from the last circuit must not
-        # say otherwise.
-        if session.phase in (Phase.LINED_UP, Phase.TAKEOFF):
+        # Outbound has no rollout to lift off: while the session is the
+        # takeoff -- the roll, the climb away, a settling touch between
+        # them -- the airborne read is the departure's own, never the
+        # end of a landing. A stale touchdown from the last circuit
+        # must not say otherwise either.
+        if session.phase.outbound:
             return
         if not session.touchdown_at:
             return
@@ -1880,6 +1881,10 @@ class _The_other_aeroplanes:
         session.roll_air_ticks = 0 if (
             state.on_ground or not rolling_out
         ) else session.roll_air_ticks + 1
+        if previous.on_ground and not state.on_ground:
+            # Every liftoff edge, whichever phase read it: the re-touch
+            # inside the settling window below is measured from here.
+            session.departed_at = time.monotonic()
         if previous.on_ground and not state.on_ground and session.rollout_liftoff_at:
             # Off the rollout, not a takeoff: back to the approach, and the
             # "landed without a clearance" advisory stays spent so a bounce
@@ -1905,7 +1910,8 @@ class _The_other_aeroplanes:
             # and the last one is no longer the one being taxied in from.
             session.advisories.discard("landed_without_clearance")
             session.landed_cleared = False
-        elif not previous.on_ground and state.on_ground and not rolling_out:
+        elif not previous.on_ground and state.on_ground \
+                and not session.re_touch_is_the_takeoffs():
             session.phase = Phase.LANDED
             session.going_around = False
             # Remembered, so a liftoff straight off this rollout can be told

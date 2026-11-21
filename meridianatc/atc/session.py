@@ -91,6 +91,13 @@ _RELEASES_HOLD = frozenset({
 # is not an instruction the aircraft is operating under.
 ATTEMPTS_BEFORE_REISSUE = 3
 
+# A touch this soon after a departure's own liftoff is still the takeoff's --
+# the struts' bounce straight off the runway, a settle back after a low
+# rotation, a porpoise down the strip. It is not a landing: no touchdown is
+# recorded, no advisory is armed, and the go-around arithmetic never sees it.
+# Past the window the aeroplane really did come back.
+SETTLING_TOUCH_S = 15.0
+
 
 @dataclass
 class Instruction:
@@ -566,6 +573,13 @@ class FlightSession:
     touchdown_cleared: bool = False
     rollout_min_kt: float = 0.0
     rollout_liftoff_at: float = 0.0
+    # The last liftoff read outbound. A re-touch inside the settling
+    # window that follows it -- the struts' own bounce straight off the
+    # runway, a settle back after a low rotation -- is still the
+    # takeoff's contact, not a landing's: nothing about a touchdown
+    # (the record, the advisory, the go-around arithmetic) may be hung
+    # on it.
+    departed_at: float = 0.0
     # The touchdown already judged a full stop, so it is judged once.
     full_stop_judged_at: float = 0.0
     # What the tower watches to tell a go-around from a bump: the lowest
@@ -650,6 +664,23 @@ class FlightSession:
         that the circuit's gates ask, and the rules are left alone.
         """
         return not self.ifr or self.pattern_work
+
+    def re_touch_is_the_takeoffs(self) -> bool:
+        """Whether a wheels-down read right now is the takeoff's own
+        contact and not a landing.
+
+        The roll's strut bounce and the climb-out's settle back both
+        read as a touchdown to a watcher that takes the gear at its
+        word: an aeroplane the session still counts outbound has no
+        landing to record, and a departure's re-touch inside the
+        settling window is the takeoff finishing what it started. Only
+        a departure that comes back past the window really came back.
+        """
+        if not self.phase.outbound:
+            return False
+        if self.phase is Phase.DEPARTURE:
+            return time.monotonic() - self.departed_at < SETTLING_TOUCH_S
+        return True
 
     def establish(self, station: Station | None) -> None:
         if not station:

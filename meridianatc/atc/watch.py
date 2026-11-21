@@ -153,13 +153,13 @@ class SurfaceWatch:
             )
 
         # --- landed without a landing clearance -----------------------
-        # Not a landing is a takeoff roll's gear answering: the struts
-        # unload and touch again at speed, and the phase still says the
-        # aeroplane is on its way out -- no flight preceded the touch, so
-        # no landing did either.
+        # Not a landing is a takeoff's own ground contact: the struts
+        # unload and touch again at speed, a low rotation settles back,
+        # and the phase still says the aeroplane is on its way out -- no
+        # flight preceded the touch, so no landing did either.
         if (not previous.on_ground and state.on_ground
                 and state.ground_speed_kt > ROLLING_KT
-                and session.phase not in (Phase.LINED_UP, Phase.TAKEOFF)
+                and not session.re_touch_is_the_takeoffs()
                 and not session.cleared_landing
                 and not session.cleared_option
                 and session.advise_once("landed_without_clearance")):
