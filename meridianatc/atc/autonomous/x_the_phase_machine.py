@@ -730,8 +730,14 @@ class _The_phase_machine:
             # Held for the clearance: as long as the aeroplane is on the
             # numbers with its engines running it is doing exactly what
             # "cleared for takeoff" is waited for. A rejected takeoff
-            # latches -- nothing re-rolls after one.
-            if self.session.cleared_takeoff and not self.state.rejected:
+            # latches -- nothing re-rolls after one. The tower's own
+            # phase counts too: the lineup's "set" gate already reads a
+            # TAKEOFF session phase as the clearance it is, and a flag
+            # rescinded without that phase changing (an abort the tower
+            # vacated) must not park the aeroplane here for ever.
+            if (self.session.cleared_takeoff
+                    or self.session.phase == Phase.TAKEOFF) \
+                    and not self.state.rejected:
                 if self._runway_blocked():
                     # The strip was clear when the clearance came; it is
                     # not now -- wait for it again rather than roll over
@@ -1728,6 +1734,12 @@ class _The_phase_machine:
                 # the speed -- bugs frozen at five hundred feet drift
                 # off the runway on the first gust.
                 self._fly_short_final(state, now)
+                # The stabilized call is the approach phase's job, but
+                # a landing handed over on the tower's own phase word
+                # skipped that phase's assessment -- without it running
+                # here the flag can never set and every final is a
+                # forced go-around at two hundred feet.
+                self._check_stabilized(state)
                 if self._should_go_around(state):
                     self._start_go_around(state)
                     return

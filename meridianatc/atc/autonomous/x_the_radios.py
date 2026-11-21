@@ -477,8 +477,17 @@ class _The_radios:
                 return
             kind = "ready"
         elif phase in (AutonomousPhase.LINE_UP, AutonomousPhase.TAKEOFF):
-            if session.cleared_takeoff or self.state.rejected \
-                    or self.state.sub not in ("set", "wait_clearance"):
+            if session.cleared_takeoff or self.state.rejected:
+                return
+            # TAKEOFF entered without a clearance -- a rescinded one, an
+            # abort the tower vacated -- waits for a fresh word from the
+            # "wait_clearance" sub, which the phase machine reaches with
+            # ``sub`` still empty: an unset sub is that sub there, not a
+            # reason to stay silent. LINE_UP's own empty sub is "align",
+            # which is nobody's cue to call ready either.
+            if self.state.sub not in ("set", "wait_clearance") \
+                    and not (phase == AutonomousPhase.TAKEOFF
+                             and not self.state.sub):
                 return
             if getattr(session, "held_for_landing", ""):
                 # Lined up behind the landing traffic -- the wait is

@@ -274,8 +274,10 @@ class _The_cleared_approach:
         The descent used to be the path's sink rate flown from wherever
         the aeroplane happened to be: begun low, it met the ground short
         of the runway at exactly three degrees."""
-        if self.state.runway_heading <= 0:
-            self._find_runway(state)
+        # The runway can change ends of the flight -- the departure's
+        # pick still sits on the state coming in -- so the key check
+        # inside _find_runway decides, not a blind "only when empty".
+        self._find_runway(state)
         if self.state.runway_heading <= 0:
             return False
         rwy_hdg = self.state.runway_heading
@@ -385,8 +387,9 @@ class _The_cleared_approach:
         if recipe is not None and recipe.final_course > 0                 and (recipe.threshold_lat or recipe.threshold_lon):
             return (recipe.threshold_lat, recipe.threshold_lon,
                     recipe.final_course, recipe.field_elev_ft)
-        if self.state.runway_heading <= 0:
-            self._find_runway(state)
+        # Same stale-departure case as _fly_visual_final: refresh on
+        # every call, the method early-returns when the pick matches.
+        self._find_runway(state)
         if self.state.runway_heading <= 0:
             return None
         return (self.state.runway_lat, self.state.runway_lon,

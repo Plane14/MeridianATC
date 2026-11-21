@@ -173,6 +173,11 @@ class _Circling:
         """The stabilized-approach call, once, below a thousand feet."""
         if self.state.stabilized:
             return
+        # The runway this judges against is the arrival's, and the pick
+        # made leaving home is still on the state unless refreshed:
+        # without this the line-up's threshold stands in for the field
+        # ahead and no final is ever aligned, let alone stable.
+        self._find_runway(state)
         agl = state.altitude_agl_ft or 0.0
         if agl > 1000.0 or agl <= 0.0:
             return
