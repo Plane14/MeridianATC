@@ -2164,6 +2164,7 @@ def test_a_roll_liftoff_is_never_off_a_landing_rollout():
     touch-and-go, so the rollout liftoff stays unarmed while the session
     is still the takeoff it was cleared for."""
     import time as _time
+
     from meridianatc.atc.session import Phase
     engine = _hold_point_engine()
     engine.station = None
@@ -2252,6 +2253,7 @@ def test_a_departure_that_comes_back_lands():
     stays down once it has had time to mean it has landed, and the
     session says so."""
     import time as _time
+
     from meridianatc.atc.session import Phase
     engine = _hold_point_engine()
     session = _departure_session(Phase.DEPARTURE)
@@ -2268,6 +2270,7 @@ def test_a_departures_liftoff_is_never_off_a_landing_rollout():
     still warm from somewhere else, a liftoff the session counts
     outbound is the departure's own and arms no go-around verdict."""
     import time as _time
+
     from meridianatc.atc.session import Phase
     engine = _hold_point_engine()
     engine.station = None
@@ -2286,6 +2289,7 @@ def test_the_watch_stays_quiet_through_the_settling_touch():
     it is the takeoff's own contact and no landing was watched, so no
     pilot hears he landed without a clearance on the climb-out."""
     import time as _time
+
     from meridianatc.atc.session import Phase
     from meridianatc.atc.watch import SurfaceWatch
     station = SimpleNamespace(ident="LEVX", position="TWR",

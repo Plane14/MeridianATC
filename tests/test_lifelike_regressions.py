@@ -1591,8 +1591,7 @@ def test_the_heli_authority_figure_falls_back_through_the_bands():
     own figure first, the nearest with evidence next, the whole-speed
     legacy after, and the tuned guess last, so a band never asked still
     answers."""
-    from meridianatc.atc.autonomous_heli import (
-        PEDAL_AUTH_NOMINAL, _pedal_authority_at)
+    from meridianatc.atc.autonomous_heli import PEDAL_AUTH_NOMINAL, _pedal_authority_at
     heli = SimpleNamespace(
         _pedal_authority_b={2: 80.0}, _pedal_authority=50.0)
     assert _pedal_authority_at(heli, 20.0) == 80.0     # its own band

@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -69,6 +70,66 @@ class PanelFiles(StaticFiles):
         response = super().file_response(*args, **kwargs)
         response.headers["cache-control"] = "no-cache"
         return response
+
+
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
+
+
+def _origin_ok(origin: str) -> bool:
+    """Whether the page a request came from is one that may call the API."""
+    if origin == "null":
+        # Opaque origins: a file:// page, the simulator's own panel frames.
+        return True
+    parts = urlsplit(origin)
+    if parts.scheme == "coui":
+        return True                # the simulator's panel
+    if parts.scheme not in ("http", "https"):
+        return False
+    return (parts.hostname or "").lower() in _LOCAL_HOSTS
+
+
+def _same_machine(scope) -> bool:
+    """Whether an ASGI request may reach the API under the origin rules."""
+    headers = {key.lower(): value
+               for key, value in scope.get("headers") or ()}
+    if headers.get(b"sec-fetch-site") == b"cross-site":
+        return False
+    origin = headers.get(b"origin")
+    return origin is None or _origin_ok(origin.decode("latin-1"))
+
+
+class _OwnMachineOnly:
+    """ASGI middleware refusing what a stranger's page can send.
+
+    The API carries no login: every endpoint answers whoever can reach the
+    port. On loopback that is only this machine's programs -- plus any web
+    page the pilot happens to open, because a browser will gladly POST or
+    open a websocket at 127.0.0.1 from a page served anywhere on the
+    internet. Browsers stamp those calls with the page's Origin and a
+    Sec-Fetch-Site, and a script can remove neither, so a request carrying
+    either that says another site sent it is refused. Everything without
+    them -- the simulator's panel, the console, a script of the pilot's own
+    -- is let through exactly as before.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket") and not _same_machine(scope):
+            if scope["type"] == "websocket":
+                await send({"type": "websocket.close", "code": 1008})
+            else:
+                await send({
+                    "type": "http.response.start", "status": 403,
+                    "headers": [(b"content-type", b"text/plain")],
+                })
+                await send({
+                    "type": "http.response.body",
+                    "body": b"the MeridianATC panel only answers its own pages",
+                })
+            return
+        await self.app(scope, receive, send)
 
 
 class Broadcaster:
@@ -142,9 +203,10 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
     # before it reaches the application, and the panel reports that MeridianATC
     # is not running while MeridianATC is running.
     #
-    # Opening this up costs nothing that was not already open: the server is
-    # bound to the loopback interface and nothing off this machine can reach
-    # it to be allowed anything.
+    # Opening this up is not free: the permissive answers are still read by
+    # every page the pilot's browser ever opens. _OwnMachineOnly is what
+    # keeps a stranger's page from flying the aeroplane, so it is added last
+    # to run first -- ahead of the CORS answers it would otherwise wrap.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -152,6 +214,7 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(_OwnMachineOnly)
 
     # ------------------------------------------------------------------
     # state
@@ -2568,6 +2631,8 @@ def create_setup_app(config, broadcaster: Broadcaster) -> FastAPI:
         CORSMiddleware, allow_origins=["*"], allow_credentials=False,
         allow_methods=["*"], allow_headers=["*"],
     )
+    # The setup panel is as open as the flying one; keep other pages out.
+    app.add_middleware(_OwnMachineOnly)
 
     installer = Installer(
         config,

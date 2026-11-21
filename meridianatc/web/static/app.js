@@ -75,6 +75,16 @@ function feet(value) {
  * number in it -- "heading", "270" -- rather than a sentence, because the
  * sentence would be in English and everything else on the page would not be.
  */
+/**
+ * A value safe to interpolate into innerHTML. Callsigns, types, intents and
+ * station names all arrive over the wire and can carry markup, and a script
+ * running in this page's origin can reach every endpoint the panel can.
+ */
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"]/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+}
+
 function order(value) {
   if (!value || !value.kind) return "";
   // The engine sends the English with the token, which is what a window being
@@ -603,9 +613,9 @@ function paintTraffic() {
     // aeroplane that is on final and one that has just been sent around.
     const told = order(aircraft.order);
     strip.innerHTML = `
-      <div class="who">${aircraft.callsign}</div>
-      <div class="doing">${doing}${where ? ` · ${where}` : ""}</div>
-      ${told ? `<div class="told">${told}</div>` : ""}`;
+      <div class="who">${esc(aircraft.callsign)}</div>
+      <div class="doing">${esc(doing)}${where ? ` · ${esc(where)}` : ""}</div>
+      ${told ? `<div class="told">${esc(told)}</div>` : ""}`;
     bay.appendChild(strip);
   }
 }
@@ -1030,8 +1040,6 @@ function paintCraftCard() {
   const make = [aircraft.make, aircraft.type].filter(Boolean).join(" · ");
   const points = aircraft.waypoints || [];
 
-  const esc = (value) => String(value ?? "").replace(/[&<>"]/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const cell = (key, value) => `<div><div class="k">${esc(key)}</div><div class="v">${esc(value)}</div></div>`;
 
   card.innerHTML = `
@@ -1172,14 +1180,14 @@ function paintAirspaceTraffic(data) {
     const told = aircraft.instruction;
     row.innerHTML = `
       <div class="lead">
-        <div class="top">${aircraft.callsign}</div>
-        <div class="bottom">${told || aircraft.intent}</div>
+        <div class="top">${esc(aircraft.callsign)}</div>
+        <div class="bottom">${esc(told || aircraft.intent)}</div>
       </div>
       <div class="trail">
-        <div class="top">${aircraft.away.toFixed(1)} nm</div>
-        <div class="bottom">${aircraft.on_ground
+        <div class="top">${esc(aircraft.away.toFixed(1))} nm</div>
+        <div class="bottom">${esc(aircraft.on_ground
           ? (aircraft.runway || aircraft.type)
-          : feet(aircraft.altitude_ft)}</div>
+          : feet(aircraft.altitude_ft))}</div>
       </div>`;
     row.onclick = () => { Airspace.select(aircraft.callsign); paintAirspace(); };
     rows.appendChild(row);
@@ -1191,12 +1199,12 @@ function stationRow(station, parts) {
   row.className = `row${station.tuned ? " is-tuned" : ""}`;
   row.innerHTML = `
     <div class="lead">
-      <div class="top">${station.callsign}</div>
-      <div class="bottom">${parts.bottom}</div>
+      <div class="top">${esc(station.callsign)}</div>
+      <div class="bottom">${esc(parts.bottom)}</div>
     </div>
     <div class="trail">
-      <div class="top">${parts.trailTop}</div>
-      <div class="bottom">${parts.trailBottom}</div>
+      <div class="top">${esc(parts.trailTop)}</div>
+      <div class="bottom">${esc(parts.trailBottom)}</div>
     </div>`;
   row.onclick = () => tune(station.mhz);
   return row;
@@ -1268,8 +1276,8 @@ function paintFrequencies() {
       field = station.ident;
       const head = document.createElement("div");
       head.className = "group-head";
-      head.innerHTML = `<div class="name">${station.ident}</div>
-        <div class="meta">${station.distance_nm} nm</div>`;
+      head.innerHTML = `<div class="name">${esc(station.ident)}</div>
+        <div class="meta">${esc(station.distance_nm)} nm</div>`;
       rows.appendChild(head);
     }
 
@@ -1278,10 +1286,10 @@ function paintFrequencies() {
     const row = document.createElement("div");
     row.className = `row${isTuned ? " is-tuned" : ""}`;
     row.innerHTML = `
-      <div class="pos-tag">${station.position}</div>
+      <div class="pos-tag">${esc(station.position)}</div>
       <div class="lead">
         <div class="top">${station.mhz.toFixed(3)}</div>
-        <div class="bottom">${station.callsign}</div>
+        <div class="bottom">${esc(station.callsign)}</div>
       </div>`;
     const button = document.createElement("button");
     button.className = "tune";
