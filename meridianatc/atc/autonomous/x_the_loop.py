@@ -221,13 +221,18 @@ class _The_loop:
 
     def _sim_ai_wanted(self, state) -> bool:
         """Whether this tick should hand the flying to the sim's AI."""
+        # A vector or an armed avoidance turn outranks the delegation:
+        # neither reaches a sim's own pilot, so the FO takes the leg
+        # back and flies the instruction itself.
         return bool(getattr(self, "_use_sim_ai", False)
                     and not self._is_helicopter
                     and self.state.phase in self.DELEGABLE_PHASES
                     and self.state.sub != "go_around"
                     and not self.state.stall_recovering
                     and not self.state.emergency
-                    and not self.state.emergency_descent)
+                    and not self.state.emergency_descent
+                    and self.session.assigned_heading is None
+                    and self.state.avoid_heading < 0.0)
 
     def _sim_ai_set(self, state, on: bool) -> bool:
         """Ask the sim to fly the leg itself (or stop), source by source.
