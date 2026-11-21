@@ -609,6 +609,28 @@ class XPlaneSource:
         except (OSError, ValueError, TypeError, OverflowError):
             return False
 
+    def dref(self, path, value):
+        # Public write for channels outside the FO's named set, e.g. the
+        # multiplayer control arrays driving AI slots.
+        return self._dref(path, value)
+
+    def value(self, key):
+        with self._lock:
+            return self._values.get(key)
+
+    def subscribe(self, key, path, frequency=None):
+        # Late subscriptions (native-traffic plane feedback): appended at
+        # connect-time order otherwise, subscribed at once when live. The
+        # index stays bound to the subscription list position, so removals
+        # are not possible -- callers keep their keys.
+        with self._lock:
+            if any(existing == key for existing, _ in self._subscriptions):
+                return
+            index = len(self._subscriptions)
+            self._subscriptions.append((key, path))
+        if self.connected:
+            self._subscribe(index, path, frequency or self.frequency)
+
     def _command(self, command):
         if not self.connected:
             return False

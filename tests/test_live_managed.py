@@ -1,10 +1,9 @@
 """Live aeroplanes adopted by traffic.live.managed are flown like the
 invented ones, and handed back to the feed when the switch goes off."""
 
+import math
 from types import SimpleNamespace
 from unittest.mock import Mock
-
-import math
 
 import pytest
 

@@ -99,6 +99,7 @@ from ..integrations.network import OnlineNetwork
 from ..integrations.servicepoints import SimServicePoints
 from ..integrations.simaircraft import SimAircraft
 from ..integrations.systems import SimSystems
+from ..integrations.xpnative import XPNativeTraffic
 from ..integrations.xptraffic import XPlaneTraffic
 from ..llm.providers import LOCAL_PROVIDER_NAMES, build_provider
 from ..llm.understanding import Understanding
@@ -332,6 +333,7 @@ __all__ = [
     "SimServicePoints",
     "SimAircraft",
     "SimSystems",
+    "XPNativeTraffic",
     "XPlaneTraffic",
     "LOCAL_PROVIDER_NAMES",
     "build_provider",

@@ -1172,6 +1172,13 @@ class TrafficConfig:
     radius_nm: float = 100.0
     xplane_plugin_host: str = "127.0.0.1"
     xplane_plugin_port: int = 49010
+    # How X-Plane draws the invented traffic. "csl" is the instanced
+    # light models it always used -- airline liveries, effectively
+    # unlimited count. "native" loads the simulator's own .acf fleet
+    # into the AI-plane slots and flies them on the sim's flight model:
+    # no CSL packs to install and real rotorcraft, at the price of the
+    # sim's slot cap and generic looks.
+    xplane_renderer: str = "csl"
     # Drawn every frame between the traffic's ticks (meridianatc.atc.follow),
     # frozen so the simulator does not move them itself; off writes each
     # aeroplane once a tick, which is what jumped on the taxiway and made a
@@ -1314,6 +1321,12 @@ describe(
                                restart=True, advanced=True),
     xplane_plugin_port=Setting("traffic", "traffic", label="set.xplane_plugin_port",
                                min=1, max=65535, restart=True, advanced=True),
+    xplane_renderer=Setting("traffic", "traffic",
+                            choices=("csl", "native"),
+                            choice_keys=("set.renderer_csl",
+                                         "set.renderer_native"),
+                            restart=True, label="set.xplane_renderer",
+                            help="set.xplane_renderer_why"),
     density=Setting("traffic", "traffic", min=0, max=3, step=0.25,
                     widget="slider", label="set.how_busy"),
     parked=Setting("traffic", "traffic", min=0, max=80, restart=True),

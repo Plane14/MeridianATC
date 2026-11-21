@@ -15,6 +15,21 @@ cleared taxi route on X-Plane's own map (`XPLMMap` markings layer), and
 answers METAR requests with `XPLMGetMETARForAirport` -- the report the
 simulator itself downloaded, for the ATIS.
 
+### Native fleet renderer (optional)
+
+The traffic setting "How X-Plane draws the traffic" offers a second
+renderer: instead of XPMP2/CSL instances the plugin acquires the
+simulator's AI-plane slots, loads a default-fleet `.acf` into each
+(type-matched: airliners to the 737, props to the Skyhawk/King Air,
+rotorcraft to the S-76/R22), and holds `override_plane_ai_autopilot` so
+X-Plane's own flight model flies them. MeridianATC's `XPNativeTraffic`
+then steers each slot through the `sim/multiplayer/controls` datarefs
+with the same PID laws the First Officer uses. No CSL packs are needed
+and real rotorcraft appear, at the price of the sim's 19-plane slot cap
+and generic (non-airline) liveries. The roster travels as
+`{"v":1,"t":"native","ac":[{"id","slot","type"}]}`; an empty roster
+releases the planes and restores the TCAS override.
+
 ## Build
 
 Clone with `git clone --recurse-submodules`, or run `git submodule update --init

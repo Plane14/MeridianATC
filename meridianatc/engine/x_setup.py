@@ -11,6 +11,7 @@ from ._shared import (
     PushToTalk,
     SimTraffic,
     XPlaneTraffic,
+    XPNativeTraffic,
     as_written,
     capabilities,
     log,
@@ -231,7 +232,13 @@ class _Setup:
         not have them leaves the radio alone.
         """
         xplane = capabilities(self.state.source).xplane_traffic
-        if xplane != isinstance(self.simtraffic, XPlaneTraffic):
+        # The renderer the traffic is drawn by: XPMP2's instanced CSL
+        # models, or the simulator's own .acf fleet flown by its flight
+        # model (traffic.xplane_renderer). A renderer switch rebuilds the
+        # link; the setting is restart-gated, so this is the cold path.
+        native = xplane and self.config.traffic.xplane_renderer == "native"
+        if (xplane != isinstance(self.simtraffic, XPlaneTraffic)
+                or (xplane and native != getattr(self.simtraffic, "native", False))):
             self.simtraffic.detach()
             options = dict(
                 enabled=self.config.traffic.enabled and self.config.traffic.in_simulator,
@@ -240,7 +247,12 @@ class _Setup:
                 settle_s=self.config.traffic.lod.settle_s,
                 smooth=self.config.traffic.smooth_motion,
             )
-            if xplane:
+            if native:
+                self.simtraffic = XPNativeTraffic(
+                    **options, host=self.config.traffic.xplane_plugin_host,
+                    port=self.config.traffic.xplane_plugin_port,
+                    source=self.source)
+            elif xplane:
                 self.simtraffic = XPlaneTraffic(
                     **options, host=self.config.traffic.xplane_plugin_host,
                     port=self.config.traffic.xplane_plugin_port)
@@ -293,10 +305,16 @@ class _Setup:
         if getattr(self, "_xptraffic_notice", False):
             return
         self._xptraffic_notice = True
-        self.emit("info",
-                  "X-Plane traffic is not available. Install or enable MeridianATC-XP "
-                  "and its CSL models; see xplane/README.md. Traffic stays radio-only.",
-                  key="log.xplane_traffic_unavailable")
+        if self.config.traffic.xplane_renderer == "native":
+            self.emit("info",
+                      "X-Plane traffic is not available. Install or update "
+                      "MeridianATC-XP; see xplane/README.md. Traffic stays radio-only.",
+                      key="log.xplane_traffic_unavailable")
+        else:
+            self.emit("info",
+                      "X-Plane traffic is not available. Install or enable MeridianATC-XP "
+                      "and its CSL models; see xplane/README.md. Traffic stays radio-only.",
+                      key="log.xplane_traffic_unavailable")
 
     def _warn_xplane_only_msfs(self) -> None:
         """Say once which configured features X-Plane does not have."""

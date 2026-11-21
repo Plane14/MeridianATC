@@ -51,10 +51,18 @@ struct FollowMe {
     double lat = 0, lon = 0, hdg = 0;
 };
 
+struct NativeAssign {
+    std::string id, type;
+    int slot = 0;
+};
+
 struct Packet {
     std::string kind;
     uint64_t seq = 0;
     std::map<std::string, AircraftState> aircraft;
+    // "native" roster: which ICAO type each AI-plane slot should be, so the
+    // plugin can load default .acf models the engine then flies itself.
+    std::vector<NativeAssign> native;
     FollowMe followme;
     // The pilot's cleared taxi route for the map overlay, lat/lon pairs.
     std::vector<std::pair<double, double>> route;
@@ -119,6 +127,24 @@ inline Packet Parse(const std::string& wire) {
         if (!j.at("q").is_number_unsigned())
             throw std::invalid_argument("match token");
         p.q = j.at("q").get<uint64_t>();
+        return p;
+    }
+    if (p.kind == "native") {
+        const auto& ac = j.at("ac");
+        if (!ac.is_array() || ac.size() > 63)
+            throw std::invalid_argument("native roster");
+        std::set<int> slots;
+        for (const auto& a : ac) {
+            NativeAssign assign;
+            assign.id = Text(a, "id", 64, true);
+            assign.type = Text(a, "type", 4, true);
+            if (!a.at("slot").is_number_integer()) throw std::invalid_argument("slot");
+            assign.slot = a.at("slot").get<int>();
+            if (assign.slot < 1 || assign.slot > 63 ||
+                !slots.insert(assign.slot).second)
+                throw std::invalid_argument("slot");
+            p.native.push_back(std::move(assign));
+        }
         return p;
     }
     if (p.kind != "traffic" || !j.at("seq").is_number_unsigned())

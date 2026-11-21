@@ -7,11 +7,13 @@
 #include "XPLMMap.h"
 #include "XPLMMenus.h"
 #include "XPLMNavigation.h"
+#include "XPLMPlanes.h"
 #include "XPLMPlugin.h"
 #include "XPLMProcessing.h"
 #include "XPLMScenery.h"
 #include "XPLMUtilities.h"
 #include "XPLMWeather.h"
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -205,6 +207,130 @@ public:
 std::map<std::string, std::unique_ptr<TrafficAircraft>> aircraft;
 std::set<std::string> unmatched;
 
+void TCAS();
+
+// --- X-Plane's own aircraft, flown by the sim's flight model ----------
+// The engine steers these through the multiplayer control datarefs; the
+// plugin's share is what no dataref can do: acquiring the planes, loading
+// a default-fleet .acf into each slot, and latching the AI-autopilot
+// override. Whether XPMP2's TCAS override currently owns the planes --
+// ownership is exclusive, so native traffic and the override swap turns.
+bool xpmpOwned = false;
+bool nativeAcquired = false;
+std::map<int, std::pair<std::string, std::string>> nativeSlots; // slot -> {id, acf}
+XPLMDataRef ovrAuto = nullptr, ovrPath = nullptr;
+std::vector<fs::path> acfList;
+
+void ScanAcf() {
+    if (!acfList.empty()) return;
+    char system[1024]{}; XPLMGetSystemPath(system);
+    std::error_code ec;
+    const fs::path base = fs::path(system) / "Aircraft";
+    for (auto it = fs::recursive_directory_iterator(base, ec);
+         !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        if (it->is_regular_file(ec) && it->path().extension() == ".acf")
+            acfList.push_back(it->path());
+    }
+}
+fs::path FindAcf(const std::string& needle) {
+    for (const auto& p : acfList)
+        if (p.filename().string().find(needle) != std::string::npos) return p;
+    return {};
+}
+std::string ModelFor(const std::string& type) {
+    // ICAO type -> a word in the default fleet's .acf filename. Everything
+    // not named falls to a size-class stand-in further down.
+    static const std::pair<const char*, const char*> table[] = {
+        {"A33", "A330"}, {"MD8", "MD-82"},
+        {"SR2", "SR22"}, {"SF5", "SF50"},
+        {"CIT", "Citation"}, {"C75", "Citation"},
+        {"B58", "Baron 58"}, {"BE5", "Baron"},
+        {"BE9", "King Air"}, {"C90", "King Air"},
+        {"PA1", "Super Cub"}, {"RV1", "RV-10"}, {"EVO", "Evolution"},
+        {"A10", "Aerolite"}, {"F14", "Tomcat"},
+        {"ASK", "ASK"}, {"GLI", "ASK"},
+        {"R22", "R22"}, {"R44", "R22"}, {"S76", "S-76"},
+        {"C17", "172"}, {"C15", "172"}, {"C18", "172"},
+        {"PA2", "172"}, {"P28", "172"},
+    };
+    for (const auto& [key, needle] : table)
+        if (type.find(key) == 0)
+            if (auto p = FindAcf(needle); !p.empty()) return p.string();
+    static const std::set<std::string> heli = {
+        "R22", "R44", "R66", "S76", "B407", "B429", "B06", "AS50",
+        "AS55", "EC35", "EC45", "A139", "MD52", "UH1", "H500",
+    };
+    if (heli.count(type)) {
+        for (const char* needle : {"S-76", "R22"})
+            if (auto p = FindAcf(needle); !p.empty()) return p.string();
+    }
+    // Stand-in by class: anything airliner-sized wears the 737, light
+    // turboprops the King Air, everything else the Skyhawk, a helicopter
+    // the S-76.
+    static const std::set<std::string> propTwin = {"AT7", "DH8", "DHC",
+        "SW4", "SF3", "JS4", "E110", "B190"};
+    const char* needle = type.size() && (type[0] == 'A' || type[0] == 'B'
+            || type[0] == 'E' || type[0] == 'D' || type[0] == 'M')
+        && !propTwin.count(type) ? "737-800"
+        : propTwin.count(type) || type.find("TBM") == 0 ? "King Air" : "172";
+    for (const char* try_ : {needle, "172", "737-800"})
+        if (auto p = FindAcf(try_); !p.empty()) return p.string();
+    return acfList.empty() ? std::string{} : acfList.front().string();
+}
+
+void EnableNative() {
+    if (nativeAcquired) return;
+    // Plane ownership is exclusive: XPMP2 holds it for the TCAS override,
+    // so native traffic asks it to let go first and hands it back later.
+    if (xpmpOwned) { XPMPMultiplayerDisable(); xpmpOwned = false; }
+    nativeAcquired = XPLMAcquirePlanes(nullptr, nullptr, nullptr) != 0;
+    if (!nativeAcquired)
+        Log("AI planes unavailable -- another plugin owns them");
+}
+void ClearNative() {
+    if (nativeSlots.empty() && !nativeAcquired) return;
+    int zero = 0;
+    for (const auto& [slot, pair] : nativeSlots) {
+        if (ovrAuto) XPLMSetDatavi(ovrAuto, &zero, slot, 1);
+        if (ovrPath) XPLMSetDatavi(ovrPath, &zero, slot, 1);
+    }
+    nativeSlots.clear();
+    if (nativeAcquired) {
+        XPLMSetActiveAircraftCount(1);
+        XPLMReleasePlanes();
+        nativeAcquired = false;
+    }
+    if (config.tcas && !xpmpOwned) TCAS();
+}
+void ApplyRoster(const std::vector<NativeAssign>& roster) {
+    if (roster.empty()) { ClearNative(); return; }
+    ScanAcf();
+    EnableNative();
+    if (!nativeAcquired) return;
+    int high = 0, one = 1, zero = 0;
+    std::map<int, std::pair<std::string, std::string>> next;
+    for (const auto& assign : roster) {
+        high = std::max(high, assign.slot);
+        const std::string acf = ModelFor(assign.type);
+        auto it = nativeSlots.find(assign.slot);
+        if (it == nativeSlots.end() || it->second.first != assign.id
+                || it->second.second != acf) {
+            if (!acf.empty()) XPLMSetAircraftModel(assign.slot, acf.c_str());
+            next[assign.slot] = {assign.id, acf};
+            if (ovrAuto) XPLMSetDatavi(ovrAuto, &one, assign.slot, 1);
+            if (ovrPath) XPLMSetDatavi(ovrPath, &zero, assign.slot, 1);
+        } else {
+            next[assign.slot] = it->second;
+        }
+    }
+    for (const auto& [slot, pair] : nativeSlots)
+        if (!next.count(slot)) {
+            if (ovrAuto) XPLMSetDatavi(ovrAuto, &zero, slot, 1);
+        }
+    nativeSlots = std::move(next);
+    XPLMSetActiveAircraftCount(1 + high);
+}
+
 // The follow-me car is no aircraft: an instanced object placed on the
 // taxiway ahead of the pilot from the engine's position stream.
 XPLMObjectRef followmeObject = nullptr;
@@ -298,8 +424,12 @@ void Labels() { XPMPEnableAircraftLabels(config.labels); }
 void TCAS() {
     if (config.tcas) {
         const char* result = XPMPMultiplayerEnable();
+        xpmpOwned = *result == '\0';
         if (*result) Log(std::string("TCAS control unavailable: ") + result);
-    } else XPMPMultiplayerDisable();
+    } else {
+        XPMPMultiplayerDisable();
+        xpmpOwned = false;
+    }
 }
 void Sync(double now) {
     unmatched.clear();
@@ -348,6 +478,7 @@ Json Status(double now) {
         {"xpmp2", MERIDIAN_XPMP2_VERSION}, {"xplane", xp}, {"csl_models", XPMPGetNumberOfInstalledModels()},
         {"aircraft", session.snapshot.size()}, {"drawn", drawn}, {"unmatched", unmatched},
         {"followme", session.FollowmeActive(now)}, {"sysroot", system},
+        {"native_cap", 1}, {"native", static_cast<int>(nativeSlots.size())},
         {"fms", FmsPlan()}, {"models", models}};
 }
 void AnswerMatch(const Packet& packet, const sockaddr_in& to) {
@@ -364,7 +495,14 @@ void AnswerMatch(const Packet& packet, const sockaddr_in& to) {
 float Poll(float, float, int, void*) {
     try {
         double now = Now();
-        if (session.Expire(now)) { aircraft.clear(); unmatched.clear(); }
+        if (session.Expire(now)) {
+            aircraft.clear(); unmatched.clear(); ClearNative();
+        }
+        // The sim clears the AI override when it pleases; the engine's
+        // control writes only hold if the flag keeps standing.
+        int one = 1;
+        for (const auto& [slot, pair] : nativeSlots)
+            if (ovrAuto) XPLMSetDatavi(ovrAuto, &one, slot, 1);
         std::string wire; sockaddr_in from{};
         for (int n = 0; n < 64 && udp.Receive(wire, from); ++n) {
             try {
@@ -383,6 +521,11 @@ float Poll(float, float, int, void*) {
                 }
                 if (packet.kind == "match") {
                     AnswerMatch(packet, from);
+                    continue;
+                }
+                if (packet.kind == "native") {
+                    ApplyRoster(packet.native);
+                    peer = from;
                     continue;
                 }
                 auto sender = (static_cast<uint64_t>(ntohl(from.sin_addr.s_addr)) << 16) | ntohs(from.sin_port);
@@ -421,6 +564,7 @@ void Menu(void*, void* item) {
 int Connected(void*) { return initialized && session.Connected(Now()) ? 1 : 0; }
 int AircraftCount(void*) { return static_cast<int>(session.snapshot.size()); }
 void Shutdown() {
+    ClearNative();
     if (loop) { XPLMDestroyFlightLoop(loop); loop = nullptr; }
     for (auto layer : mapLayers) XPLMDestroyMapLayer(layer);
     mapLayers.clear();
@@ -465,6 +609,8 @@ PLUGIN_API int XPluginEnable() {
         const char* result = XPMPMultiplayerInit("MeridianATC-XP", (root / "Resources").string().c_str(), Preferences, "A320");
         if (*result) { Log(result); XPMPMultiplayerCleanup(); return 0; }
         initialized = true;
+        ovrAuto = XPLMFindDataRef("sim/operation/override/override_plane_ai_autopilot");
+        ovrPath = XPLMFindDataRef("sim/operation/override/override_planepath");
         LoadCSL(); Labels(); TCAS(); Checks(); LoadFollowMe();
         if (!udp.Open(config.port)) throw std::runtime_error("Cannot bind localhost UDP port " + std::to_string(config.port));
         XPLMRegisterMapCreationHook(MapOpened, nullptr);
