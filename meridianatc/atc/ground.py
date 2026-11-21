@@ -626,16 +626,61 @@ class GroundLayout:
                 continue
             along, across = self.runway_frame(*self.xy[node], threshold,
                                               heading)
+            if node in junctions and abs(across) > RUNWAY_HALF_M:
+                # Out at the bars, then: the marked link from it is the
+                # paved connector, and the strip is its far end. The
+                # entry is where the link lands -- route the hold and
+                # the line-up through the connector, not at the bars a
+                # connector-width short of the pavement, where the leg
+                # drawn to the centreline cuts the infield corner.
+                joined = self._down_the_link(node, threshold, heading)
+                if joined is not None:
+                    node = joined
+                    along, across = self.runway_frame(*self.xy[node],
+                                                      threshold, heading)
             if abs(across) > ENTRY_ACROSS_M \
                     or not -150.0 <= along <= length_m + 150.0:
                 continue
-            found.append((along, node))
+            if not any(node == entry for _, entry in found):
+                found.append((along, node))
         # The node breaks a tie. ``runway_nodes`` is a set of tuples holding
         # a string, whose order changes with the interpreter's hash seed, and
         # two entries the same distance from the threshold would otherwise
         # give the pilot a different taxi on a different day.
         found.sort(key=lambda item: (item[0], item[1]))
         return found
+
+    def _down_the_link(self, node: object,
+                       threshold: tuple[float, float], heading: float
+                       ) -> object | None:
+        """Where a junction's runway-marked link reaches the strip.
+
+        The junction sits at the holding bars and the marked edges from
+        it are the paved connector; the first node on the pavement is
+        the answer, or None where the link never gets there. Walks
+        toward the centreline -- a connector that dog-legs is followed,
+        and eight hops is longer than any real link.
+        """
+        seen = {node}
+        here = node
+        for _ in range(8):
+            best = None
+            for other, _metres, runway, _name in self.edges.get(here, ()):
+                if not runway or other in seen or other[0] != "p":
+                    continue
+                _, across = self.runway_frame(*self.xy[other], threshold,
+                                              heading)
+                if best is None or abs(across) < best[0]:
+                    best = (abs(across), other)
+            if best is None:
+                return None
+            _, here = best
+            seen.add(here)
+            _, across = self.runway_frame(*self.xy[here], threshold,
+                                          heading)
+            if abs(across) <= RUNWAY_HALF_M:
+                return here
+        return None
 
     def departure(self, stand: Stand | None, start_xy: tuple[float, float],
                   threshold: tuple[float, float], heading: float,
@@ -784,6 +829,16 @@ class GroundLayout:
                 if other == b and label and not runway:
                     line_up.entry_name = label
                     break
+            if not line_up.entry_name:
+                # The edge onto the pavement is the marked link itself:
+                # where it carries no taxiway name (apt.dat remarks it
+                # "runway"), the name the departure is called by is the
+                # taxiway that feeds the bars.
+                for _other, _metres, runway_edge, label in \
+                        self.edges.get(a, ()):
+                    if not runway_edge and label:
+                        line_up.entry_name = label
+                        break
         elif first_idx == 0:
             # Held at the entry already: the taxiway the junction itself
             # sits on is the name the departure is called by.

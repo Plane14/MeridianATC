@@ -1387,6 +1387,65 @@ def test_an_entry_too_short_for_the_takeoff_is_not_used():
     assert ("p", 1) in runway_nodes
 
 
+def _bars_layout():
+    """apt.dat's junction shape: the holding bars are the node where the
+    taxiway meets a "runway"-marked link, and the connector from them to
+    the strip is that link -- the meeting point is out at the bars, not
+    on the pavement (LEVX's taxiway F onto runway 19)."""
+    from meridianatc.atc.ground import (
+        PATH_PARKING,
+        PATH_RUNWAY,
+        PATH_TAXI,
+        GroundLayout,
+    )
+    points = [
+        (0, 0, 0.0, 0.0),        # 0 runway, near end
+        (0, 0, 3500.0, 0.0),     # 1 runway, far end
+        (0, 0, 1700.0, 0.0),     # 2 the connector's join, on the strip
+        (0, 0, 1560.0, -180.0),  # 3 the bars -- the off-strip junction
+        (0, 0, 1400.0, -200.0),  # 4 taxi node back toward the stand
+    ]
+    parkings = [(8, 0, "", "", 1, 0, 90.0, 20.0, 1400.0, -230.0)]
+    paths = [
+        (PATH_RUNWAY, 0, 0, "", 0, 2, -1),
+        (PATH_RUNWAY, 0, 0, "", 2, 1, -1),
+        (PATH_RUNWAY, 0, 0, "", 3, 2, -1),
+        (PATH_TAXI, 0, 0, "F", 4, 3, -1),
+        (PATH_PARKING, 0, 0, "", 4, 0, -1),
+    ]
+    return GroundLayout("TEST", 51.0, 0.0, points, parkings, paths, ["F"])
+
+
+def test_the_entry_is_where_the_link_reaches_the_pavement():
+    """A junction out at the holding bars enters where its marked link
+    lands on the strip -- routing the line-up to the bars themselves
+    drew the straight leg from there to the centreline, across the
+    grass between the taxiway and the runway."""
+    layout = _bars_layout()
+    found = layout.entries((0.0, 0.0), 90.0, 3500.0)
+    assert ("p", 2) in {node for _along, node in found}
+    assert ("p", 3) not in {node for _along, node in found}
+
+
+def test_the_line_up_walks_the_connector_not_the_infield():
+    """The line-up leg is the bars' own connector onto the strip and
+    then the centreline past the join -- no straight leg from the bars
+    to a centreline point abeam them, which is the grass."""
+    layout = _bars_layout()
+    legs = layout.departure(layout.stands[0], (1400.0, -230.0),
+                            (0.0, 0.0), 90.0, 3500.0)
+    assert legs is not None
+    _taxi_out, line_up = legs
+    assert ("p", 3) in line_up.nodes and ("p", 2) in line_up.nodes
+    # The last node before the centreline point is on the strip --
+    # the line the path draws to it is the connector, on pavement.
+    joined = line_up.nodes.index(("p", 2))
+    assert line_up.nodes[joined - 1] == ("p", 3)
+    x, z = line_up.points[-1]
+    assert z == pytest.approx(0.0, abs=1.0)
+    assert x > 1700.0
+
+
 # -- the lifelike-controls-and-phraseology overhaul ---------------------------
 
 def test_the_yaw_rate_cap_schedules_down_with_speed():
