@@ -1807,7 +1807,7 @@ def _hold_point_engine():
     return engine
 
 
-def _departure_session(phase):
+def _departure_session(phase, lineup=None):
     from meridianatc.atc.phraseology import Aircraft
     from meridianatc.atc.session import FlightSession
     from meridianatc.atc.speech import parse_callsign
@@ -1815,7 +1815,13 @@ def _departure_session(phase):
     session.departure = SimpleNamespace(ident="LEVX")
     session.departure_runway = "01"
     session.phase = phase
+    session.lineup_path = list(lineup or ())
     return session
+
+
+# The bars the Delta route's line-up leg starts from, per the plan the
+# session was given.
+_BARS_01 = (42.22123, -8.63034)
 
 
 def test_a_parked_stand_near_the_end_is_not_a_holding_point():
@@ -1861,6 +1867,32 @@ def test_the_hold_is_marked_only_after_the_taxi_rolls():
     # has left the taxiing set, so the next look clears it.
     engine._update_phase(at_the_bars, at_the_bars, session)
     assert not session.left_the_stand
+
+
+def test_the_routes_own_bars_are_the_holding_point():
+    """The Delta route ends its taxi at the bars three hundred metres
+    from the stand: still rolling on the apron, the aeroplane is on its
+    way, not at the hold -- the premature mark is what sent a parked
+    flight to the tower and had the line-up chasing its own route."""
+    from meridianatc.atc.session import Phase
+    from meridianatc.sim.state import AircraftState
+    engine = _hold_point_engine()
+    session = _departure_session(
+        Phase.TAXI_OUT,
+        lineup=[_BARS_01, (42.22173, -8.62953), (42.22208, -8.62944)])
+    session.left_the_stand = True
+    # Mid-taxi on the apron: inside the threshold radius, three hundred
+    # metres short of the bars.
+    rolling = AircraftState(latitude=42.22300, longitude=-8.63180,
+                            altitude_ft=837.0, on_ground=True,
+                            ground_speed_kt=7.0)
+    engine._update_phase(rolling, rolling, session)
+    assert session.phase == Phase.TAXI_OUT
+    at_the_bars = AircraftState(latitude=42.22130, longitude=-8.63040,
+                                altitude_ft=837.0, on_ground=True,
+                                ground_speed_kt=0.0)
+    engine._update_phase(rolling, at_the_bars, session)
+    assert session.phase == Phase.HOLDING_SHORT
 
 
 def test_the_final_call_is_the_clearance_nobody_gives():
@@ -3149,6 +3181,41 @@ def test_the_roll_tracks_the_centreline(monkeypatch):
     flight._phase_takeoff(state, 1000.0)
     args, kwargs = flight._ground_directional.call_args
     assert abs(args[1] - 173.5) < 1e-6
+
+
+def test_a_healthy_roll_is_not_rejected_for_a_lagging_read():
+    """The model spooled its indicated reading seconds behind the ground
+    truth, and the first six seconds of the roll are the brake release
+    and the spool -- no roll at all: a takeoff accelerating at two and a
+    half knots a second was called not accelerating and rejected on the
+    numbers. The ground speed says it is moving; the whole expected
+    roll is the patience a slow spool is owed."""
+    flight = _roll_flight()
+    flight.state.sub = "roll"
+    # vr 90 at 3 kt/s: the expected roll is thirty seconds. Twenty-five
+    # in, doing fifty by the wheels and reading twelve on the needle.
+    flight.state.sub_entered_at = 975.0
+    state = SimpleNamespace(
+        on_ground=True, ground_speed_kt=50.0, indicated_airspeed_kt=12.6,
+        parking_brake=False, latitude=41.235, longitude=-8.679,
+        heading_true=170.0)
+    flight._phase_takeoff(state, 1000.0)
+    assert not flight.state.rejected
+    assert not any(c.args == ("abort",) for c in
+                   flight._goto_sub.call_args_list)
+    # The patience is not endless: past the whole expected roll still at
+    # a crawl, the rejection is real.
+    flight2 = _roll_flight()
+    flight2.state.sub = "roll"
+    flight2.state.sub_entered_at = 969.0
+    dead = SimpleNamespace(
+        on_ground=True, ground_speed_kt=4.0, indicated_airspeed_kt=2.0,
+        parking_brake=False, latitude=41.235, longitude=-8.679,
+        heading_true=170.0)
+    flight2._phase_takeoff(dead, 1000.0)
+    assert flight2.state.rejected
+    assert ("abort",) in [c.args for c in
+                          flight2._goto_sub.call_args_list]
 
 
 # ---------------------------------------------------------------------
