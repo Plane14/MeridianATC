@@ -1797,8 +1797,7 @@ def _hold_point_engine():
     inside the hold radius -- which is how a parked aeroplane was marked
     at the holding point and sent to the tower before it had ever moved.
     """
-    from meridianatc.engine.x_the_other_aeroplanes import (
-        _The_other_aeroplanes)
+    from meridianatc.engine.x_the_other_aeroplanes import _The_other_aeroplanes
     engine = _The_other_aeroplanes.__new__(_The_other_aeroplanes)
     ends = [("01", 11.4, SimpleNamespace(
         le_ident="01", he_ident="19",
