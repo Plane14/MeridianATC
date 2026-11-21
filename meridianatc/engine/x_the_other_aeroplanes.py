@@ -1658,17 +1658,35 @@ class _The_other_aeroplanes:
     _NOT_MOVING_YET = frozenset({Phase.PREFLIGHT, Phase.CLEARED,
                                  Phase.PUSHBACK})
 
+    #: How near the route's own holding point -- the first point of the
+    #: line-up leg -- counts as the bars. A crew stops short of them, and
+    #: the tower's handoff does not turn on the last few metres either way.
+    AT_THE_BARS_NM = 0.06
+
     def _reached_the_holding_point(self, state: AircraftState,
                                    session: FlightSession) -> bool:
         """Whether the aeroplane has taxied up to the runway it is leaving from.
 
-        Measured to the end it is departing from rather than to the runway as
-        a whole. A taxiway running the length of a runway is a few hundred
-        feet from it for its whole length, and an aeroplane halfway down that
-        taxiway has not reached anything.
+        Where the taxi was given as a route, the holding point is where the
+        route says it is -- the first point of the line-up leg -- measured
+        to rather than to the runway's end. A stand or an apron bend can
+        sit nearer the threshold than the bars do (Vigo's south apron is
+        three hundred metres from the 01 threshold, inside the radius
+        below): the map test alone marked an aeroplane still on its stand
+        as at the hold once its clearance named the runway, and marked a
+        taxiing one while it was still on the apron. Without a route, the
+        end it is departing from is the only marker -- the taxiway
+        running the length of a runway is a few hundred feet from it for
+        its whole length, and an aeroplane halfway down that taxiway has
+        not reached anything.
         """
         if not (state.on_ground and state.has_position):
             return False
+        lineup = getattr(session, "lineup_path", None) or ()
+        if lineup:
+            lat, lon = lineup[0]
+            return haversine_nm(state.latitude, state.longitude,
+                                lat, lon) <= self.AT_THE_BARS_NM
         runway = normalize_runway(session.departure_runway or "")
         airport = session.departure
         if not runway or airport is None:

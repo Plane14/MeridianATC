@@ -848,14 +848,22 @@ class _The_phase_machine:
                                "autonomous.brake.stuck")
             else:
                 self._brake_stuck_warned = False
-            # Rejected takeoff: the roll is not accelerating. Below 60% of
-            # rotation speed two thirds of the way through the expected
-            # roll is an abort, not a rotate.
+            # Rejected takeoff: the roll is not accelerating. Not half of
+            # rotation speed by the whole expected roll is an abort, not a
+            # rotate -- anything nearer the profile is a slow spool-up,
+            # which the clock was mistaking for a failure because it also
+            # counts the dead seconds of the brake release and spool.
             vr = self.state.vr_kt or self.performance.rotate_kt
             elapsed = now - self.state.sub_entered_at
             expected = max(10.0, vr / max(self.performance.takeoff_kt_s, 0.5))
-            ias = state.indicated_airspeed_kt or 0.0
-            if ias < vr * 0.6 and elapsed > expected * 0.66:
+            # Whichever speed says it is moving: a model that lags the
+            # indicated reading spools it up seconds behind the ground
+            # truth, and a roll rejected on that lag is an aeroplane
+            # stopped on the runway for no fault but a pitot delay. A
+            # roll that is not accelerating shows it on both.
+            ias = max(float(state.indicated_airspeed_kt or 0.0),
+                      float(state.ground_speed_kt or 0.0))
+            if ias < vr * 0.5 and elapsed > expected:
                 self.state.rejected = True
                 why = ("brakes still applied"
                        if getattr(state, "parking_brake", False)
