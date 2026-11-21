@@ -394,6 +394,11 @@ class _The_checklist_answered:
                         "model; pedal sign flipped")
             if adapt is not None:
                 adapt.set("steer.flip", 1.0 if self._pedal_flip else 0.0)
+                # A polarity is the one verdict a crash must not take
+                # with it: the next flight on a stored flip is wired
+                # right before the first metre is taxied.
+                from .. import adaptation
+                adaptation.save(force=True)
         self._pedal_votes = votes
         if adapt is not None:
             adapt.learn_votes("steer", votes)

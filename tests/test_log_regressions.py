@@ -1630,6 +1630,21 @@ def test_weak_answers_decay_the_authority_figure():
     assert flight._yaw_authority_b[1] < 30.0
 
 
+def test_a_weave_is_not_a_weak_answer():
+    """The measured rate spends half of every swing crossing zero, and
+    each crossing scored as the weak answer that walks the authority
+    figure down -- the decay raised the very gain that fed the hunt it
+    was measuring. A weave is only counted as an absent answer while
+    the rate opposes the demand or the nose is dead; the agreeing half
+    of the swing keeps breaking the streak a loss would string."""
+    flight = _flier()
+    flight._yaw_authority_b = {2: 30.0}
+    flight._yaw_authority = 30.0
+    for rate in (-1.0, 2.0) * 10:
+        flight._pedal_check(0.6, rate, 30.0)
+    assert flight._yaw_authority_b[2] == 30.0
+
+
 def test_the_rolls_directional_law_leans_on_a_held_error():
     """The rate figure alone can leave a sustained heading error
     answered by a whisper: a bounded error share is the ask that still

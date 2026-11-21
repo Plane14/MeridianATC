@@ -286,6 +286,36 @@ def _pedal_dir(self) -> int:
     return -1 if getattr(self, "_pedal_flip", False) else 1
 
 
+#: The yaw figure the tuned gains assume a full pedal buys: the store
+#: learns the real one per speed band, and the demand is scaled against
+#: it -- a model answering at half the assumed bite gets twice the ask.
+PEDAL_AUTH_NOMINAL = 45.0
+
+
+def _pedal_authority_at(self, gs: float) -> float:
+    """The deg/s of yaw a full pedal buys at this groundspeed.
+
+    Learned per speed band in ``_pedal_check`` -- the tail rotor's
+    answer in a hover is not its answer at eighty knots, and the
+    nosewheel's on a runway taxi is neither's -- then the nearest band
+    with evidence, the legacy whole-speed figure, and the middling
+    guess the gains were tuned at last.
+    """
+    bands = getattr(self, "_pedal_authority_b", None) or {}
+    got = bands.get(_gs_band(gs))
+    if got is None:
+        band = _gs_band(gs)
+        for off in range(1, 6):
+            got = bands.get(band - off) or bands.get(band + off)
+            if got is not None:
+                break
+    if not got:
+        got = getattr(self, "_pedal_authority", 0.0)
+    if got < 5.0:
+        got = PEDAL_AUTH_NOMINAL
+    return got
+
+
 def _pedal_check(self, demand: int, hdg: float, gs: float = 0.0) -> None:
     """Flip the pedal sign when the axis answers backwards.
 
@@ -334,6 +364,35 @@ def _pedal_check(self, demand: int, hdg: float, gs: float = 0.0) -> None:
                 adapt.learn(f"pedals.authority.{band}",
                             bands[band], blend=0.5)
                 adapt.learn("pedals.authority", bands[band], blend=0.5)
+    # The direction the samples never see: a demand answered by much
+    # less rate than the figure predicts means the figure flatters the
+    # model, and every ask scaled against it stays a whisper. Weak is
+    # counted the fixed-wing way -- only while the answer is absent or
+    # opposing, never while it swings the demand's own way, so a hunt
+    # crossing zero cannot pass for the shortfall it causes.
+    est = _pedal_authority_at(self, gs)
+    if abs(prev) >= PEDAL_MAX * 0.15 \
+            and abs(rate) < 0.30 * (abs(prev) / PEDAL_MAX) * est \
+            and (rate * prev <= 0.0 or abs(rate) <= 0.5):
+        weak = getattr(self, "_weak_streak", 0) + 1
+    else:
+        weak = 0
+    self._weak_streak = weak
+    if weak >= 6:
+        self._weak_streak = 0
+        band = _gs_band(gs)
+        bands = getattr(self, "_pedal_authority_b", None)
+        if bands is not None and bands.get(band, 0.0) > 0.0:
+            bands[band] = max(5.0, bands[band] * 0.85)
+            learned = bands[band]
+        else:
+            learned = max(5.0, getattr(
+                self, "_pedal_authority", 0.0) * 0.85 or PEDAL_AUTH_NOMINAL)
+        self._pedal_authority = learned
+        adapt = getattr(self, "_adapt", None)
+        if adapt is not None:
+            adapt.learn(f"pedals.authority.{band}", learned, blend=0.5)
+            adapt.learn("pedals.authority", learned, blend=0.5)
     if abs(prev) < PEDAL_MAX * 0.3 or abs(rate) < 5.0 or streak < 3:
         return
     votes = getattr(self, "_pedal_votes", 0)
@@ -346,6 +405,11 @@ def _pedal_check(self, demand: int, hdg: float, gs: float = 0.0) -> None:
                     "pedal sign flipped")
         if adapt is not None:
             adapt.set("pedals.flip", 1.0 if self._pedal_flip else 0.0)
+            # The same verdict the fixed wing banks immediately: a
+            # polarity that dies with a crash is re-learned by flying
+            # backwards first.
+            from . import adaptation
+            adaptation.save(force=True)
     self._pedal_votes = votes
     if adapt is not None:
         adapt.learn_votes("pedals", votes)
@@ -558,10 +622,14 @@ class RotorcraftFlight:
             self._pedal_authority_b = {
                 i: v for i in range(6)
                 if (v := adapt.value(f"pedals.authority.{i}", 0.0)) > 0.0}
+            # Bands with no evidence yet read the figure a whole-speed
+            # measurement left behind.
+            self._pedal_authority = adapt.value("pedals.authority", 0.0)
         else:
             self._pedal_flip = False
             self._pedal_votes = 0
             self._pedal_authority_b = {}
+            self._pedal_authority = 0.0
         # The type's own envelope where the table knows it -- an R44 and
         # an S-76 do not share a transition speed or a ceiling.
         self._profile = heli_profile_for(
@@ -1051,11 +1119,15 @@ class RotorcraftFlight:
                                     or 0.0))
                 err_h, self._turn_commit = _committed_error(
                     err_h, getattr(self, "_turn_commit", 0))
-                demand = int(_clamp(-PEDAL_DEG_PER_AXIS * err_h,
+                gs_h = float(getattr(state, "ground_speed_kt", 0.0)
+                             or 0.0)
+                demand = int(_clamp(-PEDAL_DEG_PER_AXIS * err_h
+                                    * _clamp(PEDAL_AUTH_NOMINAL
+                                             / _pedal_authority_at(
+                                                 self, gs_h), 0.5, 2.0),
                                     -PEDAL_MAX, PEDAL_MAX))
                 _pedal_check(self, demand, float(
-                    getattr(state, "heading_true", 0.0) or 0.0),
-                    float(getattr(state, "ground_speed_kt", 0.0) or 0.0))
+                    getattr(state, "heading_true", 0.0) or 0.0), gs_h)
                 pedal = demand * _pedal_dir(self)
                 if not self._send(PEDAL_SET, pedal):
                     self._send(TAIL_ROTOR_SET, pedal)
@@ -1315,13 +1387,20 @@ class RotorcraftFlight:
             err = _heading_error(want_hdg, hdg)
             err, self._turn_commit = _committed_error(
                 err, getattr(self, "_turn_commit", 0))
+            gs = float(getattr(state, "ground_speed_kt", 0.0) or 0.0)
+            # The learned answer this model's pedals give at this
+            # speed, against the figure the gains were tuned at: a tail
+            # rotor that bites half as hard gets twice the ask, bounded
+            # so a wild estimate can neither open the loop nor shut it.
+            auth_scale = _clamp(PEDAL_AUTH_NOMINAL
+                                / _pedal_authority_at(self, gs), 0.5, 2.0)
             if self._use_pids:
                 demand = int(_clamp(-self._pid("pedals").update(err),
                                     -pedal_max, pedal_max))
             else:
                 demand = int(_clamp(-PEDAL_DEG_PER_AXIS * err, -pedal_max,
                                     pedal_max))
-            gs = float(getattr(state, "ground_speed_kt", 0.0) or 0.0)
+            demand = int(_clamp(demand * auth_scale, -pedal_max, pedal_max))
             _pedal_check(self, demand, hdg, gs)
             pedal = demand * _pedal_dir(self)
             if not self._send(PEDAL_SET, pedal):

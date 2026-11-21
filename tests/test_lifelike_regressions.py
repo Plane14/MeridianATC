@@ -1585,6 +1585,79 @@ def test_the_heli_pedal_check_learns_authority_per_band():
     assert "pedals.authority" in learned
 
 
+def test_the_heli_authority_figure_falls_back_through_the_bands():
+    """The deg/s a pedal buys is learned per speed band -- the tail
+    rotor's hover answer is not its answer at eighty knots: the band's
+    own figure first, the nearest with evidence next, the whole-speed
+    legacy after, and the tuned guess last, so a band never asked still
+    answers."""
+    from meridianatc.atc.autonomous_heli import (
+        PEDAL_AUTH_NOMINAL, _pedal_authority_at)
+    heli = SimpleNamespace(
+        _pedal_authority_b={2: 80.0}, _pedal_authority=50.0)
+    assert _pedal_authority_at(heli, 20.0) == 80.0     # its own band
+    assert _pedal_authority_at(heli, 30.0) == 80.0     # the nearest one
+    heli._pedal_authority_b = {}
+    assert _pedal_authority_at(heli, 30.0) == 50.0     # the legacy
+    heli._pedal_authority = 0.0
+    assert _pedal_authority_at(heli, 30.0) == PEDAL_AUTH_NOMINAL
+
+
+def test_the_heli_pedal_check_decays_authority_the_plant_will_not_answer():
+    """The flattering figure the fixed wing walks down, the same here:
+    a tail rotor answering far short of the learned number leaves every
+    ask scaled against it a whisper, so the band's figure is decayed
+    until the asks bite -- and only on an answer that is absent or
+    opposing, never the crossing of a swing that is hunting, not weak.
+    """
+    from meridianatc.atc.autonomous_heli import PEDAL_MAX, _pedal_check
+    heli = SimpleNamespace(
+        _pedal_demand=None, _pedal_hdg=None, _pedal_at=0.0,
+        _demand_streak=0, _pedal_votes=0, _pedal_flip=False,
+        _pedal_authority_b={1: 60.0}, _pedal_authority=60.0)
+    learned = {}
+    heli._adapt = SimpleNamespace(
+        learn=lambda key, value, blend=0.0: learned.__setitem__(key, value),
+        learn_votes=lambda key, votes: None,
+        set=lambda key, value: None,
+    )
+    # A held demand the nose never answers: heading pinned, so every
+    # read is a dead rate -- opposing or dead, never the swing's own
+    # way.
+    for _ in range(9):
+        _pedal_check(heli, PEDAL_MAX // 2, 100.0, gs=10.0)
+        heli._pedal_at -= 2.0
+    assert heli._pedal_authority_b[1] < 60.0
+    assert learned["pedals.authority.1"] < 60.0
+
+
+def test_the_heli_pedal_check_does_not_decay_inside_a_weave():
+    """The same answer, given as a swing: the rate crossing zero twice
+    a cycle is not a weak plant, it is the hunt a decayed figure would
+    only feed. The alternating phase keeps resetting the streak, so
+    the band keeps its figure."""
+    from meridianatc.atc.autonomous_heli import PEDAL_MAX, _pedal_check
+    heli = SimpleNamespace(
+        _pedal_demand=None, _pedal_hdg=None, _pedal_at=0.0,
+        _demand_streak=0, _pedal_votes=0, _pedal_flip=False,
+        _pedal_authority_b={1: 60.0}, _pedal_authority=60.0)
+    heli._adapt = SimpleNamespace(
+        learn=lambda key, value, blend=0.0: None,
+        learn_votes=lambda key, votes: None,
+        set=lambda key, value: None,
+    )
+    # The demand is held right while the nose weaves across it: heading
+    # alternates either side of the last read at a small swing -- the
+    # crossings read like weak answers under the raw magnitude gate,
+    # but every second one swings the demand's own way, so the streak
+    # never reaches the count a true loss strings together.
+    for i in range(16):
+        hdg = 100.0 + (2.0 if i % 2 else -2.0)
+        _pedal_check(heli, PEDAL_MAX // 2, hdg, gs=10.0)
+        heli._pedal_at -= 2.0
+    assert heli._pedal_authority_b[1] == 60.0
+
+
 def test_the_heli_steering_set_is_faded_with_groundspeed():
     """The code sends the pedal demand through _nws_fade -- verified by the
     fade itself: full at taxi, none by seventy knots, which is where a
