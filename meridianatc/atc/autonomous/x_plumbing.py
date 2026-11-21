@@ -207,8 +207,10 @@ class _Plumbing:
         # A roll starts with the foot it is given, not the one the last
         # roll ended on: the rejected roll's saturated demand walked
         # back in as the next roll's opening ask if the memory carried.
+        # The heading bug's write is a one-shot per roll the same way.
         if sub == "roll":
             self._roll_pedal_out = 0.0
+            self._roll_bug_sent = False
 
     def _sub_age(self) -> float:
         return time.monotonic() - self.state.sub_entered_at

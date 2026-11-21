@@ -894,6 +894,17 @@ class _The_phase_machine:
                 self._goto_sub("abort")
                 return
             self._set_takeoff_power(state)
+            # The TO/GA press above engages the autopilot on the models
+            # that arm one, and an engaged AP is a second hand on the
+            # pedals: its nosewheel servo steers for whatever heading
+            # bug the airframe was left with -- a stale bug's pull is
+            # the left yaw every rejected roll converged on, right down
+            # to the parked aeroplane still walking its nose to ~335
+            # with the wheels stopped. The FO's foot owns the roll; the
+            # release is asked for every tick the way the brakes' is,
+            # because a write the sim never takes is the swerve back.
+            if state.on_ground:
+                d.autopilot(False)
             # Directional control: the nosewheel does the early work, the
             # rudder takes over as the airflow comes alive -- faded
             # across the handover the way the gear's own schedule is,
@@ -912,6 +923,11 @@ class _The_phase_machine:
                 # drives off the pavement side on any other runway.
                 keep_hdg = float(getattr(state, "heading_true", 0.0)
                                  or 0.0)
+            if not getattr(self, "_roll_bug_sent", False):
+                # And the bug is told the strip's own number: nothing
+                # the roll fights is allowed to aim somewhere else.
+                self._roll_bug_sent = True
+                d.heading(self._magnetic(keep_hdg, state))
             # The V-speeds first: the pavement checks below measure the
             # distance left against the speed still owed.
             rotate_at = (self.state.vr_kt

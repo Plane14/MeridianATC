@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import time
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -1743,6 +1744,94 @@ def test_a_new_roll_does_not_inherit_the_last_rolls_pedal():
     flight._roll_pedal_out = 0.9
     flight._goto_sub("roll")
     assert flight._roll_pedal_out == 0.0
+
+
+def _rolling_flight():
+    """A takeoff fixture one tick into the roll: the heavy helpers the
+    pavement checks lean on are doubles, the director is the mock the
+    flier fixture already hands out."""
+    flight = _flier()
+    flight.state.sub = "roll"
+    flight.state.runway_heading = 15.0
+    flight.state.runway_lat = 42.2219
+    flight.state.runway_lon = -8.6300
+    flight.state.runway_length_ft = 7874.0
+    flight.state.runway_width_ft = 100.0
+    flight.state.sub_entered_at = time.monotonic()
+    flight._airborne_confirmed = Mock(return_value=False)
+    flight._set_takeoff_power = Mock()
+    flight._ground_directional = Mock(return_value=0.0)
+    flight._right_foot = Mock(return_value=0.0)
+    flight._pedal_dir = Mock(return_value=1)
+    flight._roll_aileron = Mock(return_value=0.0)
+    flight._roll_note = Mock()
+    flight._runway_blocked = Mock(return_value=False)
+    flight._engines_out = Mock(return_value=(0, 0))
+    flight.TAKEOFF_TIMEOUT = 600.0
+    return flight
+
+
+def _rolling_state(**kw):
+    args = dict(
+        on_ground=True, parking_brake=False,
+        indicated_airspeed_kt=30.0, ground_speed_kt=30.0,
+        heading_true=15.0, latitude=42.2220, longitude=-8.6299,
+        min_rotation_kt=0.0)
+    args.update(kw)
+    return SimpleNamespace(**args)
+
+
+def test_the_roll_releases_the_autopilot_the_toga_press_armed():
+    """The TO/GA press at takeoff power engages the autopilot on the
+    models that arm one, and an engaged AP is a second hand on the
+    pedals: its nosewheel servo steers for whatever heading bug the
+    airframe was left with -- a stale bug's pull is the left yaw every
+    rejected roll converged on, and the parked aeroplane kept walking
+    to it after the stop. The FO's foot owns the roll: the master is
+    released while the wheels are on the pavement, asked for every
+    tick the way the brakes' release is."""
+    flight = _rolling_flight()
+    state = _rolling_state()
+    now = time.monotonic() + 5.0
+    flight._phase_takeoff(state, now)
+    flight.director.autopilot.assert_called_with(False)
+    flight._phase_takeoff(state, now + 1.0)
+    assert flight.director.autopilot.call_count == 2
+
+
+def test_the_roll_sets_the_bug_to_the_strips_own_heading():
+    """An autopilot that finds its way back on mid-roll -- or the
+    flight director the TO/GA mode arms -- is aimed at the strip, not
+    at whatever heading the last flight's climb left on the bug. The
+    write is once a roll, not a stream."""
+    flight = _rolling_flight()
+    state = _rolling_state()
+    now = time.monotonic() + 5.0
+    flight._phase_takeoff(state, now)
+    assert flight.director.heading.call_count == 1
+    bug = flight.director.heading.call_args[0][0]
+    assert abs(((bug - 15.0 + 540.0) % 360.0) - 180.0) < 5.0
+    flight._phase_takeoff(state, now + 1.0)
+    assert flight.director.heading.call_count == 1
+
+
+def test_a_new_roll_arms_the_bug_write_again():
+    """The one-shot is per roll: a fresh roll's bug write is not the
+    last roll's spent flag."""
+    flight = _flier()
+    flight._roll_bug_sent = True
+    flight._goto_sub("roll")
+    assert flight._roll_bug_sent is False
+
+
+def test_a_grounded_stop_releases_the_autopilot():
+    """The hold the abort leaves -- parked mid-runway waiting on the
+    tower -- is the stop the servo kept steering through: the parked
+    aeroplane walked its nose to the stale bug with the wheels dead.
+    Any grounded hold releases the master."""
+    flight = _flier()
+    flight._stop(SimpleNamespace(on_ground=True, ground_speed_kt=30.0))
+    flight.director.autopilot.assert_called_with(False)
 
 
 def _gsx(**kw):

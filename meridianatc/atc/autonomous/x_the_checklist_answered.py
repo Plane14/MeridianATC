@@ -998,6 +998,14 @@ class _The_checklist_answered:
         self._last_lever = 0.0
         self._turn_commit = 0
         gs = state.ground_speed_kt or 0.0
+        if state.on_ground:
+            # On the ground the autopilot is never the hand the FO
+            # wants: a servo holding a stale heading bug steered every
+            # rejected roll's nose left and walked the parked aeroplane
+            # after it. Any held stop -- abort, await, hold short,
+            # taxi brake -- releases it again, asked every tick because
+            # a TO/GA press will put it right back.
+            d.autopilot(False)
         if gs <= 1.0:
             d.brakes(0.0)
             d.parking_brake(True)
