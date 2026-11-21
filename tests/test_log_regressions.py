@@ -1468,8 +1468,9 @@ def test_the_lineup_turn_is_made_at_corner_pace():
 
 
 def test_lined_up_nearly_steers_at_taxi_speed():
-    """Wings level on the numbers the corner is over: the speed cap
-    releases and the roll forward is made at the book's taxi figure."""
+    """Wings level on the numbers the corner is over -- but the line
+    itself is rolled up to at walking pace, not the taxi figure whose
+    sail past the gate burns the pavement the roll was counted on."""
     flight = _lineup_flight()
     lat, lon = _near_the_strip(along_m=100.0, across_m=0.0)
     state = SimpleNamespace(
@@ -1477,7 +1478,47 @@ def test_lined_up_nearly_steers_at_taxi_speed():
         heading_true=191.0, ground_speed_kt=3.0)
     flight._phase_line_up(state, 10.0)
     called = flight._steer.call_args
-    assert abs(called.args[2] - flight.performance.taxi_kt) < 1e-6
+    assert called.args[2] <= 4.0
+
+
+def test_a_finished_lineup_path_is_a_latch_not_a_waypoint():
+    """Past the path's end the pursuit stays done: re-seating it on the
+    connector behind swings the nose back across the junction it just
+    made -- the wild heading demand a finished path still answered."""
+    flight = _lineup_flight()
+    entry = _near_the_strip(along_m=60.0, across_m=0.0)
+    lined = _near_the_strip(along_m=100.0, across_m=0.0)
+    connector = _near_the_strip(along_m=58.0, across_m=-40.0)
+    flight.session.lineup_path = [connector, entry, lined]
+    flight._lineup_on = list(flight.session.lineup_path)
+    flight._lineup_done = True
+    # Just past the end, on the paint, pointed down the strip: still
+    # inside the pursuit's cross-track reach, where without the latch
+    # it re-engages and steers the nose back at the path behind.
+    lat, lon = _near_the_strip(along_m=155.0, across_m=5.0)
+    state = SimpleNamespace(
+        on_ground=True, latitude=lat, longitude=lon,
+        heading_true=193.0, ground_speed_kt=6.0)
+    flight._phase_line_up(state, 10.0)
+    called = flight._steer.call_args
+    wanted = (called.args[1] - 193.0 + 540.0) % 360.0 - 180.0
+    assert abs(wanted) < 45.0
+
+
+def test_reaching_the_paths_end_on_the_pavement_latches_done():
+    """Within reach of the last point on the strip the pursuit hands off
+    to the centreline -- and does not take the connector back over."""
+    flight = _lineup_flight()
+    entry = _near_the_strip(along_m=60.0, across_m=0.0)
+    lined = _near_the_strip(along_m=100.0, across_m=0.0)
+    connector = _near_the_strip(along_m=58.0, across_m=-40.0)
+    flight.session.lineup_path = [connector, entry, lined]
+    lat, lon = _near_the_strip(along_m=70.0, across_m=3.0)
+    state = SimpleNamespace(
+        on_ground=True, latitude=lat, longitude=lon,
+        heading_true=160.0, ground_speed_kt=4.0)
+    flight._phase_line_up(state, 10.0)
+    assert flight._lineup_done
 
 
 def test_a_stuck_probe_climbs_the_lever_to_the_stop():
@@ -1501,6 +1542,64 @@ def test_a_stuck_probe_climbs_the_lever_to_the_stop():
     flight._lever_at = 0.0
     flight._steer(state, 45.0, 10.0)
     assert flight.director.throttle.call_args[0][0] <= 0.25 + 1e-9
+
+
+def test_the_inside_brake_is_not_a_pivot_when_stopped():
+    """Brake-turn assist is a rolling turn's tool: held at a standstill
+    it is a chock, not a pivot -- the creep the nosewheel's turn needs
+    is exactly the roll it stops."""
+    flight = _flier()
+    flight._ground_still = lambda s, n: False
+    state = SimpleNamespace(
+        on_ground=True, ground_speed_kt=0.0, heading_true=0.0)
+    for _ in range(4):
+        flight._steer(state, 45.0, 10.0, brake_turn=True)
+    assert not flight.director.brakes_split.called
+    # Rolling again, the inside wheel joins the turn as designed.
+    state.ground_speed_kt = 5.0
+    for _ in range(4):
+        flight._steer(state, 45.0, 10.0, brake_turn=True)
+    assert flight.director.brakes_split.called
+    left, right = flight.director.brakes_split.call_args[0]
+    assert max(left, right) > 0.0
+
+
+def test_a_snap_is_not_learned_as_steering_authority():
+    """A ground-handling snap answers to no pedal: the swing it writes
+    into the authority figure is the one every later ask is divided
+    by, so the gate refuses it outright."""
+    from meridianatc.atc.autonomous._shared import _gs_band
+    flight = _flier()
+    for _ in range(6):
+        flight._pedal_check(0.5, 44.5, 4.0)
+    bands = getattr(flight, "_yaw_authority_b", None) or {}
+    assert bands.get(_gs_band(4.0), 0.0) <= 0.0
+
+
+def test_weak_answers_decay_the_authority_figure():
+    """Demands that keep answering in much less rate than the figure
+    predicts mean the figure flatters the model: it is walked down
+    until the asks divided by it reach the pedal the turn needs."""
+    flight = _flier()
+    flight._yaw_authority_b = {1: 30.0}
+    flight._yaw_authority = 30.0
+    for _ in range(8):
+        flight._pedal_check(0.4, 0.5, 10.0)
+    assert flight._yaw_authority_b[1] < 30.0
+
+
+def test_the_rolls_directional_law_leans_on_a_held_error():
+    """The rate figure alone can leave a sustained heading error
+    answered by a whisper: a bounded error share is the ask that still
+    reaches the pedal the veer needs -- the difference between holding
+    the paint and leaving the strip's side on the roll."""
+    flight = _flier()
+    state = SimpleNamespace(heading_true=30.0, ground_speed_kt=30.0)
+    pedal = 0.0
+    for _ in range(4):
+        pedal = flight._ground_directional(
+            state, 50.0, 30.0, rate_cap=5.0)
+    assert pedal > 0.3
 
 
 def test_the_rollout_holds_the_line_on_the_rudder_alone():

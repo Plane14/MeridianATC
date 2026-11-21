@@ -320,7 +320,13 @@ class _The_checklist_answered:
         # old store carries.
         if abs(prev) >= 0.15 and abs(rate) >= 3.0 and gs >= 1.0:
             sample = abs(rate) / abs(prev)
-            if 5.0 <= sample <= 150.0:
+            # A sample is only believable as steering's own work while
+            # the measured swing is something a pedal could plausibly
+            # make: the figure a ground-handling snap or a teleport
+            # writes is the authority the next hundred asks are then
+            # divided by -- the whispered demands a slow veer eats a
+            # runway's width under.
+            if 5.0 <= sample <= 50.0 and abs(rate) <= 45.0:
                 band = _gs_band(gs)
                 bands = getattr(self, "_yaw_authority_b", None)
                 if bands is None:
@@ -335,6 +341,37 @@ class _The_checklist_answered:
                                 bands[band], blend=0.5)
                     adapt.learn("steer.authority",
                                 bands[band], blend=0.5)
+        # The other half of the estimate, the direction the samples
+        # never see: a demand answered by much less rate than the
+        # figure predicts means the figure flatters the model -- and
+        # every ask divided by it stays a whisper, the under-demand a
+        # weak-steering aeroplane veers off the strip beneath. The
+        # sample gate cannot catch that answer because the rate never
+        # reaches it, so the shortfall is measured straight: sustained
+        # weak answers decay the band's figure until the asks bite.
+        est = self._yaw_authority_at(gs)
+        if abs(prev) >= 0.15 and gs >= 1.0 \
+                and abs(rate) < 0.30 * abs(prev) * est:
+            weak = getattr(self, "_weak_streak", 0) + 1
+        else:
+            weak = 0
+        self._weak_streak = weak
+        if weak >= 4:
+            self._weak_streak = 0
+            band = _gs_band(gs)
+            bands = getattr(self, "_yaw_authority_b", None)
+            if bands is not None and bands.get(band, 0.0) > 0.0:
+                bands[band] = max(5.0, bands[band] * 0.85)
+                learned = bands[band]
+            else:
+                learned = max(5.0, getattr(
+                    self, "_yaw_authority", 0.0) * 0.85 or 25.0)
+            self._yaw_authority = learned
+            adapt = getattr(self, "_adapt", None)
+            if adapt is not None:
+                adapt.learn(f"steer.authority.{band}", learned,
+                            blend=0.5)
+                adapt.learn("steer.authority", learned, blend=0.5)
         if abs(prev) < 0.3 or abs(rate) < 3.0 or gs < 1.0 or streak < 3:
             return
         adapt = getattr(self, "_adapt", None)
@@ -408,6 +445,17 @@ class _The_checklist_answered:
         # of a straight roll, not a wide corner.
         pedal = max(-pedal_max,
                     min(pedal_max, (want_rate - rate) / authority))
+        # The rate law alone droops: the error reaches the pedal only
+        # through the authority figure, and a figure that flatters the
+        # model leaves a sustained error answered by a whisper -- the
+        # slow veer a roll leaves the runway's side on. An
+        # error-proportional share is the ask the figure cannot talk
+        # out of existence, bounded so it stays a lean -- and only where
+        # it agrees with the rate term, so a nose already coming around
+        # still gets the counter-pedal that stops the overshoot.
+        if pedal * err > 0.0:
+            pedal = max(-pedal_max, min(
+                pedal_max, pedal + max(-0.3, min(0.3, err * 0.02))))
         if abs(err) < 1.5 and abs(rate) < 1.0:
             pedal = 0.0
         # Walked like the taxi wheel: a kick at roll speed is a swerve
@@ -713,6 +761,16 @@ class _The_checklist_answered:
         # can ring.
         rudder = max(-0.5, min(0.5,
                                (1.5 * want_rate - 0.5 * rate) / authority))
+        # The same droop the roll's law gets a share against: an error
+        # held by an authority figure that flatters the model is never
+        # answered at the pedal it needs -- the lineup's centreline
+        # approached for a minute at a constant few degrees off. A
+        # bounded error share is the ask the estimate cannot divide
+        # away -- but only where it agrees with the rate term: a nose
+        # already swinging for the mark gets the counter-pedal it was
+        # promised, not a lean the other way.
+        if rudder * err > 0.0:
+            rudder += max(-0.3, min(0.3, err * 0.015))
         rudder = max(-limit, min(limit, rudder))
         if abs(err) < 1.5 and abs(rate) < 1.0:
             # On the heading with no swing: a twitch of tiller is a
@@ -842,10 +900,17 @@ class _The_checklist_answered:
             # POH's "minimum differential braking" is the whole answer
             # below rudder authority; and the apron pivot turn either
             # gear flies on the inside brake.
-            if tail or castor or self._turn_commit or brake_turn:
+            if gs >= 1.0 \
+                    and (tail or castor or self._turn_commit
+                         or brake_turn):
                 # The law's demand, not ``sent``: a model whose pedal
                 # axis answers backwards still wants the inside wheel
-                # for the turn it is making, not the wire's sign.
+                # for the turn it is making, not the wire's sign. And
+                # the assist is a rolling turn's tool only: braked on
+                # the inside wheel at a standstill it is not a pivot,
+                # it is a chock -- the aeroplane sat on the runway's
+                # edge for over a minute holding exactly the brake that
+                # kept the nosewheel's turn from being made.
                 add_left, add_right = tailwheel.brake_assist(rudder, gs)
                 d.brakes_split(max(brake, add_left),
                                max(brake, add_right))

@@ -567,11 +567,19 @@ class _The_phase_machine:
                 if getattr(self, "_lineup_on", None) != lineup:
                     self._lineup_progress = 0
                     self._lineup_on = lineup
+                    self._lineup_done = False
                 at = min(getattr(self, "_lineup_progress", 0),
                          len(lineup) - 2)
-                paved = auto_nav.path_steering(
-                    state.latitude, state.longitude, lineup[at:],
-                    lookahead_m=30.0)
+                paved = None
+                # ``done`` is a latch, not a waypoint state: drifting a
+                # reach past the last point re-seats the pursuit on the
+                # leg behind, and the nose is swung back across the
+                # junction it just made -- the wild heading demands a
+                # finished path still answered with.
+                if not getattr(self, "_lineup_done", False):
+                    paved = auto_nav.path_steering(
+                        state.latitude, state.longitude, lineup[at:],
+                        lookahead_m=30.0)
                 if paved is not None \
                         and paved.get("heading") is not None \
                         and not paved.get("done") \
@@ -579,6 +587,16 @@ class _The_phase_machine:
                     self._lineup_progress = at + paved["nearest"]
                     steer_hdg = paved["heading"]
                     on_path = True
+                    # The path ends on the numbers: roll up to that end
+                    # at the pace a stop wants, not still at taxi
+                    # speed -- the sail past the centreline that leaves
+                    # the roll half the pavement it was counted on.
+                    lineup_kt = min(lineup_kt, max(
+                        3.0, (paved.get("remaining_m") or 0.0) * 0.10))
+                elif paved is not None and paved.get("done") \
+                        and abs(err["offset_m"]) \
+                        <= self._runway_half_m() + 5.0:
+                    self._lineup_done = True
             # Cleared onto the runway while still on the taxi route to
             # the bars: the paved way there is the taxi path, not the
             # diagonal over the infield to the connector -- steering at
@@ -624,6 +642,17 @@ class _The_phase_machine:
                 # holds on an unnamed intersection too.
                 self._goto_sub("backtrack")
                 return
+            if not on_path and hdg_err < 30.0 \
+                    and (getattr(self, "_lineup_done", False)
+                         or abs(err["offset_m"])
+                         <= self._runway_half_m()):
+                # On the pavement pointed down it: the numbers are
+                # rolled up to at walking pace, so the aligned gate a
+                # few metres and a few degrees away is caught on the
+                # spot it was made for -- not five hundred metres
+                # further on at taxi speed, where the roll then starts
+                # with the pavement the departure was promised gone.
+                lineup_kt = min(lineup_kt, 4.0)
             d.parking_brake(False)
             self._steer(state, steer_hdg, lineup_kt,
                         brake_turn=hdg_err > 45.0)
