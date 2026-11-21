@@ -1667,13 +1667,34 @@ def test_the_roll_does_not_relearn_the_pedals_sign():
     four flips in nine seconds, the inverted half of the flapping
     feeding the veer it was meant to cure. The sign is the taxi law's
     business, where the wheel owns the yaw; the roll keeps what taxi
-    learned and asks nothing more."""
+    learned. The magnitude half of the check still runs -- vote=False
+    is the part that must not."""
     flight = _flier()
-    flight._pedal_check = Mock(
-        side_effect=AssertionError("voted on the roll"))
+    seen = []
+    flight._pedal_check = lambda *a, **k: seen.append(k.get("vote", True))
     state = SimpleNamespace(heading_true=30.0, ground_speed_kt=40.0)
     for _ in range(6):
         flight._ground_directional(state, 50.0, 40.0, rate_cap=5.0)
+    assert seen and all(v is False for v in seen)
+
+
+def test_the_roll_decays_authority_the_plant_will_not_answer():
+    """A figure learned on the taxi tiller flatters the roll's rudder:
+    the same +0.7 demand that taxied the apron answers in barely a
+    degree a second at forty knots, and a figure that flatters leaves
+    every ask divided by it a whisper -- the veer that walks a roll off
+    the strip's side. Weak answers walk the figure down until the asks
+    bite."""
+    flight = _flier()
+    flight._yaw_authority_b = {3: 30.0}
+    flight._yaw_authority = 30.0
+    state = SimpleNamespace(heading_true=30.0, ground_speed_kt=40.0)
+    for _ in range(12):
+        flight._ground_directional(state, 50.0, 40.0, rate_cap=5.0,
+                                   pedal_max=0.8)
+    # The rate never answers -- heading_true is pinned -- so the weak
+    # streak decays the band until the demands reach for the stop.
+    assert flight._yaw_authority_b[3] < 30.0
 
 
 def _gsx(**kw):

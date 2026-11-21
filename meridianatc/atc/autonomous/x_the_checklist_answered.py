@@ -277,7 +277,7 @@ class _The_checklist_answered:
         return -1.0 if getattr(self, "_pedal_flip", False) else 1.0
 
     def _pedal_check(self, demand: float, rate: float,
-                     gs: float) -> None:
+                     gs: float, vote: bool = True) -> None:
         """Flip the pedal sign when the axis answers backwards.
 
         A wheel asked right while the nose measures left is an inverted
@@ -372,7 +372,8 @@ class _The_checklist_answered:
                 adapt.learn(f"steer.authority.{band}", learned,
                             blend=0.5)
                 adapt.learn("steer.authority", learned, blend=0.5)
-        if abs(prev) < 0.3 or abs(rate) < 3.0 or gs < 1.0 or streak < 3:
+        if not vote or abs(prev) < 0.3 or abs(rate) < 3.0 \
+                or gs < 1.0 or streak < 3:
             return
         adapt = getattr(self, "_adapt", None)
         votes = getattr(self, "_pedal_votes", 0)
@@ -464,14 +465,19 @@ class _The_checklist_answered:
         step = pedal - prev_pedal
         step = max(-self._PEDAL_SLEW, min(self._PEDAL_SLEW, step))
         pedal = self._roll_pedal_out = prev_pedal + step
-        # No ``_pedal_check`` here: the roll's yaw is not the wheel's
-        # own answer. At takeoff power the prop's left-turning moment
+        # No sign vote here: the roll's yaw is not the wheel's own
+        # answer. At takeoff power the prop's left-turning moment
         # disagrees with a right demand under either sign, and the
         # vote read that as an inverted axis four times in nine
         # seconds -- the inverted half of the flapping doubling the
         # veer it was meant to cure. The axis's sign is learned where
         # the wheel owns the yaw -- the taxi law's -- and stands for
-        # the whole roll.
+        # the whole roll. The magnitude half of the estimate still
+        # runs: a demand the plant answers weakly decays the authority
+        # the asks are divided by, so a rudder that bites far less at
+        # roll speed than the tiller the figure was learned on ramps
+        # the pedal toward the stop instead of drooping off the edge.
+        self._pedal_check(pedal, rate, gs, vote=False)
         return pedal * self._pedal_dir()
 
     def _right_foot(self, state) -> float:
@@ -483,8 +489,11 @@ class _The_checklist_answered:
         has already spent the heading it was bought to keep. A pilot
         leads with the right foot as the power comes in and stands it
         down as the airflow builds; this is that, full ask below the
-        speed the rudder flies at, faded to nothing by two-thirds of
-        rotate where the correction alone is plenty.
+        speed the rudder flies at, faded to nothing at rotate where
+        the wings finally take the load the pedals were carrying. The
+        moment it answers is standing until the wheels leave -- a fade
+        that ends sooner hands the dead band between the nosewheel's
+        authority and the rudder's back to the veer.
         """
         throttle = max(0.0, min(1.0,
                                 (getattr(state, "throttle_pct", 0.0)
@@ -494,7 +503,7 @@ class _The_checklist_answered:
         rotate = (getattr(self.state, "rotate_speed_kt", 0.0) or 0.0) \
             or 55.0
         return 0.30 * throttle * max(
-            0.0, 1.0 - ias / max(1.0, rotate * 0.66))
+            0.0, 1.0 - ias / max(1.0, rotate))
 
     def _roll_aileron(self, state, gs_kt: float, takeoff: bool) -> float:
         """Aileron into the wind on the ground roll -- the AFH technique.
