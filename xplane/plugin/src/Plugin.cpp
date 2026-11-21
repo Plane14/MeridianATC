@@ -216,7 +216,7 @@ void TCAS();
 // override. Whether XPMP2's TCAS override currently owns the planes --
 // ownership is exclusive, so native traffic and the override swap turns.
 bool xpmpOwned = false;
-bool nativeAcquired = false;
+bool nativeAcquired = false, nativeBlocked = false;
 std::map<int, std::pair<std::string, std::string>> nativeSlots; // slot -> {id, acf}
 XPLMDataRef ovrAuto = nullptr, ovrPath = nullptr;
 std::vector<fs::path> acfList;
@@ -279,13 +279,31 @@ std::string ModelFor(const std::string& type) {
 }
 
 void EnableNative() {
-    if (nativeAcquired) return;
+    if (nativeAcquired || nativeBlocked) return;
     // Plane ownership is exclusive: XPMP2 holds it for the TCAS override,
     // so native traffic asks it to let go first and hands it back later.
     if (xpmpOwned) { XPMPMultiplayerDisable(); xpmpOwned = false; }
     nativeAcquired = XPLMAcquirePlanes(nullptr, nullptr, nullptr) != 0;
-    if (!nativeAcquired)
+    nativeBlocked = !nativeAcquired;
+    if (nativeBlocked)
         Log("AI planes unavailable -- another plugin owns them");
+}
+void SeedPosition(int slot, const NativeAssign& assign) {
+    // A newly claimed slot starts where the controller put the flight,
+    // not where the slot's last occupant left it. One write per axis;
+    // the flight model takes it from there.
+    if (!assign.pos) return;
+    double x = 0, y = 0, z = 0;
+    XPLMWorldToLocal(assign.lat, assign.lon, assign.ele * 0.3048, &x, &y, &z);
+    const double axes[] = {x, y, z};
+    const char* names[] = {"x", "y", "z"};
+    char path[64];
+    for (int i = 0; i < 3; ++i) {
+        std::snprintf(path, sizeof(path),
+                      "sim/multiplayer/position/plane%d_%s", slot, names[i]);
+        if (XPLMDataRef ref = XPLMFindDataRef(path))
+            XPLMSetDatad(ref, axes[i]);
+    }
 }
 void ClearNative() {
     if (nativeSlots.empty() && !nativeAcquired) return;
@@ -300,6 +318,7 @@ void ClearNative() {
         XPLMReleasePlanes();
         nativeAcquired = false;
     }
+    nativeBlocked = false;
     if (config.tcas && !xpmpOwned) TCAS();
 }
 void ApplyRoster(const std::vector<NativeAssign>& roster) {
@@ -316,6 +335,7 @@ void ApplyRoster(const std::vector<NativeAssign>& roster) {
         if (it == nativeSlots.end() || it->second.first != assign.id
                 || it->second.second != acf) {
             if (!acf.empty()) XPLMSetAircraftModel(assign.slot, acf.c_str());
+            SeedPosition(assign.slot, assign);
             next[assign.slot] = {assign.id, acf};
             if (ovrAuto) XPLMSetDatavi(ovrAuto, &one, assign.slot, 1);
             if (ovrPath) XPLMSetDatavi(ovrPath, &zero, assign.slot, 1);
@@ -474,11 +494,17 @@ Json Status(double now) {
         // the engine's model audit reads this, not a guess.
         models[id] = {{"m", ac->GetModelName()}, {"q", ac->GetMatchQuality()}};
     }
+    // The callsigns whose planes the sim actually carries, so the engine
+    // can tell a confirmed slot from a roster entry that never became a
+    // plane (e.g. another plugin holding the slots).
+    Json nativeIds = Json::array();
+    for (const auto& [slot, pair] : nativeSlots) nativeIds.push_back(pair.first);
     return {{"v", 1}, {"t", "status"}, {"plugin", "MeridianATC-XP"}, {"version", Version},
         {"xpmp2", MERIDIAN_XPMP2_VERSION}, {"xplane", xp}, {"csl_models", XPMPGetNumberOfInstalledModels()},
         {"aircraft", session.snapshot.size()}, {"drawn", drawn}, {"unmatched", unmatched},
         {"followme", session.FollowmeActive(now)}, {"sysroot", system},
-        {"native_cap", 1}, {"native", static_cast<int>(nativeSlots.size())},
+        {"native_cap", nativeBlocked ? 0 : 1}, {"native", static_cast<int>(nativeSlots.size())},
+        {"native_ac", nativeIds},
         {"fms", FmsPlan()}, {"models", models}};
 }
 void AnswerMatch(const Packet& packet, const sockaddr_in& to) {
