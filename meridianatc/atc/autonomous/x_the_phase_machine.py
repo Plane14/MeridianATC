@@ -535,18 +535,8 @@ class _The_phase_machine:
             # instead of reaching the centreline.
             steer_hdg = (self.state.runway_heading
                          + err["correction_deg"]) % 360.0
-            # The swing still owed to the runway heading is the corner
-            # the taxi law prices: the same degrees-for-knots figure,
-            # so the lineup turn is made at the pace a turn that sharp
-            # can be made at rather than the taxi speed whose arc runs
-            # off the pavement's edge -- where the infield grass holds
-            # the aeroplane it caught.
             lineup_kt = self._expedite_kt(
                 state, self.performance.taxi_kt)
-            for need_deg, corner_kt in self.CORNER_SLOW:
-                if hdg_err >= need_deg:
-                    lineup_kt = min(lineup_kt, corner_kt)
-                    break
             # Where the taxi plan walked to the bars over a connector,
             # the same plan knows the paved way in: the holding point's
             # own taxiway onto the runway, not the straight intercept to
@@ -624,8 +614,11 @@ class _The_phase_machine:
                             and not on_taxi.get("done"):
                         self._taxi_progress = at + on_taxi["nearest"]
                         d.parking_brake(False)
+                        ask = abs((on_taxi["heading"]
+                                   - (state.heading_true or 0.0)
+                                   + 540.0) % 360.0 - 180.0)
                         self._steer(state, on_taxi["heading"], lineup_kt,
-                                    brake_turn=hdg_err > 45.0)
+                                    brake_turn=ask > 45.0)
                         return
             if not on_path and err["along_m"] > self.BACKTRACK_MIN_M \
                     and abs(err["offset_m"]) <= 60.0 \
@@ -653,9 +646,37 @@ class _The_phase_machine:
                 # further on at taxi speed, where the roll then starts
                 # with the pavement the departure was promised gone.
                 lineup_kt = min(lineup_kt, 4.0)
+            # The corner's price is the turn the steering asks for and
+            # the sharp vertex the path still turns at -- the swing
+            # onto the runway heading is made at the join, where the
+            # pursuit's ask swings, not crawled toward the whole way in
+            # at a hairpin's pace because the heading owed to the
+            # runway is large while the connector's is two degrees.
+            ask = abs((steer_hdg - (state.heading_true or 0.0)
+                       + 540.0) % 360.0 - 180.0)
+            for need_deg, corner_kt in self.CORNER_SLOW:
+                if ask >= need_deg:
+                    lineup_kt = min(lineup_kt, corner_kt)
+                    break
+            if on_path:
+                vertex = next(((at_m, deg) for at_m, deg in
+                               auto_nav.turns_ahead(
+                                   state.latitude, state.longitude,
+                                   lineup[at:], self.CORNER_LOOK_M,
+                                   skip_penalty_m=self.NEAREST_SKIP_M)
+                               if abs(deg) >= self.CORNER_CUT_DEG),
+                              None)
+                if vertex is not None:
+                    at_m, deg = vertex
+                    for need_deg, corner_kt in self.CORNER_SLOW:
+                        if abs(deg) >= need_deg:
+                            lineup_kt = min(lineup_kt, corner_kt + max(
+                                0.0, at_m - self.CORNER_FULL_M)
+                                            * self.CORNER_BRAKE_KT_M)
+                            break
             d.parking_brake(False)
             self._steer(state, steer_hdg, lineup_kt,
-                        brake_turn=hdg_err > 45.0)
+                        brake_turn=ask > 45.0)
             # "Lined up" means on the paint, not merely on the pavement:
             # within a few metres of the centreline and a few degrees of
             # the heading. The old gate -- inside the strip's own

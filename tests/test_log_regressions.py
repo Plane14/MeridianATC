@@ -1481,6 +1481,48 @@ def test_lined_up_nearly_steers_at_taxi_speed():
     assert called.args[2] <= 4.0
 
 
+def test_the_connector_leg_runs_at_taxi_speed():
+    """The price of the corner is paid at the corner: two degrees of
+    demand down a long connector is a taxi leg, not the hairpin's pace
+    the heading still owed to the runway once priced it at for the
+    whole way in."""
+    flight = _lineup_flight()
+    # A long connector leg onto the strip: the join's vertex is still
+    # over a hundred metres on, inside the ramp that pays it out.
+    connector = _near_the_strip(along_m=60.0, across_m=-160.0)
+    entry = _near_the_strip(along_m=60.0, across_m=0.0)
+    lined = _near_the_strip(along_m=100.0, across_m=0.0)
+    flight.session.lineup_path = [connector, entry, lined]
+    lat, lon = _near_the_strip(along_m=60.0, across_m=-140.0)
+    state = SimpleNamespace(
+        on_ground=True, latitude=lat, longitude=lon,
+        heading_true=283.0, ground_speed_kt=10.0)
+    flight._phase_line_up(state, 10.0)
+    called = flight._steer.call_args
+    assert called.args[2] >= 12.0
+    assert called.kwargs["brake_turn"] is False
+
+
+def test_the_join_is_arrived_at_corner_pace():
+    """Inside the corner's reach the same leg pays the sharp vertex's
+    knots -- the slowdown was never wrong, only owed nowhere but the
+    turn itself."""
+    flight = _lineup_flight()
+    connector = _near_the_strip(along_m=60.0, across_m=-160.0)
+    entry = _near_the_strip(along_m=60.0, across_m=0.0)
+    lined = _near_the_strip(along_m=100.0, across_m=0.0)
+    flight.session.lineup_path = [connector, entry, lined]
+    lat, lon = _near_the_strip(along_m=60.0, across_m=-18.0)
+    state = SimpleNamespace(
+        on_ground=True, latitude=lat, longitude=lon,
+        heading_true=283.0, ground_speed_kt=4.0)
+    flight._phase_line_up(state, 10.0)
+    called = flight._steer.call_args
+    # A 90-degree vertex inside twenty metres is priced at its figure
+    # plus the metres to it: the slowdown stands, under taxi speed.
+    assert called.args[2] <= 6.0
+
+
 def test_a_finished_lineup_path_is_a_latch_not_a_waypoint():
     """Past the path's end the pursuit stays done: re-seating it on the
     connector behind swings the nose back across the junction it just
