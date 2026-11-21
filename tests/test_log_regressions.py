@@ -1427,6 +1427,82 @@ def test_ground_steering_shrinks_as_the_speed_builds():
     assert 0.0 < abs(fast) <= 0.15
 
 
+def _lineup_flight():
+    """A flier held in the lineup geometry the phase machine reads."""
+    flight = _flier()
+    flight.state.sub = "align"
+    flight.state.runway_heading = 193.0
+    flight.state.runway_lat, flight.state.runway_lon = 42.0, -8.0
+    flight.session.cleared_takeoff = True
+    flight.session.departure_remaining_m = 400.0
+    flight._find_runway = lambda s: None
+    flight._runway_blocked = lambda *a, **k: False
+    flight._runway_inbound = lambda *a, **k: False
+    flight._steer = Mock()
+    return flight
+
+
+def _near_the_strip(along_m: float, across_m: float):
+    """lat/lon ``along_m`` down and ``across_m`` right of the 193 line."""
+    import math
+    rad = math.radians(193.0)
+    north = along_m * math.cos(rad) - across_m * math.sin(rad)
+    east = along_m * math.sin(rad) + across_m * math.cos(rad)
+    return (42.0 + north / 111195.0,
+            -8.0 + east / (111195.0 * math.cos(math.radians(42.0))))
+
+
+def test_the_lineup_turn_is_made_at_corner_pace():
+    """A hundred-odd degrees onto the strip is a corner, priced like one:
+    swung at taxi speed the arc runs off the pavement's edge, where the
+    infield grass holds what it catches."""
+    flight = _lineup_flight()
+    lat, lon = _near_the_strip(along_m=100.0, across_m=100.0)
+    state = SimpleNamespace(
+        on_ground=True, latitude=lat, longitude=lon,
+        heading_true=40.0, ground_speed_kt=0.0)
+    flight._phase_line_up(state, 10.0)
+    called = flight._steer.call_args
+    assert abs(called.args[2] - 2.5) < 1e-6
+    assert called.kwargs["brake_turn"] is True
+
+
+def test_lined_up_nearly_steers_at_taxi_speed():
+    """Wings level on the numbers the corner is over: the speed cap
+    releases and the roll forward is made at the book's taxi figure."""
+    flight = _lineup_flight()
+    lat, lon = _near_the_strip(along_m=100.0, across_m=0.0)
+    state = SimpleNamespace(
+        on_ground=True, latitude=lat, longitude=lon,
+        heading_true=191.0, ground_speed_kt=3.0)
+    flight._phase_line_up(state, 10.0)
+    called = flight._steer.call_args
+    assert abs(called.args[2] - flight.performance.taxi_kt) < 1e-6
+
+
+def test_a_stuck_probe_climbs_the_lever_to_the_stop():
+    """A probe that never reaches full travel is a mired aeroplane kept
+    for ever: each one asks more than the attempt that failed, to the
+    stop itself."""
+    flight = _flier()
+    flight._lever_at = 0.0
+    flight._ground_still = lambda s, n: False
+    flight._stuck_probe = Mock(return_value=5)
+    state = SimpleNamespace(
+        on_ground=True, ground_speed_kt=0.0, heading_true=0.0)
+    for _ in range(6):
+        flight._lever_at -= 1.0
+        flight._steer(state, 45.0, 10.0)
+    lever = flight.director.throttle.call_args[0][0]
+    assert lever > 0.75
+    # And it still slews there -- a probe is walked up, not slammed.
+    flight._stuck_probe = Mock(return_value=5)
+    flight._last_lever = 0.0
+    flight._lever_at = 0.0
+    flight._steer(state, 45.0, 10.0)
+    assert flight.director.throttle.call_args[0][0] <= 0.25 + 1e-9
+
+
 def test_the_rollout_holds_the_line_on_the_rudder_alone():
     """At rollout speed the nosewheel stays out of the steering."""
     from meridianatc.atc.autonomous import AutonomousPhase

@@ -804,10 +804,12 @@ class _The_checklist_answered:
             # asked again: each probe wants more, walked up faster than
             # a pull-away's hand would move it, so a heavy or a sticky
             # pair of tyres finds its breakaway rather than dying at the
-            # same setting every half minute. Still capped -- the probe
-            # is a probe, not a held takeoff rating.
-            want = max(want, self._breakaway_lever() + 0.12 * (probe - 1))
-            lever = self._slew_lever(min(want, 0.75), up_per_s=0.15,
+            # same setting every half minute. Bogged on a corner or off
+            # the pavement's edge the ask climbs to the stop itself --
+            # a probe that never reaches full travel is a mired
+            # aeroplane kept for ever.
+            want = max(want, self._breakaway_lever() + 0.20 * (probe - 1))
+            lever = self._slew_lever(min(want, 1.0), up_per_s=0.25,
                                      down_per_s=0.15)
         else:
             lever = self._slew_lever(max(0.0, min(0.6, want)),
