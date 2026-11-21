@@ -18,10 +18,32 @@ from tests.test_xptraffic import FakePlugin, eventually, position
 
 
 class NativePlugin(FakePlugin):
-    """Same UDP peer, able to drive the AI slots."""
+    """Same UDP peer, able to drive the AI slots -- and reporting in its
+    status which rostered ids actually became planes."""
+
+    def __init__(self):
+        super().__init__()
+        self.planes = []
+
+    def run(self):
+        # Track the ids of the last roster as the planes the sim carries.
+        while not self.stop.is_set():
+            try:
+                wire, self.peer = self.socket.recvfrom(65536)
+                packet = __import__("json").loads(wire)
+                self.messages.append(packet)
+                if packet["t"] == "native":
+                    self.planes = [a["id"] for a in packet["ac"]]
+                if self.reply and packet["t"] in ("hello", "traffic"):
+                    self.status()
+            except TimeoutError:
+                continue
+            except OSError:
+                break
 
     def status(self, **overrides):
         overrides.setdefault("native_cap", 1)
+        overrides.setdefault("native_ac", list(self.planes))
         super().status(**overrides)
 
 
@@ -86,7 +108,12 @@ def test_roster_and_control_writes(plugin, link):
     eventually(lambda: len(rosters(plugin)) == 1)
     assert rosters(plugin)[0] == {"v": 1, "t": "native",
                                   "ac": [{"id": "DLH4AB", "slot": 1,
-                                          "type": "A320"}]}
+                                          "type": "A320", "lat": 48.1,
+                                          "lon": 11.7, "alt": 12000}]}
+    # The callsign is not confirmed until the plugin reports the plane.
+    assert not link.has("DLH4AB")
+    plugin.status()
+    eventually(lambda: link.has("DLH4AB"))
     # The slot's feedback is subscribed and its levers are written.
     source = link.source
     assert source.subscriptions["xpn1:lat"] == \
@@ -110,6 +137,9 @@ def test_slot_cap_and_over_cap_failure(plugin, link):
     assert len(roster) == XPNativeTraffic.MAX_SLOTS == 19
     assert [a["slot"] for a in roster] == list(range(1, 20))
     assigned = {a["id"] for a in roster}
+    # Confirmed once the plugin reports the rostered ids as real planes.
+    plugin.status()
+    link.sync(many)
     assert all(link.has(a) for a in assigned)
     overflow = "CALL24"
     assert overflow not in assigned and link.failed(overflow)
@@ -121,8 +151,10 @@ def test_stable_assignment_and_detach(plugin, link):
     slots = {a["id"]: a["slot"] for a in rosters(plugin)[0]["ac"]}
     link.sync([position("AAA"), position("BBB")])
     link.sync([position("BBB")])
-    eventually(lambda: rosters(plugin)[-1]["ac"] ==
-               [{"id": "BBB", "slot": slots["BBB"], "type": "A320"}])
+    eventually(lambda: len(rosters(plugin)) >= 2)
+    last = rosters(plugin)[-1]["ac"]
+    assert [a["id"] for a in last] == ["BBB"]
+    assert last[0]["slot"] == slots["BBB"]
     # The freed lever is zeroed so a still-modelled plane does not fly on.
     assert last_write(link.source, "engine_throttle_request",
                       slots["AAA"]) == 0.0
@@ -189,8 +221,8 @@ def test_helicopter_gets_rotor_law(plugin, link):
     assert writes["sim/multiplayer/controls/engine_throttle_request[3]"] > .6
     link.sync([npos("HELI01", type="S76")])
     eventually(lambda: rosters(plugin))
-    assert rosters(plugin)[0]["ac"] == [{"id": "HELI01", "slot": 1,
-                                         "type": "S76"}]
+    entry = rosters(plugin)[0]["ac"][0]
+    assert (entry["id"], entry["slot"], entry["type"]) == ("HELI01", 1, "S76")
     assert link._pilots["HELI01"].helicopter
 
 

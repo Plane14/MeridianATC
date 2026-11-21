@@ -249,9 +249,10 @@ class XPNativeTraffic(XPlaneTraffic):
         self.source = source
         self._slots = {}          # id -> slot index (1..MAX_SLOTS)
         self._pilots = {}         # id -> NativePilot
-        self._roster = ()         # the (slot, id, type) tuples last sent
+        self._roster = ()         # the (slot, id, type, pos) tuples last sent
         self._roster_at = 0.0
         self._assigned_at = {}    # id -> when its slot was claimed
+        self._confirmed = set()   # ids the plugin's status reports as planes
 
     @property
     def native(self):
@@ -266,11 +267,22 @@ class XPNativeTraffic(XPlaneTraffic):
     @property
     def count(self):
         return len([i for i in self._wanted
-                    if i in self._drawn]) if self.available else 0
+                    if self.has(i)]) if self.available else 0
+
+    def _refresh_confirmed(self):
+        confirmed = self._status.get("native_ac") or []
+        self._confirmed = set(confirmed) & self._slots.keys()
 
     def has(self, callsign):
-        return (self.available and callsign in self._wanted
-                and callsign in self._drawn)
+        # "Drawn" here means the plugin's status carries the callsign in
+        # native_ac -- proof the plane exists in the sim, not just that
+        # the roster asked for it -- and the settle has passed.
+        if not self.available or callsign not in self._wanted:
+            return False
+        self._refresh_confirmed()
+        return (callsign in self._confirmed
+                and time.monotonic()
+                - self._assigned_at.get(callsign, 0.0) >= self.settle_s)
 
     def failed(self, callsign):
         self.on_frame()
@@ -282,7 +294,7 @@ class XPNativeTraffic(XPlaneTraffic):
         # Over the slot cap is decided at roster time, not waited out.
         if callsign not in self._slots and len(self._slots) >= self.MAX_SLOTS:
             return True
-        return (callsign not in self._drawn
+        return (not self.has(callsign)
                 and time.monotonic() - asked >= self.ANSWER_WITHIN_S)
 
     def _subscribe_slot(self, slot):
@@ -297,8 +309,10 @@ class XPNativeTraffic(XPlaneTraffic):
         if roster == self._roster and now - self._roster_at < self.HELLO_EVERY_S:
             return
         if self._send({"v": 1, "t": "native",
-                       "ac": [{"id": ident, "slot": slot, "type": tcode}
-                              for slot, ident, tcode in roster]}):
+                       "ac": [{"id": ident, "slot": slot, "type": tcode,
+                               "lat": pos[0], "lon": pos[1],
+                               "alt": pos[2]}
+                              for slot, ident, tcode, pos in roster]}):
             self._roster = roster
             self._roster_at = now
 
@@ -311,7 +325,7 @@ class XPNativeTraffic(XPlaneTraffic):
 
             # Keep the slots already flying somebody, then fill the rest
             # in the order the injector offered -- nearest first.
-            taken = {slot for slot, _ident, _tc in self._roster}
+            taken = {slot for slot, _ident, _tc, _pos in self._roster}
             wanted = {}
             roster = []
             for position in positions:
@@ -333,13 +347,20 @@ class XPNativeTraffic(XPlaneTraffic):
                 if slot is None:
                     continue
                 taken.add(slot)
-                roster.append((slot, ident, tcode))
+                try:
+                    pos = (_number(position["lat"], -90, 90),
+                           _number(position["lon"], -180, 180),
+                           _number(position["altitude_ft"], -2000, 100000))
+                except (ValueError, TypeError, KeyError):
+                    pos = None
+                roster.append((slot, ident, tcode, pos))
                 position["_slot"] = slot
             roster.sort()
 
             # Free the slots nobody claimed this tick, and let their
             # levers go neutral so a still-modelled plane does not fly
             # off on the last demand.
+            self._refresh_confirmed()
             for ident in [i for i in self._slots
                           if not any(r[1] == i for r in roster)]:
                 slot = self._slots.pop(ident)
@@ -356,7 +377,7 @@ class XPNativeTraffic(XPlaneTraffic):
 
             # Pilot each assigned slot.
             by_id = {position["callsign"]: position for position in positions}
-            for slot, ident, tcode in roster:
+            for slot, ident, tcode, _pos in roster:
                 position = by_id.get(ident)
                 if position is None:
                     continue
@@ -376,10 +397,6 @@ class XPNativeTraffic(XPlaneTraffic):
             # A slot is "drawn" once the model has had time to load and
             # the first samples come back -- the settle the CSL renderer
             # waits through before admitting a callsign to the frequency.
-            self._drawn = {ident for ident in wanted
-                           if ident in self._slots
-                           and now - self._assigned_at.get(ident, now)
-                           >= self.settle_s}
             self._wanted = wanted
 
     def detach(self):

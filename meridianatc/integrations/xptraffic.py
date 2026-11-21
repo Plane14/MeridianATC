@@ -196,7 +196,16 @@ class XPlaneTraffic:
                     continue
                 if any(not isinstance(status.get(k), list) or len(status[k]) > 512
                        or any(not isinstance(s, str) or not s or len(s.encode()) > 64
-                              for s in status[k]) for k in ("drawn", "unmatched")):
+                              for s in status[k])
+                       for k in ("drawn", "unmatched")):
+                    continue
+                # Older plugins predate the native roster; its absence is
+                # fine, a malformed one is not.
+                native_ac = status.get("native_ac")
+                if native_ac is not None and (
+                        not isinstance(native_ac, list) or len(native_ac) > 64
+                        or any(not isinstance(s, str) or not s
+                               or len(s.encode()) > 64 for s in native_ac)):
                     continue
                 fms = status.get("fms")
                 if fms is not None and (
