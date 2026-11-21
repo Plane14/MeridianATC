@@ -18,6 +18,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from . import __version__, logs
+from .audio.voices import VoicesMissing
 from .config import CONFIG_PATH, Config
 from .navdata.channels import channel_name
 from .navdata.db import POSITION_SUFFIX, NavDB
@@ -785,8 +786,15 @@ def cmd_say(args) -> int:
     if airport is None:
         console.print("[red]Specify an airport with --airport.[/red]")
         return 1
-    _speak_once(args.text, airport, args.position, db, save=args.save,
-                config=Config.load(args.config))
+    try:
+        _speak_once(args.text, airport, args.position, db, save=args.save,
+                    config=Config.load(args.config))
+    except VoicesMissing as missing:
+        # No voice models on disk: the answer is a download, not a
+        # traceback -- the panel's own text plus the CLI route to it.
+        console.print(f"[yellow]{missing}[/yellow]\n"
+                      f"[dim]{missing.where()}[/dim]")
+        return 1
     return 0
 
 
