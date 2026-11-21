@@ -285,6 +285,8 @@ void EnableNative() {
     if (xpmpOwned) { XPMPMultiplayerDisable(); xpmpOwned = false; }
     nativeAcquired = XPLMAcquirePlanes(nullptr, nullptr, nullptr) != 0;
     nativeBlocked = !nativeAcquired;
+    // One failure must not block the mode forever: the next empty roster
+    // or session reset clears the flag and lets it retry.
     if (nativeBlocked)
         Log("AI planes unavailable -- another plugin owns them");
 }
@@ -306,7 +308,7 @@ void SeedPosition(int slot, const NativeAssign& assign) {
     }
 }
 void ClearNative() {
-    if (nativeSlots.empty() && !nativeAcquired) return;
+    if (nativeSlots.empty() && !nativeAcquired && !nativeBlocked) return;
     int zero = 0;
     for (const auto& [slot, pair] : nativeSlots) {
         if (ovrAuto) XPLMSetDatavi(ovrAuto, &zero, slot, 1);
