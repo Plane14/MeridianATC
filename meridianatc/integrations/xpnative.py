@@ -20,9 +20,9 @@ import logging
 import math
 import time
 
+from ..atc import perftable
 from ..atc.control import Pid, PidTerms
 from ..atc.control_gains import fixed_wing_gains, rotor_gains
-from ..atc.flying import RATE_LIGHT, Performance
 from .xptraffic import XPlaneTraffic, _number, _text, aircraft_packet
 
 log = logging.getLogger(__name__)
@@ -97,14 +97,11 @@ class NativePilot:
             self._collective = Pid(gains.collective, clock=clock)
             self._pedals = Pid(gains.pedals, clock=clock)
         else:
-            # The class guess from the type's own family: heavies fly the
-            # airliner set, light singles the light one, the rest the
-            # turboprop's. ``approach_kt`` decides airliner vs turboprop.
-            heavy = type_code[:1] in ("A", "B", "E", "D", "M") \
-                and type_code not in ("EVOT", "A10")
-            perf = Performance(
-                turn_rate=RATE_LIGHT if not heavy else 3.0,
-                approach_kt=140.0 if heavy else 95.0)
+            # The type's own published figures, the same ones the motion
+            # model flies: the first letter is a weak guess next to what
+            # the table knows (a CRJ9 is no 737, a King Air no A380).
+            perf = perftable.traffic_performance(
+                type_code, light=type_code[:1] not in ("A", "B", "E", "M"))
             gains = fixed_wing_gains(perf)
             self._throttle = Pid(gains.throttle, clock=clock)
             self._steer = Pid(gains.steer, clock=clock)
@@ -407,9 +404,10 @@ class XPNativeTraffic(XPlaneTraffic):
             return
         if self._send({"v": 1, "t": "native",
                        "ac": [{"id": ident, "slot": slot, "type": tcode,
+                               "op": op,
                                "lat": pos[0], "lon": pos[1],
                                "alt": pos[2]}
-                              for slot, ident, tcode, pos in roster]}):
+                              for slot, ident, tcode, op, pos in roster]}):
             self._roster = roster
             self._roster_at = now
 
@@ -422,7 +420,7 @@ class XPNativeTraffic(XPlaneTraffic):
 
             # Keep the slots already flying somebody, then fill the rest
             # in the order the injector offered -- nearest first.
-            taken = {slot for slot, _ident, _tc, _pos in self._roster}
+            taken = {slot for slot, _ident, _tc, _op, _pos in self._roster}
             wanted = {}
             roster = []
             for position in positions:
@@ -450,7 +448,8 @@ class XPNativeTraffic(XPlaneTraffic):
                            _number(position["altitude_ft"], -2000, 100000))
                 except (ValueError, TypeError, KeyError):
                     pos = None
-                roster.append((slot, ident, tcode, pos))
+                op = _text(position.get("operator") or "", 3)
+                roster.append((slot, ident, tcode, op, pos))
                 position["_slot"] = slot
             roster.sort()
 
@@ -474,7 +473,7 @@ class XPNativeTraffic(XPlaneTraffic):
 
             # Pilot each assigned slot.
             by_id = {position["callsign"]: position for position in positions}
-            for slot, ident, tcode, _pos in roster:
+            for slot, ident, tcode, _op, _pos in roster:
                 position = by_id.get(ident)
                 if position is None:
                     continue

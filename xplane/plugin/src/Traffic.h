@@ -53,7 +53,7 @@ struct FollowMe {
 };
 
 struct NativeAssign {
-    std::string id, type;
+    std::string id, type, op;
     int slot = 0;
     // Where the flight is when the slot is claimed, degrees and feet,
     // so a fresh plane starts at the controller's position, not wherever
@@ -144,6 +144,7 @@ inline Packet Parse(const std::string& wire) {
             NativeAssign assign;
             assign.id = Text(a, "id", 64, true);
             assign.type = Text(a, "type", 4, true);
+            assign.op = Text(a, "op", 3);
             if (!a.at("slot").is_number_integer()) throw std::invalid_argument("slot");
             assign.slot = a.at("slot").get<int>();
             if (assign.slot < 1 || assign.slot > 63 ||

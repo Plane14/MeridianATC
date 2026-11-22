@@ -82,9 +82,12 @@ from ..operators import (
     REGIONAL,
     WIDEBODY,
     Operator,
+    airline_registration,
     by_icao,
+    draw_tail,
     registration_prefix,
     roster_for,
+    visitor_pool,
 )
 from ..phraseology import Aircraft, Weather, wake_suffix
 from ..pilot import PilotSpeech
@@ -177,6 +180,11 @@ class Flight:
     destination_icao: str = ""
     origin_icao: str = ""
     squawk: str = "2000"
+    # The tail this airframe wears. For a light aeroplane it is the callsign
+    # itself; for an airline, a plausible mark from its country of
+    # registration, so the map and the traffic lists know more than
+    # "BAW41M".
+    registration: str = ""
     altitude_ft: float = 0.0
     distance_nm: float = 0.0     # arrivals: distance still to run
     phase: str = "clearance"
@@ -398,6 +406,7 @@ class Flight:
         return {
             "callsign": self.written,
             "spoken": self.aircraft.for_language(self.language).spoken_short,
+            "registration": self.registration,
             "type": self.type_code,
             "ifr": self.ifr,
             "operator": (self.operator.icao if self.operator
@@ -1276,7 +1285,8 @@ __all__ = [
     "WIDEBODY",
     "Operator",
     "by_icao",
-    "registration_prefix",
+    "registration_prefix", "visitor_pool", "draw_tail",
+    "airline_registration",
     "roster_for",
     "Aircraft",
     "Weather",

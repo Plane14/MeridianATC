@@ -11,6 +11,7 @@ from ._shared import (
     Flight,
     Operator,
     bearing_deg,
+    draw_tail,
     fleets,
     groundwork,
     haversine_nm,
@@ -19,7 +20,13 @@ from ._shared import (
     project,
     registration_prefix,
     roster_for,
+    visitor_pool,
 )
+
+# The share of light aeroplanes visiting from abroad -- a tourer across
+# the border, drawn from the country's neighbours rather than the whole
+# world.
+FOREIGN_LIGHT_SHARE = 0.25
 
 
 class _The_ground_driven:
@@ -162,18 +169,15 @@ class _The_ground_driven:
         one the airport would have.
         """
         prefix = registration_prefix(self.field.ident)
-        letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        needed = 5 - len(prefix.replace("-", ""))
+        # A quarter of the light traffic is visiting from across the
+        # border: the foreign prefix a tourer is likely to carry.
+        pool = visitor_pool(prefix)
+        if pool and self.random.random() < FOREIGN_LIGHT_SHARE:
+            prefix = self.random.choice(pool)
         kind = self.field.kind or fleets.classify(self.navdb, self.field.ident)
         airliners = self._airline_fleet() if airline_fleet else ()
         for _ in range(20):
-            if prefix == "N":
-                tail = (f"N{self.random.randint(100, 999)}"
-                        f"{self.random.choice(letters)}"
-                        f"{self.random.choice(letters)}")
-            else:
-                tail = prefix + "".join(
-                    self.random.choice(letters) for _ in range(needed))
+            tail = draw_tail(prefix, self.random)
             if tail not in self._used_callsigns:
                 type_code = (self.random.choice(airliners) if airliners
                              else fleets.light_type(kind, self.random))

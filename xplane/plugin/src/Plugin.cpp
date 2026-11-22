@@ -220,6 +220,8 @@ bool nativeAcquired = false, nativeBlocked = false;
 std::map<int, std::pair<std::string, std::string>> nativeSlots; // slot -> {id, acf}
 XPLMDataRef ovrAuto = nullptr, ovrPath = nullptr;
 std::vector<fs::path> acfList;
+// Every installed .acf, indexed by the ICAO designator written inside it.
+std::map<std::string, std::vector<fs::path>> acfByIcao;
 
 void ScanAcf() {
     if (!acfList.empty()) return;
@@ -228,18 +230,196 @@ void ScanAcf() {
     const fs::path base = fs::path(system) / "Aircraft";
     for (auto it = fs::recursive_directory_iterator(base, ec);
          !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
-        if (it->is_regular_file(ec) && it->path().extension() == ".acf")
-            acfList.push_back(it->path());
+        if (!it->is_regular_file(ec) || it->path().extension() != ".acf")
+            continue;
+        const fs::path p = it->path();
+        // Austin's testbeds are no aeroplane to look at, and an add-on's
+        // plugin-side helper files are not real aircraft either.
+        const std::string rel = p.lexically_relative(base).generic_string();
+        if (rel.rfind("Experimental/", 0) == 0 ||
+            rel.find("/plugins/") != std::string::npos)
+            continue;
+        acfList.push_back(p);
+        // XP12 .acf files are a text properties stream: the designator the
+        // airframe declares is the name every roster type maps onto.
+        std::ifstream in(p);
+        std::string line;
+        while (std::getline(in, line)) {
+            if (line.rfind("P acf/_ICAO ", 0) == 0 && line.size() > 12) {
+                acfByIcao[line.substr(12)].push_back(p);
+                break;
+            }
+        }
     }
+    Log("installed airframes: " + std::to_string(acfList.size()) +
+        " across " + std::to_string(acfByIcao.size()) + " types");
 }
 fs::path FindAcf(const std::string& needle) {
     for (const auto& p : acfList)
         if (p.filename().string().find(needle) != std::string::npos) return p;
     return {};
 }
-std::string ModelFor(const std::string& type) {
-    // ICAO type -> a word in the default fleet's .acf filename. Everything
-    // not named falls to a size-class stand-in further down.
+
+// Which file of a type's candidates an AI slot should fly. Purpose-built
+// AI airframes (Dazzy_AI, Laminar's *_AI) carry a fraction of a study
+// add-on's geometry and scripts; the default fleet is next best; a livery
+// or weapon variant of the same airframe is what a civilian should not be.
+int AcfScore(const fs::path& p) {
+    const std::string s = p.generic_string(), f = p.filename().string();
+    int score = s.find("/Dazzy_AI/") != std::string::npos ? 0
+        : f.find("_AI.") != std::string::npos ? 0
+        : s.find("/Laminar Research/") != std::string::npos ? 1 : 2;
+    for (const char* bad : {"seaplane", "mariner", "Float", "floats",
+                            "float", "Amphib", "JATO", "Formation",
+                            "Bomber", "Ground_Attack", "Interceptor",
+                            "NASA", "USAF"})
+        if (f.find(bad) != std::string::npos ||
+            s.find(bad) != std::string::npos) score += 4;
+    return score;
+}
+fs::path BestIcao(const std::string& code, bool freighter = false) {
+    auto it = acfByIcao.find(code);
+    if (it == acfByIcao.end() || it->second.empty()) return {};
+    auto best = std::min_element(it->second.begin(), it->second.end(),
+        [](const fs::path& a, const fs::path& b) {
+            return AcfScore(a) < AcfScore(b); });
+    // A freighter callsign gets the cargo frame where the type offers one.
+    if (freighter)
+        for (const auto& c : it->second) {
+            const std::string f = c.filename().string();
+            if (f.find("AIF") != std::string::npos ||
+                f.find("Cargo") != std::string::npos)
+                return c;
+        }
+    return *best;
+}
+
+std::string ModelFor(const std::string& type, const std::string& op) {
+    const bool freighter = op == "FDX" || op == "UPS" || op == "GEC"
+        || op == "BOX" || op == "CLX" || op == "ABW" || op == "DHL";
+    // 1. The airframe itself: the type's own designator, then the codes its
+    //    family shares a flight model with.
+    static const std::map<std::string, std::vector<const char*>> family = {
+        {"A318", {"A320", "A319"}}, {"A319", {"A320", "A318"}},
+        {"A20N", {"A320", "A20N"}}, {"A21N", {"A321", "A320", "A20N"}},
+        {"A321", {"A320", "A319", "A20N"}}, {"A319CJ", {"A319", "A320"}},
+        {"A332", {"A333", "A339"}}, {"A338", {"A339", "A333"}},
+        {"A342", {"A343"}}, {"A359", {"A333", "A339", "A343"}},
+        {"A35K", {"A359", "A333"}}, {"A306", {"B763", "A333"}},
+        {"B732", {"B733", "B738"}}, {"B733", {"B738"}},
+        {"B734", {"B738", "B733"}}, {"B735", {"B733", "B738"}},
+        {"B736", {"B738", "B733"}}, {"B737", {"B738", "B733"}},
+        {"B38M", {"B738"}}, {"B37M", {"B738"}}, {"B39M", {"B738"}},
+        {"B739", {"B738"}}, {"B73G", {"B738"}},
+        {"B742", {"B744"}}, {"B743", {"B744"}}, {"B741", {"B744"}},
+        {"B748", {"B744"}}, {"B74S", {"B744"}}, {"B74D", {"B744"}},
+        {"B753", {"B752"}}, {"B762", {"B763"}}, {"B764", {"B763"}},
+        {"B772", {"B77W", "B77L"}}, {"B773", {"B77W", "B772"}},
+        {"B77W", {"B772", "B77L"}}, {"B778", {"B772", "B77W"}},
+        {"B779", {"B772", "B77W"}}, {"B788", {"B772", "B763"}},
+        {"B789", {"B772", "B77W"}}, {"B78X", {"B772", "B77W"}},
+        {"B712", {"B717"}}, {"B717", {"B712", "MD82"}},
+        {"B721", {"B722"}}, {"B722", {"B721"}}, {"B720", {"B721"}},
+        {"MD81", {"MD82"}}, {"MD83", {"MD82"}}, {"MD87", {"MD82"}},
+        {"MD88", {"MD82"}}, {"MD90", {"MD82"}}, {"MD11", {"B767"}},
+        {"DC10", {"B767"}}, {"E135", {"E170"}}, {"E145", {"E170"}},
+        {"E170", {"E190"}}, {"E75L", {"E170", "E190"}},
+        {"E195", {"E190"}}, {"E290", {"E190", "E170"}},
+        {"E295", {"E190", "E170"}}, {"CRJ1", {"CRJ9", "E170"}},
+        {"CRJ2", {"CRJ9", "E170"}}, {"CRJ7", {"CRJ9", "E170"}},
+        {"CRJ9", {"CRJ7", "E170", "MD82"}}, {"CRJX", {"CRJ9", "E170"}},
+        {"AT43", {"AT45", "AT76", "DH8D"}}, {"AT45", {"AT76", "DH8D"}},
+        {"AT46", {"AT45", "AT76"}}, {"AT72", {"AT76", "AT45"}},
+        {"AT73", {"AT76", "AT45"}}, {"AT75", {"AT76", "AT45"}},
+        {"AT76", {"AT45", "DH8D"}}, {"DH8A", {"DH8D", "AT45"}},
+        {"DH8B", {"DH8D", "AT45"}}, {"DH8C", {"DH8D", "AT45"}},
+        {"SF34", {"AT45", "DH8D"}}, {"SW4", {"AT45", "B190"}},
+        {"JS31", {"JS32", "B190"}}, {"JS32", {"JS31", "B190"}},
+        {"JS41", {"JS32", "JS31"}}, {"E110", {"B190", "B18T"}},
+        {"B190", {"BE9L", "JS32"}}, {"D328", {"AT45", "JS32"}},
+        {"DH2T", {"DHC6", "DHC7"}}, {"DHC2", {"PA18", "C208"}},
+        {"DHC3", {"C208", "DHC6"}}, {"C208", {"DHC6", "KODI"}},
+        {"PC12", {"C208", "KODI"}}, {"TBM7", {"C208", "KODI"}},
+        {"TBM8", {"C208", "KODI"}}, {"TBM9", {"C208", "KODI"}},
+        {"KODI", {"C208", "PC12"}}, {"C25A", {"C750", "C56X"}},
+        {"C25B", {"C56X", "C750"}}, {"C25C", {"C56X", "C750"}},
+        {"C510", {"SF50", "C750"}}, {"C525", {"SF50", "C750"}},
+        {"C550", {"C56X", "C750"}}, {"C560", {"C56X", "C750"}},
+        {"C56X", {"C750", "C560"}}, {"C650", {"C750"}},
+        {"C680", {"C750", "C56X"}}, {"C700", {"C750"}},
+        {"C750", {"C56X"}}, {"LJ35", {"C750", "SF50"}},
+        {"LJ45", {"C750", "SF50"}}, {"LJ60", {"C750"}},
+        {"GLF4", {"C750", "F2TH"}}, {"GLF5", {"GLF4", "C750"}},
+        {"GLF6", {"GLF4", "C750"}}, {"F2TH", {"C750", "GLF4"}},
+        {"F900", {"F2TH", "C750"}}, {"FA7X", {"F2TH", "C750"}},
+        {"C152", {"C172"}}, {"C162", {"C172", "C152"}},
+        {"C170", {"C172"}}, {"C172", {"C152", "C170", "P28A"}},
+        {"C177", {"C172", "C182"}}, {"C182", {"C172", "C170"}},
+        {"C206", {"C172", "C208"}}, {"C210", {"C172", "BE36"}},
+        {"PA18", {"PA18", "C172"}}, {"J3", {"PA18"}},
+        {"P28A", {"C172", "PA28"}}, {"PA28", {"P28A", "C172"}},
+        {"P28R", {"P28A", "BE36"}}, {"PA32", {"P28A", "BE36"}},
+        {"PA38", {"C152", "PA18"}}, {"PA44", {"BE58", "PA31"}},
+        {"PA46", {"BE36", "P28A"}}, {"DA40", {"SR22", "C172"}},
+        {"DA42", {"BE58", "BE60"}}, {"DA62", {"BE58", "BE60"}},
+        {"PA34", {"BE58", "BE60", "PA31"}}, {"PA31", {"BE58", "BE60"}},
+        {"BE36", {"BE58", "P28A"}}, {"BE35", {"BE36"}},
+        {"BE33", {"BE36"}}, {"BE55", {"BE58", "BE60"}},
+        {"BE58", {"BE60", "BE95", "BE36"}}, {"BE60", {"BE58"}},
+        {"BE9L", {"BE9K", "B190"}}, {"BE9K", {"BE9L", "B190"}},
+        {"BE20", {"BE9L", "B190"}}, {"B350", {"BE9L", "B190"}},
+        {"SR22", {"SR20", "DA40", "C172"}}, {"SR20", {"SR22"}},
+        {"TB20", {"DR40", "P28A", "BE36"}}, {"TB21", {"TB20", "DR40"}},
+        {"DR40", {"TB20", "P28A", "C172"}}, {"RV7", {"RV10", "PA18"}},
+        {"RV10", {"RV7", "BE36"}}, {"EVOT", {"ALIA", "SF50"}},
+        {"DC3", {"DC3T", "BT67", "C46"}}, {"DC3T", {"DC3"}},
+        {"BT67", {"DC3T", "DC3"}}, {"C46", {"DC3"}},
+        {"DHC6", {"SC7", "DHC7"}}, {"SC7", {"DHC6", "TRIS"}},
+        {"TRIS", {"DHC6", "SC7"}}, {"BN2P", {"DHC6", "SC7"}},
+        {"P180", {"BE58", "JS32"}}, {"JS32", {"JS31", "B190"}},
+        {"EUFI", {"F4", "F104"}}, {"F15", {"F4", "F18"}},
+        {"F16", {"F18", "F4"}}, {"F18", {"F4"}}, {"F22", {"F18"}},
+        {"A10", {"F4"}}, {"HAR", {"AV8B", "F4"}}, {"AV8B", {"HAR"}},
+        {"AS21", {"ASK", "GLID"}}, {"GLID", {"AS21"}},
+        {"B06", {"B407", "Jetranger"}}, {"B407", {"B06"}},
+        {"B429", {"B407", "B06"}}, {"B412", {"B407", "UH1"}},
+        {"UH1", {"B06", "B412"}}, {"H500", {"R22", "B06"}},
+        {"R44", {"R22"}}, {"R66", {"R44", "R22"}},
+        {"AS50", {"B06", "EC30"}}, {"AS55", {"AS50", "EC35"}},
+        {"EC30", {"EC35", "B06"}}, {"EC35", {"EC30", "AS50"}},
+        {"EC45", {"EC35"}}, {"H125", {"AS50", "B06"}},
+        {"H145", {"EC45", "B412"}}, {"H160", {"S76", "EC45"}},
+        {"AS32", {"S76", "B412"}}, {"A109", {"S76", "B429"}},
+        {"A139", {"S76", "A109"}}, {"MD52", {"MD60", "B407"}},
+        {"MD60", {"MD52", "B06"}}, {"H47", {"S76", "CH53"}},
+        {"H53", {"CH53", "S76"}}, {"H64", {"S76"}},
+        {"V22", {"S76", "B06"}}, {"ALIA", {"EVOT", "S76"}},
+    };
+    static const std::set<std::string> heliTypes = {
+        "R22", "R44", "R66", "S76", "B407", "B429", "B06", "B412",
+        "AS50", "AS55", "AS32", "EC30", "EC35", "EC45", "A109",
+        "A139", "MD52", "MD60", "UH1", "H500", "H160", "H145",
+        "H47", "H53", "H64", "H125", "V22", "ALIA", "EVOT",
+    };
+    const bool heli = heliTypes.count(type) != 0;
+    auto pick = [&](const char* code) -> fs::path {
+        return code ? BestIcao(code, freighter) : fs::path{}; };
+    if (auto p = pick(type.c_str()); !p.empty()) return p.string();
+    if (auto fit = family.find(type); fit != family.end()) {
+        fs::path best;
+        for (const char* code : fit->second)
+            if (auto p = pick(code); !p.empty() &&
+                (best.empty() || AcfScore(p) < AcfScore(best)))
+                best = p;
+        if (!best.empty()) return best.string();
+    }
+    // Rotorcraft a family cannot cover default to the installed wheeled
+    // medium, then the light skid trainer.
+    if (heli)
+        for (const char* code : {"S76", "B06", "B407", "R22", "ALIA"})
+            if (auto p = pick(code); !p.empty()) return p.string();
+    // 2. The default fleet's filenames, for a type index the scan found no
+    //    _ICAO for and for an install without the default fleet's _ICAO.
     static const std::pair<const char*, const char*> table[] = {
         {"A33", "A330"}, {"MD8", "MD-82"},
         {"SR2", "SR22"}, {"SF5", "SF50"},
@@ -257,21 +437,9 @@ std::string ModelFor(const std::string& type) {
     for (const auto& [key, needle] : table)
         if (type.find(key) == 0)
             if (auto p = FindAcf(needle); !p.empty()) return p.string();
-    static const std::set<std::string> heli = {
-        "R22", "R44", "R66", "S76", "B407", "B429", "B06", "B412",
-        "AS50", "AS55", "AS32", "EC30", "EC35", "EC45", "A109",
-        "A139", "MD52", "MD60", "UH1", "H500", "H160", "H145",
-        "H47", "H53", "H64",
-    };
-    if (heli.count(type)) {
-        // Wheeled default rotorcraft first, the skids after, and XP12.1's
-        // eVTOL last -- its flight model is the least like a helicopter's.
-        for (const char* needle : {"S-76", "R22", "ALIA"})
-            if (auto p = FindAcf(needle); !p.empty()) return p.string();
-    }
-    // Stand-in by class: anything airliner-sized wears the 737, light
-    // turboprops the King Air, everything else the Skyhawk, a helicopter
-    // the S-76.
+    // Stand-in by class: anything airliner-sized wears the biggest jet the
+    // install has, light turboprops a turboprop, everything else the
+    // Skyhawk, a helicopter whatever rotorcraft exists.
     static const std::set<std::string> propTwin = {"AT7", "DH8", "DHC",
         "SW4", "SF3", "JS4", "E110", "B190"};
     const char* needle = type.size() && (type[0] == 'A' || type[0] == 'B'
@@ -337,7 +505,7 @@ void ApplyRoster(const std::vector<NativeAssign>& roster) {
     std::map<int, std::pair<std::string, std::string>> next;
     for (const auto& assign : roster) {
         high = std::max(high, assign.slot);
-        const std::string acf = ModelFor(assign.type);
+        const std::string acf = ModelFor(assign.type, assign.op);
         auto it = nativeSlots.find(assign.slot);
         if (it == nativeSlots.end() || it->second.first != assign.id
                 || it->second.second != acf) {

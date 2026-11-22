@@ -9,6 +9,7 @@ from ._shared import (
     Flight,
     _local_or_english,
     _spell_route,
+    airline_registration,
     decision,
     every_language,
     fleets,
@@ -301,6 +302,8 @@ class _Test_tools_traffic:
             aircraft=aircraft,
             language=language,
             operator=operator,
+            registration=(written if operator is None
+                          else airline_registration(operator, self.random)),
             arriving=arriving,
             runway=runway,
             destination=self._elsewhere(),
