@@ -429,7 +429,8 @@ class _The_checklist_answered:
 
     def _ground_directional(self, state, want_hdg: float, gs: float,
                             rate_cap: float = 5.0, pedal_max: float = 0.4,
-                            demand: float = 1.0) -> float:
+                            demand: float = 1.0, rate_damp: float = 1.0,
+                            err_share: float = 0.3) -> float:
         """The signed pedal demand that holds a heading on a fast roll.
 
         The takeoff roll, the rollout and the flare's de-crab steer by
@@ -445,7 +446,14 @@ class _The_checklist_answered:
         hdg = state.heading_true or 0.0
         err = ((want_hdg - hdg + 540.0) % 360.0 - 180.0)
         rate = self._turn_rate(hdg)
-        lead = self._steer_lead(err, rate)
+        # ``rate_damp`` de-rates the measured swing wherever the demand
+        # would answer it -- in the lead's projection and in the servo
+        # difference below. On the roll the figure arrives two beats
+        # late: asked at full weight both places it is the weave's own
+        # pump, collapsing the ask on the half-cycle the plant already
+        # answers, and the troughs that leaves are the ground the
+        # standing veer is gained on.
+        lead = self._steer_lead(err, rate * rate_damp)
         # The situation's press is on the ask before the cap: a firmer
         # demand reaches the cap sooner, a softer one sits under it --
         # the cap itself is never the thing pressed.
@@ -457,9 +465,17 @@ class _The_checklist_answered:
         # here are degrees, and the sharpness a feed-forward term adds
         # at roll speed is the weave the sim's own veer is already
         # feeding -- the droop a bare difference leaves is the price
-        # of a straight roll, not a wide corner.
+        # of a straight roll, not a wide corner. ``rate_damp`` is the
+        # fraction of the measured rate the subtraction keeps: on the
+        # takeoff roll the figure arrives two beats late -- a full
+        # subtraction is the weave's own pump, each counter-ask landing
+        # in time to be the next overshoot's push, and the troughs it
+        # leaves are the ground the standing veer is gained on. A
+        # third of the answer is enough of the brake; the callers that
+        # steer with the lag under a second keep the whole one.
         pedal = max(-pedal_max,
-                    min(pedal_max, (want_rate - rate) / authority))
+                    min(pedal_max,
+                        (want_rate - rate * rate_damp) / authority))
         # The rate law alone droops: the error reaches the pedal only
         # through the authority figure, and a figure that flatters the
         # model leaves a sustained error answered by a whisper -- the
@@ -470,7 +486,8 @@ class _The_checklist_answered:
         # still gets the counter-pedal that stops the overshoot.
         if pedal * err > 0.0:
             pedal = max(-pedal_max, min(
-                pedal_max, pedal + max(-0.3, min(0.3, err * 0.02))))
+                pedal_max, pedal + max(-err_share,
+                                       min(err_share, err * 0.02))))
         if abs(err) < 1.5 and abs(rate) < 1.0:
             pedal = 0.0
         # Walked like the taxi wheel, and smoothed harder than it: the

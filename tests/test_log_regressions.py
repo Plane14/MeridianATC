@@ -1734,6 +1734,24 @@ def test_the_rolls_pedal_holds_the_weaves_slow_half():
     assert sum(out[-4:]) / 4.0 > 0.1
 
 
+def test_the_rolls_damped_rate_keeps_the_foot_down():
+    """Subtracting the measured rate whole pumped the ~eight-second
+    weave the rejected rolls logged -- the demand's troughs were the
+    ground the standing veer was gained on, each dip below the hold it
+    was being asked to keep. A third of the answer is enough of the
+    brake, and the error's own larger share carries the standing
+    correction: through the weave the foot stays planted where the
+    drift costs it."""
+    flight = _flier()
+    flight._turn_rate = Mock(side_effect=[-6.0, 6.0] * 8)
+    state = SimpleNamespace(heading_true=30.0, ground_speed_kt=40.0)
+    out = [flight._ground_directional(state, 50.0, 40.0,
+                                      rate_cap=5.0, pedal_max=0.8,
+                                      rate_damp=0.25, err_share=0.5)
+           for _ in range(12)]
+    assert min(out[-4:]) > 0.4
+
+
 def test_a_new_roll_does_not_inherit_the_last_rolls_pedal():
     """The demand a rejected roll walked toward its stop was the next
     roll's opening ask -- the memory carried through ``_goto_sub``, so

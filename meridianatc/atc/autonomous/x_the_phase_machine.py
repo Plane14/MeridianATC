@@ -1040,7 +1040,14 @@ class _The_phase_machine:
                         self._goto_sub("abort")
                         return
             keep = self._ground_directional(
-                state, keep_hdg, gs, rate_cap=5.0, pedal_max=0.8)
+                state, keep_hdg, gs, rate_cap=5.0, pedal_max=0.8,
+                # The measured rate answers two beats late on the roll:
+                # subtracting it whole pumped the ~eight-second weave
+                # every rejected roll logged, and the troughs were the
+                # ground the left veer was gained on. A quarter of it
+                # is enough of the brake; the error's own share carries
+                # the standing correction a weak rudder keeps owing.
+                rate_damp=0.25, err_share=0.5)
             # The right foot a prop takeoff is flown with: the engine's
             # left-turning moment is the roll's standing load, led
             # before the heading can leave -- a damper that waits for
