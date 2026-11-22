@@ -841,6 +841,16 @@ class SimVehicles:
 
     # -- keeping the simulator in step --------------------------------
 
+    def stall_ended(self, now: float) -> None:
+        """Give requests asked before a simulator stall a fresh window.
+
+        Every pending ask aged through the silence, so the first sync
+        after it would count the stall seconds against ANSWER_WITHIN_S
+        and refuse vehicles the simulator never got a chance to make.
+        """
+        for request in list(self._asked_when):
+            self._asked_when[request] = now
+
     def sync(self, positions, now: float | None = None) -> None:
         """Create, move and remove, so the apron matches the turnaround."""
         if not self.available:

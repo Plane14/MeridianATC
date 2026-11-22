@@ -198,7 +198,12 @@ class _The_simulator_link:
 
         link = self._sim_source
         if link is not None and self.source is link:
-            if link.connected:
+            # ``alive`` answers "still there" where ``connected`` answers
+            # "fresh data this moment": a simulator deep in a stutter --
+            # a scenery load, a frozen draw -- goes silent for seconds
+            # without having gone, and a teardown here used to throw away
+            # the session and every integration over it.
+            if getattr(link, "alive", link.connected):
                 return
             # It was there and has gone. Say so once, drop back to a manual
             # source holding the last known position, and start looking
@@ -215,6 +220,7 @@ class _The_simulator_link:
             held.connected = True
             held.source = "manual"
             held.paused = False
+            held.stalled = False
             self._detach_simulator_integrations()
             try:
                 link.close()

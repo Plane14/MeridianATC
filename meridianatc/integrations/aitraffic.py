@@ -1227,6 +1227,16 @@ class SimTraffic:
         except Exception:
             self._handle_tick_failure()
 
+    def stall_ended(self, now: float) -> None:
+        """Give requests asked before a simulator stall a fresh window.
+
+        Every pending ask aged through the silence, so the first sync
+        after it would count the stall seconds against ANSWER_WITHIN_S
+        and refuse aeroplanes the simulator never got a chance to draw.
+        """
+        for request in list(self._asked_when):
+            self._asked_when[request] = now
+
     def _handle_tick_failure(self) -> None:
         """A tick that could not keep the traffic in step: the simulator has
         gone, and the writer stops rather than retrying every tick. It used

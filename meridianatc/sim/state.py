@@ -299,6 +299,11 @@ class AircraftState:
     # Set briefly after a menu/map teleport or slew: the position jumped
     # rather than was flown to, so change-watchers hold for the window.
     relocated: bool = False
+    # Set while the simulator has stopped answering without having gone:
+    # a long frame -- a scenery load, a hung draw -- silences it exactly
+    # like a crash does. Everything holds, as it does for paused, until
+    # either it answers or it stays silent long enough to be gone.
+    stalled: bool = False
     unavailable: tuple[str, ...] = ()
 
     # ------------------------------------------------------------------

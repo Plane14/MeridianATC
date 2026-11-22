@@ -262,10 +262,12 @@ WRITABLE = {
 
 class XPlaneSource:
     def __init__(self, host="127.0.0.1", port=49000, poll_interval=.25,
-                 timeout_s=1.0, disconnect_s=5.0, discovery_s=1.1):
+                 timeout_s=1.0, disconnect_s=5.0, gone_s=30.0,
+                 discovery_s=1.1):
         self.host, self.port = host, int(port)
         self.version = None
         self.timeout_s, self.disconnect_s = timeout_s, disconnect_s
+        self.gone_s = max(gone_s, disconnect_s)
         self.discovery_s = discovery_s
         self.frequency = max(1, round(1 / max(.05, poll_interval)))
         self._socket = None
@@ -324,6 +326,15 @@ class XPlaneSource:
     def connected(self):
         return (self._socket is not None and self._answered.is_set()
                 and time.monotonic() - self._last_packet < self.disconnect_s)
+
+    @property
+    def alive(self):
+        # Whether X-Plane is plausibly still there: answered once, and not
+        # silent past ``gone_s``. A long frame or a scenery load stops the
+        # RREF stream exactly like a crash does, so silence alone is not
+        # yet gone -- ``connected`` asks "fresh", this asks "still here".
+        return (self._socket is not None and self._answered.is_set()
+                and time.monotonic() - self._last_packet < self.gone_s)
 
     def connect(self):
         if self.connected:
@@ -403,6 +414,7 @@ class XPlaneSource:
         with self._lock:
             values = self._values.copy()
         state = AircraftState(source="xplane", connected=self.connected)
+        state.stalled = self.alive and not self.connected
         for key, (_path, factor) in DATAREFS.items():
             if key in values:
                 raw = values[key] * factor

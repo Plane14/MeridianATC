@@ -79,20 +79,38 @@ class _Situation_loop:
         # where the aeroplane is, and it keeps being written to ``self.state``
         # -- which is what makes the first tick after the menu compare two
         # readings from after the jump rather than straddling it.
-        if state.paused or getattr(state, "relocated", False):
+        if (state.paused or getattr(state, "relocated", False)
+                or getattr(state, "stalled", False)):
             if not self._was_paused:
                 self._was_paused = True
                 self.crew.hold()
                 self._paused_said = bool(state.paused)
+                self._stalled_said = bool(getattr(state, "stalled", False))
                 if state.paused:
                     self.emit("info", "The simulator is paused.",
                               key="log.sim_paused")
+                elif getattr(state, "stalled", False):
+                    self.emit("info", "The simulator stopped answering -- "
+                              "everything holds where it is until it does "
+                              "or is gone.", key="log.sim_stalled")
             return
         if self._was_paused:
             self._was_paused = False
             if getattr(self, "_paused_said", True):
                 self.emit("info", "Back in the aeroplane.",
                           key="log.sim_unpaused")
+            if getattr(self, "_stalled_said", False):
+                self.emit("info", "The simulator is answering again.",
+                          key="log.sim_unstalled")
+                self._stalled_said = False
+                # Every pending ask aged through the silence; its answer
+                # window starts over from now rather than counting the
+                # stall against it.
+                now = time.monotonic()
+                for writer in (self.simtraffic, self.simvehicles):
+                    stall_ended = getattr(writer, "stall_ended", None)
+                    if stall_ended is not None:
+                        stall_ended(now)
             self._paused_said = False
 
         # The pilot changed frequency: work out who is now listening.
