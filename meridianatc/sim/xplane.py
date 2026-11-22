@@ -261,6 +261,15 @@ WRITABLE = {
 
 
 class XPlaneSource:
+    # The simulator's level-change is pitch-for-speed: with the first
+    # officer's own throttle management it can fly a descent but it
+    # cannot climb, and its autopilot mode-status reads run armed at
+    # one -- only two means engaged. Declared for the FLC probe in
+    # autonomous._flc_owning, which trusts armed-as-engaged on the
+    # boolean MSFS readback and cannot afford to here.
+    flc_pitch_only = True
+    ap_status_engaged = 2.0
+
     def __init__(self, host="127.0.0.1", port=49000, poll_interval=.25,
                  timeout_s=1.0, disconnect_s=5.0, gone_s=30.0,
                  discovery_s=1.1):

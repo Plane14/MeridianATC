@@ -333,6 +333,84 @@ def test_the_direct_mode_still_flies_the_vs_bug():
     assert fo.state.ap_vs_mode is True
 
 
+def _xp_sim(fo, status):
+    """An X-Plane source: its level-change pitches for speed and its
+    mode statuses run armed at one, engaged at two."""
+    sim = _probe_sim(fo, status)
+    sim.flc_pitch_only = True
+    sim.ap_status_engaged = 2.0
+    return sim
+
+
+def test_xplanes_pitch_only_flc_cannot_climb():
+    """A climb on X-Plane's level-change held the aeroplane level for
+    minutes -- pitch for speed plus cruise thrust makes no climb. VS
+    owns the climb; the mode is not even asked."""
+    fo = _managed_fo()
+    _xp_sim(fo, 0.0)                                 # no mode on
+    state = AircraftState(on_ground=False, autopilot=True)
+    fo._apply_flight_director(state, altitude=8000.0, vs_fpm=+700.0,
+                              speed_kt=90.0)
+    fo._dir.vs_hold.assert_called_with(True)
+    fo._dir.level_change.assert_not_called()
+    assert fo.state.ap_vs_mode is True
+
+
+def test_xplanes_flc_is_brought_off_before_the_vs_climb():
+    """FLC still on from a descent leg is disengaged under the same
+    two-second probe, reversed, before VS asserts the axis -- both
+    asserted a write apart is the flicker the probe exists to stop.
+    Expired unanswered, the VS own stays latched for the climb --
+    re-probing a mode that will not drop would pulse the axis."""
+    import time
+    fo = _managed_fo()
+    _xp_sim(fo, 2.0)                                 # FLC still engaged
+    state = AircraftState(on_ground=False, autopilot=True)
+    now = time.monotonic()
+    assert fo._flc_owning(state, now, True) is None      # coming off
+    fo._dir.level_change.assert_called_with(False)
+    assert fo._flc_owning(state, now + 1.0, True) is None
+    assert fo._flc_owning(state, now + 3.0, True) is False
+    assert fo._flc_owning(state, now + 4.0, True) is False  # latched
+    fo._flc_off_at = time.monotonic() - 3.0          # probe out in real time
+    state2 = AircraftState(on_ground=False, autopilot=True)
+    fo._apply_flight_director(state2, altitude=8000.0, vs_fpm=+700.0,
+                              speed_kt=90.0)
+    fo._dir.vs_hold.assert_called_with(True)
+    assert fo.state.ap_vs_mode is True
+
+
+def test_xplanes_armed_flc_is_not_ownership():
+    """An armed status is one on X-Plane, and one is not engaged: an
+    armed-but-flying-nothing mode cannot hold the VS hold off the
+    axis. The probe waits its two seconds and refuses it."""
+    import time
+    fo = _managed_fo()
+    _xp_sim(fo, 1.0)                                 # armed, not engaged
+    state = AircraftState(on_ground=False, autopilot=True)
+    now = time.monotonic()
+    assert fo._flc_owning(state, now) is None          # probe, descent
+    assert fo._flc_owning(state, now + 3.0) is False   # refused
+    state2 = AircraftState(on_ground=False, autopilot=True)
+    fo._apply_flight_director(state2, altitude=3000.0, vs_fpm=-800.0,
+                              speed_kt=180.0)
+    fo._dir.vs_hold.assert_called_with(True)
+    assert fo.state.ap_vs_mode is True
+
+
+def test_xplanes_engaged_flc_keeps_the_descent():
+    """Status two is the mode flying: on the descent leg that is the
+    level-change doing its work, and VS stays off the axis."""
+    fo = _managed_fo()
+    _xp_sim(fo, 2.0)                                 # engaged
+    state = AircraftState(on_ground=False, autopilot=True)
+    fo._apply_flight_director(state, altitude=3000.0, vs_fpm=-800.0,
+                              speed_kt=180.0)
+    fo._dir.vs_hold.assert_called_with(False)
+    fo._dir.level_change.assert_called_with(True)
+    assert fo.state.ap_vs_mode is False
+
+
 # -- the rotorcraft ------------------------------------------------------------
 
 

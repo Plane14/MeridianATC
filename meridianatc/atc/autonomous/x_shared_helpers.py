@@ -489,6 +489,9 @@ class _Shared_helpers:
         # the same breath it was asked for.
         vs_demanded = bool(vs_fpm)
         if vs_fpm:
+            # The demand's own sign, before the clamps and the slew can
+            # lag it a tick: a climb that is asked is a climb.
+            climb_demand = vs_fpm > 0.0
             vs_fpm = max(lim["vs_dn_fpm"], min(float(vs_fpm),
                                              lim["vs_up_fpm"]))
             vs_fpm = self._climb_within_speed(state, vs_fpm, lim)
@@ -499,7 +502,7 @@ class _Shared_helpers:
             if self._ap_mode == "managed" and self.state.phase in (
                     AutonomousPhase.CLIMB, AutonomousPhase.DESCENT,
                     AutonomousPhase.CRUISE):
-                flc = self._flc_owning(state, now)
+                flc = self._flc_owning(state, now, climb_demand)
             # One vertical mode at a time: where level-change has been
             # confirmed on the axis the VS hold stays out of it -- the
             # two are exclusive, and both asserted is the autopilot
@@ -550,7 +553,8 @@ class _Shared_helpers:
     # axis a write at a time.
     _FLC_PROBE_S = 2.0
 
-    def _flc_owning(self, state, now: float) -> bool:
+    def _flc_owning(self, state, now: float,
+                    climb: bool = False) -> bool:
         """Whether flight-level-change owns the vertical axis this tick.
 
         ``True`` -- the mode is read back engaged and owns the axis;
@@ -570,9 +574,39 @@ class _Shared_helpers:
             # asserted alongside and winning where it does not.
             self.director.level_change(True)
             return False
+        xp = getattr(sim, "flc_pitch_only", False) is True
+        engaged_at = getattr(sim, "ap_status_engaged", 1.0)
+        if not isinstance(engaged_at, (int, float)) or engaged_at <= 0.0:
+            engaged_at = 1.0
+        if xp and climb:
+            # X-Plane's level-change pitches for speed: with the
+            # throttle managed to the speed target it flies a descent
+            # but it cannot climb -- a re-clearance to a level above
+            # the aeroplane held it level for minutes, the verify-
+            # altitude calls counting the whole time. A climb goes on
+            # the VS bug instead, which managed thrust actually
+            # answers. The mode may still be on from a descent leg:
+            # the same two-second probe, reversed, brings it off
+            # before VS takes the axis rather than both asserted a
+            # write apart. Expired unanswered, the climb is the VS
+            # hold's until the ask ends -- re-probing a mode that will
+            # not drop would pulse the axis every other tick.
+            if not getattr(self, "_flc_climb_vs", False):
+                if (read("control:speed_status") or 0.0) >= engaged_at:
+                    self._flc_off_at = \
+                        getattr(self, "_flc_off_at", 0.0) or now
+                    self.director.level_change(False)
+                    if now - self._flc_off_at <= self._FLC_PROBE_S:
+                        return None
+                self._flc_off_at = 0.0
+                self._flc_climb_vs = True
+            return False
+        self._flc_off_at = 0.0
+        self._flc_climb_vs = False
         if getattr(self, "_flc_refused", False):
             return False
-        engaged = bool((read("control:speed_status") or 0.0) >= 1.0)
+        engaged = bool((read("control:speed_status") or 0.0)
+                       >= engaged_at)
         if engaged:
             # Keep it up -- the mode write is idempotent once engaged;
             # a later drop re-opens the probe below on a fresh clock.
