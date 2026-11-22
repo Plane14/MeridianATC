@@ -231,11 +231,45 @@ class _The_cleared_approach:
             return 200.0
         return -vs
 
+    def _recipe_vertical(self, state, recipe, steer=None) -> float:
+        """The vertical speed the approach's own profile asks for here.
+
+        Published legs carry their own steps: each fix's constraint is
+        the target, flown to before the next is taken. A leg path that
+        has run out -- the missed-approach point behind, the visual
+        manoeuvre done -- falls back to the three-degree path to the
+        threshold, which is where every other final comes from.
+        """
+        if not recipe.leg_path:
+            return self._path_vertical(state, recipe)
+        if steer is None:
+            steer = auto_nav.path_steering(
+                state.latitude, state.longitude,
+                approach_flight.legs(recipe), lookahead_m=1200.0)
+        if steer is None or steer.get("done"):
+            return self._three_degree_vs(
+                state, recipe.threshold_lat, recipe.threshold_lon,
+                recipe.field_elev_ft, recipe.final_course)
+        pts = recipe.leg_path
+        idx = min(max(0, int(steer.get("nearest", 0))), len(pts) - 1)
+        # The constraint of the fix ahead is the target -- a step is
+        # flown to, not stepped past.
+        target = pts[min(idx + 1, len(pts) - 1)][2] or pts[-1][2] \
+            or recipe.field_elev_ft
+        alt = state.altitude_ft or 0.0
+        if alt > target + 150.0:
+            sink = approach_flight.sink_fpm(state.ground_speed_kt or 0.0)
+            return -min(900.0, max(300.0, sink,
+                                   (alt - target) * 0.6))
+        if alt < target - 150.0:
+            return min(300.0, (target - alt) * 0.5)
+        return (target - alt) * 0.5
+
     def _fly_path_vertical(self, state, recipe) -> None:
         """Vertical speed and speed for a mode that owns the lateral."""
         self._apply_flight_director(
             state, altitude=self._final_alt_bug(recipe.field_elev_ft),
-            vs_fpm=self._path_vertical(state, recipe),
+            vs_fpm=self._recipe_vertical(state, recipe),
             speed_kt=self._approach_speed(state))
 
     def _fly_computed(self, state, recipe) -> None:
@@ -261,7 +295,7 @@ class _The_cleared_approach:
         heading = self._into_wind(state, heading)
         self._apply_flight_director(
             state, altitude=self._final_alt_bug(recipe.field_elev_ft),
-            vs_fpm=self._path_vertical(state, recipe),
+            vs_fpm=self._recipe_vertical(state, recipe, steer),
             heading=self._magnetic(heading, state),
             speed_kt=self._approach_speed(state))
 
@@ -384,6 +418,14 @@ class _The_cleared_approach:
         """(threshold lat, lon, course, field elevation) of the final
         being flown, or None where neither the recipe nor the runway
         says."""
+        if recipe is not None and recipe.leg_path \
+                and recipe.map_course > 0:
+            # The published final's frame -- what "established" means on
+            # an approach whose legs are known. The runway frame would
+            # position onto an extended centreline the chart never flies;
+            # an offset final like LECO's RNP 03 cannot be joined from it.
+            return (recipe.map_lat, recipe.map_lon,
+                    recipe.map_course, recipe.field_elev_ft)
         if recipe is not None and recipe.final_course > 0                 and (recipe.threshold_lat or recipe.threshold_lon):
             return (recipe.threshold_lat, recipe.threshold_lon,
                     recipe.final_course, recipe.field_elev_ft)

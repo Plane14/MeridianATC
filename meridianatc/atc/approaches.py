@@ -245,6 +245,12 @@ class Approach:
     # the source decodes them (the CIFP feed); empty elsewhere, which is
     # a go-around flown the generic way.
     missed_legs: tuple = ()
+    # The instrument segment itself -- IAF to the missed-approach point,
+    # as ProcedureLegs where the source decodes them. Empty where the
+    # feed only names the procedure, which is the synthetic final flown
+    # the old way: the runway's course, a computed fix, a three-degree
+    # path.
+    legs: tuple = ()
 
     @property
     def circling_only(self) -> bool:

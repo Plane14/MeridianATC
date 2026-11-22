@@ -28,10 +28,17 @@ class _Circling:
                                      recipe.threshold_lon) \
             if getattr(state, "has_position", False) else None
         # The floor is the circling MDA: below the approach's own minima
-        # is already too low to be circling at.
+        # is already too low to be circling at. An offset final's version
+        # of "there" is the missed-approach point itself -- the charted
+        # final ends off the runway's axis, which is where the visual
+        # manoeuvre (the VPT where one is published) begins.
         floor = recipe.circle_minima_ft or recipe.minima_ft or 200.0
+        at_map = getattr(recipe, "offset_final", False) \
+            and getattr(recipe, "map_lat", 0.0) \
+            and getattr(state, "has_position", False) \
+            and state.distance_to(recipe.map_lat, recipe.map_lon) < 1.2
         entered = agl <= floor + 100.0 \
-            or (distance is not None and distance < 1.5)
+            or (distance is not None and distance < 1.5) or at_map
         if not entered:
             return False
         path = approach_flight.circle_legs(recipe, self.navdb, state)

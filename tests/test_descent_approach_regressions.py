@@ -431,3 +431,102 @@ def test_a_lined_up_departure_keeps_the_runway_it_was_given():
     assert reply is not None
     assert "go around" not in reply.text.lower()
     assert session.departure_runway == "03"
+
+
+def _legpath_recipe(offset_course=114.0, runway_course=34.0):
+    """An RNP-style recipe: published legs ending at a MAPt off the
+    runway's axis, the way LECO's RNP 03 is drawn."""
+    from meridianatc.atc import approach_flight
+    from meridianatc.navdata.build import project
+    t_lat, t_lon = 43.295, -8.377                    # LECO 03
+    map_lat, map_lon = project(t_lat, t_lon, offset_course + 180.0, 2.0)
+    mid_lat, mid_lon = project(map_lat, map_lon, offset_course + 180.0, 4.0)
+    leg_path = ((mid_lat, mid_lon, 2000.0, 0.0),
+                (map_lat, map_lon, 1500.0, 0.0))
+    return approach_flight.ApproachRecipe(
+        ident="LECO", name="RNP 03", family="rnav",
+        approach_runway="03", landing_runway="03", line="LNAV",
+        minima_ft=450.0, circle_minima_ft=450.0,
+        final_course=runway_course,
+        threshold_lat=t_lat, threshold_lon=t_lon, field_elev_ft=310.0,
+        faf_lat=mid_lat, faf_lon=mid_lon, faf_alt_ft=2000.0,
+        missed_alt_ft=2800.0, leg_path=leg_path,
+        map_lat=map_lat, map_lon=map_lon, map_course=offset_course,
+        offset_final=abs((offset_course - runway_course + 540.0) % 360.0
+                         - 180.0) > 25.0)
+
+
+def test_the_published_legs_are_the_flown_path():
+    """Where the feed carries the legs, the path the FO steers is the
+    chart's -- not a synthetic gate-to-threshold straight-in."""
+    from meridianatc.atc import approach_flight
+    recipe = _legpath_recipe()
+    path = approach_flight.legs(recipe)
+    assert path[0] == (recipe.leg_path[0][0], recipe.leg_path[0][1])
+    assert path[-1] == (recipe.map_lat, recipe.map_lon)
+
+
+def test_an_offset_final_says_it_is_one():
+    """The eighty degrees between LECO's final and its runway is what
+    marks the approach as ending in a visual manoeuvre."""
+    recipe = _legpath_recipe()
+    assert recipe.offset_final is True
+    aligned = _legpath_recipe(offset_course=40.0, runway_course=34.0)
+    assert aligned.offset_final is False
+
+
+def test_the_final_frame_is_the_missed_approach_point():
+    """Established on a published final means established on its own
+    course -- the runway's extended centreline is never flown."""
+    from meridianatc.atc.autonomous import AutonomousFlight
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    recipe = _legpath_recipe()
+    frame = fo._final_frame(SimpleNamespace(has_position=False), recipe)
+    assert frame == (recipe.map_lat, recipe.map_lon,
+                     recipe.map_course, recipe.field_elev_ft)
+
+
+def test_the_leg_profile_descends_to_the_next_constraint():
+    """Above the fix ahead's constraint the profile sinks; level with it,
+    it holds -- the chart's steps, not a three-degree guess."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.state = AutonomousState()
+    recipe = _legpath_recipe()
+    from meridianatc.navdata.build import project
+    lat, lon = project(recipe.leg_path[0][0], recipe.leg_path[0][1],
+                       recipe.map_course + 180.0, 0.5)
+    high = SimpleNamespace(latitude=lat, longitude=lon, altitude_ft=2200.0,
+                           ground_speed_kt=90.0)
+    on_it = SimpleNamespace(latitude=lat, longitude=lon, altitude_ft=1510.0,
+                            ground_speed_kt=90.0)
+    assert fo._recipe_vertical(high, recipe) < -200.0
+    assert abs(fo._recipe_vertical(on_it, recipe)) < 100.0
+
+
+def test_an_offset_final_circles_from_the_map():
+    """The instrument segment ends at the MAPt: the visual manoeuvre
+    begins there even though the aeroplane is still above the MDA."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.state = AutonomousState()
+    fo.session = SimpleNamespace(aircraft=SimpleNamespace(type="C172"))
+    fo.navdb = None
+    fo._emit = Mock()
+    recipe = _legpath_recipe()
+    # At the MAPt, still at the OCA -- the threshold triggers cannot see
+    # it (eighty degrees off and past the point) but the MAPt can.
+    state = SimpleNamespace(
+        latitude=recipe.map_lat, longitude=recipe.map_lon,
+        altitude_agl_ft=1200.0, has_position=True,
+        ground_speed_kt=90.0, heading_true=recipe.map_course,
+        track_true=recipe.map_course,
+        distance_to=lambda a, b: 0.1 if (a, b) == (
+            recipe.map_lat, recipe.map_lon) else 2.5)
+    from unittest.mock import patch
+
+    from meridianatc.atc import approach_flight
+    with patch.object(approach_flight, "circle_legs",
+                      return_value=[(1.0, 2.0)]):
+        assert fo._circling(state, recipe) is True
+    assert fo.state.circling is True

@@ -116,6 +116,20 @@ class ApproachRecipe:
     missed_alt_ft: float = 0.0
     navaid: Navaid | None = None
     circling: bool = False
+    # The published legs where the feed decodes them (the CIFP feed):
+    # (lat, lon, alt_ft, speed_kt) points from IAF to the missed-approach
+    # point. The synthetic gate-FAF-threshold path stands in where the
+    # legs are not known -- a straight-in that does not exist wherever
+    # the chart draws something else, like LECO's RNP 03 offset final.
+    leg_path: tuple = ()
+    map_lat: float = 0.0           # the missed-approach point
+    map_lon: float = 0.0
+    map_course: float = 0.0        # the course the final segment flies
+    # The final segment does not run to the runway: an offset final
+    # (RNP 03 at LECO is eighty degrees off the runway's axis) ends at
+    # the missed-approach point and a visual manoeuvre lands it --
+    # charted there as the VPT, flown here as the circling pattern.
+    offset_final: bool = False
     # The clearance's circle restriction as spoken -- "north" etc; the
     # side of the field the manoeuvre has to stay on.
     circle_side: str = ""
@@ -312,24 +326,73 @@ def resolve(session, brain, navdb, state) -> ApproachRecipe | None:
                      (t_lat, t_lon)) if family in ("ils", "loc", "vor",
                                                    "ndb") else None
 
+    # The published legs where the feed carries them: the path the chart
+    # draws instead of the synthetic final -- RF arcs and all. The last
+    # leg's fix is the missed-approach point and its course is the final
+    # segment's, which for an offset final is not the runway's at all.
+    leg_path: tuple = ()
+    map_lat = map_lon = map_course = 0.0
+    offset_final = False
+    published = tuple(getattr(approach, "legs", ()) or ())
+    if published:
+        from .procedure_legs import ProcedureTransition, build_path
+        try:
+            points, _notes = build_path(
+                ProcedureTransition(name=name, runway=approach_runway,
+                                    legs=published))
+        except Exception:
+            points = []
+        if len(points) >= 2:
+            leg_path = tuple(points)
+            map_lat, map_lon = points[-1][0], points[-1][1]
+            map_course = _segment_course(points)
+            offset = abs((map_course - course + 540.0) % 360.0 - 180.0) \
+                if map_course > 0 else 0.0
+            offset_final = offset > 25.0
+            # The published FAF, where a leg carries the mark.
+            faf_leg = next((leg for leg in published if leg.is_faf
+                            and leg.has_fix), None)
+            if faf_leg is not None:
+                faf_lat, faf_lon = faf_leg.lat, faf_leg.lon
+                faf_alt = faf_leg.altitude_constraint or faf_leg.fix_alt_ft
+                if faf_alt:
+                    faf_dist = max(FAF_MIN_NM,
+                                   min(FAF_MAX_NM,
+                                       (faf_alt - elev) / FT_PER_NM))
+
     return ApproachRecipe(
         ident=ident, name=name, family=family,
         approach_runway=approach_runway, landing_runway=landing, line=line,
-        minima_ft=minima_ft or 200.0, circle_minima_ft=circle_ft,
+        minima_ft=minima_ft or 200.0,
+        circle_minima_ft=circle_ft or (minima_ft if offset_final else 0.0),
         final_course=course,
         threshold_lat=t_lat, threshold_lon=t_lon, field_elev_ft=elev,
         faf_lat=faf_lat, faf_lon=faf_lon,
         faf_alt_ft=elev + faf_dist * FT_PER_NM,
         missed_alt_ft=missed_ft or elev + 2500.0,
         navaid=navaid,
-        circling=bool(getattr(choice, "circle_to", "")),
+        circling=bool(getattr(choice, "circle_to", "") or offset_final),
         circle_side=getattr(choice, "circle_side", "") or "",
+        leg_path=leg_path, map_lat=map_lat, map_lon=map_lon,
+        map_course=map_course, offset_final=offset_final,
         back_course=back_course,
         why=getattr(choice, "why", "") or "")
 
 
+def _segment_course(points) -> float:
+    """The course the last built segment runs, degrees true."""
+    if len(points) < 2:
+        return 0.0
+    from ..navdata.build import bearing_deg
+    a, b = points[-2], points[-1]
+    return bearing_deg(a[0], a[1], b[0], b[1])
+
+
 def legs(recipe: ApproachRecipe) -> list[tuple[float, float]]:
-    """The computed final as a polyline: gate, FAF, past the threshold."""
+    """The final as a polyline: the published legs where they are known,
+    else the computed gate, FAF and past the threshold."""
+    if recipe.leg_path:
+        return [(lat, lon) for lat, lon, _alt, _speed in recipe.leg_path]
     faf_nm = max(0.0, recipe.faf_alt_ft - recipe.field_elev_ft) / FT_PER_NM
     gate_lat, gate_lon = project(recipe.threshold_lat, recipe.threshold_lon,
                                  (recipe.final_course + 180.0) % 360.0,
