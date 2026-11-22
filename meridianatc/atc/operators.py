@@ -302,30 +302,80 @@ OPERATORS: tuple[Operator, ...] = (
 # field too small for an airline. The letters after the prefix are drawn at
 # random, so a Cessna at Toussus is F-GXXX and one at Sywell is G-XXXX.
 REGISTRATION_PREFIX: tuple[tuple[tuple[str, ...], str], ...] = (
-    (("K", "PA", "PH"), "N"),
+    # North America.
+    (("K", "PA", "PH", "PG"), "N"),
     (("C",), "C-G"),
-    (("EG",), "G-"),
-    (("EI",), "EI-"),
-    (("LF",), "F-G"),
-    (("ED", "ET"), "D-E"),
-    (("LO",), "OE-"),
-    (("LS",), "HB-"),
-    (("LE", "GC"), "EC-"),
-    (("LI",), "I-"),
-    (("LP",), "CS-"),
-    (("EH",), "PH-"),
-    (("EB",), "OO-"),
-    (("EL",), "LX-"),
-    (("EK",), "OY-"),
-    (("ES",), "SE-"),
-    (("EN",), "LN-"),
-    (("EF",), "OH-"),
-    (("EP",), "SP-"),
-    (("Y",), "VH-"),
-    (("NZ",), "ZK-"),
-    (("SB",), "PR-"),
-    (("SA",), "LV-"),
+    (("MM",), "XA-"),
+    # Central America and the Caribbean.
+    (("MG",), "TG-"), (("MH",), "HR-"), (("MS",), "YS-"),
+    (("MN",), "YN-"), (("MR",), "TI-"), (("MP",), "HP-"),
+    (("MK",), "6Y-"), (("MU",), "CU-"), (("MW",), "VP-C"),
+    (("MT",), "HI-"), (("TQ",), "VP-A"), (("TT",), "VP-T"),
+    (("TL",), "VP-L"), (("TJ",), "N"), (("TK",), "J3-"),
+    # South America.
+    (("SB", "SD", "SW"), "PP-"),
+    (("SA",), "LV-"), (("SC",), "CC-"), (("SP",), "OB-"),
+    (("SK",), "HK-"), (("SE",), "HC-"), (("SV",), "YV"),
+    (("SL",), "CP-"), (("SG",), "ZP-"), (("SU",), "CX-"),
+    (("SY",), "8R-"), (("SM",), "PZ-"), (("SO",), "F-O"),
+    # Europe.
+    (("EG",), "G-"), (("EI",), "EI-"), (("LF",), "F-G"),
+    (("ED", "ET"), "D-E"), (("LO",), "OE-"), (("LS",), "HB-"),
+    (("LE", "GC"), "EC-"), (("LI",), "I-"), (("LP",), "CS-"),
+    (("EH",), "PH-"), (("EB",), "OO-"), (("EL",), "LX-"),
+    (("EK",), "OY-"), (("ES",), "SE-"), (("EN",), "LN-"),
+    (("EF",), "OH-"), (("EP",), "SP-"), (("BI",), "TF-"),
+    (("BG",), "OY-"),
+    (("EE",), "ES-"), (("EY",), "LY-"), (("EV",), "YL-"),
+    (("LB",), "LZ-"), (("LU",), "ER-"), (("UK",), "UR-"),
+    (("LA",), "ZA-"), (("LQ",), "E7-"), (("LY",), "YU-"),
+    (("LZ",), "OM-"), (("LH",), "HA-"), (("LR",), "YR-"),
+    (("LD",), "9A-"), (("LJ",), "S5-"), (("LM",), "9H-"),
+    (("LG",), "SX-"), (("LC",), "5B-"), (("LT",), "TC-"),
+    # Russia and Central Asia.
+    (("UU", "UW", "UI", "UL", "UN", "UR", "US", "UH"), "RA-"),
+    (("UA",), "UP-"),
+    # Middle East.
+    (("OE",), "HZ-"), (("OJ",), "JY-"), (("OI",), "EP-"),
+    (("OM",), "A6-"), (("OB",), "A9C-"), (("OT",), "A7-"),
+    (("OO",), "A4O-"), (("OK",), "9K-"), (("OL",), "OD-"),
+    (("OS",), "YK-"), (("OR",), "YI-"), (("OY",), "7O-"),
+    # Africa.
+    (("FA",), "ZS-"), (("FY",), "V5-"), (("FB",), "A2-"),
+    (("FV",), "Z-"), (("FP",), "C9-"), (("FL",), "9J-"),
+    (("FW",), "7Q-"), (("HK",), "5Y-"), (("HU",), "5X-"),
+    (("HA",), "ET-"), (("DG",), "9G-"), (("DN",), "5N-"),
+    (("DR",), "5U-"), (("DF",), "XT-"), (("DI",), "TU-"),
+    (("GO",), "6V-"), (("GM",), "CN-"), (("DA",), "7T-"),
+    (("DT",), "TS-"), (("HE",), "SU-"), (("HL",), "5A-"),
+    (("HS",), "ST-"),
+    # South and East Asia.
+    (("VN",), "9N-"), (("VG",), "S2-"), (("VA", "VI", "VE", "VO"), "VT-"),
+    (("OP",), "AP-"), (("OA",), "YA-"),
+    (("ZB", "ZG", "ZH", "ZJ", "ZL", "ZP", "ZS", "ZU", "ZY", "PW"), "B-"),
+    (("RJ",), "JA"), (("RK",), "HL"), (("RC",), "B-"),
+    (("RP",), "RP-C"), (("WM",), "9M-"), (("WS",), "9V-"),
+    (("WI",), "PK-"), (("VT",), "HS-"), (("VL",), "RDPL-"),
+    (("VV",), "VN-"), (("VD",), "XU-"), (("VY",), "XY-"),
+    # Oceania and the Pacific.
+    (("Y",), "VH-"), (("NZ",), "ZK-"), (("AY",), "P2-"),
+    (("NF",), "DQ-"), (("NT",), "F-O"), (("NW",), "F-O"),
+    # The airlines' `home` countries are given at the letter level --
+    # Air China's ("Z",) is the whole Chinese FIR block -- so the letter
+    # itself names a scheme for the blocks one country does not rule.
+    (("ZM",), "JU-"), (("ZK",), "P-"), (("Z",), "B-"),
+    (("VQ",), "A5-"), (("V",), "VT-"),
 )
+
+# Schemes whose suffix is digits, not letters, and how many: RA-12345,
+# B-1234, JA1234, HL7234, RP-C1234, UR-12345, YV1234 -- the dash or its
+# absence is part of the literal prefix above. Everything not named
+# takes letters to five characters, as before.
+DIGIT_SUFFIX: dict[str, int] = {
+    "B-": 4, "P-": 3, "RA-": 5, "RDPL-": 5,
+    "JA": 4, "HL": 4, "XU-": 3, "RP-C": 4,
+    "UR-": 5, "OB-": 4, "HK-": 4, "CP-": 4, "YV": 4,
+}
 
 # The light types that fill a general aviation field, as one list; which of
 # them a field gets, and how often, is meridianatc.atc.fleet's.
@@ -341,6 +391,80 @@ def registration_prefix(ident: str) -> str:
             if code.startswith(candidate) and len(candidate) > len(best[0]):
                 best = (candidate, prefix)
     return best[1]
+
+
+# Where visiting light aeroplanes tend to come from: a Cessna crosses the
+# border, not the ocean, so a foreign registration is almost always from
+# the pool its field sits in. N-registered aeroplanes travel everywhere.
+_VISITOR_POOLS: tuple[tuple[str, ...], ...] = (
+    # Europe.
+    ("G-", "EI-", "F-G", "D-E", "OE-", "HB-", "EC-", "I-", "CS-",
+     "PH-", "OO-", "LX-", "OY-", "SE-", "LN-", "OH-", "SP-", "TF-",
+     "ES-", "LY-", "YL-", "LZ-", "ER-", "UR-", "ZA-", "E7-", "YU-",
+     "OM-", "HA-", "YR-", "9A-", "S5-", "9H-", "SX-", "5B-", "TC-"),
+    # North of Panama.
+    ("N", "C-G", "XA-"),
+    # The Caribbean and South America fly in from each other and the US.
+    ("XA-", "TG-", "HR-", "YS-", "YN-", "TI-", "HP-", "6Y-", "CU-",
+     "VP-C", "HI-", "VP-A", "VP-T", "VP-L", "J3-", "PP-", "LV-", "CC-",
+     "OB-", "HK-", "HC-", "YV", "CP-", "ZP-", "CX-", "8R-", "PZ-",
+     "F-O", "N"),
+    # Africa and the Middle East.
+    ("ZS-", "V5-", "A2-", "Z-", "C9-", "9J-", "7Q-", "5Y-", "5X-",
+     "ET-", "9G-", "5N-", "5U-", "XT-", "TU-", "6V-", "CN-", "7T-",
+     "TS-", "SU-", "5A-", "ST-", "HZ-", "JY-", "EP-", "A6-", "A9C-",
+     "A7-", "A4O-", "9K-", "OD-", "YK-", "YI-", "7O-"),
+    # Russia and Central Asia.
+    ("RA-", "UP-", "9N-", "S2-", "VT-", "AP-", "YA-"),
+    # South and East Asia.
+    ("9N-", "S2-", "VT-", "AP-", "YA-", "B-", "JA", "HL", "RP-C",
+     "9M-", "9V-", "PK-", "HS-", "RDPL-", "VN-", "XU-", "XY-"),
+    # Down under and the Pacific.
+    ("VH-", "ZK-", "P2-", "DQ-", "F-O", "N"),
+)
+
+
+def visitor_pool(local_prefix: str) -> tuple[str, ...]:
+    """The prefixes a foreign-registered aeroplane here is likely to wear."""
+    pool: list[str] = []
+    for group in _VISITOR_POOLS:
+        if local_prefix in group:
+            pool.extend(p for p in group if p != local_prefix)
+    if local_prefix != "N":
+        pool.append("N")
+    return tuple(dict.fromkeys(pool))
+
+
+def draw_tail(prefix: str, random) -> str:
+    """One registration under the country's scheme.
+
+    Letter schemes are five characters once the dash is taken out --
+    F-GXYZ, G-ABCD, D-EFGH, HB-ABC, PP-ABC -- so the prefix decides how
+    many letters are still to be drawn. The US is the exception and is
+    numeric, and the schemes in DIGIT_SUFFIX are digits outright --
+    RA-12345, JA1234 -- not letters miscounted.
+    """
+    if prefix == "N":
+        letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        return (f"N{random.randint(100, 999)}"
+                f"{random.choice(letters)}{random.choice(letters)}")
+    digits = DIGIT_SUFFIX.get(prefix)
+    if digits is not None:
+        return prefix + "".join(
+            random.choice("0123456789") for _ in range(digits))
+    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    needed = max(1, 5 - len(prefix.replace("-", "")))
+    return prefix + "".join(random.choice(letters) for _ in range(needed))
+
+
+def airline_registration(operator: Operator, random) -> str:
+    """A plausible tail for an airliner of this operator.
+
+    It wears the flag it is registered under -- the operator's home
+    country's scheme, not the field's: a Ryanair at Madrid is still EI-.
+    """
+    home = operator.home[0] if operator.home else ""
+    return draw_tail(registration_prefix(home), random)
 
 
 def _matches(prefixes: tuple[str, ...], ident: str) -> str:
@@ -479,6 +603,7 @@ def cabin_languages(code: str) -> tuple[str, ...]:
 __all__ = [
     "Operator", "Candidate", "OPERATORS", "TELEPHONY", "LEISURE", "roster_for",
     "by_icao", "cabin_languages", "CABIN_LANGUAGES",
-    "registration_prefix", "LIGHT_FLEET", "NARROWBODY", "REGIONAL",
+    "registration_prefix", "visitor_pool", "draw_tail",
+    "airline_registration", "LIGHT_FLEET", "NARROWBODY", "REGIONAL",
     "WIDEBODY", "FREIGHT",
 ]

@@ -108,7 +108,8 @@ def test_roster_and_control_writes(plugin, link):
     eventually(lambda: len(rosters(plugin)) == 1)
     assert rosters(plugin)[0] == {"v": 1, "t": "native",
                                   "ac": [{"id": "DLH4AB", "slot": 1,
-                                          "type": "A320", "lat": 48.1,
+                                          "type": "A320", "op": "DLH",
+                                          "lat": 48.1,
                                           "lon": 11.7, "alt": 12000}]}
     # The callsign is not confirmed until the plugin reports the plane.
     assert not link.has("DLH4AB")

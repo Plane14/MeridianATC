@@ -443,6 +443,7 @@ class _The_live_ones:
             origin=getattr(one, "origin", "") or "",
             destination=getattr(one, "destination", "") or "",
             hex=getattr(one, "hex", "") or "",
+            registration=getattr(one, "registration", "") or "",
             squawk=_squawk(getattr(one, "squawk", "")),
         )
 

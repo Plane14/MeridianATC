@@ -106,6 +106,15 @@ void MatchPacket() {
     Reject([] { Parse(R"({"v":1,"t":"match","q":1,"type":"TOOLONG"})"); });
     Reject([] { Parse(R"({"v":1,"t":"match","q":-1,"type":"A321"})"); });
 }
+void NativeRoster() {
+    auto p = Parse(R"({"v":1,"t":"native","ac":[{"id":"FDX512","type":"B77L","op":"FDX","slot":1,"lat":48.1,"lon":11.2,"alt":3000},{"id":"G-ABCD","type":"C172","slot":2}]})");
+    Check(p.kind == "native" && p.native.size() == 2, "native roster parses");
+    Check(p.native[0].op == "FDX" && p.native[0].pos, "operator and seed");
+    Check(p.native[1].op.empty() && !p.native[1].pos, "optional fields");
+    Reject([] { Parse(R"({"v":1,"t":"native","ac":[{"id":"A","type":"A320","slot":0}]})"); });
+    Reject([] { Parse(R"({"v":1,"t":"native","ac":[{"id":"A","type":"A320","slot":1},{"id":"B","type":"A320","slot":1}]})"); });
+    Reject([] { Parse(R"({"v":1,"t":"native","ac":[{"id":"A","type":"A320","op":"TOOLONG","slot":1}]})"); });
+}
 void Ownership() {
     Session session;
     auto hello = Parse(R"({"v":1,"t":"hello"})");
@@ -225,6 +234,6 @@ void Socket() {
     server.Close(); Check(server.Open(port), "clean socket reopen");
 }
 int main() {
-    try { Protocol(); FollowMePacket(); RouteAndMetar(); MatchPacket(); Ownership(); Claiming(); Movement(); Socket(); std::cout << "protocol, ownership, snapshot lifecycle, motion and UDP tests passed\n"; }
+    try { Protocol(); FollowMePacket(); RouteAndMetar(); MatchPacket(); NativeRoster(); Ownership(); Claiming(); Movement(); Socket(); std::cout << "protocol, ownership, snapshot lifecycle, motion and UDP tests passed\n"; }
     catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }
