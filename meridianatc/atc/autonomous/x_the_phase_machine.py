@@ -1558,24 +1558,38 @@ class _The_phase_machine:
         distance = self._distance_to_destination_nm(state)
         agl = (state.altitude_ft or 0.0) - self._field_elevation(state)
 
-        # Configuration schedule, by height above the field and the
-        # distance still to run: flap in stages as the aeroplane slows,
-        # the gear with the approach flap, the landing flap on the
-        # final. A crew does not put the wheels down at ten thousand
-        # feet, whatever a single "approach" switch would do.
+        # Configuration schedule, by the approach being made and the
+        # speed under each notch's limit -- the book's numbers, not a
+        # descent altitude. A Cessna's first notch is a pattern-height,
+        # under-110 affair and its 20 and 30 are under-85; a jet's
+        # slats meet it inside the terminal area, every stage on speed.
+        # Early extension is drag the descent never asked for; fast
+        # extension bends the tracks -- the white arc is the gate, not
+        # the calendar.
         on_final = distance is not None and distance < 5.0
-        if agl < 8000 and self.state.configured == "":
+        ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
+        lim = self._limits(state)
+        first_agl = (10_000.0 if self.performance.cruise_kt >= 230.0
+                     else 5_000.0 if self.performance.cruise_kt >= 140.0
+                     else 2_500.0)
+        vfe_late = min(lim["flap_max_kt"],
+                       (self.performance.approach_kt or 90.0) + 15.0)
+        if self.state.configured == "" and ias <= lim["flap_max_kt"] \
+                and (agl < first_agl
+                     or (distance is not None and distance < 12.0)):
             self._set_flaps(state, 0.25)
             self.state.configured = "flaps_1"
         if (agl < 2200 or (distance is not None and distance < 6.0)) \
-                and self.state.configured in ("", "flaps_1"):
+                and self.state.configured in ("", "flaps_1") \
+                and ias <= vfe_late:
             self._set_flaps(state, 0.5)
             self.state.configured = "flaps_approach"
             if self._gear_allowed(state):
                 self.director.gear(True)
             self.director.spoilers_arm(True)
         if (agl < 1500 or on_final) \
-                and self.state.configured != "flaps_final":
+                and self.state.configured != "flaps_final" \
+                and ias <= vfe_late:
             self._set_flaps(state, self.performance.landing_flaps or 1.0)
             self.state.configured = "flaps_final"
             if state.gear_down is not True and self._gear_allowed(state):

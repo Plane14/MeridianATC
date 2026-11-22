@@ -35,8 +35,8 @@ MODES = {
     "AP_LOC_HOLD": ("nav_status", "NAV", "NAV", "lateral", 1),
     "AP_APR_HOLD": ("approach_status", "approach", "approach", "approach", 1),
     "AP_ALT_HOLD": ("altitude_hold_status", "altitude_hold", "pitch_sync", "vertical", 2),
-    "AP_VS": ("vvi_status", "vertical_speed_pre_sel", "pitch_sync", "vertical", 1),
-    "FLIGHT_LEVEL_CHANGE": ("speed_status", "level_change", "pitch_sync", "vertical", 1),
+    "AP_VS": ("vvi_status", "vertical_speed", "pitch_sync", "vertical", 2),
+    "FLIGHT_LEVEL_CHANGE": ("speed_status", "level_change", "pitch_sync", "vertical", 2),
     "AP_BANK_HOLD": ("roll_status", "wing_leveler", "heading", "lateral", 1),
     "AP_WING_LEVELER": ("roll_status", "wing_leveler", "heading", "lateral", 1),
 }

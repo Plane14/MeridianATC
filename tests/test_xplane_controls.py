@@ -87,7 +87,7 @@ def test_real_director_heading_altitude_vs_speed_and_engagement(xp):
     eventually(lambda: "sim/flight_controls/landing_gear_down" in peer.commands)
     assert "sim/autopilot/servos_on" in peer.commands
     assert "sim/autopilot/heading" in peer.commands
-    assert "sim/autopilot/vertical_speed_pre_sel" in peer.commands
+    assert "sim/autopilot/vertical_speed" in peer.commands
     assert "sim/autopilot/NAV" in peer.commands and "sim/autopilot/approach" in peer.commands
     assert (AP + "flight_director_command_bars_pilot", 1) in peer.writes
     assert (AP + "heading_dial_deg_mag_pilot", 270) in peer.writes
@@ -113,7 +113,7 @@ def test_real_director_heading_altitude_vs_speed_and_engagement(xp):
     ("AP_LOC_HOLD", "nav_status", "NAV"),
     ("AP_APR_HOLD", "approach_status", "approach"),
     ("AP_ALT_HOLD", "altitude_hold_status", "altitude_hold"),
-    ("AP_VS", "vvi_status", "vertical_speed_pre_sel"),
+    ("AP_VS", "vvi_status", "vertical_speed"),
     ("FLIGHT_LEVEL_CHANGE", "speed_status", "level_change"),
 ])
 def test_mode_requests_are_idempotent_before_and_after_feedback(xp, root, status, command):
@@ -191,7 +191,7 @@ def test_altitude_capture_does_not_let_stale_vs_pending_cancel_alt_hold(xp):
     assert source._send("AP_ALT_HOLD_ON", 0)
     assert source._send("AP_VS_OFF", 0)
     eventually(lambda: bool(peer.commands))
-    assert peer.commands == ["sim/autopilot/vertical_speed_pre_sel"]
+    assert peer.commands == ["sim/autopilot/vertical_speed"]
 
 
 def test_flap_index_and_ap_state_require_real_values(xp):

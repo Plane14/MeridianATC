@@ -261,12 +261,15 @@ WRITABLE = {
 
 
 class XPlaneSource:
-    # The simulator's level-change is pitch-for-speed: with the first
-    # officer's own throttle management it can fly a descent but it
-    # cannot climb, and its autopilot mode-status reads run armed at
-    # one -- only two means engaged. Declared for the FLC probe in
-    # autonomous._flc_owning, which trusts armed-as-engaged on the
-    # boolean MSFS readback and cannot afford to here.
+    # The simulator's level-change is pitch-for-speed: the throttle
+    # manager chases the same airspeed, and two controllers on one
+    # variable is a phugoid -- the descent it owned porpoised the
+    # aeroplane into terrain. VS owns the axis on it outright, so it
+    # is also the flag the FLC probe reads to leave the mode alone;
+    # and its autopilot mode-status reads run armed at one -- only
+    # two means engaged. MSFS needs neither: its readback is a
+    # boolean where one already means engaged, and its FLC manages
+    # the levers itself.
     flc_pitch_only = True
     ap_status_engaged = 2.0
 
