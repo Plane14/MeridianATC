@@ -6,6 +6,7 @@ from ._shared import (
     Phase,
     Reply,
     _airborne,
+    decision,
     station_key,
 )
 
@@ -92,6 +93,18 @@ class _Tower:
             if not airborne:
                 return Reply(p.already_on_the_ground(aircraft), station)
             return self.go_around(session, station, weather, p, airport)
+
+        if parsed.intent is Intent.REJECTED_TAKEOFF:
+            if airborne:
+                return Reply(p.already_airborne(aircraft), station)
+            # "Stopping" -- the word the tower is owed the moment the
+            # roll is refused. The runway stays protected until the
+            # aeroplane is off it, and the abort watch works it off once
+            # it has stopped; the call itself is answered with the roger
+            # a controller gives.
+            decision("rejected_takeoff", airport=station.ident,
+                     runway=session.departure_runway or None)
+            return Reply(p.roger(aircraft), station)
 
         # A clearance asked of the tower: whoever delivers them here, or the
         # tower itself where nobody else does. It had no case at all, and the

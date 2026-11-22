@@ -93,6 +93,9 @@ class PilotBook:
     on_leg: str = "turning {leg}"
     # A circuit report the pilot handed the first officer to make.
     runway_vacated: str = "runway vacated"
+    # The rejected takeoff, told to the tower while the speed is still
+    # coming off -- "Speedbird one two three stopping".
+    stopping: str = "stopping"
     # Saying who is ahead on an uncontrolled field ("number two, following
     # the Cessna"). UNVERIFIED in every language but English.
     following: str = "number two, following {traffic}"
@@ -176,6 +179,7 @@ FRENCH = PilotBook(
     takeoff="autorisé décollage piste {runway}",
     land="autorisé atterrissage piste {runway}",
     go_around="remise de gaz",
+    stopping="décollage interrompu",
     contact="contact {station} {frequency}",
     squawk="affiche {code}",
     vfr_release_via="par {point}",
@@ -229,6 +233,7 @@ SPANISH = PilotBook(
     takeoff="autorizado a despegar pista {runway}",
     land="autorizado a aterrizar pista {runway}",
     go_around="motor y al aire",
+    stopping="abortamos el despegue",
     contact="contactamos {station} {frequency}",
     squawk="transpondedor {code}",
     vfr_release_via="vía {point}",
@@ -281,6 +286,7 @@ GERMAN = PilotBook(
     takeoff="Start frei Piste {runway}",
     land="Landung frei Piste {runway}",
     go_around="wir starten durch",
+    stopping="Startabbruch",
     contact="rufen {station} {frequency}",
     squawk="Squawk {code}",
     vfr_release_via="über {point}",
@@ -333,6 +339,7 @@ ITALIAN = PilotBook(
     takeoff="autorizzati al decollo pista {runway}",
     land="autorizzati all'atterraggio pista {runway}",
     go_around="riattacchiamo",
+    stopping="decollo interrotto",
     contact="contattiamo {station} {frequency}",
     squawk="transponder {code}",
     vfr_release_via="via {point}",
@@ -385,6 +392,7 @@ PORTUGUESE = PilotBook(
     takeoff="autorizados a descolar pista {runway}",
     land="autorizados a aterrar pista {runway}",
     go_around="arremetemos",
+    stopping="descolagem abortada",
     contact="contactamos {station} {frequency}",
     squawk="transponder {code}",
     vfr_release_via="via {point}",
@@ -648,6 +656,12 @@ class PilotSpeech:
 
     def runway_vacated(self, aircraft: Aircraft) -> str:
         return self.report(aircraft, self.book.runway_vacated)
+
+    def stopping(self, aircraft: Aircraft) -> str:
+        """"N123 stopping": the reject a crew owes the tower while the
+        speed is still coming off -- the call is made as soon as the
+        aeroplane is under control, not when it has stopped."""
+        return self.report(aircraft, self.book.stopping)
 
     def option(self, aircraft: Aircraft, runway: str) -> str:
         return self.report(

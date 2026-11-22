@@ -79,6 +79,9 @@ class Intent(StrEnum):
     REPORT_ESTABLISHED = "report_established"
     GOING_AROUND = "going_around"
     MISSED_APPROACH = "missed_approach"
+    # "Speedbird one two three stopping": the call a crew owes the
+    # tower the moment a takeoff is rejected.
+    REJECTED_TAKEOFF = "rejected_takeoff"
 
     # --- ground, after landing ---
     REQUEST_TAXI_TO_PARKING = "request_taxi_to_parking"
@@ -756,6 +759,12 @@ _RULES: list[tuple[Intent, str]] = [
 
     (Intent.GOING_AROUND, r"\b(going around|go around|go(ing)? missed|executing (the )?missed)\b"),
     (Intent.MISSED_APPROACH, r"\bmissed approach\b"),
+    # The reject call, however a crew words it: "stopping" is the
+    # standard word, "rejecting takeoff" and "aborting the takeoff"
+    # are what it also gets called.
+    (Intent.REJECTED_TAKEOFF,
+     r"\b(stopping|reject(ing|ed)?( the)? take ?-? ?off|"
+     r"abort(ing|ed)?( the)? take ?-? ?off|take ?-? ?off abort(ing|ed)?)\b"),
 
     (Intent.SAY_AGAIN, r"\b(say again|repeat that|did ?n'?o?t (copy|catch)|"
                        r"unreadable|you'?re broken|garbled)\b"),

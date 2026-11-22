@@ -844,6 +844,8 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         if kind == "going_around":
             return speech.going_around(
                 aircraft, session.assigned_altitude_ft or 0.0), ""
+        if kind == "stopping":
+            return speech.stopping(aircraft), ""
         if kind == "any":
             if phase in (Phase.PREFLIGHT, Phase.CLEARED) and session.ifr \
                     and not session.clearance_issued:

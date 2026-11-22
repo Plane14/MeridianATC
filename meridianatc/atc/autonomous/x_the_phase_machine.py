@@ -1210,13 +1210,65 @@ class _The_phase_machine:
             return
 
         if sub == "abort":
-            # Rejected takeoff: idle, maximum braking -- and then a live
-            # aeroplane held on the runway, not a shutdown on it. There is
-            # no cleared way off the strip from mid-run, so the FO waits
-            # powered for the tower to work it: switching the flight off
-            # where it stopped is the thing that was wrong.
+            # Rejected takeoff, stopped the way the QRH has it and not
+            # the way a taxiing stop is made: levers closed and the
+            # autothrottle out, the boards up, maximum wheel braking
+            # with reverse while it still helps, and the centreline
+            # held the whole way down -- a drift off the strip during
+            # the stop is the overrun the reject was called to prevent.
             d.throttle_cut()
             d.throttle_idle()
+            d.autopilot(False)
+            gs = state.ground_speed_kt or 0.0
+            if gs > 1.0:
+                # The tower is told while the aeroplane is still
+                # slowing: a crew reports the reject as soon as it is
+                # under control, not when the paperwork is done.
+                if not self.state.stopping_call:
+                    self.state.stopping_call = self._fo_say("stopping")
+                d.parking_brake(False)
+                d.spoilers(1.0)
+                rudder = 0.0
+                if self.state.runway_heading > 0:
+                    rudder = self._ground_directional(
+                        state, self._centreline_heading(state, 6.0), gs,
+                        rate_cap=4.0)
+                    d.rudder(rudder)
+                    d.steering(rudder * _nws_fade(gs))
+                if (self.performance.cruise_kt >= 180.0
+                        and capabilities(
+                            getattr(state, "source", "")).flight_axes):
+                    if gs > 60.0 and not self.state.reversers_out:
+                        d.send(b"THROTTLE_REVERSE_THRUST_TOGGLE", 0)
+                        self.state.reversers_out = True
+                    elif gs <= 60.0 and self.state.reversers_out:
+                        d.send(b"THROTTLE_REVERSE_THRUST_TOGGLE", 0)
+                        self.state.reversers_out = False
+                # Maximum braking until the aeroplane is stopped on the
+                # runway; above sixty the reverse does the work, so the
+                # wheels are eased while it is in.
+                brake = 0.7 if gs > 60.0 else 1.0
+                from .. import tailwheel
+                tail = tailwheel.is_tailwheel(state)
+                castor = tailwheel.is_castoring(state)
+                if not tail and not castor:
+                    d.brakes(brake)
+                else:
+                    # The ground loop's invitation is a stomp on a
+                    # taildragger: capped the way the rollout caps it.
+                    brake = min(brake, 0.45) if tail else brake
+                    add_left, add_right = tailwheel.brake_assist(rudder, gs)
+                    d.brakes_split(min(1.0, brake + add_left),
+                                   min(1.0, brake + add_right))
+                return
+            # Stopped: the boards and the reverse go away before the
+            # hold -- a crew does not sit on the strip with the
+            # speedbrakes out.
+            d.spoilers(0.0)
+            d.spoilers_arm(False)
+            if self.state.reversers_out:
+                d.send(b"THROTTLE_REVERSE_THRUST_TOGGLE", 0)
+                self.state.reversers_out = False
             self._stop(state)
             if not self.state.abort_announced:
                 self.state.abort_announced = True
@@ -1230,8 +1282,11 @@ class _The_phase_machine:
             # Powered hold where the roll stopped: brakes on, levers
             # idle, waiting on the tower or the pilot to take it. A taxi
             # instruction is the way off -- the runway is vacated along
-            # whatever route it clears.
+            # whatever route it clears. The "stopping" call is still
+            # owed if the frequency never let it out on the way down.
             self._stop(state)
+            if not self.state.stopping_call:
+                self.state.stopping_call = self._fo_say("stopping")
             if getattr(self.session, "taxi_path", None):
                 if self.session.phase == Phase.TAXI_IN:
                     self._transition(AutonomousPhase.TAXI_IN)
@@ -1253,6 +1308,7 @@ class _The_phase_machine:
                     and self._sub_age() > 10.0:
                 self.state.rejected = False
                 self.state.abort_announced = False
+                self.state.stopping_call = False
                 self.state.aligned = False
                 self.session.cleared_takeoff = False
                 # The roll's clearance was spent on the roll that was

@@ -1852,6 +1852,126 @@ def test_a_grounded_stop_releases_the_autopilot():
     flight.director.autopilot.assert_called_with(False)
 
 
+def _aborting_flight():
+    """A flight one tick into the rejected takeoff's stop."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _flier()
+    flight.state.phase = AutonomousPhase.TAKEOFF
+    flight.state.sub = "abort"
+    flight.state.runway_heading = 15.0
+    flight._ground_directional = Mock(return_value=0.4)
+    flight._centreline_heading = Mock(return_value=15.0)
+    flight.state.stopping_call = True
+    flight.crew.radio_call = Mock(return_value=("", ""))
+    flight.session.current_station = None
+    return flight
+
+
+def _abort_state(**kw):
+    args = dict(
+        on_ground=True, ground_speed_kt=120.0, heading_true=15.0,
+        latitude=42.2220, longitude=-8.6299, source="simconnect")
+    args.update(kw)
+    return SimpleNamespace(**args)
+
+
+def test_the_reject_flies_the_qrh_stop_not_a_taxi_stop():
+    """A rejected takeoff is maximum braking with the boards up and
+    reverse while it helps -- not the gentle squeeze ``_stop`` gives a
+    hold short."""
+    flight = _aborting_flight()
+    state = _abort_state()
+    flight._phase_takeoff(state, time.monotonic())
+    flight.director.spoilers.assert_called_with(1.0)
+    # Above sixty the reverse does the work: eased wheel brakes.
+    flight.director.brakes.assert_called_with(0.7)
+    flight.director.send.assert_called_with(
+        b"THROTTLE_REVERSE_THRUST_TOGGLE", 0)
+    # And the centreline is still held through the stop.
+    flight.director.rudder.assert_called_with(0.4)
+
+
+def test_the_reject_stows_the_boards_when_it_stops():
+    """Stopped means the speedbrakes and reverse come in before the
+    powered hold -- nobody sits on the runway with the boards out."""
+    flight = _aborting_flight()
+    flight.state.reversers_out = True
+    state = _abort_state(ground_speed_kt=0.5)
+    flight._phase_takeoff(state, time.monotonic())
+    flight.director.spoilers.assert_called_with(0.0)
+    flight.director.spoilers_arm.assert_called_with(False)
+    flight.director.parking_brake.assert_called_with(True)
+    assert flight.state.reversers_out is False
+    assert flight.state.sub == "await"
+
+
+def test_the_reject_tells_the_tower_it_is_stopping():
+    """The call a crew owes the tower goes out on the frequency --
+    "N123 stopping" -- before the hold, retried until sent."""
+    flight = _aborting_flight()
+    flight.state.stopping_call = False
+    flight.crew.radio_call = Mock(return_value=("N123 stopping", ""))
+    state = _abort_state()
+    flight._phase_takeoff(state, time.monotonic())
+    flight.crew.radio_call.assert_called_with("stopping")
+    flight.crew.transmit.assert_called_with("N123 stopping")
+    assert flight.state.stopping_call is True
+
+
+def test_the_stopping_call_retries_until_it_goes_out():
+    """A frequency that never let it out is asked again on the next
+    tick -- a call marked made where nothing sent is the report
+    nobody heard."""
+    flight = _aborting_flight()
+    flight.state.stopping_call = False
+    flight.crew.radio_call = Mock(return_value=("", "frequency busy"))
+    flight._phase_takeoff(_abort_state(), time.monotonic())
+    assert flight.state.stopping_call is False
+    flight.crew.radio_call = Mock(return_value=("N123 stopping", ""))
+    flight._phase_takeoff(_abort_state(), time.monotonic() + 1.0)
+    assert flight.state.stopping_call is True
+
+
+def test_the_stopping_words_parse_as_the_rejected_call():
+    """The tower understands the reject however the crew words it --
+    "stopping", "rejecting takeoff", "aborting the takeoff" -- in
+    every language the radios work."""
+    from meridianatc.atc import intents
+    parser = intents.IntentParser(["N123"])
+    for said in ("N123 stopping", "N123 rejecting takeoff",
+                 "N123 aborting the takeoff"):
+        assert parser.parse(said, "en").intent \
+            is intents.Intent.REJECTED_TAKEOFF, said
+    for said, language in (("N123 décollage interrompu", "fr"),
+                           ("N123 abortamos el despegue", "es"),
+                           ("N123 Startabbruch", "de"),
+                           ("N123 decollo interrotto", "it"),
+                           ("N123 descolagem abortada", "pt")):
+        assert parser.parse(said, language).intent \
+            is intents.Intent.REJECTED_TAKEOFF, said
+
+
+def test_the_tower_rogers_the_stopping_call():
+    """The report is answered, and the runway stays the aeroplane's
+    until it is off: the abort watch -- not this reply -- works it
+    off the strip once it has stopped."""
+    from meridianatc.atc.intents import Intent
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession, Phase
+    from meridianatc.atc.speech import parse_callsign
+    brain, tower = _vigo_tower_setup()
+    session = FlightSession(Aircraft(parse_callsign("ECXGS")))
+    session.phase = Phase.TAKEOFF
+    session.departure_runway = "01"
+    session.cleared_takeoff = True
+    parsed = SimpleNamespace(intent=Intent.REJECTED_TAKEOFF)
+    state = SimpleNamespace(on_ground=True, ground_speed_kt=80.0)
+    reply = brain._tower(parsed, session, tower, None,
+                         brain.for_station(tower), state)
+    assert reply.text
+    assert session.cleared_takeoff is True
+
+
 def _gsx(**kw):
     """A GsxLink stub: the state GSX reports, and the asks it takes."""
     state = SimpleNamespace(

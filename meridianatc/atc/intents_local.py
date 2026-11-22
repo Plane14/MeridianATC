@@ -493,6 +493,9 @@ SPANISH = Grammar(
 
         ("going_around", r"\b(motor y al aire|vamos al aire|al aire)\b"),
         ("missed_approach", r"\b(aproximacion frustrada|frustrada)\b"),
+        # El despegue rechazado, avisado a la torre.
+        ("rejected_takeoff", r"\b(abortamos( el)? despegue|"
+                             r"despegue abortado|interrumpimos el despegue)\b"),
 
         ("say_again", r"\b(repita|no (le )?(copie|copio|entendi)|"
                       r"no he entendido|repita por favor)\b"),
@@ -619,6 +622,9 @@ GERMAN = Grammar(
         ("going_around", r"\b(durchstarten|wir starten durch|"
                          r"ich starte durch|durchgestartet)\b"),
         ("missed_approach", r"\b(fehlanflug|fehlanflugverfahren)\b"),
+        # Der Startabbruch, dem Tower gemeldet.
+        ("rejected_takeoff", r"\b(startabbruch|brechen (den )?start ab|"
+                             r"start (wird )?abgebrochen)\b"),
 
         ("say_again", r"\b(wiederholen sie|nicht verstanden|"
                       r"sagen sie (es )?noch einmal|unverstandlich)\b"),
@@ -741,6 +747,9 @@ ITALIAN = Grammar(
 
         ("going_around", r"\b(riattacc\w+)\b"),
         ("missed_approach", r"\b(mancato avvicinamento)\b"),
+        # Il decollo interrotto, annunciato alla torre.
+        ("rejected_takeoff", r"\b(decollo interrotto|"
+                             r"interrompiamo il decollo|decollo abortito)\b"),
 
         ("say_again", r"\b(ripeta|non ho capito|non copiato|ripetere|"
                       r"non ho ricevuto)\b"),
@@ -858,6 +867,10 @@ PORTUGUESE = Grammar(
 
         ("going_around", r"\b(arremet\w+|motor e no ar)\b"),
         ("missed_approach", r"\b(aproximacao (falhada|perdida))\b"),
+        # A descolagem abortada, avisada à torre.
+        ("rejected_takeoff", r"\b(descolagem abortada|"
+                             r"abortamos( a)? descolagem|"
+                             r"interrompemos a descolagem)\b"),
 
         ("say_again", r"\b(repita|nao percebi|nao copiei|repetir|"
                       r"nao entendi)\b"),

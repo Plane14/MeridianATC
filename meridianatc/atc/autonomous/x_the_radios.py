@@ -61,8 +61,9 @@ READY_REASK_S = 90.0
 
 # The calls keyed on top of that beat rather than behind it: a go-around
 # is what the tower is already listening for, and a call that urgent is
-# late exactly the length of the pause a slower one would leave.
-_CANNOT_WAIT = frozenset({"going_around"})
+# late exactly the length of the pause a slower one would leave. The
+# rejected takeoff's "stopping" is the same kind of word.
+_CANNOT_WAIT = frozenset({"going_around", "stopping"})
 
 
 class _The_radios:
@@ -87,7 +88,9 @@ class _The_radios:
             return False
         if kind not in _CANNOT_WAIT and not self._unkeyed():
             return False
-        if self.crew.radio_call is None or self.crew.transmit is None:
+        crew = getattr(self, "crew", None)
+        if crew is None or getattr(crew, "radio_call", None) is None \
+                or getattr(crew, "transmit", None) is None:
             return False
         try:
             text, why = self.crew.radio_call(kind)

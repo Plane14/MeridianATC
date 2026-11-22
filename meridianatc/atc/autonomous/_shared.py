@@ -154,6 +154,9 @@ class AutonomousState:
     rejected: bool = False
     # The rejected takeoff's own "holding" word, said once.
     abort_announced: bool = False
+    # And the "stopping" call the tower is owed -- retried until it
+    # has actually gone out, the way the vacated call is.
+    stopping_call: bool = False
     # The speeds this leg is flown at, from vspeeds.
     v1_kt: float = 0.0
     vr_kt: float = 0.0

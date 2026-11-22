@@ -421,6 +421,10 @@ RULES_FR: list[tuple[str, str]] = [
     ("going_around", r"\b(remise de gaz|on remet les gaz|je remets les gaz|"
                      r"remets? les gaz)\b"),
     ("missed_approach", r"\b(approche interrompue|api)\b"),
+    # Le décollage refusé, annoncé à la tour.
+    ("rejected_takeoff", r"\b(decollage interrompu|interromp\w+ (le |notre )?"
+                         r"decollage|on arrete le decollage|"
+                         r"arret(ons)? (le |du )?decollage)\b"),
 
     ("say_again", r"\b(repetez|je n\s?ai pas compris|pas compris|"
                   r"vous etes inaudible|repetition)\b"),

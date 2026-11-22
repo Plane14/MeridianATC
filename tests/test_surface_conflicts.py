@@ -548,9 +548,10 @@ def test_fo_rejected_takeoff_stays_powered_on_the_runway():
     fo.state.phase = AutonomousPhase.TAKEOFF
     fo.state.sub = "abort"
     fo.state.rejected = True
+    fo.state.stopping_call = True
     fo.session = _fo_session(_path())
     fo._compute_speeds = Mock()
-    state = _state(51.15, -0.19)
+    state = _state(51.15, -0.19, ground_speed_kt=0.0)
     fo._phase_takeoff(state, 100.0)
     # Holding powered where the roll stopped -- not a shutdown.
     assert fo.state.phase == AutonomousPhase.TAKEOFF
