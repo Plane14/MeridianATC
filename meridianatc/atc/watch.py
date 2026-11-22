@@ -618,6 +618,8 @@ class DeviationAssistWatch:
                 self._seen[kind] = [since, now, said + 1, 0.0]
                 decision("deviation", check=kind,
                          station=station.callsign, count=said + 1)
+                session.deviation_query = kind
+                session.deviation_query_at = now
                 return Reply(
                     self._verify(kind, p, session, state), station)
             if session.offer_assistance("flight", now):
@@ -631,6 +633,8 @@ class DeviationAssistWatch:
             self._seen[kind] = [since, now, said + 1, 0.0]
             decision("deviation", check=kind,
                      station=station.callsign, count=said + 1)
+            session.deviation_query = kind
+            session.deviation_query_at = now
             return Reply(
                 self._verify(kind, p, session, state), station)
         # Back within limits is not the end of the episode until it has
@@ -963,9 +967,11 @@ class RunwayWatch:
     frequency is told -- everybody at once, "all stations, runway in use now
     two four", with the new information letter where the field has one --
     and a VFR flight still in the circuit for the old runway is told which
-    way round to join for the new one. A flight cleared to land, lined up or
-    cleared for takeoff keeps the runway it was given; one waiting on the
-    ground is moved to the new one for its takeoff clearance.
+    way round to join for the new one. A flight cleared to land on the
+    runway the wind just took -- outside the tailwind limit by the change's
+    own definition -- is sent round for the new one; a flight lined up or
+    cleared for takeoff keeps the runway it was given, and one waiting on
+    the ground is moved to the new one for its takeoff clearance.
 
     Said once per change and only to a flight that was given the old runway:
     the first look at a field, before any METAR has come, chooses from calm,
@@ -1047,6 +1053,24 @@ class RunwayWatch:
                 and not session.lined_up and not session.cleared_takeoff):
             session.departure_runway = now
             flight = "departure_moved"
+        elif (airborne and session.cleared_landing
+                and session.arrival_runway == was):
+            # The runway the landing clearance was written for is the one
+            # the wind just took past the tailwind limit -- a change fires
+            # only once the old direction is outside it. "Runway in use
+            # two one" alone leaves the aeroplane cleared to land on
+            # pavement that is no longer usable, so the clearance is
+            # spent and the flight is sent round for the new runway: the
+            # same call the tower would make to the last arrival of the
+            # old direction.
+            session.arrival_runway = now
+            then = self.brain.go_around(session, station, weather, p,
+                                        airport, told=True)
+            order = p.go_around(session.aircraft)
+            then.text = f"{order} {then.text}"
+            text = f"{text} {then.text}"
+            instruction = then.instruction
+            flight = "sent_around"
         elif session.cleared_landing or session.cleared_takeoff or session.lined_up:
             flight = "kept"
         decision("runway_change", airport=station.ident, said="broadcast",
