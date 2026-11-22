@@ -407,7 +407,8 @@ def test_an_inbound_still_upfield_holds_the_missed_altitude():
     assert flight.target.altitude_ft == pytest.approx(2100.0)
 
 
-def _star_arrival(altitude_ft: float, constraint_ft: float, fix_nm: float):
+def _star_arrival(altitude_ft: float, constraint_ft: float,
+                  fix_nm: float, descend_fpm: float = 1800.0):
     """A traffic arrival on a STAR with the navigator's next level
     ``constraint_ft`` at a fix ``fix_nm`` miles ahead."""
     nav = SimpleNamespace(guidance=lambda f: SimpleNamespace(
@@ -418,7 +419,8 @@ def _star_arrival(altitude_ft: float, constraint_ft: float, fix_nm: float):
         phase="inbound", latitude=41.0, longitude=-8.0, heading=120.0,
         altitude_ft=altitude_ft, on_ground=False, ground_speed_kt=180.0,
         star="MNR2A", sid="", runway="36", distance_nm=fix_nm,
-        performance=SimpleNamespace(cruise_kt=430.0),
+        performance=SimpleNamespace(cruise_kt=430.0,
+                                    descend_fpm=descend_fpm),
         procedure_pair=(Mock(), Mock()), procedure_nav=nav,
         airborne_model=True, hold=None,
         target=SimpleNamespace())
@@ -442,13 +444,25 @@ def test_below_the_path_a_star_arrival_holds_not_climbs():
     assert flight.target.altitude_ft == pytest.approx(5000.0)
 
 
-def test_the_constraint_level_stands_past_its_fix():
-    """At the fix the aim is the constraint's own level -- the path's
-    composition never lets the aeroplane under the step-down."""
+def test_the_constraint_level_is_owed_at_its_fix():
+    """Closing on the fix the aim is the constraint's own level, not
+    the path's few hundred feet of cushion -- a corner cut cannot
+    carry that cushion past the fix the level belongs to."""
     injector = _injector()
     flight = _star_arrival(4500.0, 4000.0, 0.5)
     injector._steer_procedure(flight, flight.target)
-    assert flight.target.altitude_ft == pytest.approx(4000.0 + 159.0)
+    assert flight.target.altitude_ft == pytest.approx(4000.0)
+
+
+def test_a_too_slow_descender_takes_the_constraint_early():
+    """An aeroplane that cannot hold the path's rate needs the head
+    start the level-first descent gave it -- a Cessna down five
+    hundred a minute does not fly three degrees at a hundred and
+    eighty knots."""
+    injector = _injector()
+    flight = _star_arrival(12000.0, 4000.0, 10.0, descend_fpm=500.0)
+    injector._steer_procedure(flight, flight.target)
+    assert flight.target.altitude_ft == pytest.approx(4000.0)
 
 
 # -- level-off and top of descent --------------------------------------------
