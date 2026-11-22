@@ -4,6 +4,7 @@ from ._shared import (
     AutonomousPhase,
     Phase,
     _nws_fade,
+    approach_flight,
     auto_nav,
     capabilities,
     fly,
@@ -1644,12 +1645,54 @@ class _The_phase_machine:
             # rate is proportional to the error, so the level is
             # captured on the bug rather than at its edge -- and a
             # porpoise has nothing to swing about.
+            # The continuous descent, the way the arrival is actually
+            # flown: not the book rate down to the floor and a level
+            # wait for the field -- a dive and a drive -- but the
+            # three-degree path to the threshold, started where the
+            # plan's own top of descent put it. Steep to recapture the
+            # path from above, the level it has sunk to held while the
+            # path drops back to it, and the plan's next crossing
+            # composed into the path as "at or above" rather than
+            # levelled at miles early. The cases it is not for: an
+            # assigned level to capture, a hold being held, an
+            # emergency descent, and no position to draw the path on.
             alt = self._flown_altitude_ft(state)
-            err = alt - target
+            required = target
+            cda = distance is not None and hold is None \
+                and not self.session.assigned_altitude_ft \
+                and not self.state.emergency_descent
+            if cda:
+                required = max(
+                    required,
+                    self._field_elevation(state) + approach_flight.TCH_FT
+                    + distance * approach_flight.FT_PER_NM)
+                filed_level, filed_nm, _stage = self._route_level_ahead(
+                    state)
+                if filed_level and filed_level <= alt + 300.0:
+                    required = max(
+                        required,
+                        filed_level + filed_nm * approach_flight.FT_PER_NM)
+            err = alt - required
             if err > 250.0:
                 vs = -descent_fpm
             elif err < -250.0:
-                vs = self.performance.climb_fpm
+                # Below the level itself is the breach; below only the
+                # path's line is a gentle drift back up to it, not a
+                # climb at the book's rate.
+                vs = (self.performance.climb_fpm
+                      if alt < target - 250.0 else 300.0)
+            elif required > target:
+                # On the path: the rate that follows it down -- the
+                # groundspeed's own three-degree figure, the way the
+                # VNAV number is made -- trimmed for the error the way
+                # a hand on the throttle trims the descent.
+                gs = float(getattr(state, "ground_speed_kt", 0.0)
+                           or 0.0) or float(
+                               getattr(state, "indicated_airspeed_kt",
+                                       0.0) or 0.0)
+                sink = min(max(gs * approach_flight.FT_PER_NM / 60.0,
+                               100.0), descent_fpm)
+                vs = max(-descent_fpm, min(300.0, -sink - err * 4.0))
             else:
                 vs = max(-300.0, min(300.0, -err * 4.0))
             if assigned_hdg is None:
@@ -1660,10 +1703,15 @@ class _The_phase_machine:
                 route_hdg = self._route_lateral(state, now)
             else:
                 route_hdg = assigned_hdg
+            # VS owns the axis for the whole descent, not just the
+            # path's steep part: managed level-change would pitch for
+            # speed at the preselect below and the path is never
+            # flown -- the flicker the mode asks for is dodged by
+            # giving the descent to the rate hold outright.
             self._apply_flight_director(
                 state, altitude=target, vs_fpm=vs,
                 heading=route_hdg,
-                speed_kt=speed)
+                speed_kt=speed, prefer_vs=cda)
 
         # The approach's own navaid, tuned early enough that the needles
         # are alive by the time the final is flown.

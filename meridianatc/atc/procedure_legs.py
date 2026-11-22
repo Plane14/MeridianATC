@@ -474,6 +474,10 @@ class ProcedureGuidance:
     speed_kt: float = 0.0
     done: bool = False
     note: str = ""
+    # Miles out the level named above belongs to -- how far the
+    # constrained point is, so a "descend via" can reach the level
+    # at the fix on a continuous path rather than miles early.
+    altitude_distance_nm: float = 0.0
 
 
 class ProcedureNavigator:
@@ -548,7 +552,9 @@ class ProcedureNavigator:
             heading=steer.get("heading"), altitude_ft=altitude, vs_fpm=vs,
             speed_kt=target_speed,
             done=bool(steer.get("done")), note=self.notes[0]
-            if self.notes else "")
+            if self.notes else "",
+            altitude_distance_nm=(haversine_nm(lat, lon, _lat, _lon)
+                                  if alt else 0.0))
 
 
 __all__ = [

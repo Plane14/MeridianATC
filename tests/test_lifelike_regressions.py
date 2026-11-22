@@ -407,6 +407,50 @@ def test_an_inbound_still_upfield_holds_the_missed_altitude():
     assert flight.target.altitude_ft == pytest.approx(2100.0)
 
 
+def _star_arrival(altitude_ft: float, constraint_ft: float, fix_nm: float):
+    """A traffic arrival on a STAR with the navigator's next level
+    ``constraint_ft`` at a fix ``fix_nm`` miles ahead."""
+    nav = SimpleNamespace(guidance=lambda f: SimpleNamespace(
+        heading=120.0, altitude_ft=constraint_ft, vs_fpm=-1800.0,
+        speed_kt=0.0, done=False,
+        altitude_distance_nm=fix_nm))
+    return SimpleNamespace(
+        phase="inbound", latitude=41.0, longitude=-8.0, heading=120.0,
+        altitude_ft=altitude_ft, on_ground=False, ground_speed_kt=180.0,
+        star="MNR2A", sid="", runway="36", distance_nm=fix_nm,
+        performance=SimpleNamespace(cruise_kt=430.0),
+        procedure_pair=(Mock(), Mock()), procedure_nav=nav,
+        airborne_model=True, hold=None,
+        target=SimpleNamespace())
+
+
+def test_a_star_arrival_descends_to_the_constraint_on_the_path():
+    """A "descend via" reaches the constraint's level at its fix on the
+    three-degree path, not at the book rate miles before it."""
+    injector = _injector()
+    flight = _star_arrival(12000.0, 4000.0, 10.0)
+    injector._steer_procedure(flight, flight.target)
+    assert flight.target.altitude_ft == pytest.approx(4000.0 + 3180.0)
+
+
+def test_below_the_path_a_star_arrival_holds_not_climbs():
+    """Under the three-degree line the level is kept while the path
+    drops back to it -- never a climb for a descent clearance."""
+    injector = _injector()
+    flight = _star_arrival(5000.0, 4000.0, 10.0)
+    injector._steer_procedure(flight, flight.target)
+    assert flight.target.altitude_ft == pytest.approx(5000.0)
+
+
+def test_the_constraint_level_stands_past_its_fix():
+    """At the fix the aim is the constraint's own level -- the path's
+    composition never lets the aeroplane under the step-down."""
+    injector = _injector()
+    flight = _star_arrival(4500.0, 4000.0, 0.5)
+    injector._steer_procedure(flight, flight.target)
+    assert flight.target.altitude_ft == pytest.approx(4000.0 + 159.0)
+
+
 # -- level-off and top of descent --------------------------------------------
 
 def test_the_cruise_level_off_releases_flight_level_change():
@@ -992,6 +1036,131 @@ def test_the_capture_band_converges_on_the_bug_not_its_edge():
     fo._phase_descent(state, 100.0)
     vs = fo._apply_flight_director.call_args.kwargs["vs_fpm"]
     assert -300.0 <= vs < 0.0
+
+
+def test_the_descent_flies_its_path_not_a_dive_and_a_level():
+    """Unassigned and sixty miles out, the descent is the three-degree
+    path to the threshold: on it the rate is the groundspeed's own
+    figure, not the book's descent rate flown to the floor and held."""
+    fo, state = _descending_fo(12770.0)
+    fo.session.assigned_altitude_ft = None
+    # Forty miles at three degrees is 12,770 over a sea-level field.
+    fo._phase_descent(state, 100.0)
+    vs = fo._apply_flight_director.call_args.kwargs["vs_fpm"]
+    # 180 kt of groundspeed is about 950 fpm on the path, limited to the
+    # model's own 800 -- the descent figure, not a level's capture.
+    assert vs == -800.0
+
+    # Fifty feet under the path it shallows out for it, not dive to the
+    # floor and wait.
+    fo, state = _descending_fo(12700.0)
+    fo.session.assigned_altitude_ft = None
+    fo._phase_descent(state, 100.0)
+    vs = fo._apply_flight_director.call_args.kwargs["vs_fpm"]
+    assert -800.0 < vs < -400.0
+
+
+def test_below_the_descent_path_the_level_is_kept_not_dove_past():
+    """Already under the profile at nine thousand -- the aeroplane does
+    not dive to the floor and hold there for twenty miles: it waits on
+    the level it has for the path to come back down to it."""
+    fo, state = _descending_fo(9000.0)
+    fo.session.assigned_altitude_ft = None
+    fo._phase_descent(state, 100.0)
+    vs = fo._apply_flight_director.call_args.kwargs["vs_fpm"]
+    assert vs >= 0.0 and vs <= 300.0
+
+
+def test_a_filed_crossing_composes_into_the_descent_path():
+    """"Cross at or above twelve thousand" twenty-five miles on is a
+    segment of the same path -- reached at the fix, not levelled at
+    miles early."""
+    fo, state = _descending_fo(19800.0)
+    fo.session.assigned_altitude_ft = None
+    fo._route_level = Mock(return_value=(12000.0, "DSC"))
+    fo._route_level_ahead = Mock(return_value=(12000.0, 25.0, "DSC"))
+    fo._phase_descent(state, 100.0)
+    vs = fo._apply_flight_director.call_args.kwargs["vs_fpm"]
+    # On the composed path (12,000 + 25 nm of path = 19,950) a hundred
+    # and fifty feet under it: the path rate eased, not a level kept.
+    assert -400.0 < vs < 0.0
+
+
+def test_without_a_position_the_descent_steps_to_its_level():
+    fo, state = _descending_fo(5000.0)
+    fo.session.assigned_altitude_ft = None
+    fo._distance_to_destination_nm = Mock(return_value=None)
+    fo._phase_descent(state, 100.0)
+    assert fo._apply_flight_director.call_args.kwargs["vs_fpm"] == -800.0
+
+
+def test_a_continuous_descent_asks_the_rate_hold_not_level_change():
+    """On a managed autopilot with a working level-change the descent
+    phase still hands the axis to the VS hold -- FLCH pitches for the
+    preselect, which is the floor, and the path is never flown."""
+    fo, state = _descending_fo(9000.0)
+    fo.session.assigned_altitude_ft = None
+    fo._apply_flight_director = (
+        type(fo)._apply_flight_director.__get__(fo, type(fo)))
+    fo._vector_fms = Mock()
+    fo._limits = Mock(return_value={
+        "vs_dn_fpm": -3000.0, "vs_up_fpm": 2000.0, "bank_deg": 25.0,
+        "flap_max_kt": 200.0, "stall_kt": 60.0, "speed_max_kt": 250.0})
+    fo._safe_altitude = lambda state, alt, lim: alt
+    fo._safe_speed = lambda state, spd, lim: spd
+    fo._avoid_heading_bug = Mock(return_value=-1.0)
+    fo._manage_throttle = Mock()
+    fo._climb_within_speed = lambda state, vs, lim: vs
+    fo._vs_slew = lambda state, vs, now: vs
+    fo._demeanor = Mock(return_value="calm")
+    fo._cap_bank = Mock()
+    fo._ap_mode = "managed"
+    # FLC reported engaged: the readback a managed model gives when
+    # level-change owns the axis.
+    fo.sim = fo._dir.sim = SimpleNamespace(
+        value=lambda key: 1.0, flc_pitch_only=False,
+        ap_status_engaged=1.0)
+    fo._phase_descent(state, 100.0)
+    # The probe is out: VS is not asserted while FLC is being brought
+    # off, so nothing toggles the axis a write apart.
+    assert fo._flc_off_at > 0.0
+    assert not fo.state.ap_vs_mode
+    # Probe expired with FLC still reported: VS latches and owns.
+    fo._flc_off_at = time.monotonic() - 3.0
+    fo._phase_descent(state, 103.0)
+    assert fo._flc_vs
+    assert fo.state.ap_vs_mode
+    d = fo._dir
+    assert d.vs_hold.call_args_list[-1].args == (True,)
+    for call in d.level_change.call_args_list:
+        assert call.args == (False,)
+
+
+def test_an_assigned_level_still_descends_on_level_change():
+    """Nothing about the CDA change turns FLC off where it belongs: a
+    level actually assigned to capture keeps the managed mode."""
+    fo, state = _descending_fo(9500.0)
+    fo._apply_flight_director = (
+        type(fo)._apply_flight_director.__get__(fo, type(fo)))
+    fo._vector_fms = Mock()
+    fo._limits = Mock(return_value={
+        "vs_dn_fpm": -3000.0, "vs_up_fpm": 2000.0, "bank_deg": 25.0,
+        "flap_max_kt": 200.0, "stall_kt": 60.0, "speed_max_kt": 250.0})
+    fo._safe_altitude = lambda state, alt, lim: alt
+    fo._safe_speed = lambda state, spd, lim: spd
+    fo._avoid_heading_bug = Mock(return_value=-1.0)
+    fo._manage_throttle = Mock()
+    fo._climb_within_speed = lambda state, vs, lim: vs
+    fo._vs_slew = lambda state, vs, now: vs
+    fo._demeanor = Mock(return_value="calm")
+    fo._cap_bank = Mock()
+    fo._ap_mode = "managed"
+    fo.sim = fo._dir.sim = SimpleNamespace(
+        value=lambda key: 1.0, flc_pitch_only=False,
+        ap_status_engaged=1.0)
+    fo._phase_descent(state, 100.0)
+    assert fo._dir.level_change.call_args_list[-1].args == (True,)
+    assert not fo.state.ap_vs_mode
 
 
 def _arrival_watch(monkeypatch, altitude_ft: float):

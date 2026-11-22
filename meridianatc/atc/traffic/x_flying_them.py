@@ -357,6 +357,17 @@ class _Flying_them:
         target.heading = guide.heading
         if guide.altitude_ft:
             target.altitude_ft = guide.altitude_ft
+            if flight.star and guide.altitude_distance_nm > 0.0:
+                # A "descend via" flown the way the arrival is actually
+                # flown: not the book rate to the constraint and a
+                # level wait for the fix that owns it, but the
+                # three-degree path down to its level -- the same
+                # continuous descent the FO flies. Under the path it
+                # holds rather than climbs; the constraint itself is
+                # never busted, the path only ever rides above it.
+                path = guide.altitude_ft \
+                    + guide.altitude_distance_nm * GLIDE_FT_PER_NM
+                target.altitude_ft = min(path, flight.altitude_ft)
         if guide.speed_kt:
             target.speed_kt = min(guide.speed_kt, flight.performance.cruise_kt)
         target.intent = (f"on the {flight.sid} departure" if flight.sid
