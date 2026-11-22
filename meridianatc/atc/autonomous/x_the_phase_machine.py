@@ -1658,9 +1658,10 @@ class _The_phase_machine:
             # emergency descent, and no position to draw the path on.
             alt = self._flown_altitude_ft(state)
             required = target
-            if distance is not None and hold is None \
-                    and not self.session.assigned_altitude_ft \
-                    and not self.state.emergency_descent:
+            cda = distance is not None and hold is None \
+                and not self.session.assigned_altitude_ft \
+                and not self.state.emergency_descent
+            if cda:
                 required = max(
                     required,
                     self._field_elevation(state) + approach_flight.TCH_FT
@@ -1702,10 +1703,15 @@ class _The_phase_machine:
                 route_hdg = self._route_lateral(state, now)
             else:
                 route_hdg = assigned_hdg
+            # VS owns the axis for the whole descent, not just the
+            # path's steep part: managed level-change would pitch for
+            # speed at the preselect below and the path is never
+            # flown -- the flicker the mode asks for is dodged by
+            # giving the descent to the rate hold outright.
             self._apply_flight_director(
                 state, altitude=target, vs_fpm=vs,
                 heading=route_hdg,
-                speed_kt=speed)
+                speed_kt=speed, prefer_vs=cda)
 
         # The approach's own navaid, tuned early enough that the needles
         # are alive by the time the final is flown.

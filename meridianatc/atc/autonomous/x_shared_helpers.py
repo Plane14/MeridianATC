@@ -518,11 +518,16 @@ class _Shared_helpers:
 
     def _apply_flight_director(self, state, altitude: float = 0.0,
                              vs_fpm: float = 0.0, heading: float = -1.0,
-                             speed_kt: float = 0.0) -> None:
+                             speed_kt: float = 0.0,
+                             prefer_vs: bool = False) -> None:
         """Put the assigned numbers on the autopilot, managed or direct.
 
         ``heading`` < 0 means "not commanded"; ``vs_fpm`` nonzero means a
         rate is wanted (climb or descent in progress); zero means level.
+        ``prefer_vs`` asks the managed autopilot to fly the leg on the
+        vertical-speed hold rather than level-change -- a continuous
+        descent is pitch-for-rate, the way VNAV rides a path, where
+        level-change's pitch-for-speed can only dive for a floor.
         """
         d = self.director
         self._vector_fms(state)
@@ -573,7 +578,7 @@ class _Shared_helpers:
             if self._ap_mode == "managed" and self.state.phase in (
                     AutonomousPhase.CLIMB, AutonomousPhase.DESCENT,
                     AutonomousPhase.CRUISE):
-                flc = self._flc_owning(state, now)
+                flc = self._flc_owning(state, now, prefer_vs)
             # One vertical mode at a time: where level-change has been
             # confirmed on the axis the VS hold stays out of it -- the
             # two are exclusive, and both asserted is the autopilot
@@ -624,7 +629,8 @@ class _Shared_helpers:
     # axis a write at a time.
     _FLC_PROBE_S = 2.0
 
-    def _flc_owning(self, state, now: float) -> bool:
+    def _flc_owning(self, state, now: float,
+                    prefer_vs: bool = False) -> bool:
         """Whether flight-level-change owns the vertical axis this tick.
 
         ``True`` -- the mode is read back engaged and owns the axis;
@@ -634,7 +640,10 @@ class _Shared_helpers:
         showed it has no level-change or because there is no source to
         read the mode back from at all (the legacy both-asked ordering,
         where the last write wins on models that have the mode and VS
-        simply persists on those that do not).
+        simply persists on those that do not). ``prefer_vs`` asks for
+        the VS hold even where the mode exists -- a flown path wants
+        pitch-for-rate the whole way down, not a speed the floor
+        answers early and levels for.
         """
         sim = getattr(getattr(self, "director", None), "sim", None)
         read = getattr(sim, "value", None)
@@ -648,16 +657,17 @@ class _Shared_helpers:
         engaged_at = getattr(sim, "ap_status_engaged", 1.0)
         if not isinstance(engaged_at, (int, float)) or engaged_at <= 0.0:
             engaged_at = 1.0
-        if xp:
+        if xp or prefer_vs:
             # X-Plane's level-change pitches for speed -- and so does
             # the throttle manager: two controllers on one airspeed is
             # a phugoid, and the descent leg that flew it porpoised the
-            # aeroplane into the ground. Pitch for rate (the VS bug)
-            # with thrust for speed is the decoupled pairing, so VS
-            # owns the axis here outright. A mode left on is brought
-            # off under the same two-second probe, reversed, before VS
-            # asserts -- expired unanswered, VS stays latched rather
-            # than pulsing the axis every other tick.
+            # aeroplane into the ground. A continuous descent asks for
+            # the same pairing on any sim: pitch for rate (the VS bug)
+            # with thrust for speed is the decoupled way a path is
+            # held, so VS owns the axis here outright. A mode left on
+            # is brought off under the same two-second probe, reversed,
+            # before VS asserts -- expired unanswered, VS stays latched
+            # rather than pulsing the axis every other tick.
             if not getattr(self, "_flc_vs", False):
                 if (read("control:speed_status") or 0.0) >= engaged_at:
                     self._flc_off_at = \

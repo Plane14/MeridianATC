@@ -1050,6 +1050,75 @@ def test_without_a_position_the_descent_steps_to_its_level():
     assert fo._apply_flight_director.call_args.kwargs["vs_fpm"] == -800.0
 
 
+def test_a_continuous_descent_asks_the_rate_hold_not_level_change():
+    """On a managed autopilot with a working level-change the descent
+    phase still hands the axis to the VS hold -- FLCH pitches for the
+    preselect, which is the floor, and the path is never flown."""
+    fo, state = _descending_fo(9000.0)
+    fo.session.assigned_altitude_ft = None
+    fo._apply_flight_director = (
+        type(fo)._apply_flight_director.__get__(fo, type(fo)))
+    fo._vector_fms = Mock()
+    fo._limits = Mock(return_value={
+        "vs_dn_fpm": -3000.0, "vs_up_fpm": 2000.0, "bank_deg": 25.0,
+        "flap_max_kt": 200.0, "stall_kt": 60.0, "speed_max_kt": 250.0})
+    fo._safe_altitude = lambda state, alt, lim: alt
+    fo._safe_speed = lambda state, spd, lim: spd
+    fo._avoid_heading_bug = Mock(return_value=-1.0)
+    fo._manage_throttle = Mock()
+    fo._climb_within_speed = lambda state, vs, lim: vs
+    fo._vs_slew = lambda state, vs, now: vs
+    fo._demeanor = Mock(return_value="calm")
+    fo._cap_bank = Mock()
+    fo._ap_mode = "managed"
+    # FLC reported engaged: the readback a managed model gives when
+    # level-change owns the axis.
+    fo.sim = fo._dir.sim = SimpleNamespace(
+        value=lambda key: 1.0, flc_pitch_only=False,
+        ap_status_engaged=1.0)
+    fo._phase_descent(state, 100.0)
+    # The probe is out: VS is not asserted while FLC is being brought
+    # off, so nothing toggles the axis a write apart.
+    assert fo._flc_off_at > 0.0
+    assert not fo.state.ap_vs_mode
+    # Probe expired with FLC still reported: VS latches and owns.
+    fo._flc_off_at = time.monotonic() - 3.0
+    fo._phase_descent(state, 103.0)
+    assert fo._flc_vs
+    assert fo.state.ap_vs_mode
+    d = fo._dir
+    assert d.vs_hold.call_args_list[-1].args == (True,)
+    for call in d.level_change.call_args_list:
+        assert call.args == (False,)
+
+
+def test_an_assigned_level_still_descends_on_level_change():
+    """Nothing about the CDA change turns FLC off where it belongs: a
+    level actually assigned to capture keeps the managed mode."""
+    fo, state = _descending_fo(9500.0)
+    fo._apply_flight_director = (
+        type(fo)._apply_flight_director.__get__(fo, type(fo)))
+    fo._vector_fms = Mock()
+    fo._limits = Mock(return_value={
+        "vs_dn_fpm": -3000.0, "vs_up_fpm": 2000.0, "bank_deg": 25.0,
+        "flap_max_kt": 200.0, "stall_kt": 60.0, "speed_max_kt": 250.0})
+    fo._safe_altitude = lambda state, alt, lim: alt
+    fo._safe_speed = lambda state, spd, lim: spd
+    fo._avoid_heading_bug = Mock(return_value=-1.0)
+    fo._manage_throttle = Mock()
+    fo._climb_within_speed = lambda state, vs, lim: vs
+    fo._vs_slew = lambda state, vs, now: vs
+    fo._demeanor = Mock(return_value="calm")
+    fo._cap_bank = Mock()
+    fo._ap_mode = "managed"
+    fo.sim = fo._dir.sim = SimpleNamespace(
+        value=lambda key: 1.0, flc_pitch_only=False,
+        ap_status_engaged=1.0)
+    fo._phase_descent(state, 100.0)
+    assert fo._dir.level_change.call_args_list[-1].args == (True,)
+    assert not fo.state.ap_vs_mode
+
+
 def _arrival_watch(monkeypatch, altitude_ft: float):
     """An approach position vectoring an arrival onto a seven-mile final
     for runway 21 -- the flight sits on the extended centreline at
