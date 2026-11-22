@@ -293,6 +293,8 @@ def test_a_go_around_drops_the_modes_the_approach_armed():
     flight.session = SimpleNamespace(assigned_altitude_ft=0.0)
     flight._prop_levers = Mock()
     flight._g_pull_cap = Mock(return_value=0.3)
+    flight._perf = SimpleNamespace(goaround_kt=0.0)
+    flight._vapp = Mock(return_value=65.0)
     flight._manage_radio = False
     flight.on_event = Mock()
     state = SimpleNamespace(altitude_ft=500.0, flaps_index=2,
@@ -305,6 +307,30 @@ def test_a_go_around_drops_the_modes_the_approach_armed():
     flight._dir.airspeed_hold.assert_called_with(False)
     assert flight.state.ap_master is False
     assert flight.state.ap_vs_mode is False
+
+
+def test_a_go_around_pull_yields_to_the_speed():
+    """The 2026-11-22 LECO crash: the go-around's hand-flown pull took
+    the aeroplane to +15 degrees at 82 kt and the wing gave way. Below
+    the go-around figure the nose does not come up; well below it comes
+    down -- the speed flies first, the climb attitude second."""
+    flight = _flight()
+    flight._perf = SimpleNamespace(goaround_kt=80.0)
+    flight.state.climb_kt = 0.0
+    flight._vapp = Mock(return_value=65.0)
+
+    # Room to climb in: the asked pull goes through.
+    fast = SimpleNamespace(indicated_airspeed_kt=100.0)
+    assert flight._go_around_pull(fast, 0.3) == 0.3
+    # Under the figure the nose stops rising.
+    slowing = SimpleNamespace(indicated_airspeed_kt=75.0)
+    assert flight._go_around_pull(slowing, 0.25) == 0.0
+    # Badly decayed: the wing is unloaded, not pulled through the stall.
+    stalling = SimpleNamespace(indicated_airspeed_kt=65.0)
+    assert flight._go_around_pull(stalling, 0.25) == -0.1
+    # No speed read at all: no invented bound.
+    deaf = SimpleNamespace(indicated_airspeed_kt=0.0)
+    assert flight._go_around_pull(deaf, 0.3) == 0.3
 
 
 def test_a_bus_never_seen_alive_is_not_a_collapse():

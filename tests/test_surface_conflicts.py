@@ -214,7 +214,8 @@ def _fo(**attrs):
     fo._held_at_split = False
     fo._perf = SimpleNamespace(taxi_kt=12.0, rotate_kt=140.0,
                                takeoff_kt_s=4.0, turn_rate=5.0,
-                               cruise_kt=180.0)
+                               cruise_kt=180.0, goaround_kt=90.0,
+                               touchdown_kt=85.0, approach_kt=95.0)
     fo.TAKEOFF_TIMEOUT = 240.0
     fo.brain = SimpleNamespace(contacts=lambda: [])
     for key, value in attrs.items():

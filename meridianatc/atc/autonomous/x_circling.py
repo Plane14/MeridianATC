@@ -369,7 +369,8 @@ class _Circling:
         d.rudder(0.0)
         d.steering(0.0)
         d.aileron(0.0)
-        d.elevator(self._g_pull_cap(state, 0.3))   # the pitch-up
+        d.elevator(self._g_pull_cap(state,
+                                    self._go_around_pull(state, 0.3)))
         # The book's order is power, pitch, flap, THEN gear on the
         # positive rate -- the wheels stay down while the aeroplane can
         # still touch, and come up once the climb is established.
@@ -386,6 +387,28 @@ class _Circling:
             self._fo_say("going_around")
         self._emit("info", "Going around", "autonomous.go_around")
 
+    def _go_around_pull(self, state, want: float) -> float:
+        """Bound a go-around pull by the airspeed's say in the matter.
+
+        A crew pitches for the climb attitude and flies the speed first:
+        under the go-around figure the nose does not come up more, and
+        well under it comes down, because a missed approach stalled is
+        a stall, not a missed approach.
+        """
+        ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
+        floor = float(getattr(self.performance, "goaround_kt", 0.0)
+                      or 0.0) \
+            or float(getattr(self.state, "climb_kt", 0.0) or 0.0) \
+            or self._vapp(state)
+        if not (ias and floor):
+            return want
+        if ias < floor - 10.0:
+            # Speed badly decayed: unload the wing, do not pull it up.
+            return min(want, -0.1)
+        if ias < floor:
+            return min(want, 0.0)
+        return want
+
     def _fly_go_around(self, state, now: float) -> None:
         """Climb away on the missed approach, then set up again."""
         d = self.director
@@ -397,10 +420,12 @@ class _Circling:
             pull = (0.25 if (state.vertical_speed_fpm or 0.0) < 500.0
                     else 0.10)
             # The go-around attitude bounds the pull, the way the
-            # rotation's does: at the mark the hand comes off.
+            # rotation's does: at the mark the hand comes off, a dead
+            # stick, not a lingering pinch that keeps pitching past it.
             pitch = float(getattr(state, "pitch_deg", 0.0) or 0.0)
             if pitch >= self._pitch_target_deg():
-                pull = min(pull, 0.05)
+                pull = 0.0
+            pull = self._go_around_pull(state, pull)
             d.rudder(0.0)
             d.steering(0.0)
             d.aileron(0.0)
