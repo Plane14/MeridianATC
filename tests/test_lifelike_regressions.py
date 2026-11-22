@@ -994,6 +994,62 @@ def test_the_capture_band_converges_on_the_bug_not_its_edge():
     assert -300.0 <= vs < 0.0
 
 
+def test_the_descent_flies_its_path_not_a_dive_and_a_level():
+    """Unassigned and sixty miles out, the descent is the three-degree
+    path to the threshold: on it the rate is the groundspeed's own
+    figure, not the book's descent rate flown to the floor and held."""
+    fo, state = _descending_fo(12770.0)
+    fo.session.assigned_altitude_ft = None
+    # Forty miles at three degrees is 12,770 over a sea-level field.
+    fo._phase_descent(state, 100.0)
+    vs = fo._apply_flight_director.call_args.kwargs["vs_fpm"]
+    # 180 kt of groundspeed is about 950 fpm on the path, limited to the
+    # model's own 800 -- the descent figure, not a level's capture.
+    assert vs == -800.0
+
+    # Fifty feet under the path it shallows out for it, not dive to the
+    # floor and wait.
+    fo, state = _descending_fo(12700.0)
+    fo.session.assigned_altitude_ft = None
+    fo._phase_descent(state, 100.0)
+    vs = fo._apply_flight_director.call_args.kwargs["vs_fpm"]
+    assert -800.0 < vs < -400.0
+
+
+def test_below_the_descent_path_the_level_is_kept_not_dove_past():
+    """Already under the profile at nine thousand -- the aeroplane does
+    not dive to the floor and hold there for twenty miles: it waits on
+    the level it has for the path to come back down to it."""
+    fo, state = _descending_fo(9000.0)
+    fo.session.assigned_altitude_ft = None
+    fo._phase_descent(state, 100.0)
+    vs = fo._apply_flight_director.call_args.kwargs["vs_fpm"]
+    assert vs >= 0.0 and vs <= 300.0
+
+
+def test_a_filed_crossing_composes_into_the_descent_path():
+    """"Cross at or above twelve thousand" twenty-five miles on is a
+    segment of the same path -- reached at the fix, not levelled at
+    miles early."""
+    fo, state = _descending_fo(19800.0)
+    fo.session.assigned_altitude_ft = None
+    fo._route_level = Mock(return_value=(12000.0, "DSC"))
+    fo._route_level_ahead = Mock(return_value=(12000.0, 25.0, "DSC"))
+    fo._phase_descent(state, 100.0)
+    vs = fo._apply_flight_director.call_args.kwargs["vs_fpm"]
+    # On the composed path (12,000 + 25 nm of path = 19,950) a hundred
+    # and fifty feet under it: the path rate eased, not a level kept.
+    assert -400.0 < vs < 0.0
+
+
+def test_without_a_position_the_descent_steps_to_its_level():
+    fo, state = _descending_fo(5000.0)
+    fo.session.assigned_altitude_ft = None
+    fo._distance_to_destination_nm = Mock(return_value=None)
+    fo._phase_descent(state, 100.0)
+    assert fo._apply_flight_director.call_args.kwargs["vs_fpm"] == -800.0
+
+
 def _arrival_watch(monkeypatch, altitude_ft: float):
     """An approach position vectoring an arrival onto a seven-mile final
     for runway 21 -- the flight sits on the extended centreline at

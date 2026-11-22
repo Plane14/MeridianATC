@@ -393,18 +393,26 @@ class _Shared_helpers:
         return min(target, ceiling)
 
     def _route_level(self, state) -> tuple[float, str]:
-        """(level, stage) the plan's next fix is filed at, else 0.
+        """(level, stage) the plan's next fix is filed at, else 0."""
+        level, _dist, stage = self._route_level_ahead(state)
+        return level, stage
+
+    def _route_level_ahead(self, state) -> tuple[float, float, str]:
+        """(level, nm, stage) the plan's next fix is filed at, else 0.
 
         A flight plan's vertical profile is a chain of crossing levels:
         the first fix still ahead of the aeroplane that files one is the
         one that constrains it. Markers file nothing by design, and a
         route that levels nothing answers 0 -- unchanged behaviour --
-        rather than a constraint made up.
+        rather than a constraint made up. The miles are measured along
+        the legs, the distance that is actually still to fly: a STAR
+        that doglegs past the field it started abeam does not file a
+        shorter path than the aeroplane has left.
         """
         brain = getattr(self, "brain", None)
         route = getattr(brain, "route", None)
         if route is None:
-            return 0.0, ""
+            return 0.0, 0.0, ""
         progress = getattr(brain, "route_progress", None)
         if progress is None and getattr(state, "has_position", False):
             try:
@@ -414,11 +422,14 @@ class _Shared_helpers:
             except Exception:
                 progress = None
         if progress is None:
-            return 0.0, ""
-        for fix in route.fixes[progress.leg:]:
+            return 0.0, 0.0, ""
+        for idx in range(progress.leg, len(route.fixes)):
+            fix = route.fixes[idx]
             if not fix.is_marker and fix.alt_ft > 0:
-                return float(fix.alt_ft), fix.stage or ""
-        return 0.0, ""
+                dist = progress.to_next_nm \
+                    + route._along(progress.leg, idx)
+                return float(fix.alt_ft), max(0.0, dist), fix.stage or ""
+        return 0.0, 0.0, ""
 
     def _penetration_kt(self, state) -> float:
         """The speed rough air is ridden out at: a margin off the red

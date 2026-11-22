@@ -218,6 +218,56 @@ def test_a_climb_gives_its_rate_away_before_the_airspeed():
     assert fo._climb_within_speed(state, -500.0, lim) == -500.0
 
 
+def test_the_descent_flies_its_path_down_without_a_level_leg(
+        monkeypatch):
+    """Fourteen miles out on the three-degree line and nothing assigned:
+    the descent is continuous -- a dive and a drive would park on a
+    level for the minutes it takes the field to come to it -- and the
+    approach it hands over to still lands on the runway."""
+    import time
+
+    from meridianatc.atc.autonomous import AutonomousPhase
+    plant = _start(14.0, 4500.0)
+    fo = _fo(plant)
+    fo.state.phase = AutonomousPhase.DESCENT
+    fo.state.sub = ""
+    fo.state.phase_entered_at = 1000.0
+    fo.brain = SimpleNamespace(
+        route=None, terminal_procedures={}, route_progress=None,
+        fms_idents=())
+    fo._run_checklist_for_phase = lambda *a, **k: None
+
+    clock = [1000.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    made = fo._pid
+
+    def on_the_plants_clock(channel):
+        pid = made(channel)
+        pid._clock = lambda: clock[0]
+        return pid
+    fo._pid = on_the_plants_clock
+
+    dt = 0.25
+    longest_level = level_run = 0
+    for _ in range(int(900.0 / dt)):
+        state = plant.state()
+        if fo.state.phase != AutonomousPhase.DESCENT:
+            break
+        fo._phase_descent(state, clock[0])
+        plant.step(dt)
+        clock[0] += dt
+        level_run = level_run + 1 if abs(plant.vs) < 30.0 else 0
+        longest_level = max(longest_level, level_run)
+    # The approach is taken over on the path's way down, not after a
+    # wait at a floor.
+    assert fo.state.phase == AutonomousPhase.APPROACH
+    # A level segment would sit inside thirty fpm for tens of seconds;
+    # twenty steps is five seconds of grace for the capture bands.
+    assert longest_level < 20, longest_level * dt
+    _fly_final(fo, plant, monkeypatch)
+    _assert_landed_on_the_runway(plant)
+
+
 def test_a_flap_stage_refused_for_speed_is_selected_once_slow_enough():
     from meridianatc.atc.autonomous import AutonomousPhase
     plant = _start(5.0, 3000.0)
