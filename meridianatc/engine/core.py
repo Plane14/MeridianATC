@@ -655,6 +655,9 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         # skips the message, so it gets no "back" either.
         self._was_paused = False
         self._paused_said = False
+        # A stall is tracked apart from _was_paused so one that starts
+        # while the simulator is paused still gets its "back" handling.
+        self._was_stalled = False
         # The language each frequency is being worked in (_frequency_language).
         self._languages_by_frequency: dict[str, str] = {}
         # When a controller last spoke, so a bare "say again" after them is

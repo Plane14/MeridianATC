@@ -161,7 +161,8 @@ class _The_simulator_link:
             if self._sim_source is not None and self.source is self._sim_source:
                 self._detach_simulator_integrations()
                 self.source.close()
-                self.source = ManualSource(replace(self.state, paused=False))
+                self.source = ManualSource(
+                    replace(self.state, paused=False, stalled=False))
                 self._sim_source = None
                 self.refresh_state()
             self._next_sim_try = 0.0
