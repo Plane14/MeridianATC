@@ -439,9 +439,12 @@ std::string ModelFor(const std::string& type, const std::string& op) {
         {"C17", "172"}, {"C15", "172"}, {"C18", "172"},
         {"PA2", "172"}, {"P28", "172"},
     };
-    for (const auto& [key, needle] : table)
-        if (type.find(key) == 0)
-            if (auto p = FindAcf(needle); !p.empty()) return p.string();
+    // Every needle here is a fixed wing; a rotorcraft ("A109" begins "A10")
+    // that reached this far goes straight to the helicopter fallback.
+    if (!heli)
+        for (const auto& [key, needle] : table)
+            if (type.find(key) == 0)
+                if (auto p = FindAcf(needle); !p.empty()) return p.string();
     // A rotorcraft the table did not name still gets a helicopter -- never
     // the fixed-wing stand-in below, whose controls it could not fly.
     if (heli)

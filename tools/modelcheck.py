@@ -105,10 +105,11 @@ def model_for(tcode, op=""):
         for code in ("S76", "B06", "B407", "R22", "ALIA"):
             if (p := best_icao(code)):
                 return p, "heli"
-    for key, needle in NEEDLES:
-        if tcode.startswith(key) and (p := find_needle(needle)):
-            return p, "needle"
-    if tcode in HELI:
+    if tcode not in HELI:
+        for key, needle in NEEDLES:
+            if tcode.startswith(key) and (p := find_needle(needle)):
+                return p, "needle"
+    else:
         for needle in ("S-76", "R22", "ALIA"):
             if (p := find_needle(needle)):
                 return p, "heli-needle"
