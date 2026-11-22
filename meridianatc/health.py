@@ -277,17 +277,31 @@ def _xplane_udp(config: Config) -> Check:
 
 
 def _xplane_plugin(config: Config) -> Check:
-    from .xplane_plugin import probe
+    from .xplane_plugin import probe, resolve_port
 
     if config.sim.simulator == "msfs" or not config.traffic.in_simulator or not config.traffic.enabled:
         return Check("xplane_plugin", "X-Plane traffic plugin", "off", "X-Plane traffic not selected")
-    status = probe(config.traffic.xplane_plugin_host, config.traffic.xplane_plugin_port)
+    # The plugin binds the port its preserved INI declares; when that and
+    # the config disagree the INI wins, the way attach resolves it.
+    configured = config.traffic.xplane_plugin_port
+    try:
+        port = resolve_port(config.traffic.xplane_plugin_host, configured)
+    except Exception:
+        port = configured
+    status = probe(config.traffic.xplane_plugin_host, port)
     if status is None:
+        if port != configured:
+            return Check("xplane_plugin", "X-Plane traffic plugin", "warn",
+                         f"no hello response on INI port {port} (config says {configured}); "
+                         "is MeridianATC-XP running? see xplane/README.md")
         return Check("xplane_plugin", "X-Plane traffic plugin", "warn",
                      "no hello response; install/enable MeridianATC-XP; see xplane/README.md")
     models = status["csl_models"]
+    detail = f"hello answered: version {status['version']}, {models} CSL models"
+    if port != configured:
+        detail += f"; on INI port {port}, not the configured {configured}"
     return Check("xplane_plugin", "X-Plane traffic plugin", "ok" if models else "warn",
-                 f"hello answered: version {status['version']}, {models} CSL models")
+                 detail)
 
 
 def _ground(config: Config) -> Check | None:
