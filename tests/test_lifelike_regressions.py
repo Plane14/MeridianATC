@@ -407,6 +407,50 @@ def test_an_inbound_still_upfield_holds_the_missed_altitude():
     assert flight.target.altitude_ft == pytest.approx(2100.0)
 
 
+def _star_arrival(altitude_ft: float, constraint_ft: float, fix_nm: float):
+    """A traffic arrival on a STAR with the navigator's next level
+    ``constraint_ft`` at a fix ``fix_nm`` miles ahead."""
+    nav = SimpleNamespace(guidance=lambda f: SimpleNamespace(
+        heading=120.0, altitude_ft=constraint_ft, vs_fpm=-1800.0,
+        speed_kt=0.0, done=False,
+        altitude_distance_nm=fix_nm))
+    return SimpleNamespace(
+        phase="inbound", latitude=41.0, longitude=-8.0, heading=120.0,
+        altitude_ft=altitude_ft, on_ground=False, ground_speed_kt=180.0,
+        star="MNR2A", sid="", runway="36", distance_nm=fix_nm,
+        performance=SimpleNamespace(cruise_kt=430.0),
+        procedure_pair=(Mock(), Mock()), procedure_nav=nav,
+        airborne_model=True, hold=None,
+        target=SimpleNamespace())
+
+
+def test_a_star_arrival_descends_to_the_constraint_on_the_path():
+    """A "descend via" reaches the constraint's level at its fix on the
+    three-degree path, not at the book rate miles before it."""
+    injector = _injector()
+    flight = _star_arrival(12000.0, 4000.0, 10.0)
+    injector._steer_procedure(flight, flight.target)
+    assert flight.target.altitude_ft == pytest.approx(4000.0 + 3180.0)
+
+
+def test_below_the_path_a_star_arrival_holds_not_climbs():
+    """Under the three-degree line the level is kept while the path
+    drops back to it -- never a climb for a descent clearance."""
+    injector = _injector()
+    flight = _star_arrival(5000.0, 4000.0, 10.0)
+    injector._steer_procedure(flight, flight.target)
+    assert flight.target.altitude_ft == pytest.approx(5000.0)
+
+
+def test_the_constraint_level_stands_past_its_fix():
+    """At the fix the aim is the constraint's own level -- the path's
+    composition never lets the aeroplane under the step-down."""
+    injector = _injector()
+    flight = _star_arrival(4500.0, 4000.0, 0.5)
+    injector._steer_procedure(flight, flight.target)
+    assert flight.target.altitude_ft == pytest.approx(4000.0 + 159.0)
+
+
 # -- level-off and top of descent --------------------------------------------
 
 def test_the_cruise_level_off_releases_flight_level_change():
