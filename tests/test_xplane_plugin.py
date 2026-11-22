@@ -103,29 +103,56 @@ def test_install_upgrade_uninstall_preserves_user_files(root, source):
     xp.uninstall(root)
 
 
-def test_plugin_port_reads_the_ini(root, monkeypatch):
+def _install_dir(root):
     directory = xp.plugin_directory(root)
-    directory.mkdir(parents=True)
+    (directory / xp.platform_folder()).mkdir(parents=True)
+    (directory / xp.platform_folder() / f"{xp.NAME}.xpl").write_bytes(b"xpl")
+    return directory
+
+
+def test_plugin_ports_reads_installed_inis(root, tmp_path, monkeypatch):
+    directory = _install_dir(root)
     (directory / xp.INI).write_text(
         "# comment\n; other\n[section]\nlabels=1\nport = 52510 \nport=oops\n",
         encoding="utf-8")
-    monkeypatch.setattr(xp, "install_roots", lambda *a, **kw: [root])
-    assert xp.plugin_port() == 52510
+    # A kept INI under a root whose plugin was uninstalled governs nothing.
+    stale = tmp_path / "uninstalled"
+    (stale / "Resources/plugins").mkdir(parents=True)
+    stale_dir = _install_dir(stale)
+    (stale_dir / xp.INI).write_text("port=49999\n", encoding="utf-8")
+    (stale_dir / xp.platform_folder() / f"{xp.NAME}.xpl").unlink()
+    monkeypatch.setattr(xp, "install_roots", lambda *a, **kw: [stale, root])
+    assert xp.plugin_ports() == [52510]
 
 
-def test_plugin_port_absent_invalid_or_out_of_range(root, monkeypatch):
+def test_plugin_ports_absent_invalid_or_out_of_range(root, monkeypatch):
     monkeypatch.setattr(xp, "install_roots", lambda *a, **kw: [root])
-    assert xp.plugin_port() is None
-    directory = xp.plugin_directory(root)
-    directory.mkdir(parents=True)
-    ini = directory / xp.INI
+    assert xp.plugin_ports() == []
+    ini = _install_dir(root) / xp.INI
     ini.write_text("tcas=1\n", encoding="utf-8")
-    assert xp.plugin_port() is None
+    assert xp.plugin_ports() == []
     ini.write_text("port=99999\nport=0\nport=-1\nport=abc\n", encoding="utf-8")
-    assert xp.plugin_port() is None
+    assert xp.plugin_ports() == []
     monkeypatch.setattr(xp, "install_roots",
                         lambda *a, **kw: (_ for _ in ()).throw(FileNotFoundError))
-    assert xp.plugin_port() is None
+    assert xp.plugin_ports() == []
+
+
+def test_resolve_port_probes_disagreeing_inis(monkeypatch):
+    monkeypatch.setattr(xp, "plugin_ports", lambda: [52510, 53000])
+    answers = {53000: {"v": 1, "t": "status", "plugin": "MeridianATC-XP",
+                     "version": "x", "csl_models": 1}}
+    monkeypatch.setattr(xp, "probe", lambda host, port, timeout=.4: answers.get(port))
+    # The install whose plugin actually answers is the running sim's.
+    assert xp.resolve_port(configured=49010) == 53000
+    monkeypatch.setattr(xp, "plugin_ports", lambda: [52510])
+    assert xp.resolve_port(configured=49010) == 52510
+    # Several silent installs are ambiguous; the config is the safer guess.
+    monkeypatch.setattr(xp, "plugin_ports", lambda: [52510, 53000])
+    monkeypatch.setattr(xp, "probe", lambda *a, **kw: None)
+    assert xp.resolve_port(configured=49010) == 49010
+    monkeypatch.setattr(xp, "plugin_ports", lambda: [])
+    assert xp.resolve_port(configured=49010) == 49010
 
 
 def test_clean_uninstall_and_older_metadata(root, source):

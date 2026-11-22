@@ -113,25 +113,53 @@ def _ini_port(directory: Path) -> int | None:
     return None
 
 
-def plugin_port(path=None, *, home=None, localappdata=None) -> int | None:
-    """The UDP port the installed plugin actually listens on.
+def plugin_ports(path=None, *, home=None, localappdata=None) -> list[int]:
+    """The UDP ports the installed plugins' INIs put their listeners on.
 
     The plugin's own INI is the authority: the install preserves it
     across updates, so it outlives the port ``config.yaml`` was last
     written with. An engine that only knows the config's number talks
     into the void -- the traffic link, the follow-me car and the FMS
-    readback all die together, and silently. Returns None when no
-    install has the plugin or its INI sets no port.
+    readback all die together, and silently. Only roots where the
+    plugin itself is installed count: the INI is kept after an
+    uninstall, and a file with no .xpl to read it governs nothing.
     """
     try:
         roots = install_roots(path, home=home, localappdata=localappdata)
     except (FileNotFoundError, OSError):
-        return None
+        return []
+    ports = []
     for root in roots:
-        port = _ini_port(plugin_directory(root))
-        if port is not None:
-            return port
-    return None
+        directory = root / "Resources" / "plugins" / NAME
+        if not (directory / platform_folder() / f"{NAME}.xpl").is_file():
+            continue
+        port = _ini_port(directory)
+        if port is not None and port not in ports:
+            ports.append(port)
+    return ports
+
+
+def resolve_port(host="127.0.0.1", configured=49010, timeout=.4) -> int:
+    """The port the plugin link should use.
+
+    An INI port wins over the config's: it is what the loaded .xpl
+    bound. Several installs can disagree, though, and an inactive
+    one's file would poison the link just as a stale config did -- so
+    each candidate is asked first, and the plugin that answers is the
+    running sim's. Unanswered, a single install's INI still wins (the
+    sim may not be up yet); several unanswered are ambiguous, and the
+    configured port is the safer guess.
+    """
+    try:
+        ini = [port for port in plugin_ports() if port != configured]
+    except Exception:
+        ini = []
+    if not ini:
+        return configured
+    for candidate in ini:
+        if probe(host, candidate, timeout=timeout):
+            return candidate
+    return ini[0] if len(ini) == 1 else configured
 
 
 def installed(root) -> dict:

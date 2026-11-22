@@ -277,7 +277,7 @@ def _xplane_udp(config: Config) -> Check:
 
 
 def _xplane_plugin(config: Config) -> Check:
-    from .xplane_plugin import plugin_port, probe
+    from .xplane_plugin import probe, resolve_port
 
     if config.sim.simulator == "msfs" or not config.traffic.in_simulator or not config.traffic.enabled:
         return Check("xplane_plugin", "X-Plane traffic plugin", "off", "X-Plane traffic not selected")
@@ -285,13 +285,12 @@ def _xplane_plugin(config: Config) -> Check:
     # the config disagree the INI wins, the way attach resolves it.
     configured = config.traffic.xplane_plugin_port
     try:
-        actual = plugin_port()
+        port = resolve_port(config.traffic.xplane_plugin_host, configured)
     except Exception:
-        actual = None
-    port = actual if actual is not None else configured
+        port = configured
     status = probe(config.traffic.xplane_plugin_host, port)
     if status is None:
-        if actual is not None and actual != configured:
+        if port != configured:
             return Check("xplane_plugin", "X-Plane traffic plugin", "warn",
                          f"no hello response on INI port {port} (config says {configured}); "
                          "is MeridianATC-XP running? see xplane/README.md")
