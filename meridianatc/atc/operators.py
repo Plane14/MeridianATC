@@ -315,7 +315,7 @@ REGISTRATION_PREFIX: tuple[tuple[tuple[str, ...], str], ...] = (
     # South America.
     (("SB", "SD", "SW"), "PP-"),
     (("SA",), "LV-"), (("SC",), "CC-"), (("SP",), "OB-"),
-    (("SK",), "HK-"), (("SE",), "HC-"), (("SV",), "YV-"),
+    (("SK",), "HK-"), (("SE",), "HC-"), (("SV",), "YV"),
     (("SL",), "CP-"), (("SG",), "ZP-"), (("SU",), "CX-"),
     (("SY",), "8R-"), (("SM",), "PZ-"), (("SO",), "F-O"),
     # Europe.
@@ -353,14 +353,29 @@ REGISTRATION_PREFIX: tuple[tuple[tuple[str, ...], str], ...] = (
     (("VN",), "9N-"), (("VG",), "S2-"), (("VA", "VI", "VE", "VO"), "VT-"),
     (("OP",), "AP-"), (("OA",), "YA-"),
     (("ZB", "ZG", "ZH", "ZJ", "ZL", "ZP", "ZS", "ZU", "ZY", "PW"), "B-"),
-    (("RJ",), "JA-"), (("RK",), "HL-"), (("RC",), "B-"),
-    (("RP",), "RP-"), (("WM",), "9M-"), (("WS",), "9V-"),
+    (("RJ",), "JA"), (("RK",), "HL"), (("RC",), "B-"),
+    (("RP",), "RP-C"), (("WM",), "9M-"), (("WS",), "9V-"),
     (("WI",), "PK-"), (("VT",), "HS-"), (("VL",), "RDPL-"),
     (("VV",), "VN-"), (("VD",), "XU-"), (("VY",), "XY-"),
     # Oceania and the Pacific.
     (("Y",), "VH-"), (("NZ",), "ZK-"), (("AY",), "P2-"),
     (("NF",), "DQ-"), (("NT",), "F-O"), (("NW",), "F-O"),
+    # The airlines' `home` countries are given at the letter level --
+    # Air China's ("Z",) is the whole Chinese FIR block -- so the letter
+    # itself names a scheme for the blocks one country does not rule.
+    (("ZM",), "JU-"), (("ZK",), "P-"), (("Z",), "B-"),
+    (("VQ",), "A5-"), (("V",), "VT-"),
 )
+
+# Schemes whose suffix is digits, not letters, and how many: RA-12345,
+# B-1234, JA1234, HL7234, RP-C1234, UR-12345, YV1234 -- the dash or its
+# absence is part of the literal prefix above. Everything not named
+# takes letters to five characters, as before.
+DIGIT_SUFFIX: dict[str, int] = {
+    "B-": 4, "P-": 3, "RA-": 5, "RDPL-": 5,
+    "JA": 4, "HL": 4, "XU-": 3, "RP-C": 4,
+    "UR-": 5, "OB-": 4, "HK-": 4, "CP-": 4, "YV": 4,
+}
 
 # The light types that fill a general aviation field, as one list; which of
 # them a field gets, and how often, is meridianatc.atc.fleet's.
@@ -392,7 +407,7 @@ _VISITOR_POOLS: tuple[tuple[str, ...], ...] = (
     # The Caribbean and South America fly in from each other and the US.
     ("XA-", "TG-", "HR-", "YS-", "YN-", "TI-", "HP-", "6Y-", "CU-",
      "VP-C", "HI-", "VP-A", "VP-T", "VP-L", "J3-", "PP-", "LV-", "CC-",
-     "OB-", "HK-", "HC-", "YV-", "CP-", "ZP-", "CX-", "8R-", "PZ-",
+     "OB-", "HK-", "HC-", "YV", "CP-", "ZP-", "CX-", "8R-", "PZ-",
      "F-O", "N"),
     # Africa and the Middle East.
     ("ZS-", "V5-", "A2-", "Z-", "C9-", "9J-", "7Q-", "5Y-", "5X-",
@@ -402,7 +417,7 @@ _VISITOR_POOLS: tuple[tuple[str, ...], ...] = (
     # Russia and Central Asia.
     ("RA-", "UP-", "9N-", "S2-", "VT-", "AP-", "YA-"),
     # South and East Asia.
-    ("9N-", "S2-", "VT-", "AP-", "YA-", "B-", "JA-", "HL-", "RP-",
+    ("9N-", "S2-", "VT-", "AP-", "YA-", "B-", "JA", "HL", "RP-C",
      "9M-", "9V-", "PK-", "HS-", "RDPL-", "VN-", "XU-", "XY-"),
     # Down under and the Pacific.
     ("VH-", "ZK-", "P2-", "DQ-", "F-O", "N"),
@@ -423,15 +438,21 @@ def visitor_pool(local_prefix: str) -> tuple[str, ...]:
 def draw_tail(prefix: str, random) -> str:
     """One registration under the country's scheme.
 
-    Every scheme here is five characters once the dash is taken out --
+    Letter schemes are five characters once the dash is taken out --
     F-GXYZ, G-ABCD, D-EFGH, HB-ABC, PP-ABC -- so the prefix decides how
     many letters are still to be drawn. The US is the exception and is
-    numeric.
+    numeric, and the schemes in DIGIT_SUFFIX are digits outright --
+    RA-12345, JA1234 -- not letters miscounted.
     """
-    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     if prefix == "N":
+        letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         return (f"N{random.randint(100, 999)}"
                 f"{random.choice(letters)}{random.choice(letters)}")
+    digits = DIGIT_SUFFIX.get(prefix)
+    if digits is not None:
+        return prefix + "".join(
+            random.choice("0123456789") for _ in range(digits))
+    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     needed = max(1, 5 - len(prefix.replace("-", "")))
     return prefix + "".join(random.choice(letters) for _ in range(needed))
 
