@@ -81,28 +81,31 @@ class _Situation_loop:
         # readings from after the jump rather than straddling it.
         if (state.paused or getattr(state, "relocated", False)
                 or getattr(state, "stalled", False)):
+            if getattr(state, "stalled", False) and not self._was_stalled:
+                # Tracked apart from _was_paused: a stall that starts while
+                # the simulator is paused still counts against the writers'
+                # answer windows, and still has to release them after.
+                self._was_stalled = True
+                self.emit("info", "The simulator stopped answering -- "
+                          "everything holds where it is until it does "
+                          "or is gone.", key="log.sim_stalled")
             if not self._was_paused:
                 self._was_paused = True
                 self.crew.hold()
                 self._paused_said = bool(state.paused)
-                self._stalled_said = bool(getattr(state, "stalled", False))
                 if state.paused:
                     self.emit("info", "The simulator is paused.",
                               key="log.sim_paused")
-                elif getattr(state, "stalled", False):
-                    self.emit("info", "The simulator stopped answering -- "
-                              "everything holds where it is until it does "
-                              "or is gone.", key="log.sim_stalled")
             return
-        if self._was_paused:
+        if self._was_paused or self._was_stalled:
             self._was_paused = False
             if getattr(self, "_paused_said", True):
                 self.emit("info", "Back in the aeroplane.",
                           key="log.sim_unpaused")
-            if getattr(self, "_stalled_said", False):
+            if self._was_stalled:
                 self.emit("info", "The simulator is answering again.",
                           key="log.sim_unstalled")
-                self._stalled_said = False
+                self._was_stalled = False
                 # Every pending ask aged through the silence; its answer
                 # window starts over from now rather than counting the
                 # stall against it.
