@@ -244,6 +244,23 @@ class _Setup:
                 or (xplane and (renderer == "hybrid")
                     != isinstance(self.simtraffic, XPHybridTraffic))):
             self.simtraffic.detach()
+            plugin_port = self.config.traffic.xplane_plugin_port
+            if xplane:
+                # The plugin listens where its own INI put it -- the
+                # file the installer preserves across updates. When it
+                # and the config disagree, the INI is right: it is what
+                # the loaded .xpl bound. Without this the link is dead
+                # and the FMS readback with it, for no visible reason.
+                from ..xplane_plugin import plugin_port as ini_port
+                try:
+                    actual = ini_port()
+                except Exception:
+                    actual = None
+                if actual is not None and actual != plugin_port:
+                    log.warning("MeridianATC-XP listens on port %s from its "
+                                "INI, not the configured %s -- the plugin's "
+                                "is used", actual, plugin_port)
+                    plugin_port = actual
             options = dict(
                 enabled=self.config.traffic.enabled and self.config.traffic.in_simulator,
                 limit=self.config.traffic.in_simulator_limit + max(0, int(self.config.traffic.parked)),
@@ -254,17 +271,17 @@ class _Setup:
             if renderer == "hybrid":
                 self.simtraffic = XPHybridTraffic(
                     **options, host=self.config.traffic.xplane_plugin_host,
-                    port=self.config.traffic.xplane_plugin_port,
+                    port=plugin_port,
                     source=self.source)
             elif native:
                 self.simtraffic = XPNativeTraffic(
                     **options, host=self.config.traffic.xplane_plugin_host,
-                    port=self.config.traffic.xplane_plugin_port,
+                    port=plugin_port,
                     source=self.source)
             elif xplane:
                 self.simtraffic = XPlaneTraffic(
                     **options, host=self.config.traffic.xplane_plugin_host,
-                    port=self.config.traffic.xplane_plugin_port)
+                    port=plugin_port)
             else:
                 self.simtraffic = SimTraffic(**options)
             self.simtraffic.lod_models = dict(self.config.traffic.lod.models or {})

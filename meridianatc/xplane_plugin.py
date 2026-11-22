@@ -85,6 +85,55 @@ def plugin_directory(root) -> Path:
     return install_roots(root)[0] / "Resources" / "plugins" / NAME
 
 
+def _ini_port(directory: Path) -> int | None:
+    """The port one plugin folder's INI puts its listener on.
+
+    Read the way the plugin's own ``ReadConfig`` does: blank lines and
+    ``#``/``;``/section lines are skipped, the first ``=`` splits the
+    pair, and a port outside 1-65535 is not a port at all.
+    """
+    try:
+        lines = (directory / INI).read_text(encoding="utf-8",
+                                            errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        line = line.strip(" \t\r\n")
+        if not line or line[0] in "#;[":
+            continue
+        key, sep, value = line.partition("=")
+        if not sep or key.strip() != "port":
+            continue
+        try:
+            port = int(value.strip())
+        except ValueError:
+            continue
+        if 1 <= port <= 65535:
+            return port
+    return None
+
+
+def plugin_port(path=None, *, home=None, localappdata=None) -> int | None:
+    """The UDP port the installed plugin actually listens on.
+
+    The plugin's own INI is the authority: the install preserves it
+    across updates, so it outlives the port ``config.yaml`` was last
+    written with. An engine that only knows the config's number talks
+    into the void -- the traffic link, the follow-me car and the FMS
+    readback all die together, and silently. Returns None when no
+    install has the plugin or its INI sets no port.
+    """
+    try:
+        roots = install_roots(path, home=home, localappdata=localappdata)
+    except (FileNotFoundError, OSError):
+        return None
+    for root in roots:
+        port = _ini_port(plugin_directory(root))
+        if port is not None:
+            return port
+    return None
+
+
 def installed(root) -> dict:
     directory = plugin_directory(root)
     present = (directory / platform_folder() / f"{NAME}.xpl").is_file()

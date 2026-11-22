@@ -103,6 +103,31 @@ def test_install_upgrade_uninstall_preserves_user_files(root, source):
     xp.uninstall(root)
 
 
+def test_plugin_port_reads_the_ini(root, monkeypatch):
+    directory = xp.plugin_directory(root)
+    directory.mkdir(parents=True)
+    (directory / xp.INI).write_text(
+        "# comment\n; other\n[section]\nlabels=1\nport = 52510 \nport=oops\n",
+        encoding="utf-8")
+    monkeypatch.setattr(xp, "install_roots", lambda *a, **kw: [root])
+    assert xp.plugin_port() == 52510
+
+
+def test_plugin_port_absent_invalid_or_out_of_range(root, monkeypatch):
+    monkeypatch.setattr(xp, "install_roots", lambda *a, **kw: [root])
+    assert xp.plugin_port() is None
+    directory = xp.plugin_directory(root)
+    directory.mkdir(parents=True)
+    ini = directory / xp.INI
+    ini.write_text("tcas=1\n", encoding="utf-8")
+    assert xp.plugin_port() is None
+    ini.write_text("port=99999\nport=0\nport=-1\nport=abc\n", encoding="utf-8")
+    assert xp.plugin_port() is None
+    monkeypatch.setattr(xp, "install_roots",
+                        lambda *a, **kw: (_ for _ in ()).throw(FileNotFoundError))
+    assert xp.plugin_port() is None
+
+
 def test_clean_uninstall_and_older_metadata(root, source):
     target = xp.install(root, source)
     (target / "version.json").unlink()
