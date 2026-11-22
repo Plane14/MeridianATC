@@ -245,6 +245,11 @@ void ScanAcf() {
         std::ifstream in(p);
         std::string line;
         while (std::getline(in, line)) {
+            // A CRLF save keeps its \r on any platform's getline; the
+            // designator must not end up keyed as "A320\r".
+            while (!line.empty() && (line.back() == '\r' ||
+                                     line.back() == ' '))
+                line.pop_back();
             if (line.rfind("P acf/_ICAO ", 0) == 0 && line.size() > 12) {
                 acfByIcao[line.substr(12)].push_back(p);
                 break;
@@ -420,6 +425,11 @@ std::string ModelFor(const std::string& type, const std::string& op) {
             if (auto p = pick(code); !p.empty()) return p.string();
     // 2. The default fleet's filenames, for a type index the scan found no
     //    _ICAO for and for an install without the default fleet's _ICAO.
+    //    The rotorcraft go first: with no _ICAO anywhere an EC35 still
+    //    gets a helicopter and not the 737 the class stand-in names.
+    if (heli)
+        for (const char* needle : {"S-76", "R22", "ALIA"})
+            if (auto p = FindAcf(needle); !p.empty()) return p.string();
     static const std::pair<const char*, const char*> table[] = {
         {"A33", "A330"}, {"MD8", "MD-82"},
         {"SR2", "SR22"}, {"SF5", "SF50"},
