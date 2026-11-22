@@ -1614,6 +1614,76 @@ def test_no_incursion_no_cancel():
     p.cancel_takeoff.assert_not_called()
 
 
+def test_a_cleared_arrival_is_sent_round_for_an_incursion():
+    """The other half of the tower's safety calls: the landing clearance
+    was already given and then the runway filled -- "go around, traffic
+    on the runway", said the moment the occupancy is seen, not when the
+    arrival has run out of sky to climb back into."""
+    from meridianatc.atc import arrival
+    occupant = SimpleNamespace(describe=lambda lang: "a Cessna",
+                               written="N456")
+    brain = Mock()
+    brain.runway_occupants = Mock(return_value=[occupant])
+    brain.order_go_around = Mock(return_value="GO_AROUND")
+    watch = arrival.ArrivalWatch.__new__(arrival.ArrivalWatch)
+    watch.navdb = SimpleNamespace(
+        airport=lambda ident: SimpleNamespace(ident="LPPR"))
+    watch.brain = brain
+    watch._weather = Mock(return_value=None)
+    session = SimpleNamespace(
+        cleared_landing=True, arrival_runway="17",
+        aircraft=SimpleNamespace(language=""))
+    state = SimpleNamespace(on_ground=False)
+    reply = watch._cancel_the_landing(
+        session, SimpleNamespace(ident="LPPR"), state,
+        SimpleNamespace(ident="LPPR"), lambda ident: None, Mock())
+    assert reply == "GO_AROUND"
+    brain.order_go_around.assert_called_once()
+    assert brain.order_go_around.call_args[1]["why"] == "runway_incursion"
+
+
+def test_a_cleared_arrival_down_is_not_sent_round():
+    """On the pavement the word is too late: the rollout, not the go
+    around, is the aeroplane's business now."""
+    from meridianatc.atc import arrival
+    brain = Mock()
+    brain.runway_occupants = Mock(return_value=[object()])
+    brain.order_go_around = Mock(return_value="GO_AROUND")
+    watch = arrival.ArrivalWatch.__new__(arrival.ArrivalWatch)
+    watch.brain = brain
+    watch._weather = Mock(return_value=None)
+    session = SimpleNamespace(
+        cleared_landing=True, arrival_runway="17",
+        aircraft=SimpleNamespace(language=""))
+    assert watch._cancel_the_landing(
+        session, SimpleNamespace(ident="LPPR"),
+        SimpleNamespace(on_ground=True),
+        SimpleNamespace(ident="LPPR"), lambda ident: None, Mock()) \
+        is None
+    brain.order_go_around.assert_not_called()
+
+
+def test_a_cleared_arrival_on_a_clear_runway_lands_on():
+    """Nobody on the strip, nobody sent round: the cancel is spent only
+    on a runway that is actually occupied."""
+    from meridianatc.atc import arrival
+    brain = Mock()
+    brain.runway_occupants = Mock(return_value=[])
+    brain.order_go_around = Mock(return_value="GO_AROUND")
+    watch = arrival.ArrivalWatch.__new__(arrival.ArrivalWatch)
+    watch.brain = brain
+    watch._weather = Mock(return_value=None)
+    session = SimpleNamespace(
+        cleared_landing=True, arrival_runway="17",
+        aircraft=SimpleNamespace(language=""))
+    assert watch._cancel_the_landing(
+        session, SimpleNamespace(ident="LPPR"),
+        SimpleNamespace(on_ground=False),
+        SimpleNamespace(ident="LPPR"), lambda ident: None, Mock()) \
+        is None
+    brain.order_go_around.assert_not_called()
+
+
 # -- stands for the kind of flight ------------------------------------------------
 
 def _gate_and_ramp_layout():

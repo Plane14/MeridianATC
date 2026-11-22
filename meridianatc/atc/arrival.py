@@ -1651,7 +1651,8 @@ class ArrivalWatch:
                 session, station, self._weather(weather_for, field), p,
                 field, told=True)
         if session.cleared_landing:
-            return None
+            return self._cancel_the_landing(
+                session, station, state, field, weather_for, p)
         if session.going_around and not self.brain.re_established(
                 session, field, state):
             return None
@@ -1686,6 +1687,31 @@ class ArrivalWatch:
                  f"{round(weather.wind_kt)}", threshold_nm=(
                      round(final.distance(state), 1) if final is not None else None))
         return self.brain.clear_to_land(session, station, weather, p, state)
+
+    def _cancel_the_landing(self, session, station, state, field,
+                            weather_for, p) -> Reply | None:
+        """A landing clearance pulled for somebody on the runway.
+
+        The tower's call a real tower cannot not make: the clearance is
+        given and then the strip fills -- "go around, traffic on the
+        runway", sent the moment the occupancy is seen, because waiting
+        to see if it clears is how a collision is made. Down already,
+        the rollout is the aeroplane's own business: the call is only
+        ever made while there is still sky to climb back into.
+        """
+        if getattr(state, "on_ground", True):
+            return None
+        runway = session.arrival_runway or self.brain.arrival_runway(
+            field, self._weather(weather_for, field))
+        if not runway:
+            return None
+        if not session.arrival_runway:
+            session.arrival_runway = runway
+        if not self.brain.runway_occupants(field, runway):
+            return None
+        return self.brain.order_go_around(
+            session, station, self._weather(weather_for, field), p,
+            field, why="runway_incursion")
 
     def _runway_owed(self, session, station, state, field, weather_for,
                      p) -> Reply | None:
