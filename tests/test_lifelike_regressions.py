@@ -513,6 +513,131 @@ def test_a_navless_route_falls_back_to_the_destination_bearing():
         == pytest.approx(want)
 
 
+def _routing_flight(box_nav=None):
+    """A flight with a route that places the aeroplane one leg in."""
+    from meridianatc.atc.route import Progress, RouteFix
+    flight = _flight()
+    if box_nav is None:
+        flight.sim = SimpleNamespace()
+    else:
+        flight.sim = SimpleNamespace(box_nav=box_nav)
+    flight._dir = Mock(sim=flight.sim)
+    flight.brain = SimpleNamespace(
+        route=SimpleNamespace(
+            progress=lambda *a, **k: Progress(
+                leg=1,
+                from_fix=RouteFix(ident="A", lat=41.0, lon=-8.0),
+                to_fix=RouteFix(ident="B", lat=42.0, lon=-8.0),
+                cross_track_nm=0.5, along_leg_nm=5.0, to_go_nm=55.0,
+                to_next_nm=50.0, eta_s=())))
+    flight.session = SimpleNamespace(
+        route_direct_index=-1, destination=None)
+    return flight
+
+
+def test_an_untrusted_box_nav_steers_the_bearing_to_the_fix():
+    """Where the sim's FMS cannot be trusted with the plan -- X-Plane's
+    drops a plan it cannot load and follows an active leg it will not
+    sequence -- the route is steered on the heading bug, bearing to the
+    active fix, and the NAV mode is never armed at all."""
+    flight = _routing_flight(box_nav=False)
+    state = SimpleNamespace(
+        has_position=True, latitude=41.2, longitude=-8.1,
+        ground_speed_kt=150.0, track_true=30.0, heading_true=30.0,
+        bearing_to=lambda lat, lon: 30.0)
+    got = flight._route_lateral(state, 1000.0)
+    from meridianatc.navdata.magvar import to_magnetic, variation
+    want = to_magnetic(30.0, variation(41.2, -8.1)) % 360.0
+    assert got == pytest.approx(want)
+    flight.director.nav.assert_not_called()
+
+
+def test_an_untrusted_box_nav_without_a_fix_holds_the_heading():
+    """No route and no destination: the heading the wings have is held,
+    not a course that was never steering anything."""
+    flight = _routing_flight(box_nav=False)
+    flight.brain = SimpleNamespace(route=None)
+    state = SimpleNamespace(
+        has_position=True, latitude=41.2, longitude=-8.1,
+        ground_speed_kt=150.0, track_true=42.0, heading_true=42.0,
+        bearing_to=lambda lat, lon: 0.0)
+    got = flight._route_lateral(state, 1000.0)
+    assert got >= 0.0
+    flight.director.nav.assert_not_called()
+
+
+def test_a_trusted_box_nav_still_arms_it():
+    """Where the box's NAV can be trusted it is armed and the watchdog's
+    fallback is the heading handed back -- unchanged behaviour."""
+    flight = _routing_flight(box_nav=True)
+    state = SimpleNamespace(
+        has_position=True, latitude=41.2, longitude=-8.1,
+        ground_speed_kt=150.0, track_true=30.0, heading_true=30.0,
+        bearing_to=lambda lat, lon: 30.0)
+    got = flight._route_lateral(state, 1000.0)
+    flight.director.nav.assert_called_once_with(True)
+    assert got == -1.0
+    assert flight.state.ap_nav_mode is True
+
+
+def _levelled_fo(altitude_ft: float, indicated_ft: float):
+    """A cruise-phase FO at the given true/indicated levels, target 9000."""
+    from meridianatc.atc.autonomous import AutonomousFlight
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    from meridianatc.atc.autonomous import AutonomousState
+    from meridianatc.atc.session import Phase
+    fo.state = AutonomousState()
+    fo.sim = SimpleNamespace(box_nav=False)
+    fo._dir = Mock(sim=fo.sim)
+    fo.brain = SimpleNamespace(route=None)
+    fo._perf = SimpleNamespace(climb_fpm=500.0, descend_fpm=800.0)
+    fo.session = SimpleNamespace(
+        assigned_heading=None, assigned_altitude_ft=9000.0,
+        assigned_speed_kt=None, phase=Phase.ENROUTE,
+        route_direct_index=-1, cruise_altitude_ft=0.0,
+        initial_altitude_ft=0.0, destination=None, vfr_ceiling_ft=0.0)
+    fo._run_checklist_for_phase = Mock()
+    fo._sid_nav = Mock(return_value=None)
+    fo._fms_departure_direct = Mock()
+    fo._route_level = Mock(return_value=(0.0, ""))
+    fo._speed_target = Mock(return_value=100.0)
+    fo._manage_throttle = Mock()
+    fo._distance_to_destination_nm = Mock(return_value=200.0)
+    fo._plan_tod = Mock()
+    fo._transition = Mock()
+    fo._apply_flight_director = Mock()
+    fo.state.emergency_descent = False
+    fo.state.tod_nm = 60.0
+    state = SimpleNamespace(
+        has_position=True, latitude=42.5, longitude=-8.5,
+        altitude_ft=altitude_ft, indicated_altitude_ft=indicated_ft,
+        altitude_agl_ft=altitude_ft, ground_speed_kt=100.0,
+        heading_true=30.0, track_true=30.0, vertical_speed_fpm=0.0,
+        indicated_airspeed_kt=90.0, on_ground=False,
+        engines_running=True, autopilot=True,
+        bearing_to=lambda lat, lon: 30.0)
+    return fo, state
+
+
+def test_the_cruise_band_judges_the_altimeter_not_the_ground():
+    """True 8890 on a 9000 bug is "close enough" on the raw figure --
+    but the altimeter reads 8600, and that is the gauge the clearance
+    and the deviation watch are kept to. The band is judged on it: the
+    flight climbs for the level rather than latching alt-hold short."""
+    fo, state = _levelled_fo(8890.0, 8600.0)
+    fo._phase_cruise(state, 100.0)
+    fo._apply_flight_director.assert_called_once()
+    assert fo._apply_flight_director.call_args.kwargs["vs_fpm"] > 0.0
+    fo.director.alt_hold.assert_not_called()
+
+
+def test_the_cruise_band_holds_where_the_altimeter_says_level():
+    fo, state = _levelled_fo(8890.0, 8950.0)
+    fo._phase_cruise(state, 100.0)
+    fo._apply_flight_director.assert_not_called()
+    fo.director.alt_hold.assert_called_once_with(True)
+
+
 # -- expedite -----------------------------------------------------------------
 
 def test_an_expedite_command_hurries_what_the_flight_does_next():

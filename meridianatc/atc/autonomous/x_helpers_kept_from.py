@@ -191,8 +191,10 @@ class _Helpers_kept_from:
                 d.heading(assigned_hdg)
                 self.state.ap_hdg_mode = True
             else:
-                d.nav(True)
-                self.state.ap_nav_mode = True
+                own = self._route_lateral(state)
+                if own >= 0.0:
+                    d.heading(own)
+                    self.state.ap_hdg_mode = True
             d.speed(speed)
             d.airspeed_hold(True)
             # Speed hold only drives the levers where an autothrottle is
@@ -210,14 +212,8 @@ class _Helpers_kept_from:
                 state, altitude=target,
                 vs_fpm=self.performance.climb_fpm,
                 heading=(assigned_hdg if assigned_hdg is not None
-                         else -1.0),
+                         else self._route_lateral(state)),
                 speed_kt=speed)
-            if assigned_hdg is None:
-                # No heading to hold is not "wings free": the filed
-                # route is the lateral plan until ATC says otherwise,
-                # the same ask the managed mode makes.
-                self.director.nav(True)
-                self.state.ap_nav_mode = True
 
     def _level_off_at_cruise(self, state) -> None:
         """Level off at cruise altitude."""
@@ -229,14 +225,15 @@ class _Helpers_kept_from:
         # cruise belongs to ALT + SPD).
         self.director.level_change(False)
         self.director.alt_hold(True)
-        self.director.nav(True)
+        own = self._route_lateral(state)
+        if own >= 0.0:
+            self.director.heading(own)
         self.director.airspeed_hold(True)
         self.director.speed(self._speed_target(state))
         if not getattr(state, "autothrottle", False):
             self.director.autothrottle_arm()
         self.director.vs_hold(False)
         self.state.ap_alt_mode = True
-        self.state.ap_nav_mode = True
         self.state.ap_speed_mode = True
 
     def _shutdown_engines(self) -> None:

@@ -177,7 +177,7 @@ class _Filed_cleared_sid:
         altitude = assigned_alt or guidance.altitude_ft \
             or self._altitude_target(state)
         if assigned_alt:
-            current = state.altitude_ft or 0.0
+            current = self._flown_altitude_ft(state)
             if current < assigned_alt - 250.0:
                 vs = self.performance.climb_fpm
             elif current > assigned_alt + 250.0:

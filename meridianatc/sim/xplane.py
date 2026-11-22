@@ -272,6 +272,15 @@ class XPlaneSource:
     # the levers itself.
     flc_pitch_only = True
     ap_status_engaged = 2.0
+    # The sim's own NAV cannot be trusted to steer the route on it: a
+    # plan the FMS cannot load is dropped silently, and one it can is
+    # followed on an active leg the box picks itself and will not
+    # always sequence -- watched following a course back at the
+    # departure end, circling the fix it would not pass. The FO steers
+    # enroute by its own bearing to the active fix on the heading bug
+    # instead, the way the procedure legs are already flown. MSFS's
+    # GPS drives NAV1 properly, so it keeps the flag.
+    box_nav = False
 
     def __init__(self, host="127.0.0.1", port=49000, poll_interval=.25,
                  timeout_s=1.0, disconnect_s=5.0, gone_s=30.0,

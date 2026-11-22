@@ -1344,7 +1344,7 @@ class _The_phase_machine:
     def _phase_climb(self, state, now: float) -> None:
         """Climb to the assigned or planned level."""
         target = self._altitude_target(state)
-        alt = state.altitude_ft or 0.0
+        alt = self._flown_altitude_ft(state)
         # The initial-climb window is the flaps' scheduled moment, not
         # their only one: a climb phase that got there dirty -- too slow
         # for the retract before the AP took over -- still comes clean,
@@ -1393,15 +1393,13 @@ class _The_phase_machine:
                                         speed_kt=self._speed_target(state))
         else:
             # No SID to walk and no heading assigned is not "wings
-            # free": NAV flies the filed route until ATC says otherwise.
-            # It is armed first so the fallback course -- armed inside
-            # the director call where the plan steers nothing -- wins
-            # the engagement; NAV armed last flies the dead course.
-            self.director.nav(True)
-            self.state.ap_nav_mode = True
+            # free": the filed route is the lateral plan until ATC says
+            # otherwise -- the sim's NAV where it can be trusted with
+            # the plan, the bearing to the active fix on the bug where
+            # it cannot.
             self._apply_flight_director(
                 state, altitude=target, vs_fpm=vs,
-                heading=self._nav_fallback_heading(state, now),
+                heading=self._route_lateral(state, now),
                 speed_kt=self._speed_target(state))
 
         # A descent or approach clearance outranks the machine's own top
@@ -1415,7 +1413,7 @@ class _The_phase_machine:
             return
 
         # Level off at the top of the climb.
-        if target and abs((state.altitude_ft or 0.0) - target) < 200 \
+        if target and abs(alt - target) < 200 \
                 and abs(state.vertical_speed_fpm or 0.0) < 200:
             self.state.top_of_climb = True
             self.director.alt_hold(True)
@@ -1437,24 +1435,24 @@ class _The_phase_machine:
             # toward the divert's height. NAV flies the replanned route --
             # the leg now goes where the emergency is being taken.
             self.director.spoilers(0.5)
-            self.director.nav(True)
             self._apply_flight_director(
                 state, altitude=self._altitude_target(state),
                 vs_fpm=-min(self.performance.descend_fpm * 2.0, 5000.0),
                 heading=(self.session.assigned_heading
                          if self.session.assigned_heading is not None
-                         else self._nav_fallback_heading(state, now)),
+                         else self._route_lateral(state, now)),
                 speed_kt=self._speed_target(state))
         elif sid is not None:
             self._fly_procedure(state, sid)
         else:
             vector = self.session.assigned_heading
+            route_hdg = None
             if vector is None:
                 self._fms_departure_direct(state)
-                self.director.nav(True)
+                route_hdg = self._route_lateral(state, now)
             self.director.airspeed_hold(True)
             target = self._altitude_target(state)
-            alt = state.altitude_ft or 0.0
+            alt = self._flown_altitude_ft(state)
             # The filed profile's next crossing level, while the fix
             # is still ahead and ATC has assigned nothing: a filed
             # crossing below the target is held until the fix passes;
@@ -1483,7 +1481,7 @@ class _The_phase_machine:
                     state, altitude=target, vs_fpm=vs,
                     heading=(self.session.assigned_heading
                              if self.session.assigned_heading is not None
-                             else self._nav_fallback_heading(state, now)),
+                             else route_hdg),
                     speed_kt=self._speed_target(state))
             else:
                 # No assigned or planned level is not an instruction to
@@ -1497,15 +1495,15 @@ class _The_phase_machine:
                     # heading read back is the readback not flown.
                     self.director.heading(vector)
                     self.state.ap_hdg_mode = True
-                else:
-                    # Level on the plan is where a dead NAV course is
-                    # most quietly wrong: the fallback bearing keeps
-                    # the aeroplane pointed at the leg until the track
+                elif route_hdg is not None and route_hdg >= 0.0:
+                    # Level on the plan is where a dead course is most
+                    # quietly wrong: the route's own heading -- the
+                    # watchdog's fallback where NAV steers, the bearing
+                    # to the active fix where it does not -- keeps the
+                    # aeroplane pointed at the leg until the track
                     # comes round.
-                    fallback = self._nav_fallback_heading(state, now)
-                    if fallback >= 0.0:
-                        self.director.heading(fallback)
-                        self.state.ap_hdg_mode = True
+                    self.director.heading(route_hdg)
+                    self.state.ap_hdg_mode = True
             self._manage_throttle(state, self._speed_target(state))
             self.director.speed(self._speed_target(state))
 
@@ -1658,14 +1656,13 @@ class _The_phase_machine:
                 # A vector that has ended is not a heading kept for
                 # ever: with nothing assigned the route is the lateral
                 # plan again, the same ask the climb and the cruise
-                # make. It is armed first so the fallback course wins
-                # the engagement where the plan steers nothing.
-                self.director.nav(True)
-                self.state.ap_nav_mode = True
+                # make.
+                route_hdg = self._route_lateral(state, now)
+            else:
+                route_hdg = assigned_hdg
             self._apply_flight_director(
                 state, altitude=target, vs_fpm=vs,
-                heading=assigned_hdg if assigned_hdg is not None
-                else self._nav_fallback_heading(state, now),
+                heading=route_hdg,
                 speed_kt=speed)
 
         # The approach's own navaid, tuned early enough that the needles

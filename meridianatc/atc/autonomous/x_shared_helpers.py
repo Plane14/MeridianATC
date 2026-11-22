@@ -51,13 +51,14 @@ class _Shared_helpers:
         stale course.
         """
         route = getattr(getattr(self, "brain", None), "route", None)
+        session = getattr(self, "session", None)
         progress = None
         if route is not None and getattr(state, "has_position", False):
             try:
                 progress = route.progress(
                     state.latitude, state.longitude,
                     float(getattr(state, "ground_speed_kt", 0.0) or 0.0),
-                    hint=getattr(self.session, "route_direct_index", -1))
+                    hint=getattr(session, "route_direct_index", -1))
             except Exception:
                 progress = None
         want = None
@@ -68,7 +69,7 @@ class _Shared_helpers:
             # The route cannot be placed -- the box's plan is the thing
             # steering now, and the check that remains is whether the
             # track is going where the flight goes at all.
-            destination = getattr(self.session, "destination", None)
+            destination = getattr(session, "destination", None)
             if destination is not None \
                     and getattr(state, "has_position", False):
                 try:
@@ -93,6 +94,68 @@ class _Shared_helpers:
         # The bug it is handed to reads magnetic; the bearing is true,
         # like the runway course the go-around converts the same way.
         return self._magnetic(want, state)
+
+    def _own_nav_heading(self, state) -> float:
+        """The magnetic bearing to the fix the active leg runs to, -1 else.
+
+        The same aim the NAV watchdog checks its bearing against, taken
+        as the steering itself: where the box's NAV cannot be trusted
+        with the plan the heading bug carries this instead, refreshed
+        every tick the way the procedure legs are already flown. The
+        destination's bearing answers where the plan cannot be placed
+        at all, for the same reason the fallback keeps it.
+        """
+        route = getattr(getattr(self, "brain", None), "route", None)
+        session = getattr(self, "session", None)
+        want = None
+        if route is not None and getattr(state, "has_position", False):
+            try:
+                progress = route.progress(
+                    state.latitude, state.longitude,
+                    float(getattr(state, "ground_speed_kt", 0.0) or 0.0),
+                    hint=getattr(session, "route_direct_index", -1))
+            except Exception:
+                progress = None
+            if progress is not None:
+                fix = progress.to_fix
+                want = state.bearing_to(fix.lat, fix.lon)
+        if want is None:
+            destination = getattr(session, "destination", None)
+            if destination is not None \
+                    and getattr(state, "has_position", False):
+                try:
+                    want = state.bearing_to(destination.lat,
+                                            destination.lon)
+                except Exception:
+                    want = None
+        if want is None:
+            return -1.0
+        return self._magnetic(want, state)
+
+    def _route_lateral(self, state, now=None) -> float:
+        """The heading the director flies where the route steers, -1 NAV.
+
+        Where the sim's own NAV can be trusted with the plan --
+        ``box_nav`` -- it is armed first and the watchdog's fallback is
+        the heading handed back, so the course wins the engagement the
+        way the climb has always meant it. X-Plane's FMS is not that
+        NAV: a plan it cannot load is dropped without a word and one it
+        can is followed on an active leg it picks itself and will not
+        always sequence, so the steering is the bearing to the active
+        fix on the bug instead. With no fix and no destination to aim
+        at, the heading the wings already have is held -- a course that
+        was never steering is no better than the one the compass reads.
+        """
+        if getattr(self.sim, "box_nav", True):
+            self.director.nav(True)
+            self.state.ap_nav_mode = True
+            return self._nav_fallback_heading(
+                state, now if now is not None else time.monotonic())
+        own = self._own_nav_heading(state)
+        if own >= 0.0:
+            return own
+        hdg = float(getattr(state, "heading_true", 0.0) or 0.0)
+        return self._magnetic(hdg, state) if hdg else -1.0
 
     def _vector_fms(self, state) -> None:
         """A vectored plan, told to the FMS once per heading.
