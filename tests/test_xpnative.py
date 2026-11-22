@@ -11,6 +11,7 @@ from meridianatc.config import Config
 from meridianatc.integrations.xpnative import (
     HELICOPTER_TYPES,
     NativePilot,
+    XPHybridTraffic,
     XPNativeTraffic,
 )
 from meridianatc.sim.state import AircraftState
@@ -103,6 +104,7 @@ def last_write(source, channel, slot):
 
 
 def test_roster_and_control_writes(plugin, link):
+    link.SLOT_KEEP_S = 0.0   # the grace window is covered separately
     assert link.available and link.drawing and link.count == 0
     link.sync([position()])
     eventually(lambda: len(rosters(plugin)) == 1)
@@ -147,6 +149,7 @@ def test_slot_cap_and_over_cap_failure(plugin, link):
 
 
 def test_stable_assignment_and_detach(plugin, link):
+    link.SLOT_KEEP_S = 0.0   # the grace window is covered separately
     link.sync([position("AAA"), position("BBB")])
     eventually(lambda: rosters(plugin))
     slots = {a["id"]: a["slot"] for a in rosters(plugin)[0]["ac"]}
@@ -164,6 +167,51 @@ def test_stable_assignment_and_detach(plugin, link):
     # AAA's old slot can serve the newcomer.
     link.detach()
     eventually(lambda: rosters(plugin)[-1]["ac"] == [])
+
+
+def test_hybrid_queues_the_drawings_while_native_flies(plugin):
+    source = FakeSource()
+    link = XPHybridTraffic(port=plugin.port, source=source, settle_s=0)
+    try:
+        assert link.attach()
+        many = [npos(f"CALL{i:02d}", type="C172") for i in range(21)]
+        link.sync(many)
+        eventually(lambda: rosters(plugin))
+        rostered = len(rosters(plugin)[-1]["ac"])
+        assert rostered == XPNativeTraffic.MAX_SLOTS
+        plugin.status(native=rostered)
+        time.sleep(0.1)
+        link.on_frame()
+        assert link._status.get("native") == rostered
+        # Plane ownership is exclusive: while the roster flies, nothing
+        # sent to the drawings can render, so nothing is sent -- and the
+        # overflow callsigns wait for a slot rather than failing out.
+        sent = len([m for m in plugin.messages if m["t"] == "traffic"])
+        link.sync(many)
+        assert all(not link.failed(p["callsign"]) for p in many)
+        assert len([m for m in plugin.messages
+                    if m["t"] == "traffic"]) == sent
+        # Once the roster lets go the drawings take over again.
+        link._status["native"] = 0
+        link.sync(many)
+        eventually(lambda: any(m["t"] == "traffic" and m["ac"]
+                               for m in plugin.messages[sent:]))
+    finally:
+        link.detach()
+
+
+def test_departed_callsign_keeps_its_slot(plugin, link):
+    link.sync([position()])
+    eventually(lambda: rosters(plugin))
+    # A callsign that stops being offered keeps its plane for the grace
+    # window, so a feed's quiet spell does not blink it out and back in.
+    link.sync([])
+    assert any(a["id"] == "DLH4AB" for a in rosters(plugin)[-1]["ac"])
+    # Past the window the slot is freed and the levers go neutral.
+    link._departed["DLH4AB"] = 0.0
+    link.sync([])
+    eventually(lambda: rosters(plugin)[-1]["ac"] == [])
+    assert last_write(link.source, "engine_throttle_request", 1) == 0.0
 
 
 def test_pilot_laws_hold_and_steer():

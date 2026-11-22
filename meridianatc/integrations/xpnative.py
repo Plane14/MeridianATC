@@ -335,6 +335,11 @@ class XPNativeTraffic(XPlaneTraffic):
 
     # X-Plane has 19 usable AI slots (index 0 is the pilot's own plane).
     MAX_SLOTS = 19
+    # A callsign that drops out of the positions stream keeps its plane
+    # this long before the slot is freed: a live feed's quiet spell
+    # should not blink a drawn aeroplane out and back in. The slot still
+    # answers the roster, so the plane holds its last state in the sim.
+    SLOT_KEEP_S = 45.0
 
     def __init__(self, *args, source=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -346,6 +351,7 @@ class XPNativeTraffic(XPlaneTraffic):
         self._roster = ()         # the (slot, id, type, pos) tuples last sent
         self._roster_at = 0.0
         self._assigned_at = {}    # id -> when its slot was claimed
+        self._departed = {}       # id -> when it stopped being offered
         self._confirmed = set()   # ids the plugin's status reports as planes
 
     @property
@@ -432,6 +438,7 @@ class XPNativeTraffic(XPlaneTraffic):
                 if ident in wanted:
                     continue
                 wanted[ident] = self._wanted.get(ident, now)
+                self._departed.pop(ident, None)
                 slot = self._slots.get(ident)
                 if slot is None and len(taken) < self.MAX_SLOTS:
                     slot = next(s for s in range(1, self.MAX_SLOTS + 1)
@@ -453,15 +460,29 @@ class XPNativeTraffic(XPlaneTraffic):
                 position["_slot"] = slot
             roster.sort()
 
-            # Free the slots nobody claimed this tick, and let their
-            # levers go neutral so a still-modelled plane does not fly
-            # off on the last demand.
+            # Free the slots nobody claimed this tick -- but not at
+            # once: one that merely stopped being offered keeps its
+            # plane for SLOT_KEEP_S, so a feed's quiet spell does not
+            # blink it out and back in. Past the grace, let the levers
+            # go neutral so a still-modelled plane does not fly off on
+            # the last demand.
             self._refresh_confirmed()
+            previous = {r[1]: r for r in self._roster}
             for ident in [i for i in self._slots
                           if not any(r[1] == i for r in roster)]:
+                gone = self._departed.setdefault(ident, now)
+                if now - gone < self.SLOT_KEEP_S and ident in previous:
+                    # Keep the slot on the roster with its last position;
+                    # the plugin only re-seeds a changed assignment, so
+                    # the plane simply holds where it was left.
+                    keep = previous[ident]
+                    roster.append(keep)
+                    taken.add(keep[0])
+                    continue
                 slot = self._slots.pop(ident)
                 self._pilots.pop(ident, None)
                 self._assigned_at.pop(ident, None)
+                self._departed.pop(ident, None)
                 if self.source is not None:
                     for chan in ("yoke_pitch_ratio", "yoke_roll_ratio",
                                  "yoke_heading_ratio",
@@ -563,6 +584,11 @@ class XPHybridTraffic(XPNativeTraffic):
             return time.monotonic() - asked >= self.ANSWER_WITHIN_S
         if callsign in self._unmatched:
             return True
+        if self._status.get("native") and callsign not in self._slots:
+            # Queued behind the native roster: while the slots are ours
+            # the drawings cannot render at all, so waiting for a seat
+            # is no failure of the callsign's own.
+            return False
         return (not self.has(callsign)
                 and time.monotonic() - asked >= self.ANSWER_WITHIN_S)
 
@@ -614,4 +640,17 @@ class XPHybridTraffic(XPNativeTraffic):
             native_ids = {c for c in self._slots if self._is_native(c)}
             csl = [p for p in positions
                    if p.get("callsign") not in native_ids]
+            # While the plugin flies a native roster the drawings cannot
+            # render -- plane ownership is exclusive. Send nothing, and
+            # keep the unslotted callsigns asked-for so they queue for
+            # a slot instead of timing out as failures.
+            if self._status.get("native"):
+                now = time.monotonic()
+                for position in csl:
+                    ident = _text(position.get("callsign"), 64, True)
+                    if ident:
+                        # Refresh the ask-time: the drawing window starts
+                        # when a packet can actually reach the planes.
+                        self._wanted[ident] = now
+                return
             self._sync_csl(csl, time.monotonic())

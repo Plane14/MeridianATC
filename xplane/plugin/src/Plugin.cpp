@@ -472,9 +472,13 @@ void EnableNative() {
     nativeAcquired = XPLMAcquirePlanes(nullptr, nullptr, nullptr) != 0;
     nativeBlocked = !nativeAcquired;
     // One failure must not block the mode forever: the next empty roster
-    // or session reset clears the flag and lets it retry.
-    if (nativeBlocked)
+    // or session reset clears the flag and lets it retry. While it lasts
+    // the CSL drawings still fly, so take the override back rather than
+    // black the whole renderer out for want of the slots.
+    if (nativeBlocked) {
         Log("AI planes unavailable -- another plugin owns them");
+        if (config.tcas && !xpmpOwned) TCAS();
+    }
 }
 void SeedPosition(int slot, const NativeAssign& assign) {
     // A newly claimed slot starts where the controller put the flight,
@@ -536,7 +540,11 @@ void ApplyRoster(const std::vector<NativeAssign>& roster) {
             if (ovrAuto) XPLMSetDatavi(ovrAuto, &zero, slot, 1);
         }
     nativeSlots = std::move(next);
-    XPLMSetActiveAircraftCount(1 + high);
+    // Every slot stays alive: the ones the roster did not claim were
+    // handed back above (ovrAuto 0), and the simulator's own AI fills
+    // them with its native traffic rather than leaving the sky empty.
+    // ``high`` only matters for the roster's half of the count.
+    XPLMSetActiveAircraftCount(1 + std::max(high, 19));
 }
 
 // The follow-me car is no aircraft: an instanced object placed on the
