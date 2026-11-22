@@ -64,7 +64,13 @@ BUGS = {
 }
 COMMANDS = {
     "AUTOPILOT_ON": "sim/autopilot/servos_on",
-    "AUTOPILOT_OFF": "sim/autopilot/servos_off_any",
+    # The full-disconnect, not just the servos: a mode left armed --
+    # the TO/GA press's is the live example -- re-engages the servos
+    # the next frame, and "autopilot off" that reads back `servos_on`
+    # still set is the second hand on the pedals nobody asked for.
+    # ``fdir_servos_down_any`` is the command the disconnect button
+    # itself sends: flight director, servos and armed modes all down.
+    "AUTOPILOT_OFF": "sim/autopilot/fdir_servos_down_any",
     "AP_MASTER": "sim/autopilot/servos_toggle",
     "TOGGLE_FLIGHT_DIRECTOR": "sim/autopilot/fdir_toggle",
     "ENGINE_AUTO_START": "sim/operation/auto_start",

@@ -60,7 +60,7 @@ def test_event_datarefs(xp, event, value, path, expected):
 
 @pytest.mark.parametrize("event,command", [
     ("AUTOPILOT_ON", "sim/autopilot/servos_on"),
-    ("AUTOPILOT_OFF", "sim/autopilot/servos_off_any"),
+    ("AUTOPILOT_OFF", "sim/autopilot/fdir_servos_down_any"),
     ("GEAR_UP", "sim/flight_controls/landing_gear_up"),
     ("GEAR_DOWN", "sim/flight_controls/landing_gear_down"),
     ("ENGINE_AUTO_START", "sim/operation/auto_start"),
