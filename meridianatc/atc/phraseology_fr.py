@@ -582,6 +582,15 @@ class FrenchPhraseology:
                      "annulez le décollage, je répète annulez le décollage",
                      reason) + "."
 
+    def cancel_approach_clearance(self, aircraft: Aircraft,
+                                  heading: float | None = None) -> str:
+        """« annulez l'approche » -- l'autorisation d'approche retirée
+        par le radar (OACI : la forme est la même). UNVERIFIED: la forme."""
+        parts = [aircraft.spoken(True), "annulez l'approche"]
+        if heading is not None:
+            parts.append(f"prenez le cap {self.hdg(heading)}")
+        return _join(*parts) + "."
+
     def go_around(self, aircraft: Aircraft, reason: str = "",
                   instruction: str = "") -> str:
         parts = [aircraft.spoken(True), "remettez les gaz"]

@@ -368,6 +368,8 @@ SPANISH = Phrasebook(
         # UNVERIFIED: la orden cancelando el despegue.
         "cancel_takeoff": "cancele el despegue, repito cancele el despegue",
         "traffic_on_the_runway": "tráfico en la pista",
+        # UNVERIFIED: la orden retirando la aproximación.
+        "cancel_approach_clearance": "cancele la aproximación",
         # UNVERIFIED.
         "flight_plan_relayed": "recibido, cerraré su plan de vuelo",
         # fragments passed back in
@@ -734,6 +736,8 @@ GERMAN = Phrasebook(
         # UNVERIFIED: der Ruf, der den Start abbricht.
         "cancel_takeoff": "brechen Sie den Start ab, ich wiederhole brechen Sie den Start ab",
         "traffic_on_the_runway": "Verkehr auf der Piste",
+        # UNVERIFIED: der Ruf, der die Anflugfreigabe zurücknimmt.
+        "cancel_approach_clearance": "Anflugfreigabe aufgehoben",
         # UNVERIFIED.
         "flight_plan_relayed": "verstanden, ich schließe Ihren Flugplan",
         # fragments passed back in
@@ -1096,6 +1100,8 @@ ITALIAN = Phrasebook(
         # UNVERIFIED: il richiamo che annulla il decollo.
         "cancel_takeoff": "annullate il decollo, ripeto annullate il decollo",
         "traffic_on_the_runway": "traffico sulla pista",
+        # UNVERIFIED: il richiamo che revoca l'avvicinamento.
+        "cancel_approach_clearance": "annullato l'avvicinamento",
         # UNVERIFIED.
         "flight_plan_relayed": "ricevuto, chiudo il vostro piano di volo",
         # fragments passed back in
@@ -1459,6 +1465,8 @@ PORTUGUESE = Phrasebook(
         # UNVERIFIED: a chamada que cancela a descolagem.
         "cancel_takeoff": "cancele a descolagem, repito cancele a descolagem",
         "traffic_on_the_runway": "tráfego na pista",
+        # UNVERIFIED: a chamada que cancela a aproximação.
+        "cancel_approach_clearance": "cancele a aproximação",
         # UNVERIFIED.
         "flight_plan_relayed": "recebido, vou fechar o seu plano de voo",
         # fragments passed back in

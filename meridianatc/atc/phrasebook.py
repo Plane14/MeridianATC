@@ -189,6 +189,7 @@ PHRASE_KEYS: tuple[str, ...] = (
     # delays
     "orbit", "report_complete", "hold_at", "circuit_busy", "will_call_you",
     "leave_hold", "expedite", "cancel_takeoff", "traffic_on_the_runway",
+    "cancel_approach_clearance",
     # a flight plan closed through a controller
     "flight_plan_relayed",
     # general
@@ -736,6 +737,15 @@ class LocalisedPhraseology:
         """The tower's own reject (see :meth:`Phraseology.cancel_takeoff`)."""
         return _join(aircraft.spoken(True), self._("cancel_takeoff"),
                      reason) + "."
+
+    def cancel_approach_clearance(self, aircraft: Aircraft,
+                                  heading: float | None = None) -> str:
+        """See :meth:`Phraseology.cancel_approach_clearance`."""
+        parts = [aircraft.spoken(True), self._("cancel_approach_clearance")]
+        if heading is not None:
+            parts.append(self._("fly_heading").format(
+                heading=self.hdg(heading)))
+        return _join(*parts) + "."
 
     def go_around(self, aircraft: Aircraft, reason: str = "",
                   instruction: str = "") -> str:

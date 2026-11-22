@@ -1684,6 +1684,153 @@ def test_a_cleared_arrival_on_a_clear_runway_lands_on():
     brain.order_go_around.assert_not_called()
 
 
+def _cancel_approach_watch(monkeypatch, final):
+    from meridianatc.atc import arrival
+    monkeypatch.setattr(arrival, "final_for", lambda *a, **k: final)
+    watch = arrival.ArrivalWatch.__new__(arrival.ArrivalWatch)
+    watch.navdb = SimpleNamespace()
+    watch.brain = SimpleNamespace(
+        approach_choice=lambda *a, **k: SimpleNamespace(
+            kind="ILS", approach=SimpleNamespace(runway="17",
+                                                 name="ILS Z 17"),
+            runway="17"))
+    watch._weather = Mock(return_value=None)
+    watch._on_a_star_to_the_final = Mock(return_value=None)
+    return watch
+
+
+def _cleared_arrival(**kw):
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession, Phase
+    from meridianatc.atc.speech import parse_callsign
+    session = FlightSession(Aircraft(parse_callsign("N45XS")))
+    session.ifr = True
+    session.phase = Phase.APPROACH
+    session.arrival_runway = "17"
+    session.advisories.add("arrival:cleared_approach")
+    for key, value in kw.items():
+        setattr(session, key, value)
+    return session
+
+
+def test_radar_cancels_the_approach_of_a_flight_off_the_final(monkeypatch):
+    """Cleared for the approach and then off the final it was cleared
+    to: radar pulls the clearance and vectors it again -- "cancel
+    approach clearance, fly heading ...", the call the real book keeps
+    for the position that issued it."""
+    from meridianatc.atc.final import Final
+    from meridianatc.atc.phraseology import Phraseology
+    from meridianatc.navdata.build import project
+    final = Final("17", 42.0, -8.0, 170.0)
+    watch = _cancel_approach_watch(monkeypatch, final)
+    session = _cleared_arrival()
+    # Five miles out but seventy degrees off the extended centreline:
+    # whatever happened, this is not the final it was cleared to.
+    lat, lon = project(final.lat, final.lon,
+                       (final.course + 180.0 + 70.0) % 360.0, 5.0)
+    state = SimpleNamespace(
+        latitude=lat, longitude=lon, altitude_ft=3000.0,
+        ground_speed_kt=130.0, heading_true=170.0,
+        has_position=True)
+    from meridianatc.navdata.db import Station
+    reply = watch._cancel_approach(
+        session, Station("LECO", "APP", 120.2, "Approach"), state,
+        SimpleNamespace(ident="LECO"), lambda ident: None,
+        Phraseology())
+    assert reply is not None
+    assert "cancel approach clearance" in reply.text
+    assert "arrival:cleared_approach" not in session.advisories
+    assert reply.instruction is not None
+    assert "heading" in reply.instruction.values
+
+
+def test_the_approach_stands_while_the_flight_is_on_it(monkeypatch):
+    """Inside the cone the clearance still fits: nobody pulls it."""
+    from meridianatc.atc.final import Final
+    from meridianatc.atc.phraseology import Phraseology
+    from meridianatc.navdata.build import project
+    final = Final("17", 42.0, -8.0, 170.0)
+    watch = _cancel_approach_watch(monkeypatch, final)
+    session = _cleared_arrival()
+    lat, lon = project(final.lat, final.lon,
+                       (final.course + 180.0) % 360.0, 8.0)
+    state = SimpleNamespace(
+        latitude=lat, longitude=lon, altitude_ft=2400.0,
+        ground_speed_kt=130.0, heading_true=170.0,
+        has_position=True)
+    assert watch._cancel_approach(
+        session, SimpleNamespace(ident="LECO", position="APP"), state,
+        SimpleNamespace(ident="LECO"), lambda ident: None,
+        Phraseology()) is None
+    assert "arrival:cleared_approach" in session.advisories
+
+
+def test_the_towers_flight_is_not_the_radars_to_cancel(monkeypatch):
+    """Handed to the tower, off the final or not, the word that ends
+    the approach is the tower's "go around" -- radar has no call left
+    to make on it."""
+    from meridianatc.atc.final import Final
+    from meridianatc.atc.phraseology import Phraseology
+    from meridianatc.navdata.build import project
+    final = Final("17", 42.0, -8.0, 170.0)
+    watch = _cancel_approach_watch(monkeypatch, final)
+    session = _cleared_arrival()
+    session.advisories.add("handoff:tower")
+    lat, lon = project(final.lat, final.lon,
+                       (final.course + 180.0 + 80.0) % 360.0, 4.0)
+    state = SimpleNamespace(
+        latitude=lat, longitude=lon, altitude_ft=900.0,
+        ground_speed_kt=110.0, heading_true=170.0,
+        has_position=True)
+    assert watch._cancel_approach(
+        session, SimpleNamespace(ident="LECO", position="APP"), state,
+        SimpleNamespace(ident="LECO"), lambda ident: None,
+        Phraseology()) is None
+    assert "arrival:cleared_approach" in session.advisories
+
+
+def test_a_going_around_flight_keeps_no_cancel_to_hear(monkeypatch):
+    """The missed approach ends the clearance by itself; nothing is
+    cancelled over the top of it."""
+    from meridianatc.atc.final import Final
+    from meridianatc.atc.phraseology import Phraseology
+    from meridianatc.navdata.build import project
+    final = Final("17", 42.0, -8.0, 170.0)
+    watch = _cancel_approach_watch(monkeypatch, final)
+    session = _cleared_arrival(going_around=True)
+    lat, lon = project(final.lat, final.lon,
+                       (final.course + 180.0 + 90.0) % 360.0, 3.0)
+    state = SimpleNamespace(
+        latitude=lat, longitude=lon, altitude_ft=1600.0,
+        ground_speed_kt=140.0, heading_true=170.0,
+        has_position=True)
+    assert watch._cancel_approach(
+        session, SimpleNamespace(ident="LECO", position="APP"), state,
+        SimpleNamespace(ident="LECO"), lambda ident: None,
+        Phraseology()) is None
+
+
+def test_cancel_approach_clearance_is_said_in_every_language():
+    """The same call the world over -- the books keep it plain."""
+    from meridianatc.atc.phrasebook import LocalisedPhraseology
+    from meridianatc.atc.phrasebooks import BOOKS
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.speech import parse_callsign
+    aircraft = Aircraft(parse_callsign("N45XS"))
+    assert "cancel approach clearance" in \
+        Phraseology().cancel_approach_clearance(aircraft, 270)
+    assert "fly heading" in \
+        Phraseology().cancel_approach_clearance(aircraft, 270)
+    from meridianatc.atc.phraseology_fr import FrenchPhraseology
+    words = FrenchPhraseology().cancel_approach_clearance(aircraft, 270)
+    assert "annulez" in words
+    for language in ("es", "de", "it", "pt"):
+        words = LocalisedPhraseology(
+            BOOKS[language]).cancel_approach_clearance(aircraft, 270)
+        assert "cancel approach clearance" not in words
+        assert words.startswith("November")
+
+
 # -- stands for the kind of flight ------------------------------------------------
 
 def _gate_and_ramp_layout():

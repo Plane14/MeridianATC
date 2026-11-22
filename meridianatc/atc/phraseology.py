@@ -874,6 +874,16 @@ class Phraseology:
             words = "cancel takeoff, I say again cancel takeoff"
         return _join(aircraft.spoken(True), words, reason) + "."
 
+    def cancel_approach_clearance(self, aircraft: Aircraft,
+                                  heading: float | None = None) -> str:
+        """Radar taking the clearance back (JO 7110.65 4-8-1, AIM
+        5-4-7): "CANCEL APPROACH CLEARANCE" -- the same words both sides
+        of the ocean -- and the heading to fly while it is re-sequenced."""
+        parts = [aircraft.spoken(True), "cancel approach clearance"]
+        if heading is not None:
+            parts.append(f"fly heading {self.hdg(heading)}")
+        return _join(*parts) + "."
+
     def go_around(self, aircraft: Aircraft, reason: str = "",
                   instruction: str = "") -> str:
         parts = [aircraft.spoken(True), "go around"]

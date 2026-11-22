@@ -387,8 +387,10 @@ class ArrivalWatch:
                 # the hold's level, no vector, no clearance.
                 return held
         return (
-            self._approach_clearance(session, station, state, destination,
-                                     to_run, weather_for, p)
+            self._cancel_approach(session, station, state, destination,
+                                  weather_for, p)
+            or self._approach_clearance(session, station, state, destination,
+                                        to_run, weather_for, p)
             or self._radar_vectors(session, station, state, destination,
                                    to_run, weather_for, p)
             or self._speed_control(session, station, state, destination,
@@ -402,6 +404,56 @@ class ArrivalWatch:
             or self._expect_lower(session, station, state, destination,
                                   to_run, p)
         )
+
+    def _cancel_approach(self, session, station, state, destination,
+                         weather_for, p) -> Reply | None:
+        """"Cancel approach clearance": radar taking the clearance back.
+
+        The call JO 7110.65 4-8-1 and AIM 5-4-7 give the radar position
+        for a clearance that no longer fits: a flight cleared for the
+        approach that leaves the final it was cleared to -- the
+        intercept that was never made, the localizer drifted off -- is
+        vectored again, and the clearance is pulled first. It is said
+        only while the flight is still the radar's to re-sequence: once
+        the tower has it, the tower's own "go around" is the word that
+        ends the approach, and the line where this is wired means a
+        tower station can never say it.
+        """
+        if CLEARED_APPROACH_KEY not in session.advisories:
+            return None
+        if "handoff:tower" in session.advisories:
+            return None
+        if session.phase != Phase.APPROACH or session.going_around:
+            return None
+        runway = session.arrival_runway
+        final = final_for(self.navdb, destination.ident, runway) if runway \
+            else None
+        if final is None or final.offset(state) <= APPROACH_CONE_DEG:
+            return None
+        # A flight still inbound to the STAR's join is approaching the
+        # cone, not leaving the final: its clearance still fits.
+        if self._on_a_star_to_the_final(destination, final, state) \
+                is not None:
+            return None
+        speed = float(getattr(state, "ground_speed_kt", 0.0) or 0.0)
+        heading = float(getattr(state, "heading_true", 0.0) or 0.0)
+        leg = vec.vector(final, state.latitude, state.longitude,
+                         speed_kt=speed, heading_true=heading)
+        wanted = self._magnetic(leg.heading_true, state)
+        session.advisories.discard(CLEARED_APPROACH_KEY)
+        session.joined_final = False
+        session.vector_leg, session.vector_side, session.vector_at = \
+            leg.leg, leg.side, time.monotonic()
+        decision("approach_clearance_cancelled",
+                 airport=destination.ident, runway=runway,
+                 offset_deg=round(final.offset(state)),
+                 leg=leg.leg, heading=round(wanted))
+        values = {"heading": int(round(wanted)) or 360}
+        text = p.cancel_approach_clearance(session.aircraft,
+                                           values["heading"])
+        instruction = session.remember(Instruction(
+            "heading", station_key(station), text, values))
+        return Reply(text, station, instruction=instruction)
 
     def _expect_lower(self, session, station, state, destination, to_run,
                       p) -> Reply | None:
