@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <string>
 
