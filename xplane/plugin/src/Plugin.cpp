@@ -425,11 +425,6 @@ std::string ModelFor(const std::string& type, const std::string& op) {
             if (auto p = pick(code); !p.empty()) return p.string();
     // 2. The default fleet's filenames, for a type index the scan found no
     //    _ICAO for and for an install without the default fleet's _ICAO.
-    //    The rotorcraft go first: with no _ICAO anywhere an EC35 still
-    //    gets a helicopter and not the 737 the class stand-in names.
-    if (heli)
-        for (const char* needle : {"S-76", "R22", "ALIA"})
-            if (auto p = FindAcf(needle); !p.empty()) return p.string();
     static const std::pair<const char*, const char*> table[] = {
         {"A33", "A330"}, {"MD8", "MD-82"},
         {"SR2", "SR22"}, {"SF5", "SF50"},
@@ -446,6 +441,11 @@ std::string ModelFor(const std::string& type, const std::string& op) {
     };
     for (const auto& [key, needle] : table)
         if (type.find(key) == 0)
+            if (auto p = FindAcf(needle); !p.empty()) return p.string();
+    // A rotorcraft the table did not name still gets a helicopter -- never
+    // the fixed-wing stand-in below, whose controls it could not fly.
+    if (heli)
+        for (const char* needle : {"S-76", "R22", "ALIA"})
             if (auto p = FindAcf(needle); !p.empty()) return p.string();
     // Stand-in by class: anything airliner-sized wears the biggest jet the
     // install has, light turboprops a turboprop, everything else the
