@@ -117,6 +117,9 @@ class PilotBook:
     # back with the line-up and takeoff clearances. UNVERIFIED in every
     # language but English.
     at_intersection: str = "at taxiway {taxiway}"
+    # The answer "say your intentions" gets when the plan is the approach
+    # it was cleared for: "continuing approach runway 21".
+    continuing_approach: str = "continuing approach runway {runway}"
 
 
 ENGLISH = PilotBook(
@@ -206,6 +209,7 @@ FRENCH = PilotBook(
     at_intersection="à l'intersection {taxiway}",
     pattern_entry="{leg} main {direction} piste {runway}",
     on_leg="en {leg}",
+    continuing_approach="poursuivons l'approche piste {runway}",
     runway_vacated="piste dégagée",
     following="numéro deux, derrière {traffic}",
     option="autorisé option piste {runway}",
@@ -260,6 +264,7 @@ SPANISH = PilotBook(
     at_intersection="en {taxiway}",
     pattern_entry="{leg} por la {direction} pista {runway}",
     on_leg="en {leg}",
+    continuing_approach="continuamos aproximación pista {runway}",
     following="número dos, detrás de {traffic}",
     option="autorizada la opción pista {runway}",
     hold="espera sobre {fix}, {altitude}",
@@ -313,6 +318,7 @@ GERMAN = PilotBook(
     at_intersection="an {taxiway}",
     pattern_entry="{leg} {direction} Piste {runway}",
     on_leg="im {leg}",
+    continuing_approach="setzen den Anflug fort Piste {runway}",
     following="Nummer zwei, hinter {traffic}",
     option="Option genehmigt Piste {runway}",
     hold="Warteverfahren über {fix}, {altitude}",
@@ -366,6 +372,7 @@ ITALIAN = PilotBook(
     at_intersection="al raccordo {taxiway}",
     pattern_entry="{leg} {direction} pista {runway}",
     on_leg="in {leg}",
+    continuing_approach="continuiamo l'avvicinamento pista {runway}",
     following="numero due, dietro {traffic}",
     option="autorizzato all'opzione pista {runway}",
     hold="attesa su {fix}, {altitude}",
@@ -419,6 +426,7 @@ PORTUGUESE = PilotBook(
     at_intersection="na interseção {taxiway}",
     pattern_entry="{leg} pela {direction} pista {runway}",
     on_leg="na {leg}",
+    continuing_approach="continuamos aproximação pista {runway}",
     following="número dois, atrás de {traffic}",
     option="autorizada a opção pista {runway}",
     hold="espera sobre {fix}, {altitude}",

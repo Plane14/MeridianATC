@@ -554,6 +554,12 @@ class FlightSession:
     # follows answers the offer; silence or "negative" lets it lapse.
     assist_offered: str = ""
     assist_offered_at: float = 0.0
+    # The last "verify altitude/heading/speed" the deviation watch put on
+    # the frequency -- which kind, and when. A query is not a clearance, so
+    # nothing is owed back in items; the crew answers it with a report and
+    # this stamp is how the answer is owed at all.
+    deviation_query: str = ""
+    deviation_query_at: float = 0.0
     cleared_takeoff: bool = False
     # The tower's "cancel takeoff clearance" (JO 7110.65 3-9-11), said for
     # safety with somebody on the runway: set when the call was made, held

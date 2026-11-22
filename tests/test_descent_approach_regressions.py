@@ -211,3 +211,223 @@ def test_a_vector_that_cannot_intercept_is_released():
                              track=90.0, side_nm=1.5)
     assert fo._join_final(state, None) is False
     assert fo.session.assigned_heading is None
+
+
+def _engine_for_reports():
+    """An engine answered the tower's verify calls: same bones as the
+    check-in fixture, with the session carrying the flags "say your
+    intentions" and "verify ..." read off."""
+    from meridianatc.atc.phraseology import Phraseology
+    from meridianatc.engine.core import Engine
+    eng = Engine.__new__(Engine)
+    eng.session = SimpleNamespace(
+        assigned_altitude_ft=4000.0, assigned_heading=2.0,
+        assigned_speed_kt=90.0, pending=None, handoff_pending=None,
+        going_around=False, cleared_landing=False, arrival_runway="03",
+        aircraft=SimpleNamespace(
+            spoken=lambda abbreviated=False: "x-ray golf sierra",
+            kept_short=False),
+        phase=None)
+    eng.station = SimpleNamespace(
+        ident="LECO", callsign_in=lambda spoken: "Tower")
+    eng._current_station = lambda: eng.station
+    eng._language_for = lambda ident, last: "en"
+    eng.brain = SimpleNamespace(
+        for_station=lambda station, spoken: Phraseology())
+    eng.last_language = "en"
+    return eng
+
+
+def test_verify_altitude_reports_the_level_flown_and_the_fix():
+    """1000 low and still coming down, the answer is not "four thousand"
+    -- it is what the needle shows plus the descent toward the cleared
+    level."""
+    eng = _engine_for_reports()
+    eng.state = SimpleNamespace(
+        vertical_speed_fpm=-800.0, indicated_altitude_ft=3200.0,
+        altitude_ft=3100.0)
+    text, why = eng.first_officer_call("verify_altitude")
+    assert why == ""
+    assert "three thousand" in text and "four thousand" in text
+
+
+def test_verify_altitude_level_reports_the_level():
+    eng = _engine_for_reports()
+    eng.state = SimpleNamespace(
+        vertical_speed_fpm=0.0, indicated_altitude_ft=2900.0,
+        altitude_ft=2800.0)
+    text, why = eng.first_officer_call("verify_altitude")
+    assert why == ""
+    assert "two thousand nine hundred" in text.replace("niner", "nine")
+
+
+def test_verify_heading_and_speed_report_the_assigned_values():
+    eng = _engine_for_reports()
+    eng.state = SimpleNamespace(heading_magnetic=40.0,
+                                indicated_airspeed_kt=110.0)
+    text, _ = eng.first_officer_call("verify_heading")
+    assert "zero zero two" in text or "heading" in text.lower()
+    text, _ = eng.first_officer_call("verify_speed")
+    assert "niner zero" in text or "90" in text
+
+
+def test_intentions_on_a_cleared_landing_names_the_runway():
+    eng = _engine_for_reports()
+    eng.session.cleared_landing = True
+    eng.state = SimpleNamespace(vertical_speed_fpm=-500.0)
+    text, why = eng.first_officer_call("intentions")
+    assert why == ""
+    assert "land" in text.lower() and "three" in text
+
+
+def test_intentions_mid_vector_names_the_vector():
+    eng = _engine_for_reports()
+    eng.state = SimpleNamespace(vertical_speed_fpm=-600.0)
+    text, why = eng.first_officer_call("intentions")
+    assert why == ""
+    assert "zero zero two" in text
+    assert "four thousand" in text
+
+
+def test_the_deviation_watch_stamps_the_query_for_the_crew():
+    """A "verify altitude" that nobody heard was a tree falling in the
+    forest: the call is stamped on the session so the crew's ear --
+    _answer_the_queries -- has something to answer."""
+    from meridianatc.atc.controller import ControllerBrain
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.atc.watch import DeviationAssistWatch
+    from meridianatc.navdata.db import Station
+    from meridianatc.sim.state import AircraftState
+
+    brain = ControllerBrain(Mock(), Phraseology())
+    brain.staffed = lambda station: True
+    watch = DeviationAssistWatch(Mock(), brain)
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    session.assigned_altitude_ft = 5000.0
+    station = Station("TEST", "APP", 124.5, "Approach")
+    session.establish(station)
+    state = AircraftState(altitude_ft=4000.0, on_ground=False,
+                          latitude=40.0, longitude=-75.0)
+    watch.look(session, station, state)
+    watch._seen["altitude"][0] -= watch.SETTLE_S + 1.0
+    reply = watch.look(session, station, state)
+    assert reply is not None and "verify" in reply.text.lower()
+    assert session.deviation_query == "altitude"
+    assert session.deviation_query_at > 0.0
+
+
+def _fo_for_answers():
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.state = AutonomousState()
+    fo.state.last_radio_at = 0.0
+    fo._fo_say = Mock(return_value=True)
+    return fo
+
+
+def test_the_crew_answers_the_deviation_query():
+    """The stamp the watch left is heard, answered once, and spent -- a
+    second call of the same kind is a new stamp, not a repeat."""
+    import time as _t
+    fo = _fo_for_answers()
+    now = _t.monotonic()
+    session = SimpleNamespace(
+        deviation_query="altitude", deviation_query_at=now,
+        assist_offered_at=0.0,
+        assistance_offered=lambda what="": False)
+    state = SimpleNamespace(on_ground=False)
+    fo._answer_the_queries(state, session, now)
+    fo._fo_say.assert_called_once_with("verify_altitude")
+    assert session.deviation_query == ""
+    # The same stamp back on the session is the call already answered,
+    # not a new question.
+    session.deviation_query = "altitude"
+    fo._fo_say.reset_mock()
+    fo._answer_the_queries(state, session, now + 5.0)
+    fo._fo_say.assert_not_called()
+    # A fresh stamp -- the watch called it again -- is a new question.
+    session.deviation_query_at = now + 5.0
+    fo._answer_the_queries(state, session, now + 6.0)
+    fo._fo_say.assert_called_once_with("verify_altitude")
+
+
+def test_the_crew_answers_say_your_intentions():
+    import time as _t
+    fo = _fo_for_answers()
+    now = _t.monotonic()
+    session = SimpleNamespace(
+        deviation_query="", deviation_query_at=0.0,
+        assist_offered="flight", assist_offered_at=now,
+        assistance_offered=lambda what="": what == "flight",
+        answer_assistance=Mock(return_value="flight"))
+    state = SimpleNamespace(on_ground=False)
+    fo._answer_the_queries(state, session, now)
+    fo._fo_say.assert_called_once_with("intentions")
+    session.answer_assistance.assert_called_once()
+
+
+def _runway_watch_fixture():
+    """A tower mid-change 03 -> 21, and a flight cleared to land 03."""
+    from meridianatc.atc.controller import Reply
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.atc.watch import RunwayWatch
+    from meridianatc.navdata.db import Station
+
+    def go_around(session, station, weather, p, airport, told=False):
+        session.cleared_landing = False
+        session.going_around = True
+        return Reply("go around, fly runway heading, climb to "
+                     "four thousand", station)
+
+    brain = SimpleNamespace(
+        realism=SimpleNamespace(runway_change=True),
+        staffed=lambda station: True,
+        arrival_runway=lambda airport, weather: "21",
+        departure_runway=lambda airport, weather: "21",
+        runway_changes={"TEST": ("03", "21")},
+        for_station=lambda station, language: Phraseology(),
+        station_name=lambda station, p: "Tower",
+        go_around=go_around)
+    airport = SimpleNamespace(ident="TEST")
+    navdb = SimpleNamespace(airport=lambda ident: airport)
+    weather = SimpleNamespace(qnh_hpa=1013.0, altimeter_inhg=29.92)
+    watch = RunwayWatch(navdb, brain,
+                        weather_for=lambda ident: weather)
+    station = Station("TEST", "TWR", 118.1, "Tower")
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    session.establish(station)
+    return watch, session, station
+
+
+def test_a_cleared_landing_is_sent_round_to_the_new_runway():
+    """Cleared to land 03 when the tower's broadcast makes 21 the runway
+    in use: the strip the clearance was written for no longer passes the
+    wind, so the flight is sent around and worked back for 21 -- the
+    call the tower owes the last arrival of the old direction."""
+    watch, session, station = _runway_watch_fixture()
+    session.arrival_runway = "03"
+    session.cleared_landing = True
+    state = SimpleNamespace(on_ground=False)
+    reply = watch.look(session, station, state)
+    assert reply is not None
+    assert "runway in use two one" in reply.text.lower() \
+        or "runway two one" in reply.text.lower()
+    assert "go around" in reply.text.lower()
+    assert not session.cleared_landing
+    assert session.going_around
+    assert session.arrival_runway == "21"
+
+
+def test_a_lined_up_departure_keeps_the_runway_it_was_given():
+    watch, session, station = _runway_watch_fixture()
+    session.departure_runway = "03"
+    session.lined_up = True
+    state = SimpleNamespace(on_ground=True)
+    reply = watch.look(session, station, state)
+    assert reply is not None
+    assert "go around" not in reply.text.lower()
+    assert session.departure_runway == "03"

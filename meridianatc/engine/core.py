@@ -844,6 +844,59 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         if kind == "going_around":
             return speech.going_around(
                 aircraft, session.assigned_altitude_ft or 0.0), ""
+        if kind == "verify_altitude":
+            alt = getattr(self.state, "indicated_altitude_ft", 0.0) \
+                or getattr(self.state, "altitude_ft", 0.0) or 0.0
+            vs = getattr(self.state, "vertical_speed_fpm", 0.0) or 0.0
+            assigned = session.assigned_altitude_ft or 0.0
+            if vs >= 300.0 and assigned:
+                body = f"{p.alt(alt)}, " \
+                    + speech.book.climb.format(altitude=p.alt(assigned))
+            elif vs <= -300.0 and assigned:
+                body = f"{p.alt(alt)}, " \
+                    + speech.book.descend.format(altitude=p.alt(assigned))
+            elif alt:
+                body = p.alt(alt)
+            else:
+                return "", "no altitude"
+            return speech.report(aircraft, body), ""
+        if kind == "verify_heading":
+            hdg = session.assigned_heading \
+                or getattr(self.state, "heading_magnetic", 0.0) \
+                or getattr(self.state, "heading_true", 0.0) or 0.0
+            if not hdg:
+                return "", "no heading"
+            return speech.heading(aircraft, hdg), ""
+        if kind == "verify_speed":
+            kt = session.assigned_speed_kt \
+                or getattr(self.state, "indicated_airspeed_kt", 0.0) \
+                or getattr(self.state, "true_airspeed_kt", 0.0) or 0.0
+            if not kt:
+                return "", "no speed"
+            return speech.speed(aircraft, kt), ""
+        if kind == "intentions":
+            if session.going_around:
+                return speech.going_around(
+                    aircraft, session.assigned_altitude_ft or 0.0), ""
+            runway = session.arrival_runway or ""
+            if session.cleared_landing and runway:
+                return speech.land(aircraft, runway), ""
+            parts = []
+            if session.assigned_heading is not None:
+                parts.append(speech.book.heading.format(
+                    heading=p.hdg(session.assigned_heading)))
+            if session.assigned_altitude_ft:
+                vs = getattr(self.state, "vertical_speed_fpm", 0.0) or 0.0
+                frame = speech.book.climb if vs >= 0.0 \
+                    else speech.book.descend
+                parts.append(frame.format(
+                    altitude=p.alt(session.assigned_altitude_ft)))
+            if not parts and runway:
+                parts.append(speech.book.continuing_approach.format(
+                    runway=p.rwy(runway)))
+            if not parts:
+                return "", "no intentions"
+            return speech.report(aircraft, ", ".join(parts)), ""
         if kind == "stopping":
             return speech.stopping(aircraft), ""
         if kind == "any":

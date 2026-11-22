@@ -190,11 +190,53 @@ class _The_radios:
         if not self._comms_settled:
             return
 
+        # Answered before anything volunteered: "verify altitude" and
+        # "say your intentions" are spoken to, and a call made to the
+        # aeroplane is one the crew answers.
+        self._answer_the_queries(state, session, now)
+
         # On a broadcast frequency the circuit legs are the calls the
         # traffic is sequenced by -- run before the asks.
         self._work_the_circuit(state, session, now)
         self._work_the_calls(state, session, now)
         self._check_in_once(state, session, now)
+
+    def _answer_the_queries(self, state, session, now: float) -> None:
+        """Answer the calls a watch put on the frequency to this
+        aeroplane: the deviation watch's "verify altitude/heading/speed",
+        and the "say your intentions" its patience ends in. Neither is a
+        clearance, so nothing of them is in ``pending`` -- the watch
+        stamps the session instead, and this is the ear that hears the
+        stamp. A query is answered once, with a report; a fresh call of
+        the same kind (a newer stamp) is a fresh question and gets a
+        fresh answer.
+        """
+        if getattr(state, "on_ground", False):
+            return
+        if now - self.state.last_radio_at < 4.0:
+            return
+        kind = getattr(session, "deviation_query", "") or ""
+        query_at = getattr(session, "deviation_query_at", 0.0) or 0.0
+        if kind and query_at \
+                and query_at != getattr(self, "_query_answered_at", -1.0):
+            said = self._fo_say(f"verify_{kind}")
+            if said or now - query_at >= 30.0:
+                # Answered, or nobody heard the answer trying to leave
+                # for half a minute -- either way the stamp is spent;
+                # the watch's next call of the kind writes a new one.
+                session.deviation_query = ""
+                self._query_answered_at = query_at
+            return
+        offered = getattr(session, "assistance_offered", None)
+        if offered is not None and offered("flight"):
+            offered_at = getattr(session, "assist_offered_at", 0.0) or 0.0
+            if offered_at != getattr(self, "_intentions_answered_at",
+                                     -1.0):
+                if self._fo_say("intentions"):
+                    self._intentions_answered_at = offered_at
+                    session.answer_assistance()
+                elif now - offered_at >= 30.0:
+                    self._intentions_answered_at = offered_at
 
     # -- who owns COM1 -------------------------------------------------------
 
