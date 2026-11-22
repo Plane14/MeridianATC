@@ -525,6 +525,12 @@ class FrenchPhraseology:
         n = max(1, int(round(miles)))
         return f"trafic {traffic} en finale à {fr.distance(n)}"
 
+    def traffic_on_runway(self, traffic: str) -> str:
+        """« trafic sur la piste, un Cessna » : la raison d'une annulation
+        ou d'un maintien. UNVERIFIED."""
+        return f"trafic sur la piste, {traffic}" if traffic \
+            else "trafic sur la piste"
+
     def land_after(self, aircraft: Aircraft, runway: str,
                    weather: Weather | None = None, *, traffic: str,
                    station: str = "", abbreviated: bool = True,
@@ -568,6 +574,13 @@ class FrenchPhraseology:
 
     def expedite(self, aircraft: Aircraft, reason: str = "") -> str:
         return _join(aircraft.spoken(True), "accélérez", reason) + "."
+
+    def cancel_takeoff(self, aircraft: Aircraft, reason: str = "") -> str:
+        """« annulez le décollage » -- le rejet de la tour (DGAC, calqué
+        sur l'OACI : la consigne est répétée). UNVERIFIED: la forme."""
+        return _join(aircraft.spoken(True),
+                     "annulez le décollage, je répète annulez le décollage",
+                     reason) + "."
 
     def go_around(self, aircraft: Aircraft, reason: str = "",
                   instruction: str = "") -> str:

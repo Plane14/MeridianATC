@@ -1442,6 +1442,7 @@ def test_the_fo_turns_away_from_a_meeting_in_the_air():
 def _stopped_departure():
     return SimpleNamespace(
         emergency=False, cleared_takeoff=True, cleared_takeoff_at=50.0,
+        takeoff_cancelled=False,
         lined_up=True, departure_runway="17", arrival_runway="",
         phase=SimpleNamespace(outbound=True),
         advise_once=lambda key: True,
@@ -1530,6 +1531,7 @@ def test_rolling_under_the_clearance_marks_the_abort_watch():
     watch = DepartureWatch.__new__(DepartureWatch)
     watch.navdb = SimpleNamespace(airport=lambda ident: None)
     watch.brain = Mock(realism=SimpleNamespace(delays=False))
+    watch.brain.runway_occupants = Mock(return_value=[])
     watch._busy_at = 0.0
     watch._stopped_since = 0.0
     watch._rolled_for = 0.0
@@ -1539,6 +1541,77 @@ def test_rolling_under_the_clearance_marks_the_abort_watch():
                               has_position=False)
     watch.look(session, station, rolling, 60.0)
     assert watch._rolled_for == session.cleared_takeoff_at
+
+
+def _incursion_watch(occupants):
+    """A DepartureWatch whose tower sees ``occupants`` on the strip."""
+    from meridianatc.atc.departure import DepartureWatch
+    p = Mock()
+    p.language = "en"
+    p.cancel_takeoff = Mock(return_value="CANCEL")
+    p.traffic_on_runway = Mock(return_value="TRAFFIC")
+    brain = Mock()
+    brain.runway_occupants = Mock(return_value=occupants)
+    brain.for_station = Mock(return_value=p)
+    watch = DepartureWatch.__new__(DepartureWatch)
+    watch.navdb = SimpleNamespace(
+        airport=lambda ident: SimpleNamespace(ident="LPPR"))
+    watch.brain = brain
+    return watch, p
+
+
+def test_the_tower_cancels_a_roll_for_somebody_on_the_runway():
+    """"Cancel takeoff clearance" (JO 7110.65 3-9-11): the tower's own
+    reject, said for somebody on the strip the roll is pointed at. The
+    clearance stays on the session so the stop that follows is worked
+    off like a crew's own reject -- the abort watch's, not this call's.
+    """
+    occupant = SimpleNamespace(describe=lambda lang: "a Cessna",
+                               written="N456")
+    watch, p = _incursion_watch([occupant])
+    session = _stopped_departure()
+    # It is rolling under this clearance.
+    watch._rolled_for = session.cleared_takeoff_at
+    reply = watch._cancel_for_incursion(
+        session, SimpleNamespace(ident="LPPR"), None, 100.0, "en")
+    assert reply is not None
+    p.cancel_takeoff.assert_called_once()
+    assert session.takeoff_cancelled is True
+    assert session.cleared_takeoff is True
+    # Said once: the next look does not repeat it.
+    assert watch._cancel_for_incursion(
+        session, SimpleNamespace(ident="LPPR"), None, 101.0, "en") \
+        is None
+
+
+def test_a_clearance_never_rolled_on_is_taken_back():
+    """Lined up but not rolling, "cancel" takes the clearance itself --
+    a fresh one is re-issued when the strip is free rather than the
+    crew re-asking for one it already had."""
+    occupant = SimpleNamespace(describe=lambda lang: "a Cessna",
+                               written="N456")
+    watch, p = _incursion_watch([occupant])
+    session = _stopped_departure()
+    watch._rolled_for = 0.0     # never rolled
+    reply = watch._cancel_for_incursion(
+        session, SimpleNamespace(ident="LPPR"), None, 100.0, "en")
+    assert reply is not None
+    assert session.takeoff_cancelled is True
+    assert session.cleared_takeoff is False
+    assert session.cleared_takeoff_at == 0.0
+
+
+def test_no_incursion_no_cancel():
+    """An empty strip is nobody's cancel: the word is spent only on a
+    runway that is actually occupied."""
+    watch, p = _incursion_watch([])
+    session = _stopped_departure()
+    watch._rolled_for = session.cleared_takeoff_at
+    assert watch._cancel_for_incursion(
+        session, SimpleNamespace(ident="LPPR"), None, 100.0, "en") \
+        is None
+    assert session.takeoff_cancelled is False
+    p.cancel_takeoff.assert_not_called()
 
 
 # -- stands for the kind of flight ------------------------------------------------

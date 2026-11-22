@@ -787,6 +787,12 @@ class Phraseology:
         goes now."""
         return f"traffic {traffic}, {self.d(max(1, int(round(miles))))} mile final"
 
+    def traffic_on_runway(self, traffic: str) -> str:
+        """"traffic on the runway, a Cessna": why a clearance is taken
+        back -- the reason a cancel or a hold is given with."""
+        return f"traffic on the runway, {traffic}" if traffic \
+            else "traffic on the runway"
+
     def land_after(self, aircraft: Aircraft, runway: str,
                    weather: Weather | None = None, *, traffic: str,
                    station: str = "", abbreviated: bool = True,
@@ -856,6 +862,17 @@ class Phraseology:
         """"Expedite" with the reason (FAA JO 7110.65 and CAP 413 both use
         the word; UNVERIFIED: the sentence)."""
         return _join(aircraft.spoken(True), "expedite", reason) + "."
+
+    def cancel_takeoff(self, aircraft: Aircraft, reason: str = "") -> str:
+        """The tower's own reject (JO 7110.65 3-9-11): "CANCEL TAKEOFF
+        CLEARANCE" with what made it unsafe, cancelled only for safety.
+        ICAO Doc 9432's is "CANCEL TAKEOFF. I SAY AGAIN CANCEL TAKEOFF",
+        repeated so it lands over the noise a rolling crew is in."""
+        if self.dialect == "faa":
+            words = "cancel takeoff clearance"
+        else:
+            words = "cancel takeoff, I say again cancel takeoff"
+        return _join(aircraft.spoken(True), words, reason) + "."
 
     def go_around(self, aircraft: Aircraft, reason: str = "",
                   instruction: str = "") -> str:

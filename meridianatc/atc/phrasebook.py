@@ -188,7 +188,7 @@ PHRASE_KEYS: tuple[str, ...] = (
     "departing_prior", "line_up_behind", "landing_traffic_named",
     # delays
     "orbit", "report_complete", "hold_at", "circuit_busy", "will_call_you",
-    "leave_hold", "expedite",
+    "leave_hold", "expedite", "cancel_takeoff", "traffic_on_the_runway",
     # a flight plan closed through a controller
     "flight_plan_relayed",
     # general
@@ -682,6 +682,10 @@ class LocalisedPhraseology:
         return self._("traffic_on_final").format(
             traffic=traffic, miles=self.n(max(1, int(round(miles)))))
 
+    def traffic_on_runway(self, traffic: str) -> str:
+        body = self._("traffic_on_the_runway")
+        return f"{body}, {traffic}" if traffic else body
+
     def land_after(self, aircraft: Aircraft, runway: str,
                    weather: Weather | None = None, *, traffic: str,
                    station: str = "", abbreviated: bool = True,
@@ -727,6 +731,11 @@ class LocalisedPhraseology:
 
     def expedite(self, aircraft: Aircraft, reason: str = "") -> str:
         return _join(aircraft.spoken(True), self._("expedite"), reason) + "."
+
+    def cancel_takeoff(self, aircraft: Aircraft, reason: str = "") -> str:
+        """The tower's own reject (see :meth:`Phraseology.cancel_takeoff`)."""
+        return _join(aircraft.spoken(True), self._("cancel_takeoff"),
+                     reason) + "."
 
     def go_around(self, aircraft: Aircraft, reason: str = "",
                   instruction: str = "") -> str:

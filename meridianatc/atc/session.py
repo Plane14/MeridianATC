@@ -555,6 +555,11 @@ class FlightSession:
     assist_offered: str = ""
     assist_offered_at: float = 0.0
     cleared_takeoff: bool = False
+    # The tower's "cancel takeoff clearance" (JO 7110.65 3-9-11), said for
+    # safety with somebody on the runway: set when the call was made, held
+    # until a fresh clearance or the reject's reset ends it. The roll stops
+    # on it below V1 the way it stops on a crew's own reject.
+    takeoff_cancelled: bool = False
     cleared_landing: bool = False
     # Sent round, and not yet back on the final. No landing clearance is
     # issued while this is set: it is cleared when the aeroplane is in the

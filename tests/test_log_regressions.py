@@ -1972,6 +1972,47 @@ def test_the_tower_rogers_the_stopping_call():
     assert session.cleared_takeoff is True
 
 
+def test_the_roll_rejects_on_the_towers_cancel():
+    """"Cancel takeoff clearance" below V1 is the tower's own reject --
+    obeyed with the same stop a crew's reject flies, not argued with."""
+    flight = _rolling_flight()
+    flight.session.takeoff_cancelled = True
+    flight.session.cleared_takeoff = True
+    flight._phase_takeoff(_rolling_state(), time.monotonic())
+    assert flight.state.rejected is True
+    assert flight.state.sub == "abort"
+
+
+def test_the_roll_flies_past_v1_despite_the_cancel():
+    """Above V1 the word is too late to stop for -- the aeroplane flies,
+    the way the real rule leaves the call to the crew."""
+    flight = _rolling_flight()
+    flight.session.takeoff_cancelled = True
+    flight.session.cleared_takeoff = True
+    flight._phase_takeoff(
+        _rolling_state(indicated_airspeed_kt=200.0,
+                       ground_speed_kt=195.0),
+        time.monotonic())
+    assert not flight.state.rejected
+    assert flight.state.sub != "abort"
+
+
+def test_the_wait_clearance_holds_on_a_cancel():
+    """Cleared but never rolled, then told it is taken back: the
+    aeroplane stays on the numbers until a fresh clearance comes --
+    the spent one is nobody's to roll on."""
+    from meridianatc.atc.session import Phase
+    flight = _rolling_flight()
+    flight.state.sub = "wait_clearance"
+    flight.session.takeoff_cancelled = True
+    flight.session.cleared_takeoff = False
+    flight.session.phase = Phase.TAKEOFF
+    state = _rolling_state(ground_speed_kt=0.0,
+                           indicated_airspeed_kt=0.0)
+    flight._phase_takeoff(state, time.monotonic())
+    assert flight.state.sub == "wait_clearance"
+
+
 def _gsx(**kw):
     """A GsxLink stub: the state GSX reports, and the asks it takes."""
     state = SimpleNamespace(

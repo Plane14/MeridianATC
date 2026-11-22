@@ -101,6 +101,10 @@ class DepartureWatch:
             if float(getattr(state, "ground_speed_kt", 0.0) or 0.0) \
                     >= self.ROLLING_KT:
                 self._rolled_for = session.cleared_takeoff_at
+            reply = self._cancel_for_incursion(
+                session, station, state, now, language)
+            if reply is not None:
+                return reply
             reply = self._vacate_the_stopped(
                 session, station, state, now, weather_for, language)
             if reply is not None:
@@ -140,6 +144,9 @@ class DepartureWatch:
         # question, and nobody asked one.
         if not session.cleared_takeoff:
             return None
+        # A fresh clearance after a cancel settles the flag it left: the
+        # words that took the last one back are spent.
+        session.takeoff_cancelled = False
         return reply
 
     # ------------------------------------------------------------------
@@ -158,6 +165,46 @@ class DepartureWatch:
     # reads as rolling: a stop that follows one is the abort the watch is
     # for, where a lineup that has not moved yet is line-up-and-wait.
     ROLLING_KT = 20.0
+
+    def _cancel_for_incursion(self, session, station, state, now,
+                              language) -> Reply | None:
+        """"Cancel takeoff clearance" (JO 7110.65 3-9-11): somebody on
+        the strip a cleared departure is pointed at.
+
+        Cancelled for safety and only for safety -- the rule's own
+        words. While the roll has not started the call takes the
+        clearance back and the release above re-gives a fresh one once
+        the strip clears; once the aeroplane is rolling the clearance
+        stays on the session so the stop is worked off exactly like a
+        crew's own reject -- the abort watch's taxi-in, or the
+        aeroplane's own re-lineup.
+        """
+        if session.takeoff_cancelled or not session.departure_runway:
+            return None
+        field = self.navdb.airport(station.ident)
+        occupants = self.brain.runway_occupants(
+            field, session.departure_runway)
+        if not occupants:
+            return None
+        p = self.brain.for_station(station, language)
+        session.aircraft.language = language_of(p)
+        described = (occupants[0].describe(language_of(p))
+                     if occupants else "")
+        session.takeoff_cancelled = True
+        if self._rolled_for != session.cleared_takeoff_at \
+                or not session.cleared_takeoff_at:
+            # Never rolled under this clearance: it is taken back now,
+            # so a fresh one is re-issued once the runway is free --
+            # not re-asked for by a crew already told it had one.
+            session.cleared_takeoff = False
+            session.cleared_takeoff_at = 0.0
+        decision("takeoff_cancelled", airport=station.ident,
+                 runway=session.departure_runway,
+                 who=occupants[0].written or None)
+        return Reply(
+            p.cancel_takeoff(
+                session.aircraft, p.traffic_on_runway(described)),
+            station)
 
     def _vacate_the_stopped(self, session, station, state, now,
                           weather_for, language) -> Reply | None:
@@ -204,6 +251,7 @@ class DepartureWatch:
         weather = self._weather(weather_for, field, station)
         session.cleared_takeoff = False
         session.cleared_takeoff_at = 0.0
+        session.takeoff_cancelled = False
         session.lined_up = False
         if not session.arrival_runway:
             session.arrival_runway = runway

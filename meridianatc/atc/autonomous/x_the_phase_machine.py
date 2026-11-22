@@ -791,6 +791,7 @@ class _The_phase_machine:
             self._configure_for_takeoff(state)
             if (self.session.cleared_takeoff
                     or self.session.phase == Phase.TAKEOFF) \
+                    and not getattr(self.session, "takeoff_cancelled", False) \
                     and not self._runway_blocked():
                 self._transition(AutonomousPhase.TAKEOFF)
 
@@ -817,6 +818,7 @@ class _The_phase_machine:
             # vacated) must not park the aeroplane here for ever.
             if (self.session.cleared_takeoff
                     or self.session.phase == Phase.TAKEOFF) \
+                    and not getattr(self.session, "takeoff_cancelled", False) \
                     and not self.state.rejected:
                 if self._runway_blocked():
                     # The strip was clear when the clearance came; it is
@@ -1073,6 +1075,18 @@ class _The_phase_machine:
                            "autonomous.rejected_runway")
                 self._goto_sub("abort")
                 return
+            if ias < v1 and getattr(
+                        self.session, "takeoff_cancelled", False):
+                # The tower's own reject: "cancel takeoff clearance" is
+                # obeyed the way a crew's is -- a stop while there is
+                # still speed to spare. Past V1 the aeroplane flies and
+                # the cancel lands the way a real one does, too late.
+                self.state.rejected = True
+                self._emit("error",
+                           "Rejected takeoff: clearance cancelled",
+                           "autonomous.rejected_cancelled")
+                self._goto_sub("abort")
+                return
             engines_out, _ = self._engines_out(state)
             if engines_out and ias < v1:
                 # An engine that quits below V1 is a stop, not a
@@ -1311,6 +1325,7 @@ class _The_phase_machine:
                 self.state.stopping_call = False
                 self.state.aligned = False
                 self.session.cleared_takeoff = False
+                self.session.takeoff_cancelled = False
                 # The roll's clearance was spent on the roll that was
                 # refused: the session's TAKEOFF would be read back as
                 # the clearance it came with, and the next lineup would
