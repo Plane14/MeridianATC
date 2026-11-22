@@ -432,6 +432,17 @@ class XPlaneTraffic:
                 self._unmatched.intersection_update(wanted)
                 self._wanted = wanted
 
+    def stall_ended(self, now):
+        """Give aeroplanes asked for before a simulator stall a fresh window.
+
+        Every wanted entry aged through the silence, so the first check
+        after it would count the stall seconds against ANSWER_WITHIN_S
+        and mark failed aeroplanes the plugin never got a chance to draw.
+        """
+        with self._lock:
+            for callsign in list(self._wanted):
+                self._wanted[callsign] = now
+
     def detach(self):
         with self._lock:
             if self._socket is not None:

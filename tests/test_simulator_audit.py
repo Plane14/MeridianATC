@@ -219,7 +219,7 @@ def test_loss_and_disable_release_integrations_and_keep_position():
     engine = watcher()
     engine.state.latitude = 48
     engine.state.paused = True
-    engine._sim_source = engine.source = Mock(connected=False)
+    engine._sim_source = engine.source = Mock(connected=False, alive=False)
     previous = engine.source
     engine._watch_simulator()
     engine._detach_simulator_integrations.assert_called_once()

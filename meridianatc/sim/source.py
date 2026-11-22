@@ -1243,23 +1243,28 @@ class SimConnectSource:
         # type and the transponder are all in the slow tier, and a session
         # started from a state that has not got round to them yet is a
         # session with no aeroplane in it. After that they rotate.
-        if self._full_sweep:
-            for name, attribute, kind in self._slow:
-                self._fetch(name, attribute, kind)
-            self._full_sweep = False
-        elif self._slow:
-            for _ in range(min(self.SLOW_PER_READ, len(self._slow))):
-                name, attribute, kind = self._slow[self._next_slow]
-                self._next_slow = (self._next_slow + 1) % len(self._slow)
-                self._fetch(name, attribute, kind)
+        # While the simulator is stalled, every fetch below waits out its
+        # whole timeout for nothing -- a pass that answers none of them is
+        # as informative as the timeouts are slow. It stops being asked.
+        if self._empty_reads < self.EMPTY_READS_BEFORE_STALL:
+            if self._full_sweep:
+                for name, attribute, kind in self._slow:
+                    self._fetch(name, attribute, kind)
+                self._full_sweep = False
+            elif self._slow:
+                for _ in range(min(self.SLOW_PER_READ, len(self._slow))):
+                    name, attribute, kind = self._slow[self._next_slow]
+                    self._next_slow = (self._next_slow + 1) % len(self._slow)
+                    self._fetch(name, attribute, kind)
 
         if not fresh and not self._values:
             # The connection object exists but the sim has gone away.
             self._connected = False
             return AircraftState(connected=False, source="simconnect")
         if not fresh:
-            # Nothing that moves came back. One empty pass is a hiccup; a run
-            # of them is the simulator having gone.
+            # Nothing that moves came back. One empty pass is a hiccup; a
+            # run of them is a stalled simulator, and a longer run is a
+            # gone one.
             self._empty_reads += 1
             if self._empty_reads >= self.EMPTY_READS_BEFORE_GONE:
                 self._connected = False
@@ -1268,6 +1273,10 @@ class SimConnectSource:
             self._empty_reads = 0
 
         state = AircraftState(connected=True, source="simconnect")
+        state.stalled = self._empty_reads >= self.EMPTY_READS_BEFORE_STALL
+        # ``connected`` on the state means fresh, as it does on the
+        # X-Plane source; the link stays ``_connected`` until gone.
+        state.connected = not state.stalled
         for attribute, value in self._values.items():
             setattr(state, attribute, value)
         state.paused = self._is_paused()
@@ -1295,9 +1304,14 @@ class SimConnectSource:
         return state
 
     # How many reads in a row may come back with nothing moving before the
-    # simulator is taken to have gone. A single empty pass happens: the sim
-    # pauses, a menu opens, a variable is momentarily unavailable.
-    EMPTY_READS_BEFORE_GONE = 8
+    # simulator is taken to be stalled -- a long frame, a scenery load, a
+    # busy main thread -- and how many more before it is taken to have
+    # gone. A single empty pass happens: the sim pauses, a menu opens, a
+    # variable is momentarily unavailable. Stall and gone are deliberately
+    # far apart: a stutter this long is common enough, and treating it as
+    # a crash tears down the session and every integration for nothing.
+    EMPTY_READS_BEFORE_STALL = 8
+    EMPTY_READS_BEFORE_GONE = 80
 
     def _is_paused(self) -> bool:
         """Whether the flight is stopped, or the user is in the menus.
