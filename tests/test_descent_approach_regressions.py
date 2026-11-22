@@ -458,12 +458,16 @@ def _legpath_recipe(offset_course=114.0, runway_course=34.0):
 
 def test_the_published_legs_are_the_flown_path():
     """Where the feed carries the legs, the path the FO steers is the
-    chart's -- not a synthetic gate-to-threshold straight-in."""
+    chart's -- not a synthetic gate-to-threshold straight-in. The legs
+    end at the missed-approach point; the runway is appended so the
+    steering keeps going forward instead of pulling back to the fix."""
     from meridianatc.atc import approach_flight
     recipe = _legpath_recipe()
     path = approach_flight.legs(recipe)
     assert path[0] == (recipe.leg_path[0][0], recipe.leg_path[0][1])
-    assert path[-1] == (recipe.map_lat, recipe.map_lon)
+    assert (recipe.map_lat, recipe.map_lon) in path
+    assert (recipe.threshold_lat, recipe.threshold_lon) in path
+    assert path[-1] != (recipe.map_lat, recipe.map_lon)
 
 
 def test_an_offset_final_says_it_is_one():
@@ -530,3 +534,51 @@ def test_an_offset_final_circles_from_the_map():
                       return_value=[(1.0, 2.0)]):
         assert fo._circling(state, recipe) is True
     assert fo.state.circling is True
+
+
+def test_past_the_map_the_profile_descends_to_the_runway():
+    """Once the published legs run out the profile is the runway's
+    three degrees again -- the missed-approach point's level is not
+    flown all the way over the threshold."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.state = AutonomousState()
+    recipe = _legpath_recipe()
+    # A step past the MAPt on the stretch to the threshold, still high.
+    from meridianatc.navdata.build import bearing_deg, project
+    toward = bearing_deg(recipe.map_lat, recipe.map_lon,
+                         recipe.threshold_lat, recipe.threshold_lon)
+    lat, lon = project(recipe.map_lat, recipe.map_lon, toward, 0.2)
+    from meridianatc.navdata.build import haversine_nm
+    state = SimpleNamespace(
+        latitude=lat, longitude=lon,
+        altitude_ft=1500.0, ground_speed_kt=90.0, has_position=True,
+        distance_to=lambda a, b: haversine_nm(lat, lon, a, b))
+    vs = fo._recipe_vertical(state, recipe)
+    assert vs < -100.0
+
+
+def test_the_circle_steering_can_only_move_on():
+    """Nearest-segment steering flips between the downwind and base
+    legs on the teardrop; the kept index makes the pattern's progress
+    one-way, so the orbit the report caught cannot repeat."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.state = AutonomousState()
+    fo.sim = None
+    fo._dir = SimpleNamespace(localizer=Mock(), approach=Mock(), sim=None)
+    fo.state.ap_apr_mode = False
+    fo._apply_flight_director = Mock()
+    fo._magnetic = Mock(side_effect=lambda h, s: h)
+    fo._vapp = Mock(return_value=70.0)
+    fo._emit = Mock()
+    fo.state.circle_path = [(42.0, -8.0), (42.0, -7.9), (42.05, -7.9),
+                            (42.05, -8.0)]
+    fo.state.circle_index = 2      # on the base leg already
+    recipe = _legpath_recipe()
+    # Physically back near the downwind start -- without the index the
+    # nearest segment is behind and the pattern would re-fly itself.
+    state = SimpleNamespace(latitude=42.0, longitude=-8.0,
+                            altitude_ft=900.0, has_position=True)
+    assert fo._fly_circle(state, recipe) is True
+    assert fo.state.circle_index >= 2

@@ -251,7 +251,15 @@ class _The_cleared_approach:
                 state, recipe.threshold_lat, recipe.threshold_lon,
                 recipe.field_elev_ft, recipe.final_course)
         pts = recipe.leg_path
-        idx = min(max(0, int(steer.get("nearest", 0))), len(pts) - 1)
+        idx = int(steer.get("nearest", 0))
+        if idx >= len(pts) - 1:
+            # On the stretch legs() adds past the last fix -- the
+            # missed-approach point to the threshold -- the profile is
+            # the runway's three degrees again, not the MAPt's level.
+            return self._three_degree_vs(
+                state, recipe.threshold_lat, recipe.threshold_lon,
+                recipe.field_elev_ft, recipe.final_course)
+        idx = max(0, idx)
         # The constraint of the fix ahead is the target -- a step is
         # flown to, not stepped past.
         target = pts[min(idx + 1, len(pts) - 1)][2] or pts[-1][2] \

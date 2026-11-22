@@ -422,6 +422,7 @@ class _Weather:
             self.state.approach_tuned = False
             self.state.circling = False
             self.state.circle_path = []
+            self.state.circle_index = 0
             self.state.tod_nm = 0.0
             self.state.weather_gas = 0
             self.state.weather_ga_active = False

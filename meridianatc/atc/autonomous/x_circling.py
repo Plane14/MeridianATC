@@ -46,6 +46,7 @@ class _Circling:
             return False
         self.state.circling = True
         self.state.circle_path = path
+        self.state.circle_index = 0
         # Below this the go-around triggers are the circling minima's.
         self.state.minima_ft = recipe.circle_minima_ft or recipe.minima_ft
         self._emit("info", "Circling to land",
@@ -77,8 +78,10 @@ class _Circling:
             if not path:
                 self.state.circling = False
                 self.state.circle_path = []
+                self.state.circle_index = 0
                 return False
             self.state.circle_path = path
+            self.state.circle_index = 0
         d = self.director
         # Whatever was tracking the approach runway's needles is done with
         # them: the pattern is flown on the heading bug.
@@ -86,9 +89,19 @@ class _Circling:
         if self.state.ap_apr_mode:
             d.approach(False)
             self.state.ap_apr_mode = False
+        # Nearest-segment steering alone can never progress: on the
+        # teardrop the aeroplane keeps flipping between the downwind and
+        # base legs and orbits the field. The furthest segment reached
+        # is kept, so the path it steers can only move on.
+        start = max(0, min(self.state.circle_index,
+                           len(self.state.circle_path) - 1))
         steer = auto_nav.path_steering(
-            state.latitude, state.longitude, self.state.circle_path,
+            state.latitude, state.longitude,
+            self.state.circle_path[start:],
             lookahead_m=2500.0)
+        if steer is not None:
+            self.state.circle_index = start + int(
+                steer.get("nearest", 0))
         target = recipe.field_elev_ft + \
             (recipe.circle_minima_ft or recipe.minima_ft)
         alt = state.altitude_ft or 0.0

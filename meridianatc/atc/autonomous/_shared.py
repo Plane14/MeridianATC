@@ -221,6 +221,10 @@ class AutonomousState:
     nav_tune_at: float = 0.0
     circling: bool = False
     circle_path: list = field(default_factory=list)
+    # The furthest pattern leg reached, so circle steering can only move
+    # on -- nearest-segment steering alone flips between the downwind
+    # and base legs and the pattern never ends.
+    circle_index: int = 0
     # Filed/cleared SID and STAR guidance: the chosen transition's legs
     # walked by ProcedureNavigator, keyed so a new clearance or field is
     # a new navigator. ``procedure_suspended`` is the controller's

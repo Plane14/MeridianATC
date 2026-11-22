@@ -32,7 +32,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from ..navdata.build import project
+from ..navdata.build import haversine_nm, project
 from ..navdata.db import normalize_runway
 from .approaches import (
     AIRLINER_LINES,
@@ -392,7 +392,20 @@ def legs(recipe: ApproachRecipe) -> list[tuple[float, float]]:
     """The final as a polyline: the published legs where they are known,
     else the computed gate, FAF and past the threshold."""
     if recipe.leg_path:
-        return [(lat, lon) for lat, lon, _alt, _speed in recipe.leg_path]
+        path = [(lat, lon) for lat, lon, _alt, _speed in recipe.leg_path]
+        # The legs end at the missed-approach point; the flight does not.
+        # The threshold and a stretch past it keep the steering forward
+        # -- without them a path that ends short of the runway pulls the
+        # aeroplane back to the last fix instead of landing it.
+        if recipe.threshold_lat or recipe.threshold_lon:
+            last = path[-1]
+            if haversine_nm(last[0], last[1], recipe.threshold_lat,
+                            recipe.threshold_lon) > 0.05:
+                path.append((recipe.threshold_lat, recipe.threshold_lon))
+            past = project(recipe.threshold_lat, recipe.threshold_lon,
+                           recipe.final_course, 0.3)
+            path.append(past)
+        return path
     faf_nm = max(0.0, recipe.faf_alt_ft - recipe.field_elev_ft) / FT_PER_NM
     gate_lat, gate_lon = project(recipe.threshold_lat, recipe.threshold_lon,
                                  (recipe.final_course + 180.0) % 360.0,
