@@ -246,19 +246,28 @@ class _The_cleared_approach:
             steer = auto_nav.path_steering(
                 state.latitude, state.longitude,
                 approach_flight.legs(recipe), lookahead_m=1200.0)
-        if steer is None or steer.get("done"):
+        def _rollout_vs() -> float:
+            if recipe.offset_final:
+                # Out of the visual manoeuvre the aeroplane sits at the
+                # MDA -- under the three-degree path by construction, and
+                # climbing back to it is not how a circling rollout ends.
+                # It keeps coming down to the runway on the height it
+                # has, the way the VPT's own profile does.
+                agl = (state.altitude_ft or 0.0) - recipe.field_elev_ft
+                return -max(150.0, min(700.0, max(0.0, agl) * 0.9))
             return self._three_degree_vs(
                 state, recipe.threshold_lat, recipe.threshold_lon,
                 recipe.field_elev_ft, recipe.final_course)
+
+        if steer is None or steer.get("done"):
+            return _rollout_vs()
         pts = recipe.leg_path
         idx = int(steer.get("nearest", 0))
         if idx >= len(pts) - 1:
             # On the stretch legs() adds past the last fix -- the
             # missed-approach point to the threshold -- the profile is
             # the runway's three degrees again, not the MAPt's level.
-            return self._three_degree_vs(
-                state, recipe.threshold_lat, recipe.threshold_lon,
-                recipe.field_elev_ft, recipe.final_course)
+            return _rollout_vs()
         idx = max(0, idx)
         # The constraint of the fix ahead is the target -- a step is
         # flown to, not stepped past.

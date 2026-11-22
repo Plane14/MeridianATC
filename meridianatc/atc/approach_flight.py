@@ -472,6 +472,13 @@ def circle_legs(recipe: ApproachRecipe, navdb, state) -> list | None:
     points = [
         frame_point(final.lat, final.lon, final.course,
                     CIRCLE_DOWNWIND_NM, s * CIRCLE_OFFSET_NM),
+        # The base leg does not arrive at final squared onto it: a
+        # shallow intercept two miles further out, rolled onto the
+        # centreline at under thirty degrees. Coming in steeper was the
+        # rollout that reached the flare still turning, too misaligned
+        # to ever stabilize inside the gate.
+        frame_point(final.lat, final.lon, final.course,
+                    CIRCLE_BASE_OUT_NM + 2.0, s * CIRCLE_OFFSET_NM * 0.5),
         frame_point(final.lat, final.lon, final.course,
                     CIRCLE_BASE_OUT_NM, 0.0),
         frame_point(final.lat, final.lon, final.course,
