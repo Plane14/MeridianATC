@@ -591,9 +591,9 @@
           ],
           "note": "ADVANCE to 50% N1 - stabilise engines before applying takeoff thrust.",
           "check": {
-            "var": "throttle_pct",
+            "var": "eng_n1_pct",
             "op": "min",
-            "value": 85
+            "value": 45
           }
         },
         {
