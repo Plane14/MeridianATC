@@ -18,6 +18,7 @@ import threading
 import time
 from dataclasses import fields
 
+from .models import XP_READ_ALIASES, XP_WRITE_ALIASES, xp_model_key
 from .source import SimConnectSource
 from .state import AircraftState, floats_said
 from .xpcontrols import OVERRIDES, OVR, READS, XPlaneControls
@@ -323,6 +324,10 @@ STRINGS = {
     "type_code": ("sim/aircraft/view/acf_ICAO", 40),
     "tail_number": ("sim/aircraft/view/acf_tailnum", 40),
     "title": ("sim/aircraft/view/acf_ui_name", 250),
+    # The .acf's path below the install identifies the add-on when the
+    # display name does not -- the MAD A320 calls itself "Airbus A320
+    # Neo", exactly like a stock model would.
+    "acf_path": ("sim/aircraft/view/acf_relative_path", 512),
 }
 
 DERIVED = {
@@ -470,6 +475,13 @@ class XPlaneSource:
         self._relocated_until = 0.0
         self._controls = XPlaneControls(self)
         self._last_packet = 0.0
+        # The study-level add-on the loaded aircraft belongs to, as
+        # models.py names it. Its custom datarefs are subscribed under
+        # "alias:<attr>" so a name the stock ref also answers still
+        # resolves deterministically to the add-on's own value.
+        self._model = ""
+        self._alias_factors: dict[str, float] = {}
+        self._alias_index: dict[str, int] = {}
         self._subscriptions = [(key, path) for key, (path, _) in DATAREFS.items()]
         self._subscriptions += list(EXTRA.items())
         self._subscriptions += [(f"{key}:{i}", f"{path}[{i}]")
@@ -556,6 +568,29 @@ class XPlaneSource:
             self.close()
         return False
 
+    def _subscribe_model_aliases(self):
+        """Subscribe the custom datarefs the detected add-on publishes.
+
+        Each lands in ``_values`` under ``alias:<attr>`` so it cannot
+        race the stock ref that answers under the bare attribute. A
+        subscription slot is reused per attribute, so an aircraft
+        change re-points the slot rather than growing the table. Data
+        that arrives while no model is detected is ignored at read
+        time (the attribute is only honoured from ``_alias_factors``).
+        """
+        self._alias_factors.clear()
+        for attr, (path, factor) in XP_READ_ALIASES.get(self._model, {}).items():
+            key = f"alias:{attr}"
+            if attr in self._alias_index:
+                index = self._alias_index[attr]
+                self._subscriptions[index] = (key, path)
+            else:
+                index = len(self._subscriptions)
+                self._subscriptions.append((key, path))
+                self._alias_index[attr] = index
+            self._alias_factors[attr] = factor
+            self._subscribe(index, path, self.frequency)
+
     def _packet(self, payload):
         if self._peer is not None:
             self._socket.sendto(payload, self._peer)
@@ -594,14 +629,25 @@ class XPlaneSource:
         state = AircraftState(source="xplane", connected=self.connected)
         state.stalled = self.alive and not self.connected
         for key, (_path, factor) in DATAREFS.items():
-            if key in values:
+            akey = f"alias:{key}"
+            if akey in values and key in self._alias_factors:
+                # The add-on publishes this system on its own dataref;
+                # its answer beats the stock ref's standing value.
+                raw = values[akey] * self._alias_factors[key]
+            elif key in values:
                 raw = values[key] * factor
-                default = getattr(state, key)
-                setattr(state, key, bool(raw) if isinstance(default, bool)
-                        else int(raw) if isinstance(default, int) else raw)
+            else:
+                continue
+            default = getattr(state, key)
+            setattr(state, key, bool(raw) if isinstance(default, bool)
+                    else int(raw) if isinstance(default, int) else raw)
         for key, (_path, size) in STRINGS.items():
             raw = bytes(max(0, min(255, int(values.get(f"{key}:{i}", 0)))) for i in range(size))
             setattr(state, key, raw.split(b"\0", 1)[0].decode("utf-8", errors="replace").strip())
+        model = xp_model_key(state.acf_path, state.title)
+        if model != self._model:
+            self._model = model
+            self._subscribe_model_aliases()
         state.callsign = state.tail_number
         state.engines_running = any(values.get(f"running{i}", 0) for i in range(16))
         for i in range(1, 4):
@@ -1096,6 +1142,11 @@ class XPlaneSource:
                 return False
             if self._controls.set_variable(name, value, unit):
                 return True
+            # The add-on watches its own dataref for this switch, not
+            # the stock actuator the WRITABLE table names.
+            if (path := XP_WRITE_ALIASES.get(self._model,
+                                             {}).get(name)) is not None:
+                return self._dref(path, value)
             if name == "FUEL TANK SELECTOR:1":
                 # SimConnect's selector enum to X-Plane's: positions the
                 # model does not have (aux, tips, externals, crossfeeds)

@@ -26,6 +26,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import Protocol
 
+from .models import MSFS_ALIASES, msfs_model_key
 from .serial import serialize
 from .state import AircraftState, floats_said, normalize_angle
 
@@ -443,6 +444,11 @@ _PER_ENGINE_SUFFIXES = ("combustion",) + tuple(
 class SimConnectSource:
     """Reads aircraft state from Microsoft Flight Simulator over SimConnect."""
 
+    # The study-level add-on the loaded aeroplane belongs to, as
+    # models.py names it. Class-level so tests that build the object
+    # by hand still take the stock path; __init__ keeps the same value.
+    _model = ""
+
     # Variable name, attribute, the unit the wrapper actually returns, and how
     # often it is worth asking.
     #
@@ -817,6 +823,11 @@ class SimConnectSource:
         self._requests = None
         self._connected = False
         self._missing: set[str] = set()
+        # The study-level add-on the loaded aeroplane belongs to, as
+        # models.py names it. Set from the title read; an entry in
+        # MSFS_ALIASES then answers stock wire names with the model's
+        # own L: variables, in both the batched read and the writes.
+        self._model = ""
         # How often each variable that has never answered has been asked.
         self._silent: dict[str, int] = {}
         self._state = AircraftState()
@@ -988,6 +999,11 @@ class SimConnectSource:
             var, unit = entry[1], entry[2]
             if index is not None:
                 var = var.replace(b":index", (":" + index).encode())
+            # A study-level add-on bypasses the stock variable: ask the
+            # L: variable it publishes instead, as a plain number.
+            alias = MSFS_ALIASES.get(self._model, {}).get(var.decode())
+            if alias is not None:
+                var, unit = alias.encode(), b"Number"
             return var, unit
         return None
 
@@ -1407,6 +1423,15 @@ class SimConnectSource:
         state.connected = not state.stalled
         for attribute, value in self._values.items():
             setattr(state, attribute, value)
+        model = msfs_model_key(state.title)
+        if model != self._model:
+            # A new aeroplane, or the title just answered. Rebuild the
+            # batch with the add-on's variable names in place of the
+            # stock ones it bypasses, and re-ask what never answered.
+            self._model = model
+            self._silent.clear()
+            self._missing.clear()
+            self._make_batch()
         state.paused = self._is_paused()
         # A menu move or a slew is a position the aeroplane could not have
         # flown to -- further than its groundspeed could carry it since
@@ -1972,6 +1997,9 @@ class SimConnectSource:
             from SimConnect import Request
         except ImportError:
             return False
+        # The same alias the read side uses, so the stock wire name
+        # reaches the L: variable the add-on's system logic watches.
+        name = MSFS_ALIASES.get(self._model, {}).get(name, name)
         writer = self._writers.get(name)
         if writer is None:
             writer = Request((name.encode(), unit.encode()), self._sim,
