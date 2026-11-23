@@ -351,7 +351,7 @@ def _leg_end(leg: ProcedureLeg, from_lat: float, from_lon: float
     if leg.has_fix:
         return leg.lat, leg.lon
     # Course/heading terminators carry their own direction and distance.
-    course = leg.course or leg.theta
+    course = leg.course
     if course > 0 and not leg.true_degree:
         course = to_true(course, variation(from_lat, from_lon))
     if course <= 0:
@@ -367,19 +367,12 @@ def _leg_end(leg: ProcedureLeg, from_lat: float, from_lon: float
     return _offset(from_lat, from_lon, course, distance_nm)
 
 
-def _arc_points(leg: ProcedureLeg, from_lat: float, from_lon: float
-                ) -> list[tuple[float, float]] | None:
-    """Points along an RF arc, when the centre and radius are known."""
-    if not leg.has_fix or leg.arc_lat == 0.0 and leg.arc_lon == 0.0:
-        return None
-    centre_lat, centre_lon = leg.arc_lat, leg.arc_lon
-    radius_nm = leg.radius_m / M_PER_NM if leg.radius_m > 0 else \
-        haversine_nm(centre_lat, centre_lon, leg.lat, leg.lon)
-    if radius_nm < 0.5:
-        return None
+def _sweep(centre_lat: float, centre_lon: float, radius_nm: float,
+           from_lat: float, from_lon: float, to_lat: float, to_lon: float,
+           turn: str) -> list[tuple[float, float]] | None:
+    """Points along an arc about a centre, in its turn's own direction."""
     start_brg = bearing_deg(centre_lat, centre_lon, from_lat, from_lon)
-    end_brg = bearing_deg(centre_lat, centre_lon, leg.lat, leg.lon)
-    turn = leg.turn
+    end_brg = bearing_deg(centre_lat, centre_lon, to_lat, to_lon)
     # The bearing from the centre runs clockwise around it, so a
     # right-hand arc's sweep counts up and a left-hand's counts down --
     # whatever the size: a 270-degree arc is not the 90 flown the other
@@ -397,14 +390,104 @@ def _arc_points(leg: ProcedureLeg, from_lat: float, from_lon: float
         # A point on the circle: offset from the centre by the radius.
         lat, lon = _offset(centre_lat, centre_lon, brg, radius_nm)
         points.append((lat, lon))
-    points[-1] = (leg.lat, leg.lon)
+    points[-1] = (to_lat, to_lon)
     return points
+
+
+def _arc_points(leg: ProcedureLeg, from_lat: float, from_lon: float
+                ) -> list[tuple[float, float]] | None:
+    """Points along an RF arc, when the centre and radius are known."""
+    if not leg.has_fix or leg.arc_lat == 0.0 and leg.arc_lon == 0.0:
+        return None
+    centre_lat, centre_lon = leg.arc_lat, leg.arc_lon
+    radius_nm = leg.radius_m / M_PER_NM if leg.radius_m > 0 else \
+        haversine_nm(centre_lat, centre_lon, leg.lat, leg.lon)
+    if radius_nm < 0.5:
+        return None
+    return _sweep(centre_lat, centre_lon, radius_nm, from_lat, from_lon,
+                  leg.lat, leg.lon, leg.turn)
+
+
+def _dme_arc_points(leg: ProcedureLeg, from_lat: float, from_lon: float
+                    ) -> list[tuple[float, float]] | None:
+    """Points along an AF leg: the arc at the navaid's DME distance.
+
+    An AF's centre is the leg's origin (the DME's facility) and its
+    radius is rho -- the record names both, so the arc is drawn the
+    same way an RF's is.
+    """
+    if not leg.has_fix or leg.rho_m <= 0 \
+            or leg.origin_lat == 0.0 and leg.origin_lon == 0.0:
+        return None
+    radius_nm = leg.rho_m / M_PER_NM
+    if radius_nm < 0.5:
+        return None
+    return _sweep(leg.origin_lat, leg.origin_lon, radius_nm,
+                  from_lat, from_lon, leg.lat, leg.lon, leg.turn)
+
+
+_COURSE_PATHS = {"CA", "CD", "CI", "CR", "VA", "VD", "VI", "VM", "VR"}
+
+
+def _course_end(leg: ProcedureLeg, from_lat: float, from_lon: float,
+                prev_alt_ft: float) -> tuple[float, float] | None:
+    """A point far enough along the leg's course to fly it by.
+
+    Course-to-altitude and heading legs end on a condition, not a fix --
+    the level reached, the DME run, the controller's vector. The path is
+    drawn for a plausible distance on the published course: the leg's own
+    distance when the record carries one, the miles its climb needs at a
+    nominal three hundred feet to the mile, else eight.
+    """
+    course = leg.course
+    if course > 0 and not leg.true_degree:
+        course = to_true(course, variation(from_lat, from_lon))
+    if not (0 < course <= 360.0):
+        return None
+    if leg.route_distance:
+        distance_nm = (leg.route_distance * 4.0 if leg.distance_minute
+                       else leg.route_distance / M_PER_NM)
+    elif leg.rho_m:
+        distance_nm = leg.rho_m / M_PER_NM
+    elif leg.altitude_constraint:
+        distance_nm = abs(leg.altitude_constraint - prev_alt_ft) / 300.0
+        distance_nm = min(15.0, max(4.0, distance_nm))
+    else:
+        distance_nm = 8.0
+    return _offset(from_lat, from_lon, course, distance_nm)
+
+
+def _hold_points(leg: ProcedureLeg, from_lat: float, from_lon: float
+                 ) -> list[tuple[float, float]]:
+    """One circuit of the holding pattern, drawn as a racetrack.
+
+    The published hold is outbound on the leg's course for the leg's
+    time or distance, the standard-rate turn onto the reciprocal, and
+    back to the fix. One circuit is drawn; when the clearance still
+    needs the hold the next pass takes the same pattern again.
+    """
+    fix_lat, fix_lon = (leg.lat, leg.lon) if leg.has_fix \
+        else (from_lat, from_lon)
+    course = leg.course if leg.course > 0 else leg.theta
+    if course > 0 and not leg.true_degree:
+        course = to_true(course, variation(fix_lat, fix_lon))
+    if not (0 < course <= 360.0):
+        course = 0.0
+    out = leg.route_distance
+    out = out * 4.0 if leg.distance_minute else out / M_PER_NM
+    out = min(12.0, max(2.0, out or 4.0))
+    turn_sign = -1.0 if leg.turn == "L" else 1.0
+    side = (course + 90.0 * turn_sign) % 360.0
+    end = _offset(fix_lat, fix_lon, course, out)
+    swing = _offset(*end, side, 1.2)
+    abeam = _offset(fix_lat, fix_lon, side, 1.2)
+    return [end, swing, abeam, (fix_lat, fix_lon)]
 
 
 def _turn_points(leg: ProcedureLeg, from_lat: float, from_lon: float
                  ) -> list[tuple[float, float]]:
     """A procedure turn or racetrack, approximated as outbound then back."""
-    course = leg.course or leg.theta
+    course = leg.course
     if course > 0 and not leg.true_degree:
         course = to_true(course, variation(from_lat, from_lon))
     outbound = leg.route_distance
@@ -424,7 +507,8 @@ def _turn_points(leg: ProcedureLeg, from_lat: float, from_lon: float
 
 
 def build_path(transition: ProcedureTransition,
-               start: tuple[float, float] | None = None
+               start: tuple[float, float] | None = None,
+               kind: str = ""
                ) -> tuple[list[tuple[float, float, float, float]], list[str]]:
     """The procedure as a path the autopilot can steer, with each point's
     level and speed limit.
@@ -440,7 +524,17 @@ def build_path(transition: ProcedureTransition,
         return points, ["the procedure has no legs"]
     cursor = start or (transition.legs[0].lat, transition.legs[0].lon)
     for leg in transition.legs:
-        alt = leg.altitude_constraint or leg.fix_alt_ft
+        prev_alt = points[-1][2] if points else 0.0
+        # The constraint only: a fix's own elevation is not a level to
+        # fly, and on MSFS that is what FIX_ALTITUDE carries.
+        alt = leg.altitude_constraint
+        if leg.alt_desc == ALT_IN_BETWEEN:
+            # A window's low edge is what the constraint is owed.
+            alt = min(leg.alt1_ft, leg.alt2_ft) or alt
+        if kind == "sid" and leg.alt_desc == ALT_AT_OR_BELOW:
+            # A SID's levels are floors the climb makes through; a
+            # ceiling is not one -- the climb does not level at it.
+            alt = 0.0
         speed = leg.speed_limit_kt
         path = leg.path
         generated: list[tuple[float, float]] = []
@@ -450,11 +544,23 @@ def build_path(transition: ProcedureTransition,
                 notes.append(f"{leg.fix_ident or leg.path}: RF arc approximated")
             else:
                 notes.append(f"{leg.fix_ident or leg.path}: RF arc unavailable")
-        elif path in ("PI", "HA", "HF", "HM"):
+        elif path == "AF":
+            generated = _dme_arc_points(leg, cursor[0], cursor[1]) or []
+            if generated:
+                notes.append(f"{leg.fix_ident or leg.path}: AF arc approximated")
+            else:
+                notes.append(f"{leg.fix_ident or leg.path}: AF arc unavailable")
+        elif path == "PI":
             generated = _turn_points(leg, cursor[0], cursor[1])
             notes.append(f"{leg.fix_ident or leg.path}: {path} approximated")
-        elif path in ("VA", "VD", "VI", "VM", "VR"):
-            notes.append(f"{leg.fix_ident or leg.path}: {path} flown direct")
+        elif path in ("HA", "HF", "HM"):
+            generated = _hold_points(leg, cursor[0], cursor[1])
+            notes.append(f"{leg.fix_ident or leg.path}: {path} racetrack")
+        elif path in _COURSE_PATHS:
+            end = _course_end(leg, cursor[0], cursor[1], prev_alt)
+            if end is not None:
+                generated = [end]
+            notes.append(f"{leg.fix_ident or leg.path}: {path} flown on course")
         end = _leg_end(leg, cursor[0], cursor[1])
         if not generated and end is not None:
             generated = [end]
@@ -493,7 +599,8 @@ class ProcedureNavigator:
                  fallback_speed_kt: float = 0.0):
         self.procedure = procedure
         self.transition = transition
-        leg_points, self.notes = build_path(transition, start)
+        leg_points, self.notes = build_path(transition, start,
+                                            kind=procedure.kind)
         # The path the aeroplane steers starts where the procedure does:
         # the runway end for a SID, the position it was picked up on for a
         # STAR. Without that first point the steering can aim past the

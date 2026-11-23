@@ -130,9 +130,9 @@ class _Flying_them:
         # The level it checks in at: the STAR's own constraint where the
         # legs give one, the arrival height the spawn worked out where
         # they do not.
-        level = next((leg.altitude_constraint or leg.fix_alt_ft
+        level = next((leg.altitude_constraint
                       for leg in trans.legs
-                      if leg.altitude_constraint or leg.fix_alt_ft), 0.0)
+                      if leg.altitude_constraint), 0.0)
         if level:
             flight.altitude_ft = level
         if len(nav.points) > 1:

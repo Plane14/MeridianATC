@@ -585,15 +585,15 @@ def _approaches(af: _AirportFile, fixes: _FixIndex,
         kind = _APPROACH_KIND.get(rtype, "RNAV")
         runway = _approach_runway(proc_ident)
         legs = [reader.leg(i, f) for i, f in enumerate(rows)]
-        faf_ft = next((leg.altitude_constraint or leg.fix_alt_ft
+        faf_ft = next((leg.altitude_constraint
                        for leg in legs if leg.is_faf), 0.0)
         map_index = next((leg.index for leg in legs if leg.is_map),
                          len(legs) - 1)
         missed_ft = next(
-            (leg.altitude_constraint or leg.fix_alt_ft
+            (leg.altitude_constraint
              for leg in legs
              if leg.index > map_index
-             and (leg.altitude_constraint or leg.fix_alt_ft)),
+             and leg.altitude_constraint),
             0.0)
         # The PRDAT inside this final (it sits between the final's rows
         # in the file) carries the RNAV minima lines.

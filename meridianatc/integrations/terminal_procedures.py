@@ -250,6 +250,7 @@ def decode(records, ident: str) -> AirportProcedures | None:
         return tuple(leg for _i, leg in sorted(
             legs_by_parent.get(parent, []), key=lambda item: item[0]))
 
+    pieces: dict[int, list[ProcedureTransition]] = {}
     for unique_id, (trans, parent_id) in transitions.items():
         owner = procedures.get(parent_id)
         if owner is None:
@@ -257,10 +258,40 @@ def decode(records, ident: str) -> AirportProcedures | None:
         proc, _kind = owner
         trans.legs = ordered(unique_id)
         if trans.legs:
-            proc.transitions.append(trans)
+            pieces.setdefault(parent_id, []).append(trans)
 
-    for unique_id, (proc, _kind) in procedures.items():
+    def joined(parts: list[tuple[ProcedureLeg, ...]]) -> tuple:
+        """The pieces flown as one list; the shared boundary fix is
+        written once, the way the chart draws it."""
+        legs: list[ProcedureLeg] = []
+        for part in parts:
+            chunk = list(part)
+            if legs and chunk and legs[-1].fix_ident \
+                    and legs[-1].fix_ident == chunk[0].fix_ident:
+                chunk = chunk[1:]
+            legs.extend(chunk)
+        return tuple(legs)
+
+    for unique_id, (proc, kind) in procedures.items():
         proc.direct_legs = ordered(unique_id)
+        own = pieces.get(unique_id, [])
+        runway_trs = [t for t in own if t.runway]
+        enroute_trs = [t for t in own if not t.runway]
+        if not runway_trs and not enroute_trs:
+            continue
+        enroutes = enroute_trs or [ProcedureTransition(name="")]
+        runways = runway_trs or [ProcedureTransition(runway="")]
+        for en in enroutes:
+            for rw in runways:
+                # Composed the way the clearance reads it: a SID's
+                # runway legs, the common portion, the filed enroute
+                # transition; a STAR the other way round.
+                legs = joined([rw.legs, proc.direct_legs, en.legs]) \
+                    if kind == "sid" \
+                    else joined([en.legs, proc.direct_legs, rw.legs])
+                if legs:
+                    proc.transitions.append(ProcedureTransition(
+                        name=en.name, runway=rw.runway, legs=legs))
         proc.transitions.sort(key=lambda t: (t.runway != "", t.name))
 
     if not airport.departures and not airport.arrivals:

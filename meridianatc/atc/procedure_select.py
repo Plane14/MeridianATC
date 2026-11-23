@@ -156,7 +156,8 @@ def pick_star(procedures: AirportProcedures | None, runway: str = "",
         if chosen.transition is None:
             continue
         trans = chosen.transition
-        score = 4.0 if runway and trans.runway == runway else 0.0
+        score = 4.0 if runway and normalize_runway(trans.runway) \
+            == normalize_runway(runway) else 0.0
         first = trans.first_fix
         if at is not None and first is not None:
             score += _direction_score(at, toward, first.lat, first.lon)

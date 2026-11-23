@@ -354,7 +354,7 @@ def resolve(session, brain, navdb, state) -> ApproachRecipe | None:
                             and leg.has_fix), None)
             if faf_leg is not None:
                 faf_lat, faf_lon = faf_leg.lat, faf_leg.lon
-                faf_alt = faf_leg.altitude_constraint or faf_leg.fix_alt_ft
+                faf_alt = faf_leg.altitude_constraint
                 if faf_alt:
                     faf_dist = max(FAF_MIN_NM,
                                    min(FAF_MAX_NM,

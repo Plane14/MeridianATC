@@ -40,6 +40,15 @@ class _The_checklist_answered:
         item, run_state = runner.pending()
         if item is None:
             self._checklist_item_id = 0
+            # A checklist the phase machine asked for while this one was
+            # still running is owed; it is started once the runner can
+            # take it, not dropped.
+            deferred = getattr(self.state, "checklist_deferred", "")
+            if deferred and not runner.waiting:
+                self.state.checklist_deferred = ""
+                if deferred not in self.state.checklists_completed:
+                    runner.start(deferred)
+                    self.state.checklists_completed.add(deferred)
             return
         if id(item) != self._checklist_item_id:
             self._checklist_item_id = id(item)

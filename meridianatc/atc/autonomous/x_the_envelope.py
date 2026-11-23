@@ -191,8 +191,10 @@ class _The_envelope:
         runner = self.crew.checklists
         if runner is not None and runner.waiting:
             # The checklist before this one is still being worked: let it
-            # finish rather than abandon it mid-item. The phase is checked
-            # again on the next pass, so this run is only deferred.
+            # finish rather than abandon it mid-item. The callers move on
+            # and never ask again, so the debt is remembered and the
+            # checklist driver picks it up once the runner is free.
+            self.state.checklist_deferred = checklist_name
             return
         if runner is not None:
             runner.start(checklist_name)
