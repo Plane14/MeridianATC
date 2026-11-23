@@ -320,20 +320,61 @@ class _Flying_them:
                 target.accel_kt_s = max(target.accel_kt_s or 0.0,
                                         performance.takeoff_kt_s * 1.3)
 
+    def _next_procedure(self, flight: Flight) -> bool:
+        """The cleared approach's own legs take over when the ones
+        before them run out: the published final -- RF arcs and all --
+        instead of the straight-in the phase falls back to.
+
+        True when a navigator is now ready and on the pair, built from
+        wherever the aeroplane is the way the STAR's was. The legs are
+        consumed once: a go-around keeps the pair that was flying and
+        rejoins it, it does not start the approach again.
+        """
+        legs = getattr(flight, "approach_legs", ()) or ()
+        if not legs or not flight.arriving or not flight.ifr:
+            return False
+        from ..procedure_legs import (
+            ProcedureNavigator,
+            ProcedureTransition,
+            TerminalProcedure,
+        )
+
+        procedure = TerminalProcedure(
+            name=f"{flight.approach} approach", kind="approach")
+        transition = ProcedureTransition(
+            runway=flight.runway, legs=tuple(legs))
+        nav = ProcedureNavigator(
+            procedure, transition,
+            start=(flight.latitude, flight.longitude),
+            fallback_altitude_ft=flight.target.altitude_ft
+            or self.field.elevation_ft,
+            fallback_speed_kt=flight.target.speed_kt
+            or flight.performance.approach_kt)
+        if not nav.active:
+            return False
+        flight.approach_legs = ()
+        flight.procedure_pair = (procedure, transition)
+        flight.procedure_nav = nav
+        return True
+
     def _steer_procedure(self, flight: Flight, target) -> None:
         """The SID or STAR legs as this tick's aim.
 
         Built the first time the model asks, from wherever the aeroplane
         then is -- for a departure that is the end of the runway, for an
         arrival the entry fix it spawned at. The legs' own levels and
-        speed limits come with the path; when they are done the aeroplane
-        goes back to flying its phase, and anything the tower assigns
-        still outranks it afterwards.
+        speed limits come with the path; when they are done the cleared
+        approach's own legs take over where the data decoded any (the
+        published final, offset or straight), and where there are none
+        the aeroplane goes back to flying its phase. Anything the tower
+        assigns still outranks all of it afterwards.
         """
-        if (flight.procedure_pair is None or flight.on_ground
-                or not flight.airborne_model):
+        if flight.on_ground or not flight.airborne_model:
             return
         if flight.phase not in ("takeoff", "departed", "inbound", "final"):
+            return
+        if flight.procedure_pair is None and not self._next_procedure(
+                flight):
             return
         nav = flight.procedure_nav
         if nav is None:
@@ -351,13 +392,21 @@ class _Flying_them:
         if guide.done:
             flight.procedure_nav = None
             flight.procedure_pair = None
-            return
+            if not self._next_procedure(flight):
+                return
+            nav = flight.procedure_nav
+            guide = nav.guidance(flight)
+            if guide.done:
+                flight.procedure_nav = None
+                flight.procedure_pair = None
+                return
         if guide.heading is None:
             return
         target.heading = guide.heading
         if guide.altitude_ft:
             target.altitude_ft = guide.altitude_ft
-            if flight.star and guide.altitude_distance_nm > 0.0:
+            if nav.procedure.kind != "sid" \
+                    and guide.altitude_distance_nm > 0.0:
                 # A "descend via" flown the way the arrival is actually
                 # flown: not the book rate to the constraint and a
                 # level wait for the fix that owns it, but the
@@ -383,9 +432,12 @@ class _Flying_them:
                     target.altitude_ft = min(path, flight.altitude_ft)
         if guide.speed_kt:
             target.speed_kt = min(guide.speed_kt, flight.performance.cruise_kt)
-        target.intent = (f"on the {flight.sid} departure" if flight.sid
-                         else f"on the {flight.star} arrival" if flight.star
-                         else target.intent)
+        target.intent = (
+            f"on the {flight.approach} approach"
+            if nav.procedure.kind == "approach"
+            else f"on the {flight.sid} departure" if flight.sid
+            else f"on the {flight.star} arrival" if flight.star
+            else target.intent)
 
     # Faster than this a held aeroplane's pattern stops looking like a
     # hold and starts looking like a tour of the county. ICAO's tables

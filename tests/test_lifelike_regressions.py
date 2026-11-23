@@ -395,7 +395,8 @@ def test_an_inbound_still_upfield_holds_the_missed_altitude():
     flight = SimpleNamespace(
         phase="inbound", latitude=41.03, longitude=-8.0, heading=0.0,
         runway="36", altitude_ft=2100.0, distance_nm=0.0,
-        missed_alt_ft=2100.0, on_ground=False, ground_speed_kt=140.0,
+        missed_alt_ft=2100.0, on_ground=False, airborne_model=True,
+        ground_speed_kt=140.0,
         performance=SimpleNamespace(
             approach_kt=90.0, climb_kt=100.0, cruise_kt=140.0,
             pattern_agl_ft=1000.0, rotate_kt=80.0),
@@ -411,10 +412,12 @@ def _star_arrival(altitude_ft: float, constraint_ft: float,
                   fix_nm: float, descend_fpm: float = 1800.0):
     """A traffic arrival on a STAR with the navigator's next level
     ``constraint_ft`` at a fix ``fix_nm`` miles ahead."""
-    nav = SimpleNamespace(guidance=lambda f: SimpleNamespace(
-        heading=120.0, altitude_ft=constraint_ft, vs_fpm=-1800.0,
-        speed_kt=0.0, done=False,
-        altitude_distance_nm=fix_nm))
+    nav = SimpleNamespace(
+        procedure=SimpleNamespace(kind="star"),
+        guidance=lambda f: SimpleNamespace(
+            heading=120.0, altitude_ft=constraint_ft, vs_fpm=-1800.0,
+            speed_kt=0.0, done=False,
+            altitude_distance_nm=fix_nm))
     return SimpleNamespace(
         phase="inbound", latitude=41.0, longitude=-8.0, heading=120.0,
         altitude_ft=altitude_ft, on_ground=False, ground_speed_kt=180.0,

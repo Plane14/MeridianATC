@@ -375,18 +375,37 @@ class _The_ground_driven:
         Nothing is assigned where the field has no decoded procedures --
         the flight is cleared and flown generically, which is what a
         field with no published procedures sounds like, never an invented
-        name. The same applies where the far end is not in the navdata:
-        the bearing that would have picked the transition is simply
-        unknown.
+        name. The arrival's approach is its own data and is cleared on
+        its own -- a field can publish approaches without SIDs or STARs.
+        The same applies where the far end is not in the navdata: the
+        bearing that would have picked the transition is simply unknown.
         """
-        procedures = self.terminal_procedures.get(self.field.ident)
-        if procedures is None:
-            return
-        from ..procedure_select import pick_sid, pick_star, select_approach
-
         far = self.navdb.airport(far_icao) if far_icao else None
         toward = (far.lat, far.lon) if far is not None else None
         at = (self.field.latitude, self.field.longitude)
+        if arriving:
+            # The approach stands on its own data, not the field's SIDs
+            # and STARs: a field that publishes only approaches still
+            # clears the flight onto one and it is still flown.
+            known = self.approach_data.get(self.field.ident)
+            from ...navdata.db import vfr_region
+            from ..procedure_select import select_approach
+            choice = select_approach(
+                known, flight.runway, self.field.weather,
+                airliner=flight.operator is not None,
+                region=vfr_region(self.field.ident))
+            flight.approach = choice.approach.name
+            # And the path it will actually fly: the instrument segment's
+            # legs, where the approach data decodes them (the CIFP feed
+            # and the simulator's own). The name is for the radio; these
+            # are for the model, once whatever came before them is done.
+            flight.approach_legs = tuple(
+                getattr(choice.approach, "legs", ()) or ())
+        procedures = self.terminal_procedures.get(self.field.ident)
+        if procedures is None:
+            return
+        from ..procedure_select import pick_sid, pick_star
+
         if arriving:
             chosen = pick_star(procedures, runway=flight.runway, at=at,
                                toward=toward)
@@ -395,13 +414,6 @@ class _The_ground_driven:
                 flight.star_transition = chosen.transition.name
                 flight.procedure_pair = (chosen.procedure,
                                          chosen.transition)
-            known = self.approach_data.get(self.field.ident)
-            from ...navdata.db import vfr_region
-            choice = select_approach(
-                known, flight.runway, self.field.weather,
-                airliner=flight.operator is not None,
-                region=vfr_region(self.field.ident))
-            flight.approach = choice.approach.name
         else:
             chosen = pick_sid(procedures, runway=flight.runway, at=at,
                               toward=toward)

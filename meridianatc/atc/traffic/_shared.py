@@ -302,6 +302,14 @@ class Flight:
     star: str = ""
     star_transition: str = ""
     approach: str = ""
+    # The cleared approach's own legs, kept from the Approach record the
+    # assign picked (atc.procedure_select): what it flies after whatever
+    # procedure_pair held before them runs out -- the published final,
+    # RF arcs and all, instead of the straight-in the phase would fall
+    # back to. Empty where the source only names the procedure, which
+    # keeps the old synthetic final. Consumed once: a second approach
+    # keeps the pair that is already flying, not a fresh start.
+    approach_legs: tuple = ()
     procedure_pair: tuple | None = None
     # The navigator flying those legs (ProcedureNavigator), built when
     # the model takes over; None again once the legs are done.

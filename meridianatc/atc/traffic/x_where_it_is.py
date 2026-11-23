@@ -164,12 +164,24 @@ class _Where_it_is:
                 "inbound", "joining", "final", "landed"):
             lat, lon, heading = end
             if flight.phase != "landed":
-                behind = project(lat, lon, (heading + 180.0) % 360.0,
-                                 min(6.0, max(0.0, flight.distance_nm)))
-                path.append((behind[0], behind[1],
-                             glide_altitude(elevation, min(
-                                 6.0, max(0.0, flight.distance_nm)),
-                                 GLIDE_FT_PER_NM)))
+                # A procedure the model is steering draws ahead as the
+                # legs it is on -- the published path, offset final and
+                # all -- rather than the straight-in there would be
+                # without them.
+                rest = getattr(getattr(flight, "procedure_nav", None),
+                               "points", None)
+                if rest:
+                    for plat, plon, palt, _speed in rest:
+                        path.append((plat, plon,
+                                     palt or elevation + 50.0))
+                else:
+                    behind = project(
+                        lat, lon, (heading + 180.0) % 360.0,
+                        min(6.0, max(0.0, flight.distance_nm)))
+                    path.append((behind[0], behind[1],
+                                 glide_altitude(elevation, min(
+                                     6.0, max(0.0, flight.distance_nm)),
+                                     GLIDE_FT_PER_NM)))
                 path.append((lat, lon, elevation + 50.0))
                 mark("threshold", flight.runway, lat, lon)
             rollout = project(lat, lon, heading, 0.8)
