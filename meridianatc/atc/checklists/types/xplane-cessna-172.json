@@ -1,138 +1,916 @@
 {
   "_comment": "X-Plane 12 Cessna 172 Skyhawk SP manual checklists (x-plane.com/support/manuals/), mapped onto the standard names. The manual's own words, adapted to the model; checks only where the state publishes the variable.",
   "source": "X-Plane 12 Cessna 172 Skyhawk SP manual, Checklists section",
-  "match": [ "cessna 172", "172s", "skyhawk" ],
+  "match": [
+    "cessna 172",
+    "172s",
+    "skyhawk"
+  ],
   "checklists": {
     "preflight": {
       "title": "preflight",
       "items": [
-        { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
-        { "challenge": "Master switch", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
-        { "challenge": "Battery voltage", "response": "check twenty-four plus", "accept": ["check"] },
-        { "challenge": "Landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true} },
-        { "challenge": "Taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
-        { "challenge": "Navigation lights", "response": "on", "accept": ["on"], "check": {"var": "nav_light", "op": "eq", "value": true} },
-        { "challenge": "Beacon", "response": "on", "accept": ["on"], "check": {"var": "beacon_light", "op": "eq", "value": true} },
-        { "challenge": "Strobes", "response": "on", "accept": ["on"], "check": {"var": "strobe_light", "op": "eq", "value": true} },
-        { "challenge": "Flaps", "response": "extended", "accept": ["down", "set"], "note": "Extended for the walk-around." },
-        { "challenge": "Exterior inspection", "response": "complete", "accept": ["complete", "check"], "note": "Control surfaces move with full deflection; all lights checked operating." }
+        {
+          "challenge": "Parking brake",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Master switch",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Battery voltage",
+          "response": "check twenty-four plus",
+          "accept": [
+            "check"
+          ],
+          "check": {
+            "var": "main_bus_volts",
+            "op": "min",
+            "value": 20
+          }
+        },
+        {
+          "challenge": "Landing lights",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Taxi lights",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "taxi_light",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Navigation lights",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "nav_light",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Beacon",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "beacon_light",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Strobes",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "strobe_light",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Flaps",
+          "response": "extended",
+          "accept": [
+            "down",
+            "set"
+          ],
+          "note": "Extended for the walk-around."
+        },
+        {
+          "challenge": "Exterior inspection",
+          "response": "complete",
+          "accept": [
+            "complete",
+            "check"
+          ],
+          "note": "Control surfaces move with full deflection; all lights checked operating."
+        }
       ]
     },
     "before_start": {
       "title": "before starting engines",
       "items": [
-        { "challenge": "Exterior inspection", "response": "completed", "accept": ["complete", "check"] },
-        { "challenge": "Fuel selector", "response": "both", "accept": ["set", "on"], "check": {"var": "fuel_selector", "op": "in", "value": [1, 16]} },
-        { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
-        { "challenge": "Lights", "response": "off", "accept": ["off"] },
-        { "challenge": "Fuel quantity", "response": "checked", "accept": ["check"] },
-        { "challenge": "Power", "response": "idle", "accept": ["check", "set"] },
-        { "challenge": "Mixture", "response": "rich", "accept": ["set", "check"], "check": {"var": "mixture_pct", "op": "min", "value": 95}, "note": "Full forward." },
-        { "challenge": "Avionics bus one and two", "response": "off", "accept": ["off"], "check": {"var": "avionics_master", "op": "eq", "value": false} }
+        {
+          "challenge": "Exterior inspection",
+          "response": "completed",
+          "accept": [
+            "complete",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Fuel selector",
+          "response": "both",
+          "accept": [
+            "set",
+            "on"
+          ],
+          "check": {
+            "var": "fuel_selector",
+            "op": "in",
+            "value": [
+              1,
+              16
+            ]
+          }
+        },
+        {
+          "challenge": "Parking brake",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Lights",
+          "response": "off",
+          "accept": [
+            "off"
+          ]
+        },
+        {
+          "challenge": "Fuel quantity",
+          "response": "checked",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Power",
+          "response": "idle",
+          "accept": [
+            "check",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Mixture",
+          "response": "rich",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "mixture_pct",
+            "op": "min",
+            "value": 95
+          },
+          "note": "Full forward."
+        },
+        {
+          "challenge": "Avionics bus one and two",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "avionics_master",
+            "op": "eq",
+            "value": false
+          }
+        }
       ]
     },
     "after_start": {
       "title": "engine start",
       "items": [
-        { "challenge": "Throttle", "response": "quarter inch open", "accept": ["set", "check"] },
-        { "challenge": "Master switch", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
-        { "challenge": "Fuel pump", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "Mixture", "response": "rich until stable fuel flow, then lean", "accept": ["set", "check"] },
-        { "challenge": "Beacon", "response": "on", "accept": ["on"], "check": {"var": "beacon_light", "op": "eq", "value": true} },
-        { "challenge": "Propeller area", "response": "clear", "accept": ["check"] },
-        { "challenge": "Ignition switch", "response": "start", "accept": ["set", "on"] },
-        { "challenge": "Mixture", "response": "rich when engine starts", "accept": ["set", "check"], "check": {"var": "mixture_pct", "op": "min", "value": 95} },
-        { "challenge": "Ignition switch", "response": "both", "accept": ["set", "check"] },
-        { "challenge": "Oil pressure", "response": "check", "accept": ["check", "green"] },
-        { "challenge": "Avionics bus one and two", "response": "on", "accept": ["on"], "check": {"var": "avionics_master", "op": "eq", "value": true} },
-        { "challenge": "Radios", "response": "on and set", "accept": ["set", "on"] },
-        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] , "check": {"var": "transponder_state", "op": "in", "value": [3, 4, 5]} }
+        {
+          "challenge": "Throttle",
+          "response": "quarter inch open",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Master switch",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Fuel pump",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "fuel_pump_on",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Mixture",
+          "response": "rich until stable fuel flow, then lean",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "mixture_pct",
+            "op": "min",
+            "value": 90
+          }
+        },
+        {
+          "challenge": "Beacon",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "beacon_light",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Propeller area",
+          "response": "clear",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Ignition switch",
+          "response": "start",
+          "accept": [
+            "set",
+            "on"
+          ],
+          "check": {
+            "var": "magneto_pos",
+            "op": "in",
+            "value": [
+              3,
+              4
+            ]
+          }
+        },
+        {
+          "challenge": "Mixture",
+          "response": "rich when engine starts",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "mixture_pct",
+            "op": "min",
+            "value": 95
+          }
+        },
+        {
+          "challenge": "Ignition switch",
+          "response": "both",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "magneto_pos",
+            "op": "eq",
+            "value": 3
+          }
+        },
+        {
+          "challenge": "Oil pressure",
+          "response": "check",
+          "accept": [
+            "check",
+            "green"
+          ],
+          "check": {
+            "var": "oil_pressure_psi",
+            "op": "min",
+            "value": 10
+          }
+        },
+        {
+          "challenge": "Avionics bus one and two",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "avionics_master",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Radios",
+          "response": "on and set",
+          "accept": [
+            "set",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Transponder",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "transponder_state",
+            "op": "in",
+            "value": [
+              3,
+              4,
+              5
+            ]
+          }
+        }
       ]
     },
     "taxi": {
       "title": "before taxi",
       "items": [
-        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
-        { "challenge": "Brakes", "response": "check", "accept": ["check"] },
-        { "challenge": "Gyro instruments and compass", "response": "check and set", "accept": ["set", "check"] }
+        {
+          "challenge": "Flaps",
+          "response": "retracted",
+          "accept": [
+            "up"
+          ],
+          "check": {
+            "var": "flaps_index",
+            "op": "eq",
+            "value": 0
+          }
+        },
+        {
+          "challenge": "Brakes",
+          "response": "check",
+          "accept": [
+            "check"
+          ],
+          "check": {
+            "var": "brake_left_pct",
+            "op": "min",
+            "value": 10
+          }
+        },
+        {
+          "challenge": "Gyro instruments and compass",
+          "response": "check and set",
+          "accept": [
+            "set",
+            "check"
+          ]
+        }
       ]
     },
     "before_takeoff": {
       "title": "before takeoff",
       "items": [
-        { "challenge": "Parking brake", "response": "set", "accept": ["set", "on"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
-        { "challenge": "Doors and windows", "response": "closed", "accept": ["check"] },
-        { "challenge": "Flight controls", "response": "free and correct", "accept": ["check"] },
-        { "challenge": "Flight instruments", "response": "check", "accept": ["check"] },
-        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
-        { "challenge": "Fuel selector valve", "response": "both", "accept": ["set", "on"], "check": {"var": "fuel_selector", "op": "in", "value": [1, 16]} },
-        { "challenge": "Mixture", "response": "rich", "accept": ["set", "check"], "check": {"var": "mixture_pct", "op": "min", "value": 95} },
-        { "challenge": "Elevator and rudder trim", "response": "takeoff", "accept": ["set", "check"] },
-        { "challenge": "Throttle", "response": "seventeen hundred RPM", "accept": ["set", "check"] },
-        { "challenge": "Magnetos", "response": "check", "accept": ["check"] },
-        { "challenge": "Engine instruments", "response": "check", "accept": ["check", "green"] },
-        { "challenge": "Ammeter", "response": "check", "accept": ["check"] },
-        { "challenge": "Vacuum pressure", "response": "check", "accept": ["check"] },
-        { "challenge": "Throttle", "response": "idle", "accept": ["set", "check"] },
-        { "challenge": "Radios", "response": "as required", "accept": ["set", "check"] },
-        { "challenge": "Lights", "response": "as required", "accept": ["set", "check"] },
-        { "challenge": "Transponder", "response": "alt", "accept": ["on", "set"], "check": {"var": "transponder_state", "op": "in", "value": [3, 4]}, "note": "UNVERIFIED: TRANSPONDER STATE values are program-defined and unmeasured on a live sim." },
-        { "challenge": "Parking brake", "response": "release", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} }
+        {
+          "challenge": "Parking brake",
+          "response": "set",
+          "accept": [
+            "set",
+            "on"
+          ],
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Doors and windows",
+          "response": "closed",
+          "accept": [
+            "check"
+          ],
+          "check": {
+            "var": "exits_open_pct",
+            "op": "max",
+            "value": 5
+          }
+        },
+        {
+          "challenge": "Flight controls",
+          "response": "free and correct",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flight instruments",
+          "response": "check",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Altimeter",
+          "response": "set",
+          "accept": [
+            "set",
+            "value"
+          ],
+          "check": {
+            "var": "kohlsman_hpa",
+            "op": "near",
+            "value": "$qnh",
+            "tolerance": 1.0
+          }
+        },
+        {
+          "challenge": "Fuel selector valve",
+          "response": "both",
+          "accept": [
+            "set",
+            "on"
+          ],
+          "check": {
+            "var": "fuel_selector",
+            "op": "in",
+            "value": [
+              1,
+              16
+            ]
+          }
+        },
+        {
+          "challenge": "Mixture",
+          "response": "rich",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "mixture_pct",
+            "op": "min",
+            "value": 95
+          }
+        },
+        {
+          "challenge": "Elevator and rudder trim",
+          "response": "takeoff",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Throttle",
+          "response": "seventeen hundred RPM",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Magnetos",
+          "response": "check",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Engine instruments",
+          "response": "check",
+          "accept": [
+            "check",
+            "green"
+          ]
+        },
+        {
+          "challenge": "Ammeter",
+          "response": "check",
+          "accept": [
+            "check"
+          ],
+          "check": {
+            "var": "battery_amps",
+            "op": "min",
+            "value": 0
+          }
+        },
+        {
+          "challenge": "Vacuum pressure",
+          "response": "check",
+          "accept": [
+            "check"
+          ],
+          "check": {
+            "var": "suction_inhg",
+            "op": "min",
+            "value": 3.5
+          }
+        },
+        {
+          "challenge": "Throttle",
+          "response": "idle",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "throttle_pct",
+            "op": "max",
+            "value": 10
+          }
+        },
+        {
+          "challenge": "Radios",
+          "response": "as required",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Lights",
+          "response": "as required",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Transponder",
+          "response": "alt",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "transponder_state",
+            "op": "in",
+            "value": [
+              3,
+              4
+            ]
+          },
+          "note": "UNVERIFIED: TRANSPONDER STATE values are program-defined and unmeasured on a live sim."
+        },
+        {
+          "challenge": "Parking brake",
+          "response": "release",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": false
+          }
+        }
       ]
     },
     "after_takeoff": {
       "title": "takeoff and climb",
       "items": [
-        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
-        { "challenge": "Throttle", "response": "full open", "accept": ["set", "check"] },
-        { "challenge": "Airspeed", "response": "V-y", "accept": ["check"], "note": "Rotate at 55 KIAS; Vx to clear obstacles, then Vy." },
-        { "challenge": "Mixture", "response": "set for max RPM", "accept": ["set", "check"] }
+        {
+          "challenge": "Flaps",
+          "response": "retracted",
+          "accept": [
+            "up"
+          ],
+          "check": {
+            "var": "flaps_index",
+            "op": "eq",
+            "value": 0
+          }
+        },
+        {
+          "challenge": "Throttle",
+          "response": "full open",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Airspeed",
+          "response": "V-y",
+          "accept": [
+            "check"
+          ],
+          "note": "Rotate at 55 KIAS; Vx to clear obstacles, then Vy."
+        },
+        {
+          "challenge": "Mixture",
+          "response": "set for max RPM",
+          "accept": [
+            "set",
+            "check"
+          ]
+        }
       ]
     },
     "cruise": {
       "title": "cruise",
       "items": [
-        { "challenge": "RPM", "response": "twenty-one hundred to twenty-seven hundred", "accept": ["set", "check"] },
-        { "challenge": "Elevator trim", "response": "adjust for desired airspeed", "accept": ["set", "check"] },
-        { "challenge": "Mixture", "response": "lean as required", "accept": ["set", "check"] }
+        {
+          "challenge": "RPM",
+          "response": "twenty-one hundred to twenty-seven hundred",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Elevator trim",
+          "response": "adjust for desired airspeed",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Mixture",
+          "response": "lean as required",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "mixture_pct",
+            "op": "max",
+            "value": 95
+          }
+        }
       ]
     },
     "descent": {
       "title": "descent",
       "items": [
-        { "challenge": "Fuel selector valve", "response": "both", "accept": ["set", "on"], "check": {"var": "fuel_selector", "op": "in", "value": [1, 16]} },
-        { "challenge": "Mixture", "response": "richen", "accept": ["set", "check"], "check": {"var": "mixture_pct", "op": "min", "value": 95} },
-        { "challenge": "Power", "response": "as required", "accept": ["set", "check"] }
+        {
+          "challenge": "Fuel selector valve",
+          "response": "both",
+          "accept": [
+            "set",
+            "on"
+          ],
+          "check": {
+            "var": "fuel_selector",
+            "op": "in",
+            "value": [
+              1,
+              16
+            ]
+          }
+        },
+        {
+          "challenge": "Mixture",
+          "response": "richen",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "mixture_pct",
+            "op": "min",
+            "value": 95
+          }
+        },
+        {
+          "challenge": "Power",
+          "response": "as required",
+          "accept": [
+            "set",
+            "check"
+          ]
+        }
       ]
     },
     "before_landing": {
       "title": "before landing",
       "items": [
-        { "challenge": "Fuel selector valve", "response": "both", "accept": ["set", "on"], "check": {"var": "fuel_selector", "op": "in", "value": [1, 16]} },
-        { "challenge": "Mixture", "response": "rich", "accept": ["set", "check"], "check": {"var": "mixture_pct", "op": "min", "value": 95} },
-        { "challenge": "Flaps", "response": "extended", "accept": ["down", "set"] }
+        {
+          "challenge": "Fuel selector valve",
+          "response": "both",
+          "accept": [
+            "set",
+            "on"
+          ],
+          "check": {
+            "var": "fuel_selector",
+            "op": "in",
+            "value": [
+              1,
+              16
+            ]
+          }
+        },
+        {
+          "challenge": "Mixture",
+          "response": "rich",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "mixture_pct",
+            "op": "min",
+            "value": 95
+          }
+        },
+        {
+          "challenge": "Flaps",
+          "response": "extended",
+          "accept": [
+            "down",
+            "set"
+          ]
+        }
       ]
     },
     "after_landing": {
       "title": "after landing",
       "items": [
-        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
-        { "challenge": "Strobe lights", "response": "off", "accept": ["off"], "check": {"var": "strobe_light", "op": "eq", "value": false} },
-        { "challenge": "Trim", "response": "reset", "accept": ["set", "check"] }
+        {
+          "challenge": "Flaps",
+          "response": "retracted",
+          "accept": [
+            "up"
+          ],
+          "check": {
+            "var": "flaps_index",
+            "op": "eq",
+            "value": 0
+          }
+        },
+        {
+          "challenge": "Strobe lights",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "strobe_light",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Trim",
+          "response": "reset",
+          "accept": [
+            "set",
+            "check"
+          ]
+        }
       ]
     },
     "shutdown": {
       "title": "engine shutdown and securing",
       "items": [
-        { "challenge": "Parking brake", "response": "set", "accept": ["set", "on"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
-        { "challenge": "Throttle", "response": "eight hundred to one thousand RPM", "accept": ["set", "check"] },
-        { "challenge": "Avionics", "response": "off", "accept": ["off"], "check": {"var": "avionics_master", "op": "eq", "value": false} },
-        { "challenge": "Electrical switches except beacon", "response": "off", "accept": ["off", "check"] },
-        { "challenge": "Mixture", "response": "idle cutoff", "accept": ["set", "off"], "check": {"var": "mixture_pct", "op": "max", "value": 5} },
-        { "challenge": "Ignition switch", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "Master switch", "response": "off", "accept": ["off"], "check": {"var": "battery_master", "op": "eq", "value": false} },
-        { "challenge": "Fuel selector valve", "response": "right tank", "accept": ["set", "check"] },
-        { "challenge": "Hobbs and tach times", "response": "record", "accept": ["check", "complete"], "note": "Not simulated." }
+        {
+          "challenge": "Parking brake",
+          "response": "set",
+          "accept": [
+            "set",
+            "on"
+          ],
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Throttle",
+          "response": "eight hundred to one thousand RPM",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Avionics",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "avionics_master",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Electrical switches except beacon",
+          "response": "off",
+          "accept": [
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Mixture",
+          "response": "idle cutoff",
+          "accept": [
+            "set",
+            "off"
+          ],
+          "check": {
+            "var": "mixture_pct",
+            "op": "max",
+            "value": 5
+          }
+        },
+        {
+          "challenge": "Ignition switch",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ],
+          "check": {
+            "var": "magneto_pos",
+            "op": "eq",
+            "value": 0
+          }
+        },
+        {
+          "challenge": "Master switch",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Fuel selector valve",
+          "response": "right tank",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Hobbs and tach times",
+          "response": "record",
+          "accept": [
+            "check",
+            "complete"
+          ],
+          "note": "Not simulated."
+        }
       ]
     }
   }

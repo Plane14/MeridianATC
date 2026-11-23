@@ -277,6 +277,7 @@ def test_a_climb_under_the_transport_gate_still_comes_clean():
     test so a leftover cannot stay out for the flight.
     """
     from dataclasses import replace
+
     from meridianatc.atc.autonomous import AutonomousPhase
     plant = _start(5.0, 3000.0)
     fo = _fo(plant)

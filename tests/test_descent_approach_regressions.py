@@ -112,7 +112,7 @@ def test_a_descent_above_its_level_brings_the_lever_back():
     assert fo.throttle_writes and fo.throttle_writes[-1] <= 0.20
     # And the walk was monotonic down, never an up-swing on the way.
     writes = fo.throttle_writes
-    assert all(b <= a for a, b in zip(writes, writes[1:]))
+    assert all(b <= a for a, b in zip(writes, writes[1:], strict=False))
 
 
 def test_a_level_leg_in_the_descent_keeps_normal_power():

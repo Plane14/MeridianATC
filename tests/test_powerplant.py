@@ -154,6 +154,7 @@ def test_a_spike_across_the_line_is_not_an_over_limit():
     The cap and the call wait for a reading that stays there, the way a
     hand on the lever does."""
     import time as _time
+
     from meridianatc.atc.autonomous import AutonomousPhase
     fo = _fo()
     fo.state.phase = AutonomousPhase.CRUISE
@@ -411,8 +412,9 @@ def test_deadband_does_not_hide_an_engine_over_limit():
     """On-target speed is the deadband the throttle servo leaves alone --
     but a gauge drifting past its red line at that speed still gets the
     power pulled; an exceedance is not a deadband case."""
-    from meridianatc.atc.autonomous import AutonomousPhase
     import time as _time
+
+    from meridianatc.atc.autonomous import AutonomousPhase
     fo = _fo()
     fo._OVER_PERSIST_S = 0.0
     fo.state.phase = AutonomousPhase.CRUISE
