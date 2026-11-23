@@ -499,6 +499,7 @@ class SimConnectSource:
         ("KOHLSMAN_SETTING_MB", "kohlsman_hpa", "raw", "slow"),      # Millibars
         ("FUEL_TANK_SELECTOR:1", "fuel_selector", "int", "slow"),    # Enum
         ("GENERAL_ENG_MIXTURE_LEVER_POSITION:1", "mixture_pct", "raw", "slow"),
+        ("GENERAL_ENG_PROPELLER_LEVER_POSITION:1", "prop_pct", "raw", "slow"),
         ("AUTOPILOT_MASTER", "autopilot", "bool", "slow"),
         ("GPS_DRIVES_NAV1", "gps_drives_nav1", "bool", "slow"),
         # The level-change mode's own status, for the first officer's
@@ -614,6 +615,8 @@ class SimConnectSource:
         ("NAV_GSI:1", "nav1_gsi", "raw", "slow"),
         ("NAV ACTIVE FREQUENCY:1", "nav1_freq", "navfreq", "slow"),
         ("AUTOPILOT_AIRSPEED_HOLD_VAR", "ap_airspeed_kt", "raw", "slow"),
+        ("AUTOPILOT_ALTITUDE_LOCK_VAR:1", "ap_altitude_ft", "raw", "slow"),
+        ("AUTOPILOT_HEADING_LOCK_DIR", "ap_heading_deg", "raw", "slow"),
         # Whether an autothrottle is actually driving the levers -- the
         # FO's throttle servo checks it before touching them, and the
         # managed engage arms the AT only while this reads false.

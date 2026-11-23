@@ -167,7 +167,25 @@ class _The_checklist_answered:
             # idle -- and the lever is the enum's three detents.
             "condition_pct": lambda: d.condition(
                 round(float(expected) / 50.0)),
+            # The lever checks name a percent of travel; the servo's own
+            # ramp keeps the write from being the brisk lever jump the
+            # ITT fix taught the sims to hate.
+            "throttle_pct": lambda: d.throttle(
+                min(1.0, float(expected) / 100.0)),
+            "prop_pct": lambda: d.prop(
+                min(1.0, float(expected) / 100.0)),
+            # The mode switch's check names one enum value for "stby"
+            # and a list for "on or alt": write the first acceptable
+            # detent, which is the one the card means.
+            "transponder_state": lambda: d.write(
+                "TRANSPONDER STATE:1",
+                float(expected[0] if isinstance(expected, (list, tuple))
+                      else expected)),
             "transponder_code": lambda: d.transponder(str(expected)),
+            # The FCU windows the card asks for: dial the figure the
+            # controller gave, the way the human would.
+            "ap_altitude_ft": lambda: d.altitude(float(expected)),
+            "ap_heading_deg": lambda: d.heading(float(expected)),
             "kohlsman_hpa": lambda: d.kohlsman(
                 self._altimeter_hpa(expected)),
             # The check asks for a detent, not a travel: the handle index

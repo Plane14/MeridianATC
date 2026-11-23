@@ -25,6 +25,11 @@
         {
           "challenge": "Battery switch",
           "response": "on",
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "on",
             "check"
@@ -109,6 +114,11 @@
         {
           "challenge": "Parking brake",
           "response": "set",
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "check",
@@ -140,6 +150,11 @@
         {
           "challenge": "Fasten seat belts and no smoking",
           "response": "on",
+          "check": {
+            "var": "seatbelt_sign",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "on",
             "check"
@@ -188,6 +203,11 @@
         {
           "challenge": "Anti-collision beacon",
           "response": "on",
+          "check": {
+            "var": "beacon_light",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "on",
             "check"
@@ -204,6 +224,11 @@
         {
           "challenge": "Thrust levers",
           "response": "idle",
+          "check": {
+            "var": "throttle_pct",
+            "op": "max",
+            "value": 5
+          },
           "accept": [
             "check",
             "off"
@@ -220,6 +245,11 @@
         {
           "challenge": "Transponder code and mode",
           "response": "set, standby",
+          "check": {
+            "var": "transponder_state",
+            "op": "eq",
+            "value": 1
+          },
           "accept": [
             "set",
             "check",
@@ -282,6 +312,11 @@
         {
           "challenge": "Parking brake",
           "response": "set",
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "check",
@@ -472,6 +507,11 @@
         {
           "challenge": "Taxi light",
           "response": "on",
+          "check": {
+            "var": "taxi_light",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "on",
             "check"
@@ -480,6 +520,11 @@
         {
           "challenge": "Parking brake",
           "response": "released for taxi",
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "check",
             "off"
@@ -533,6 +578,11 @@
         {
           "challenge": "Parking brake",
           "response": "released",
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "check",
             "off"
@@ -572,6 +622,15 @@
         {
           "challenge": "Transponder and T C A S",
           "response": "alt, T A R A",
+          "check": {
+            "var": "transponder_state",
+            "op": "in",
+            "value": [
+              3,
+              4,
+              5
+            ]
+          },
           "accept": [
             "set",
             "check",
@@ -598,6 +657,11 @@
         {
           "challenge": "Strobe lights",
           "response": "on",
+          "check": {
+            "var": "strobe_light",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "on",
             "check"
@@ -606,6 +670,11 @@
         {
           "challenge": "Landing lights",
           "response": "extended and on",
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "on",
             "check"
@@ -655,6 +724,11 @@
         {
           "challenge": "Speedbrake",
           "response": "down, disarmed",
+          "check": {
+            "var": "spoilers_armed",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "check",
             "down",
@@ -695,6 +769,12 @@
         {
           "challenge": "Altimeters",
           "response": "standard, two niner niner two",
+          "check": {
+            "var": "kohlsman_hpa",
+            "op": "near",
+            "value": 1013.25,
+            "tolerance": 1.0
+          },
           "accept": [
             "set",
             "value",
@@ -812,6 +892,12 @@
         {
           "challenge": "Altimeters",
           "response": "set, cross-checked",
+          "check": {
+            "var": "kohlsman_hpa",
+            "op": "near",
+            "value": "$qnh",
+            "tolerance": 1.0
+          },
           "accept": [
             "set",
             "check",
@@ -844,6 +930,12 @@
         {
           "challenge": "Altimeters, Q N H",
           "response": "destination Q N H set",
+          "check": {
+            "var": "kohlsman_hpa",
+            "op": "near",
+            "value": "$qnh",
+            "tolerance": 1.0
+          },
           "accept": [
             "set",
             "value",
@@ -928,6 +1020,11 @@
         {
           "challenge": "Landing lights",
           "response": "on",
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "on",
             "check"
@@ -936,6 +1033,11 @@
         {
           "challenge": "Parking brake",
           "response": "released",
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "check",
             "off"
@@ -984,6 +1086,11 @@
         {
           "challenge": "Taxi light",
           "response": "on",
+          "check": {
+            "var": "taxi_light",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "on",
             "check"
@@ -992,6 +1099,11 @@
         {
           "challenge": "Strobe lights",
           "response": "off",
+          "check": {
+            "var": "strobe_light",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "off",
             "check"
@@ -1000,6 +1112,11 @@
         {
           "challenge": "Transponder and T C A S",
           "response": "standby",
+          "check": {
+            "var": "transponder_state",
+            "op": "eq",
+            "value": 1
+          },
           "accept": [
             "check",
             "set"
@@ -1025,6 +1142,11 @@
         {
           "challenge": "Parking brake",
           "response": "released, monitor cooling",
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "check",
             "off"
@@ -1040,6 +1162,11 @@
         {
           "challenge": "Parking brake",
           "response": "set",
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "check",
@@ -1090,6 +1217,11 @@
         {
           "challenge": "Battery master switch",
           "response": "off",
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "off",
             "check"
@@ -1210,6 +1342,11 @@
         {
           "challenge": "Thrust lever, affected engine",
           "response": "idle",
+          "check": {
+            "var": "throttle_pct",
+            "op": "max",
+            "value": 5
+          },
           "accept": [
             "check",
             "off"
@@ -1373,6 +1510,11 @@
         {
           "challenge": "Thrust levers one through four",
           "response": "flight idle, below sixty-five percent N one",
+          "check": {
+            "var": "throttle_pct",
+            "op": "max",
+            "value": 5
+          },
           "accept": [
             "check",
             "off"
@@ -1403,6 +1545,11 @@
         {
           "challenge": "Landing gear handle",
           "response": "down",
+          "check": {
+            "var": "gear_down",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "down",
             "check"
@@ -1411,6 +1558,11 @@
         {
           "challenge": "Alternate gear extension lever",
           "response": "pulled, mechanical uplock release",
+          "check": {
+            "var": "gear_down",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "check",
             "set"
@@ -1419,6 +1571,11 @@
         {
           "challenge": "Landing gear downlock indication",
           "response": "down and locked, three green",
+          "check": {
+            "var": "gear_down",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "down",
             "check",

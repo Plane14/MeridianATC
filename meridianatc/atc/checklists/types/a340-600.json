@@ -67,6 +67,11 @@
         {
           "challenge": "Battery",
           "response": "on.",
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -118,6 +123,11 @@
         {
           "challenge": "Navigation Lights",
           "response": "on.",
+          "check": {
+            "var": "nav_light",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -128,6 +138,11 @@
         {
           "challenge": "Seat Belts Sign",
           "response": "on.",
+          "check": {
+            "var": "seatbelt_sign",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -203,6 +218,12 @@
         {
           "challenge": "FCU Altitude",
           "response": "altitude.",
+          "check": {
+            "var": "ap_altitude_ft",
+            "op": "near",
+            "value": "$altitude",
+            "tolerance": 100
+          },
           "accept": [
             "set",
             "on",
@@ -214,6 +235,11 @@
         {
           "challenge": "Transponder",
           "response": "stby.",
+          "check": {
+            "var": "transponder_state",
+            "op": "eq",
+            "value": 1
+          },
           "accept": [
             "set",
             "on",
@@ -225,6 +251,11 @@
         {
           "challenge": "Parking Brake",
           "response": "set.",
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -235,6 +266,11 @@
         {
           "challenge": "Beacon Light",
           "response": "on.",
+          "check": {
+            "var": "beacon_light",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -252,6 +288,11 @@
         {
           "challenge": "Thrust Levers",
           "response": "idle.",
+          "check": {
+            "var": "throttle_pct",
+            "op": "max",
+            "value": 5
+          },
           "accept": [
             "set",
             "on",
@@ -282,6 +323,11 @@
         {
           "challenge": "Engine Master",
           "response": "on.",
+          "check": {
+            "var": "engines_running",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -387,6 +433,11 @@
         {
           "challenge": "Taxi Light",
           "response": "on.",
+          "check": {
+            "var": "taxi_light",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -397,6 +448,11 @@
         {
           "challenge": "Parking Brake",
           "response": "release.",
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "set",
             "on",
@@ -443,6 +499,15 @@
         {
           "challenge": "Transponder",
           "response": "on.",
+          "check": {
+            "var": "transponder_state",
+            "op": "in",
+            "value": [
+              3,
+              4,
+              5
+            ]
+          },
           "accept": [
             "set",
             "on",
@@ -469,6 +534,11 @@
         {
           "challenge": "Landing Lights",
           "response": "on.",
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -479,6 +549,11 @@
         {
           "challenge": "Strobe Lights",
           "response": "on.",
+          "check": {
+            "var": "strobe_light",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -499,6 +574,11 @@
         {
           "challenge": "Thrust Levers",
           "response": "thrust.",
+          "check": {
+            "var": "throttle_pct",
+            "op": "min",
+            "value": 85
+          },
           "accept": [
             "set",
             "on",
@@ -510,6 +590,11 @@
         {
           "challenge": "Brakes",
           "response": "release.",
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "set",
             "on",
@@ -546,6 +631,11 @@
         {
           "challenge": "Positive Climb",
           "response": "confirmed.",
+          "check": {
+            "var": "vertical_speed_fpm",
+            "op": "min",
+            "value": 300
+          },
           "accept": [
             "check"
           ]
@@ -553,6 +643,11 @@
         {
           "challenge": "Landing Gear",
           "response": "up.",
+          "check": {
+            "var": "gear_down",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "set",
             "on",
@@ -563,6 +658,11 @@
         {
           "challenge": "Thrust Levers",
           "response": "detent.",
+          "check": {
+            "var": "throttle_pct",
+            "op": "min",
+            "value": 85
+          },
           "accept": [
             "set",
             "on",
@@ -574,6 +674,11 @@
         {
           "challenge": "Autopilot",
           "response": "on.",
+          "check": {
+            "var": "autopilot",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -584,6 +689,11 @@
         {
           "challenge": "Flaps",
           "response": "retract.",
+          "check": {
+            "var": "flaps_index",
+            "op": "eq",
+            "value": 0
+          },
           "accept": [
             "set",
             "on",
@@ -594,6 +704,11 @@
         {
           "challenge": "Landing Gear",
           "response": "up.",
+          "check": {
+            "var": "gear_down",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "check"
           ],
@@ -602,6 +717,12 @@
         {
           "challenge": "Baro Reference",
           "response": "std.",
+          "check": {
+            "var": "kohlsman_hpa",
+            "op": "near",
+            "value": 1013.25,
+            "tolerance": 1.0
+          },
           "accept": [
             "set",
             "on",
@@ -703,6 +824,12 @@
         {
           "challenge": "FCU Altitude",
           "response": "altitude.",
+          "check": {
+            "var": "ap_altitude_ft",
+            "op": "near",
+            "value": "$altitude",
+            "tolerance": 100
+          },
           "accept": [
             "set",
             "on",
@@ -725,6 +852,11 @@
         {
           "challenge": "Landing Lights",
           "response": "ft.",
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -758,6 +890,11 @@
         {
           "challenge": "Landing Gear",
           "response": "down.",
+          "check": {
+            "var": "gear_down",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -768,6 +905,11 @@
         {
           "challenge": "Ground Spoilers",
           "response": "arm.",
+          "check": {
+            "var": "spoilers_armed",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -849,6 +991,11 @@
         {
           "challenge": "Flaps",
           "response": "0.",
+          "check": {
+            "var": "flaps_index",
+            "op": "eq",
+            "value": 0
+          },
           "accept": [
             "set",
             "on",
@@ -860,6 +1007,11 @@
         {
           "challenge": "Ground Spoilers",
           "response": "disarm.",
+          "check": {
+            "var": "spoilers_armed",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "set",
             "on",
@@ -870,6 +1022,11 @@
         {
           "challenge": "Strobe Lights",
           "response": "auto.",
+          "check": {
+            "var": "strobe_light",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -881,6 +1038,11 @@
         {
           "challenge": "Landing Lights",
           "response": "off.",
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "set",
             "on",
@@ -891,6 +1053,11 @@
         {
           "challenge": "Transponder",
           "response": "stby.",
+          "check": {
+            "var": "transponder_state",
+            "op": "eq",
+            "value": 1
+          },
           "accept": [
             "set",
             "on",
@@ -901,6 +1068,11 @@
         {
           "challenge": "Parking Brake",
           "response": "set.",
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -911,6 +1083,11 @@
         {
           "challenge": "Engine Master",
           "response": "off.",
+          "check": {
+            "var": "engines_running",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "set",
             "on",
@@ -921,6 +1098,11 @@
         {
           "challenge": "Seat Belts Sign",
           "response": "off.",
+          "check": {
+            "var": "seatbelt_sign",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "set",
             "on",
@@ -931,6 +1113,11 @@
         {
           "challenge": "Beacon Light",
           "response": "off.",
+          "check": {
+            "var": "beacon_light",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "set",
             "on",
@@ -952,6 +1139,11 @@
         {
           "challenge": "Navigation Lights",
           "response": "off.",
+          "check": {
+            "var": "nav_light",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "set",
             "on",
@@ -983,6 +1175,11 @@
         {
           "challenge": "Battery",
           "response": "off.",
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "set",
             "on",

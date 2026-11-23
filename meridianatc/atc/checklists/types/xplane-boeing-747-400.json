@@ -42,7 +42,7 @@
         { "challenge": "Flaps", "response": "set, five degrees", "accept": ["set", "check"] },
         { "challenge": "Flight controls", "response": "checked, pitch roll yaw", "accept": ["check"] },
         { "challenge": "Taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
-        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] , "check": {"var": "transponder_state", "op": "in", "value": [3, 4, 5]} },
         { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} }
       ]
     },
@@ -89,7 +89,7 @@
         { "challenge": "Speed brakes", "response": "retracted", "accept": ["set", "check"], "check": {"var": "spoilers_armed", "op": "eq", "value": false} },
         { "challenge": "Landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
         { "challenge": "Taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
-        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] }
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] , "check": {"var": "transponder_state", "op": "in", "value": [3, 4, 5]} }
       ]
     },
     "shutdown": {
@@ -98,8 +98,8 @@
         { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
         { "challenge": "Taxi lights", "response": "off", "accept": ["off"], "check": {"var": "taxi_light", "op": "eq", "value": false} },
         { "challenge": "Seatbelt sign", "response": "off", "accept": ["off"], "check": {"var": "seatbelt_sign", "op": "eq", "value": false} },
-        { "challenge": "Transponder", "response": "standby", "accept": ["set", "off"] },
-        { "challenge": "Fuel control levers", "response": "down, off", "accept": ["off", "set"] },
+        { "challenge": "Transponder", "response": "standby", "accept": ["set", "off"] , "check": {"var": "transponder_state", "op": "eq", "value": 1} },
+        { "challenge": "Fuel control levers", "response": "down, off", "accept": ["off", "set"] , "check": {"var": "engines_running", "op": "eq", "value": false} },
         { "challenge": "External power", "response": "on", "accept": ["on", "set"] },
         { "challenge": "Beacon", "response": "off", "accept": ["off"], "check": {"var": "beacon_light", "op": "eq", "value": false} },
         { "challenge": "Hydraulic pump demands", "response": "off, all", "accept": ["off", "set"] },

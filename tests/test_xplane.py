@@ -186,6 +186,36 @@ def test_engine_types(xp, engine, helo, expected):
     assert (link.read().category == "Helicopter") == bool(helo)
 
 
+@pytest.mark.parametrize("engine,helo,prop,unavailable", [
+    (8, 0, 97.0, False),   # turboprop: the blue lever is the prop channel
+    (4, 0, 97.0, False),   # piston: fixed-pitch props simply read 1.0
+    (3, 0, 0.0, True),     # jet: no lever lives on the prop channel
+    (9, 1, 0.0, True),     # helicopter: that channel is the collective
+])
+def test_the_prop_lever_is_only_named_on_fixed_wing_props(
+        xp, engine, helo, prop, unavailable):
+    server, link = xp
+    server.values.update({EXTRA["xp_engine_type"]: engine,
+                          EXTRA["helicopter"]: helo,
+                          DATAREFS["collective_position"][0]: 0.97})
+    assert link.connect()
+    eventually(lambda: "collective_position" in link._values)
+    state = link.read()
+    assert state.prop_pct == pytest.approx(prop)
+    assert ("prop_pct" in state.unavailable) == unavailable
+
+
+def test_the_fcu_windows_are_read(xp):
+    server, link = xp
+    server.values.update({DATAREFS["ap_altitude_ft"][0]: 4000.0,
+                          DATAREFS["ap_heading_deg"][0]: 210.0})
+    assert link.connect()
+    eventually(lambda: "ap_altitude_ft" in link._values)
+    state = link.read()
+    assert state.ap_altitude_ft == pytest.approx(4000.0)
+    assert state.ap_heading_deg == pytest.approx(210.0)
+
+
 def test_radio_and_command_writes_and_safe_noops(xp):
     server, link = xp
     assert not link.set_com(123.805)

@@ -22,7 +22,7 @@
         { "challenge": "Flaps", "response": "set, ten degrees", "accept": ["set", "check"] },
         { "challenge": "Flight controls", "response": "checked, pitch roll yaw", "accept": ["check"] },
         { "challenge": "Taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
-        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] , "check": {"var": "transponder_state", "op": "in", "value": [3, 4, 5]} },
         { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} }
       ]
     },
@@ -62,7 +62,7 @@
       "items": [
         { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
         { "challenge": "Landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
-        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] }
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] , "check": {"var": "transponder_state", "op": "in", "value": [3, 4, 5]} }
       ]
     },
     "shutdown": {
@@ -70,7 +70,7 @@
       "items": [
         { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
         { "challenge": "Taxi lights", "response": "off", "accept": ["off"], "check": {"var": "taxi_light", "op": "eq", "value": false} },
-        { "challenge": "Transponder", "response": "standby", "accept": ["off", "set"] },
+        { "challenge": "Transponder", "response": "standby", "accept": ["off", "set"] , "check": {"var": "transponder_state", "op": "eq", "value": 1} },
         { "challenge": "Engine start stop", "response": "stop", "accept": ["off", "set"] },
         { "challenge": "Nav lights", "response": "off", "accept": ["off"], "check": {"var": "nav_light", "op": "eq", "value": false} },
         { "challenge": "Probe heat and ice protection", "response": "off", "accept": ["off"], "check": {"var": "pitot_heat", "op": "eq", "value": false} },

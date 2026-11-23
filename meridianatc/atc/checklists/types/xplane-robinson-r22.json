@@ -18,7 +18,7 @@
       "title": "before starting engine",
       "items": [
         { "challenge": "Doors", "response": "closed and latched", "accept": ["check", "set"] },
-        { "challenge": "Fuel shut-off", "response": "on", "accept": ["on", "set"], "check": {"var": "fuel_selector", "op": "ne", "value": 0} },
+        { "challenge": "Fuel shut-off", "response": "on", "accept": ["on", "set"] },
         { "challenge": "Cyclic friction", "response": "off", "accept": ["off", "set"] },
         { "challenge": "Throttle", "response": "idle", "accept": ["set", "check"] },
         { "challenge": "Governor", "response": "off", "accept": ["off", "set"] },

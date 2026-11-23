@@ -8,7 +8,7 @@
       "items": [
         { "challenge": "Cabin door", "response": "closed, window optional", "accept": ["check", "set"] },
         { "challenge": "Parking brake", "response": "check on", "accept": ["on", "check"], "check": {"var": "parking_brake", "op": "eq", "value": true}, "note": "The manual notes the lever is unmodelled; a mapped key toggles it." },
-        { "challenge": "Fuel selector", "response": "both", "accept": ["set", "on"], "check": {"var": "fuel_selector", "op": "ne", "value": 0} },
+        { "challenge": "Fuel selector", "response": "both", "accept": ["set", "on"], "check": {"var": "fuel_selector", "op": "in", "value": [1, 16]} },
         { "challenge": "Master battery", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
         { "challenge": "Mixture", "response": "full rich", "accept": ["set", "check"], "check": {"var": "mixture_pct", "op": "min", "value": 95} },
         { "challenge": "Carburetor heat", "response": "off", "accept": ["off", "set"] },
@@ -19,7 +19,7 @@
         { "challenge": "Oil pressure", "response": "check, within green arc", "accept": ["check", "green"] },
         { "challenge": "Ammeter", "response": "check, charging", "accept": ["check"] },
         { "challenge": "Avionics", "response": "on", "accept": ["on"], "check": {"var": "avionics_master", "op": "eq", "value": true} },
-        { "challenge": "Transponder", "response": "standby", "accept": ["set", "on"] }
+        { "challenge": "Transponder", "response": "standby", "accept": ["set", "on"] , "check": {"var": "transponder_state", "op": "eq", "value": 1} }
       ]
     },
     "taxi": {
@@ -27,7 +27,7 @@
       "items": [
         { "challenge": "Flight controls", "response": "checked, pitch roll yaw", "accept": ["check"] },
         { "challenge": "Directional gyro", "response": "set from magnetic compass", "accept": ["set", "check"] },
-        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] , "check": {"var": "transponder_state", "op": "in", "value": [3, 4, 5]} },
         { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} }
       ]
     },

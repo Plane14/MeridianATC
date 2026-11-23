@@ -230,6 +230,35 @@ def test_fo_fuel_selector_item_writes_on_not_off():
     fo._dir.write.assert_called_once_with("FUEL TANK SELECTOR:1", 2.0)
 
 
+def test_fo_checklist_switches_cover_the_named_levers():
+    pytest.importorskip("scipy")
+    from meridianatc.atc.autonomous import AutonomousFlight
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.sim = None
+    fo._dir = Mock()
+    fo._dir.sim = None
+    # "Throttle idle" names max 5: the servo writes the threshold as a
+    # fraction of lever travel.
+    assert fo._switch_for(None, "throttle_pct", 5)
+    fo._dir.throttle.assert_called_once_with(0.05)
+    # "Propeller levers full forward" names min 95 on the same scale.
+    assert fo._switch_for(None, "prop_pct", 95)
+    fo._dir.prop.assert_called_once_with(0.95)
+    # "Transponder on" accepts the on-or-alt detents; the write is the
+    # first acceptable one, the "on" the card means.
+    assert fo._switch_for(None, "transponder_state", [3, 4, 5])
+    fo._dir.write.assert_called_once_with("TRANSPONDER STATE:1", 3.0)
+    # The FCU windows dial the figure the controller gave.
+    assert fo._switch_for(None, "ap_altitude_ft", 4000)
+    fo._dir.altitude.assert_called_once_with(4000.0)
+    assert fo._switch_for(None, "ap_heading_deg", 210)
+    fo._dir.heading.assert_called_once_with(210.0)
+    # Gauges have no switch behind them: a "positive climb" check
+    # verifies the climb, it cannot fly one.
+    assert not fo._switch_for(None, "vertical_speed_fpm", 300)
+    assert not fo._switch_for(None, "engines_running", True)
+
+
 def test_autonomous_preserves_north_vector_and_arrival_runway():
     pytest.importorskip("scipy")
     from meridianatc.atc.autonomous import (

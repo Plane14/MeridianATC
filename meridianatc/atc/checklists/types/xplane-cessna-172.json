@@ -22,7 +22,7 @@
       "title": "before starting engines",
       "items": [
         { "challenge": "Exterior inspection", "response": "completed", "accept": ["complete", "check"] },
-        { "challenge": "Fuel selector", "response": "both", "accept": ["set", "on"], "check": {"var": "fuel_selector", "op": "ne", "value": 0} },
+        { "challenge": "Fuel selector", "response": "both", "accept": ["set", "on"], "check": {"var": "fuel_selector", "op": "in", "value": [1, 16]} },
         { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
         { "challenge": "Lights", "response": "off", "accept": ["off"] },
         { "challenge": "Fuel quantity", "response": "checked", "accept": ["check"] },
@@ -46,7 +46,7 @@
         { "challenge": "Oil pressure", "response": "check", "accept": ["check", "green"] },
         { "challenge": "Avionics bus one and two", "response": "on", "accept": ["on"], "check": {"var": "avionics_master", "op": "eq", "value": true} },
         { "challenge": "Radios", "response": "on and set", "accept": ["set", "on"] },
-        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] }
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] , "check": {"var": "transponder_state", "op": "in", "value": [3, 4, 5]} }
       ]
     },
     "taxi": {
@@ -65,7 +65,7 @@
         { "challenge": "Flight controls", "response": "free and correct", "accept": ["check"] },
         { "challenge": "Flight instruments", "response": "check", "accept": ["check"] },
         { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
-        { "challenge": "Fuel selector valve", "response": "both", "accept": ["set", "on"], "check": {"var": "fuel_selector", "op": "ne", "value": 0} },
+        { "challenge": "Fuel selector valve", "response": "both", "accept": ["set", "on"], "check": {"var": "fuel_selector", "op": "in", "value": [1, 16]} },
         { "challenge": "Mixture", "response": "rich", "accept": ["set", "check"], "check": {"var": "mixture_pct", "op": "min", "value": 95} },
         { "challenge": "Elevator and rudder trim", "response": "takeoff", "accept": ["set", "check"] },
         { "challenge": "Throttle", "response": "seventeen hundred RPM", "accept": ["set", "check"] },
@@ -100,7 +100,7 @@
     "descent": {
       "title": "descent",
       "items": [
-        { "challenge": "Fuel selector valve", "response": "both", "accept": ["set", "on"], "check": {"var": "fuel_selector", "op": "ne", "value": 0} },
+        { "challenge": "Fuel selector valve", "response": "both", "accept": ["set", "on"], "check": {"var": "fuel_selector", "op": "in", "value": [1, 16]} },
         { "challenge": "Mixture", "response": "richen", "accept": ["set", "check"], "check": {"var": "mixture_pct", "op": "min", "value": 95} },
         { "challenge": "Power", "response": "as required", "accept": ["set", "check"] }
       ]
@@ -108,7 +108,7 @@
     "before_landing": {
       "title": "before landing",
       "items": [
-        { "challenge": "Fuel selector valve", "response": "both", "accept": ["set", "on"], "check": {"var": "fuel_selector", "op": "ne", "value": 0} },
+        { "challenge": "Fuel selector valve", "response": "both", "accept": ["set", "on"], "check": {"var": "fuel_selector", "op": "in", "value": [1, 16]} },
         { "challenge": "Mixture", "response": "rich", "accept": ["set", "check"], "check": {"var": "mixture_pct", "op": "min", "value": 95} },
         { "challenge": "Flaps", "response": "extended", "accept": ["down", "set"] }
       ]

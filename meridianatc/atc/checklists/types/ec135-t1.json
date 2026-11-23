@@ -63,6 +63,11 @@
         {
           "challenge": "Parking Brake",
           "response": "set.",
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -73,6 +78,11 @@
         {
           "challenge": "MASTER Switch",
           "response": "on.",
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -116,6 +126,11 @@
         {
           "challenge": "Brakes",
           "response": "set.",
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -135,6 +150,11 @@
         {
           "challenge": "Electrical Equipment",
           "response": "off.",
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "set",
             "on",
@@ -145,6 +165,14 @@
         {
           "challenge": "FUEL SELECTOR",
           "response": "both.",
+          "check": {
+            "var": "fuel_selector",
+            "op": "in",
+            "value": [
+              1,
+              16
+            ]
+          },
           "accept": [
             "set",
             "on",
@@ -155,6 +183,11 @@
         {
           "challenge": "Mixture",
           "response": "cutoff.",
+          "check": {
+            "var": "mixture_pct",
+            "op": "max",
+            "value": 5
+          },
           "accept": [
             "set",
             "on",
@@ -166,6 +199,11 @@
         {
           "challenge": "Throttle",
           "response": "idle.",
+          "check": {
+            "var": "throttle_pct",
+            "op": "max",
+            "value": 5
+          },
           "accept": [
             "set",
             "on",
@@ -183,6 +221,11 @@
         {
           "challenge": "MASTER Switch",
           "response": "on.",
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -222,6 +265,11 @@
         {
           "challenge": "AVIONICS Switch",
           "response": "on.",
+          "check": {
+            "var": "avionics_master",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -232,6 +280,11 @@
         {
           "challenge": "Parking Brake",
           "response": "set.",
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -264,6 +317,11 @@
         {
           "challenge": "Mixture",
           "response": "rich.",
+          "check": {
+            "var": "mixture_pct",
+            "op": "min",
+            "value": 90
+          },
           "accept": [
             "set",
             "on",
@@ -387,6 +445,12 @@
         {
           "challenge": "Altimeter",
           "response": "set.",
+          "check": {
+            "var": "kohlsman_hpa",
+            "op": "near",
+            "value": "$qnh",
+            "tolerance": 1.0
+          },
           "accept": [
             "set",
             "on",
@@ -404,6 +468,14 @@
         {
           "challenge": "Fuel Selector",
           "response": "both.",
+          "check": {
+            "var": "fuel_selector",
+            "op": "in",
+            "value": [
+              1,
+              16
+            ]
+          },
           "accept": [
             "set",
             "on",
@@ -414,6 +486,11 @@
         {
           "challenge": "Mixture",
           "response": "rich.",
+          "check": {
+            "var": "mixture_pct",
+            "op": "min",
+            "value": 90
+          },
           "accept": [
             "set",
             "on",
@@ -424,6 +501,11 @@
         {
           "challenge": "Landing Lights",
           "response": "on.",
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": true
+          },
           "accept": [
             "set",
             "on",
@@ -434,6 +516,11 @@
         {
           "challenge": "Airspeed",
           "response": "speed.",
+          "check": {
+            "var": "indicated_airspeed_kt",
+            "op": "min",
+            "value": 30
+          },
           "accept": [
             "set",
             "on",
@@ -488,6 +575,11 @@
         {
           "challenge": "Throttle",
           "response": "idle.",
+          "check": {
+            "var": "throttle_pct",
+            "op": "max",
+            "value": 5
+          },
           "accept": [
             "set",
             "on",
@@ -499,6 +591,11 @@
         {
           "challenge": "Mixture",
           "response": "cutoff.",
+          "check": {
+            "var": "mixture_pct",
+            "op": "max",
+            "value": 5
+          },
           "accept": [
             "set",
             "on",
@@ -510,6 +607,11 @@
         {
           "challenge": "MASTER Switch",
           "response": "off.",
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "set",
             "on",
@@ -520,6 +622,11 @@
         {
           "challenge": "MASTER Switch",
           "response": "off.",
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": false
+          },
           "accept": [
             "set",
             "on",

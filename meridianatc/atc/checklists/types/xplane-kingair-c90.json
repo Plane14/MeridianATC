@@ -39,7 +39,7 @@
         { "challenge": "EFIS power", "response": "on", "accept": ["on", "set"] },
         { "challenge": "Lights", "response": "as required", "accept": ["set", "check"] },
         { "challenge": "Radios", "response": "as required", "accept": ["set", "check"] },
-        { "challenge": "Transponder", "response": "on and set", "accept": ["on", "set"] }
+        { "challenge": "Transponder", "response": "on and set", "accept": ["on", "set"] , "check": {"var": "transponder_state", "op": "in", "value": [3, 4, 5]} }
       ]
     },
     "before_takeoff": {

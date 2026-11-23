@@ -113,6 +113,12 @@ class AircraftState:
     # zero. Published only on turboprops; a piston's or a jet's quadrant
     # has no such stop and the field joins state.unavailable.
     condition_pct: float = 0.0
+    # The blue lever, 0 feather/low .. 100 full forward: PROPELLER LEVER
+    # POSITION on MSFS, and X-Plane's prop_ratio actuator where the type
+    # is a fixed-wing prop -- on a helicopter that channel is the
+    # collective instead, so the field joins state.unavailable there (a
+    # fixed-pitch prop simply reads 100 for the lever it does not have).
+    prop_pct: float = 0.0
     autopilot: bool = False
     gps_drives_nav1: bool = False
     pitot_heat: bool = False
@@ -214,6 +220,11 @@ class AircraftState:
     # approach, so it can tell a needle that is alive from one that is not.
     nav1_freq: float = 0.0
     ap_airspeed_kt: float = 0.0
+    # The FCU/MCP windows: AUTOPILOT ALTITUDE LOCK VAR and HEADING LOCK
+    # DIR on MSFS, the altitude and heading dials on X-Plane -- what a
+    # checklist's "FCU altitude ... set" item can be held to.
+    ap_altitude_ft: float = 0.0
+    ap_heading_deg: float = 0.0
     # AUTOTHROTTLE ACTIVE: whether the sim's own autothrottle is driving
     # the levers -- the FO's throttle servo reads this before touching them.
     autothrottle: bool = False

@@ -35,7 +35,7 @@
         { "challenge": "Flight controls", "response": "checked, pitch roll yaw", "accept": ["check"] },
         { "challenge": "Speed bugs", "response": "set", "accept": ["set", "check"], "note": "The manual's example: V1 125, VR 130, V2 139, flaps-up 150 KIAS." },
         { "challenge": "Nose and taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
-        { "challenge": "Transponder", "response": "standby", "accept": ["set", "on"] },
+        { "challenge": "Transponder", "response": "standby", "accept": ["set", "on"] , "check": {"var": "transponder_state", "op": "eq", "value": 1} },
         { "challenge": "Pitot heat", "response": "captain", "accept": ["on", "set"], "check": {"var": "pitot_heat", "op": "eq", "value": true} },
         { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} }
       ]
@@ -89,7 +89,7 @@
         { "challenge": "Speed brakes", "response": "retracted", "accept": ["set", "check"], "check": {"var": "spoilers_armed", "op": "eq", "value": false} },
         { "challenge": "Wing and landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
         { "challenge": "Nose and taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
-        { "challenge": "Transponder", "response": "standby", "accept": ["set", "off"] }
+        { "challenge": "Transponder", "response": "standby", "accept": ["set", "off"] , "check": {"var": "transponder_state", "op": "eq", "value": 1} }
       ]
     },
     "shutdown": {
@@ -98,7 +98,7 @@
         { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
         { "challenge": "Seatbelt sign", "response": "off", "accept": ["off"], "check": {"var": "seatbelt_sign", "op": "eq", "value": false} },
         { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
-        { "challenge": "Fuel control levers", "response": "down, off", "accept": ["off", "set"] },
+        { "challenge": "Fuel control levers", "response": "down, off", "accept": ["off", "set"] , "check": {"var": "engines_running", "op": "eq", "value": false} },
         { "challenge": "Left, center and right fuel pumps", "response": "off", "accept": ["off", "set"] },
         { "challenge": "Aux transfer pump", "response": "off", "accept": ["off", "set"] },
         { "challenge": "AC bus cross-tie", "response": "open", "accept": ["set", "check"] },

@@ -38,7 +38,7 @@
         { "challenge": "Flight controls", "response": "checked, pitch roll yaw", "accept": ["check"] },
         { "challenge": "Nav lights", "response": "on", "accept": ["on"], "check": {"var": "nav_light", "op": "eq", "value": true} },
         { "challenge": "Landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true}, "note": "No separate taxi light; landing lights serve both." },
-        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] , "check": {"var": "transponder_state", "op": "in", "value": [3, 4, 5]} },
         { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} }
       ]
     },
@@ -80,7 +80,7 @@
       "title": "after landing",
       "items": [
         { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
-        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] , "check": {"var": "transponder_state", "op": "in", "value": [3, 4, 5]} },
         { "challenge": "Condition lever", "response": "low idle", "accept": ["set", "check"], "check": { "var": "condition_pct", "op": "near", "value": 50, "tolerance": 15 } }
       ]
     },
@@ -95,7 +95,7 @@
         { "challenge": "Landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
         { "challenge": "Strobes", "response": "off", "accept": ["off"], "check": {"var": "strobe_light", "op": "eq", "value": false} },
         { "challenge": "Nav lights", "response": "off", "accept": ["off"], "check": {"var": "nav_light", "op": "eq", "value": false} },
-        { "challenge": "Transponder", "response": "standby", "accept": ["off", "set"] },
+        { "challenge": "Transponder", "response": "standby", "accept": ["off", "set"] , "check": {"var": "transponder_state", "op": "eq", "value": 1} },
         { "challenge": "Door seals", "response": "off", "accept": ["off", "set"] },
         { "challenge": "Battery one", "response": "off", "accept": ["off"], "check": {"var": "battery_master", "op": "eq", "value": false} }
       ]

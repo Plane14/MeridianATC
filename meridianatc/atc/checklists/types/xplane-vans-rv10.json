@@ -8,7 +8,7 @@
       "items": [
         { "challenge": "Cabin door", "response": "closed", "accept": ["check", "set"] },
         { "challenge": "Parking brake", "response": "check on", "accept": ["on", "check"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
-        { "challenge": "Fuel selector", "response": "as required, left or right tank", "accept": ["set", "check"], "check": {"var": "fuel_selector", "op": "ne", "value": 0} },
+        { "challenge": "Fuel selector", "response": "as required, left or right tank", "accept": ["set", "check"], "check": {"var": "fuel_selector", "op": "in", "value": [2, 18]} },
         { "challenge": "Battery master", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
         { "challenge": "Fuel quantity", "response": "check", "accept": ["check"] },
         { "challenge": "Mixture", "response": "full rich", "accept": ["set", "check"], "check": {"var": "mixture_pct", "op": "min", "value": 95} },
@@ -28,7 +28,7 @@
         { "challenge": "Strobes", "response": "as required", "accept": ["set", "check"] },
         { "challenge": "Nav lights", "response": "on", "accept": ["on"], "check": {"var": "nav_light", "op": "eq", "value": true} },
         { "challenge": "Taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
-        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] },
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] , "check": {"var": "transponder_state", "op": "in", "value": [3, 4, 5]} },
         { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} }
       ]
     },
@@ -70,7 +70,7 @@
       "title": "after landing",
       "items": [
         { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
-        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] }
+        { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] , "check": {"var": "transponder_state", "op": "in", "value": [3, 4, 5]} }
       ]
     },
     "shutdown": {
@@ -80,7 +80,7 @@
         { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
         { "challenge": "Mixture", "response": "cut off", "accept": ["off", "set"], "check": {"var": "mixture_pct", "op": "max", "value": 5} },
         { "challenge": "Fuel selector", "response": "off", "accept": ["off", "set"], "check": {"var": "fuel_selector", "op": "eq", "value": 0} },
-        { "challenge": "Transponder", "response": "standby", "accept": ["off", "set"] },
+        { "challenge": "Transponder", "response": "standby", "accept": ["off", "set"] , "check": {"var": "transponder_state", "op": "eq", "value": 1} },
         { "challenge": "Avionics master", "response": "off", "accept": ["off"], "check": {"var": "avionics_master", "op": "eq", "value": false} },
         { "challenge": "Alternator", "response": "off", "accept": ["off", "set"] },
         { "challenge": "Battery master", "response": "off", "accept": ["off"], "check": {"var": "battery_master", "op": "eq", "value": false} }

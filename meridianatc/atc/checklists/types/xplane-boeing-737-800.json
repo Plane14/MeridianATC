@@ -18,9 +18,9 @@
         { "challenge": "Hydraulic pumps A and B", "response": "on", "accept": ["on", "set"] },
         { "challenge": "Electrical pumps A and B", "response": "on", "accept": ["on", "set"] },
         { "challenge": "Engine one", "response": "ground start", "accept": ["set", "on"], "note": "Wait until OIL FILTER BYPASS and LOW OIL PRESSURE extinguish." },
-        { "challenge": "Engine one fuel control lever", "response": "up, on", "accept": ["set", "on"] },
+        { "challenge": "Engine one fuel control lever", "response": "up, on", "accept": ["set", "on"] , "check": {"var": "engines_running", "op": "eq", "value": true} },
         { "challenge": "Engine two", "response": "ground start", "accept": ["set", "on"], "note": "Wait until OIL FILTER BYPASS and LOW OIL PRESSURE extinguish." },
-        { "challenge": "Engine two fuel control lever", "response": "up, on", "accept": ["set", "on"] },
+        { "challenge": "Engine two fuel control lever", "response": "up, on", "accept": ["set", "on"] , "check": {"var": "engines_running", "op": "eq", "value": true} },
         { "challenge": "Engine generators one and two", "response": "on", "accept": ["on", "set"] },
         { "challenge": "APU generators one and two", "response": "off", "accept": ["off", "set"] },
         { "challenge": "APU bleed", "response": "off", "accept": ["off", "set"] },
@@ -35,7 +35,7 @@
         { "challenge": "Flaps", "response": "set, five degrees", "accept": ["set", "check"] },
         { "challenge": "Flight controls", "response": "checked, pitch roll yaw", "accept": ["check"] },
         { "challenge": "Taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
-        { "challenge": "Transponder", "response": "alt off", "accept": ["set", "on"] },
+        { "challenge": "Transponder", "response": "alt off", "accept": ["set", "on"] , "check": {"var": "transponder_state", "op": "in", "value": [3, 4, 5]} },
         { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} }
       ]
     },
@@ -81,7 +81,7 @@
         { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
         { "challenge": "Speed brakes", "response": "retracted", "accept": ["set", "check"], "check": {"var": "spoilers_armed", "op": "eq", "value": false} },
         { "challenge": "Wing and landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
-        { "challenge": "Transponder", "response": "alt off", "accept": ["set", "off"] }
+        { "challenge": "Transponder", "response": "alt off", "accept": ["set", "off"] , "check": {"var": "transponder_state", "op": "in", "value": [3, 4, 5]} }
       ]
     },
     "shutdown": {
@@ -89,11 +89,11 @@
       "items": [
         { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
         { "challenge": "Seatbelt sign", "response": "off", "accept": ["off"], "check": {"var": "seatbelt_sign", "op": "eq", "value": false} },
-        { "challenge": "Transponder", "response": "standby", "accept": ["set", "off"] },
+        { "challenge": "Transponder", "response": "standby", "accept": ["set", "off"] , "check": {"var": "transponder_state", "op": "eq", "value": 1} },
         { "challenge": "Engine generators one and two", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "Fuel control levers", "response": "down, off", "accept": ["off", "set"] },
+        { "challenge": "Fuel control levers", "response": "down, off", "accept": ["off", "set"] , "check": {"var": "engines_running", "op": "eq", "value": false} },
         { "challenge": "Hydraulic pumps A and B", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "Electrical pumps A and B", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Electrical pumps A and B", "response": "off", "accept": ["off", "set"] , "check": {"var": "battery_master", "op": "eq", "value": false} },
         { "challenge": "Aft and forward fuel pumps one and two", "response": "off", "accept": ["off", "set"] },
         { "challenge": "Standby power", "response": "off", "accept": ["off", "set"] },
         { "challenge": "Battery master", "response": "off", "accept": ["off"], "check": {"var": "battery_master", "op": "eq", "value": false} }

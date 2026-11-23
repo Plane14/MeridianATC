@@ -7,7 +7,7 @@
       "title": "cold and dark to engine start",
       "items": [
         { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
-        { "challenge": "Transponder", "response": "standby", "accept": ["set", "off"] },
+        { "challenge": "Transponder", "response": "standby", "accept": ["set", "off"] , "check": {"var": "transponder_state", "op": "eq", "value": 1} },
         { "challenge": "Batteries one and two", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
         { "challenge": "External power", "response": "on", "accept": ["on", "set"] },
         { "challenge": "Beacon", "response": "on", "accept": ["on"], "check": {"var": "beacon_light", "op": "eq", "value": true} },
@@ -51,7 +51,7 @@
       "items": [
         { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
         { "challenge": "Landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true} },
-        { "challenge": "Taxi lights", "response": "takeoff", "accept": ["set", "on"] },
+        { "challenge": "Taxi lights", "response": "takeoff", "accept": ["set", "on"] , "check": {"var": "taxi_light", "op": "eq", "value": false} },
         { "challenge": "Strobes", "response": "on", "accept": ["on"], "check": {"var": "strobe_light", "op": "eq", "value": true} }
       ]
     },
@@ -79,7 +79,7 @@
         { "challenge": "Seatbelt sign", "response": "on", "accept": ["on"], "check": {"var": "seatbelt_sign", "op": "eq", "value": true} },
         { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
         { "challenge": "Landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true} },
-        { "challenge": "Taxi lights", "response": "takeoff", "accept": ["set", "on"] },
+        { "challenge": "Taxi lights", "response": "takeoff", "accept": ["set", "on"] , "check": {"var": "taxi_light", "op": "eq", "value": false} },
         { "challenge": "Speedbrakes", "response": "armed", "accept": ["set", "on"], "check": {"var": "spoilers_armed", "op": "eq", "value": true} },
         { "challenge": "Auto brakes", "response": "as required", "accept": ["set", "check"] },
         { "challenge": "Flaps", "response": "as required", "accept": ["set", "down"] },
@@ -100,9 +100,9 @@
       "items": [
         { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
         { "challenge": "Seatbelt sign", "response": "off", "accept": ["off"], "check": {"var": "seatbelt_sign", "op": "eq", "value": false} },
-        { "challenge": "Transponder", "response": "standby", "accept": ["set", "off"] },
+        { "challenge": "Transponder", "response": "standby", "accept": ["set", "off"] , "check": {"var": "transponder_state", "op": "eq", "value": 1} },
         { "challenge": "Engine start switches one and two", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "Electrical bus tie", "response": "off", "accept": ["off", "set"] },
+        { "challenge": "Electrical bus tie", "response": "off", "accept": ["off", "set"] , "check": {"var": "battery_master", "op": "eq", "value": false} },
         { "challenge": "Hydraulic and fuel pumps", "response": "all off", "accept": ["off", "set"] },
         { "challenge": "GPWS aural alerts", "response": "all off", "accept": ["off", "set"] },
         { "challenge": "Flight control systems", "response": "all off", "accept": ["off", "set"] },

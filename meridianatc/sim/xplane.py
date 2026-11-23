@@ -75,6 +75,8 @@ DATAREFS = {
     "main_bus_volts": ("sim/cockpit2/electrical/bus_volts[0]", 1),
     "nav1_freq": (RADIOS + "nav1_frequency_hz", .01),
     "ap_airspeed_kt": ("sim/cockpit2/autopilot/airspeed_dial_kts", 1),
+    "ap_altitude_ft": ("sim/cockpit2/autopilot/altitude_dial_ft", 1),
+    "ap_heading_deg": ("sim/cockpit2/autopilot/heading_dial_deg_mag_pilot", 1),
     "throttle_pct": ("sim/cockpit2/engine/actuators/throttle_ratio[0]", 100),
     # The trim actuators, ratio of their travel to per cent -- the
     # figures a trim write reads back as (xpcontrols.TRIMS writes the
@@ -477,6 +479,12 @@ class XPlaneSource:
         # is Plane-Maker opt-in and would instead read prop at zero here.
         if state.engine_type == 5 and "mixture_pct" in values:
             state.condition_pct = state.mixture_pct
+        # The blue lever reads the same actuator the collective does on
+        # a helicopter: on a fixed-wing piston or turboprop prop_ratio
+        # is the prop control; jets have neither lever and a helicopter
+        # keeps the collective's name for it.
+        if state.engine_type in (1, 5) and "collective_position" in values:
+            state.prop_pct = state.collective_position
         state.flaps_index = round(values.get("flaps", 0) * max(0, values.get("flap_detents", 1) - 1))
         state.transponder_state = {0: 0, 1: 1, 2: 3, 3: 4, 4: 2, 5: 4, 6: 4, 7: 4}.get(
             int(values.get("xp_transponder", 0)), 0)
@@ -612,6 +620,8 @@ class XPlaneSource:
             known.add("eng_torque_pct")
         if state.engine_type == 5 and "mixture_pct" in values:
             known.add("condition_pct")
+        if state.engine_type in (1, 5) and "collective_position" in values:
+            known.add("prop_pct")
         if state.ap_max_bank_deg:
             known.add("ap_max_bank_deg")
         known.add("relocated")
