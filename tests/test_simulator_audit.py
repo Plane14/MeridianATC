@@ -295,7 +295,7 @@ def test_a_check_holds_on_every_engine_not_just_the_first():
     lever is idle too: the eng2_ slot is checked, and the disagreement
     it names is the second engine's figure, not engine one's."""
     item = Item({"en": "Throttles"}, {"en": "idle"},
-                check=Check("throttle_pct", op="max", value=5.0))
+                checks=(Check("throttle_pct", op="max", value=5.0),))
     state = AircraftState(throttle_pct=0.0, eng2_throttle_pct=85.0)
     runner = ChecklistRunner(
         Mock(), fresh=lambda name: getattr(state, name, None))
