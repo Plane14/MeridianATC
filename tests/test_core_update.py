@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import threading
 import zipfile
@@ -104,8 +105,10 @@ def test_download_extracts_the_claimed_release_and_cancels_cleanly(monkeypatch, 
     response.headers = {}
     updater = update.Updater(opener=lambda *args, **kwargs: response)
     monkeypatch.setattr(update, "updates_dir", lambda: tmp_path)
+    digest = hashlib.sha256(data.getvalue()).hexdigest()
     updater._download(update.Release("3.0", "v3.0", asset="app.zip",
-                                     asset_url="https://example.invalid/app.zip"))
+                                     asset_url="https://example.invalid/app.zip",
+                                     digest=f"sha256:{digest}"))
     assert updater.snapshot()["phase"] == "ready"
     assert (updater._staged / update.EXECUTABLE).read_bytes() == b"program"
     updater._cancel.set()

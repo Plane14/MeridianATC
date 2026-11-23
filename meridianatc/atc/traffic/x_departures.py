@@ -29,6 +29,10 @@ class _Departures:
         phase = flight.phase
 
         if phase == "clearance":
+            # The initial level is an altitude, MSL: what the flight
+            # model climbs to, not the bare three thousand above sea
+            # level that would sit under a high field.
+            initial = self.field.elevation_ft + INITIAL_CLIMB_FT
             self._exchange(
                 flight, now, "DEL",
                 pilot_first=lambda p, a, s: p.request_clearance(
@@ -39,11 +43,11 @@ class _Departures:
                     a, s, flight.destination,
                     departure_procedure=flight.sid,
                     transition=flight.sid_transition,
-                    initial_altitude=INITIAL_CLIMB_FT, squawk=flight.squawk,
+                    initial_altitude=initial, squawk=flight.squawk,
                     departure_freq=self._freq("DEP")),
                 pilot_back=lambda p, a, s: p.clearance(
-                    a, flight.destination, flight.squawk, INITIAL_CLIMB_FT),
-                command=("clearance", {"altitude_ft": INITIAL_CLIMB_FT}),
+                    a, flight.destination, flight.squawk, initial),
+                command=("clearance", {"altitude_ft": initial}),
             )
             flight.phase = "taxi"
             flight.next_at = now + self.random.uniform(25.0, 70.0)

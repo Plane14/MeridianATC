@@ -715,12 +715,14 @@ class _The_live_ones:
                         type_name=self._type_of(flight)),
                     controller=lambda c, a, s: c.ifr_clearance(
                         a, s, flight.destination,
-                        initial_altitude=INITIAL_CLIMB_FT,
+                        # An altitude, MSL -- what the model climbs to.
+                        initial_altitude=(self.field.elevation_ft
+                                          + INITIAL_CLIMB_FT),
                         squawk=flight.squawk,
                         departure_freq=self._freq("DEP")),
                     pilot_back=lambda p, a, s: p.clearance(
                         a, flight.destination, flight.squawk,
-                        INITIAL_CLIMB_FT),
+                        self.field.elevation_ft + INITIAL_CLIMB_FT),
                 )
             self._exchange(
                 flight, now, "GND" if "GND" in self.field.stations else "TWR",

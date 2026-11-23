@@ -160,8 +160,12 @@ def _takeoff_accel_kt_s(perf: TypePerf) -> float:
     """Average acceleration to V2 over the published takeoff distance."""
     if perf.v2_kt <= 0 or perf.takeoff_m <= 0:
         return 0.0
-    v_ms = perf.v2_kt * 0.514444
-    a_ms2 = v_ms * v_ms / (2.0 * perf.takeoff_m)
+    # V2 is reached at the screen height, so the published distance to
+    # 35 ft includes the rotation and the airborne segment; the ground
+    # roll is roughly the first seventy percent of it, ending at about
+    # V2 minus five (rotation speed).
+    v_ms = (perf.v2_kt - 5.0) * 0.514444
+    a_ms2 = v_ms * v_ms / (2.0 * 0.7 * perf.takeoff_m)
     return a_ms2 / 0.514444
 
 
@@ -223,14 +227,15 @@ def range_for(type_code: str, light: bool = False) -> float:
     if perf is not None and perf.range_nm > 0:
         return perf.range_nm
     code = (type_code or "").strip().upper()
+    if code in HELI_TYPES:
+        # A rotorcraft the table does not know still does not fly an
+        # airliner's leg -- checked before the light single's figure,
+        # since a small helicopter is called with light=True.
+        return 400.0
     if code in fly._LIGHT_TYPES or (light and code not in fly._TURBOPROP_TYPES):
         return 450.0
     if code in fly._TURBOPROP_TYPES:
         return 1200.0
-    if code in HELI_TYPES:
-        # A rotorcraft the table does not know still does not fly an
-        # airliner's leg.
-        return 400.0
     return 2500.0
 
 

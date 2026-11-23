@@ -346,14 +346,18 @@ class WeatherProvider:
         with self._lock:
             cached = self._memory.get(station)
             failed_at = self._failed.get(station)
-        # Freshness is measured from the observation, not from when it
-        # was fetched -- a feed still serving yesterday's METAR is stale,
-        # however new the download.
-        served = (min(cached[0], _obs_epoch(cached[2], now) or cached[0])
-                  if cached else 0.0)
-        if cached and not force and (now - served) < self.refresh_s:
+        # Two different clocks: a fetch is due when the *fetch* is old,
+        # since a METAR is an hourly publication and a fresh download of
+        # last hour's report is still fresh -- while the report itself
+        # stops counting as current weather when the *observation* is
+        # older than a cycle and a half.
+        obs_age = (now - (_obs_epoch(cached[2], now) or cached[0])
+                   if cached else float("inf"))
+        fetch_age = now - cached[0] if cached else float("inf")
+        if cached and not force and fetch_age < self.refresh_s \
+                and obs_age < 75 * 60:
             return WeatherSample(cached[1], "metar", station,
-                                 age_s=now - served)
+                                 age_s=obs_age)
 
         recently_failed = (failed_at is not None and not force
                            and (now - failed_at) < FAILURE_RETRY_S)

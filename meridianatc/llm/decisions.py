@@ -194,12 +194,15 @@ class Decisions:
         "Answer with the spoken words only.")
 
     def draft(self, scope: str, question: str, facts: str, baseline: str, *,
-              persona: str = "a crew member", max_len: int = 240) -> str:
+              persona: str = "a crew member", max_len: int = 240,
+              wait_s: float | None = None) -> str:
         """A model-worded version of ``baseline``, or ``baseline`` unchanged.
 
         The draft survives only while every fact token in it was already in
         ``facts`` or the baseline, and while it keeps every fact the
-        baseline carried.
+        baseline carried. ``wait_s`` bounds how long the call may stall the
+        caller, for drafts made on a clock -- otherwise a provider timeout
+        sits on the reply path.
         """
         if not (baseline or "").strip() or not self.model_available:
             return baseline
@@ -207,7 +210,9 @@ class Decisions:
         prompt = (f"The pilot said: {question}\n"
                   f"Facts: {facts}\n"
                   f"Reply to word: {baseline}")
-        raw = self._ask(prompt, system, scope)
+        raw = (self._ask(prompt, system, scope)
+               if wait_s is None
+               else self._ask_bounded(prompt, system, scope, wait_s))
         if raw is None:
             return baseline
         candidate = raw.strip().strip("\"'").strip()

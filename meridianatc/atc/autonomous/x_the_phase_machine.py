@@ -2172,11 +2172,14 @@ class _The_phase_machine:
                 d.brakes(0.0)
                 d.spoilers(0.0)
                 d.spoilers_arm(False)
-                if not self.state.vacated:
+                off = self._centreline_offset_m(state)
+                if not self.state.vacated and (off is None or abs(off) > 30.0):
                     self.state.vacated = True
                     # Clear of the runway: strobes and the landing light
                     # come off -- the after-landing flow a crew runs on
-                    # the way out.
+                    # the way out. Still on the pavement at taxi speed
+                    # is a backtrack, not a vacating, so none of it is
+                    # done until the centreline has been left.
                     d.strobes(False)
                     d.landing_light(False)
                     self._run_checklist_for_phase("after_landing")
@@ -2197,6 +2200,13 @@ class _The_phase_machine:
                 and self._radio_quiet():
             off = self._centreline_offset_m(state)
             if off is None or abs(off) > 30.0:
+                if not self.state.vacated:
+                    # The turn-off after a backtrack lands here: the
+                    # rollout's branch only marks the runway left when
+                    # the centreline is already behind it.
+                    self.state.vacated = True
+                    self.director.strobes(False)
+                    self.director.landing_light(False)
                 # Still on the strip is not vacated, whatever the phase
                 # says -- a stopped aeroplane reporting clear is the
                 # runway left blocked with nobody told.

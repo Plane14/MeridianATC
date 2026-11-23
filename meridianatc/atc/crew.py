@@ -2510,7 +2510,7 @@ class CrewDirector:
         return advisor.draft(
             "first_officer", getattr(said, "text", "") or "", facts, text,
             persona="the first officer on the flight deck, answering the "
-                    "captain")
+                    "captain", wait_s=1.5)
 
     def _take_the_radio(self, said, language: str) -> None:
         """ONE call, handed over in so many words, then the radio back."""

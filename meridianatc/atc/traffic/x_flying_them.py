@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ..flying import ias_to_tas
 from ._shared import (
     _CIRCUIT_PHASES,
     ACCELERATE_AT_FT,
@@ -62,7 +63,8 @@ class _Flying_them:
                 lat, lon, from_where, max(1.0, flight.distance_nm))
             flight.altitude_ft = (elevation
                                   + flight.performance.pattern_agl_ft + 500.0)
-            flight.ground_speed_kt = flight.performance.cruise_kt
+            flight.ground_speed_kt = ias_to_tas(
+                flight.performance.cruise_kt, flight.altitude_ft)
             flight.heading = (from_where + 180.0) % 360.0
             flight.on_ground = False
             return
@@ -138,7 +140,8 @@ class _Flying_them:
         if len(nav.points) > 1:
             flight.heading = bearing_deg(
                 flight.latitude, flight.longitude, *nav.points[1][:2])
-        flight.ground_speed_kt = flight.performance.cruise_kt
+        flight.ground_speed_kt = ias_to_tas(
+            flight.performance.cruise_kt, flight.altitude_ft)
         flight.on_ground = False
         flight.procedure_nav = nav
         end = self._threshold(flight.runway)
@@ -194,7 +197,8 @@ class _Flying_them:
                                           performance.rotate_kt + 20.0)
         elif phase == "departed":
             target.heading = heading
-            target.speed_kt = performance.cruise_kt
+            target.speed_kt = ias_to_tas(performance.cruise_kt,
+                                         flight.altitude_ft)
             target.altitude_ft = elevation + CLIMB_TO_FT
             target.intent = "climbing out"
             if getattr(flight, "source", "") == "live":
@@ -252,7 +256,8 @@ class _Flying_them:
             target.intent = "holding on the missed approach"
         elif phase == "joining":
             target.heading = self._bearing_to_join(flight, heading)
-            target.speed_kt = performance.cruise_kt * 0.85
+            target.speed_kt = ias_to_tas(performance.cruise_kt,
+                                         flight.altitude_ft) * 0.85
             target.altitude_ft = elevation + performance.pattern_agl_ft
             target.intent = "joining downwind"
         elif phase in ("inbound", "final"):
@@ -313,7 +318,9 @@ class _Flying_them:
             # "Expedite": a higher aim speed, and a firmer push into it,
             # until the moment passes or the runway is given back.
             if not target.hold and target.speed_kt is not None:
-                cap = (performance.cruise_kt if not flight.on_ground
+                cap = (ias_to_tas(performance.cruise_kt,
+                                  flight.altitude_ft)
+                       if not flight.on_ground
                        else performance.rotate_kt * 0.6)
                 target.speed_kt = min(target.speed_kt * 1.25 + 10.0, cap)
             if flight.on_ground:

@@ -146,7 +146,7 @@ class PilotsTalking:
             f"destination {flight.destination}" if flight.destination else "",
         ) if part)
         return advisor.draft(
-            "traffic_pilot", asked, facts, reply,
+            "traffic_pilot", asked, facts, reply, wait_s=1.5,
             persona=f"the pilot of traffic aeroplane {own}, talking to "
                     f"another pilot over the radio"
                     + (", being a little playful" if humor else ""))

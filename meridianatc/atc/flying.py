@@ -353,6 +353,17 @@ def _turn_rate(performance: Performance, speed_kt: float,
                _G_KT_S * math.tan(bank) * 57.2958 / max(speed_kt, 30.0))
 
 
+def ias_to_tas(ias_kt: float, altitude_ft: float) -> float:
+    """True airspeed for an indicated figure at altitude, ISA.
+
+    Performance figures are indicated airspeeds; the model carries the
+    true figure, and at height the difference is not small -- 290 KIAS
+    at fifteen thousand is about 360 knots over the ground before wind.
+    """
+    sigma = max(0.2, (1.0 - 6.8756e-6 * max(0.0, altitude_ft)) ** 4.2561)
+    return ias_kt / math.sqrt(sigma)
+
+
 def step(flight, target: Target, performance: Performance, dt: float,
          ground_elevation_ft: float = 0.0, energy: bool = True) -> None:
     """Fly one slice of time.

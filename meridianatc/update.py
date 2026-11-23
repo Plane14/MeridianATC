@@ -526,13 +526,18 @@ class Updater:
         if release.asset_size and size != release.asset_size:
             raise RuntimeError(f"the download is {size} bytes, "
                                f"expected {release.asset_size}")
-        if release.digest.lower().startswith("sha256:"):
-            digest = hashlib.sha256()
-            with open(path, "rb") as handle:
-                for chunk in iter(lambda: handle.read(CHUNK), b""):
-                    digest.update(chunk)
-            if digest.hexdigest() != release.digest.split(":", 1)[1].lower():
-                raise RuntimeError("the download does not match its checksum")
+        if not release.digest.lower().startswith("sha256:"):
+            # A size match alone is not integrity: the staged zip is
+            # unpacked and run, so without a published checksum there is
+            # nothing to verify it against and the update is refused.
+            raise RuntimeError(
+                "the release publishes no sha256 digest to verify against")
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(CHUNK), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != release.digest.split(":", 1)[1].lower():
+            raise RuntimeError("the download does not match its checksum")
 
     # -- handing over ---------------------------------------------------------
 
