@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import re
+
 from ._shared import (
     decision,
     log,
     os,
-    re,
     time,
 )
 

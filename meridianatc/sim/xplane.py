@@ -592,7 +592,7 @@ class XPlaneSource:
             self._subscribe(index, path, self.frequency)
 
     def _packet(self, payload):
-        if self._peer is not None:
+        if self._peer is not None and self._socket is not None:
             self._socket.sendto(payload, self._peer)
 
     def _subscribe(self, index, path, frequency):
@@ -648,6 +648,14 @@ class XPlaneSource:
         if model != self._model:
             self._model = model
             self._subscribe_model_aliases()
+
+        def alias_read(attr):
+            """The add-on's own value for a field, or None to fall
+            back to whatever the stock refs answered."""
+            akey = f"alias:{attr}"
+            if attr in self._alias_factors and akey in values:
+                return values[akey] * self._alias_factors[attr]
+            return None
         state.callsign = state.tail_number
         state.engines_running = any(values.get(f"running{i}", 0) for i in range(16))
         for i in range(1, 4):
@@ -692,20 +700,31 @@ class XPlaneSource:
         # five stops, and the turbine ignition switches.
         for i, attr in enumerate(("fuel_pump_on", "eng2_fuel_pump_on",
                                   "eng3_fuel_pump_on", "eng4_fuel_pump_on")):
-            if f"fuelpump{i}" in values:
+            alias = alias_read(attr)
+            if alias is not None:
+                setattr(state, attr, bool(alias))
+            elif f"fuelpump{i}" in values:
                 setattr(state, attr, bool(values[f"fuelpump{i}"]))
         for i, attr in enumerate(("generator_on", "eng2_generator_on",
                                   "eng3_generator_on", "eng4_generator_on")):
-            if f"gen{i}" in values:
+            alias = alias_read(attr)
+            if alias is not None:
+                on = bool(alias)
+            elif f"gen{i}" in values:
                 on = bool(values[f"gen{i}"])
-                setattr(state, attr, on)
-                if i == 0:
-                    state.alternator_on = on
-                elif i == 1:
-                    state.eng2_alternator_on = on
+            else:
+                continue
+            setattr(state, attr, on)
+            if i == 0:
+                state.alternator_on = on
+            elif i == 1:
+                state.eng2_alternator_on = on
         for i, attr in enumerate(("bleed_air_on", "eng2_bleed_air_on",
                                   "eng3_bleed_air_on", "eng4_bleed_air_on")):
-            if f"bleed{i}" in values:
+            alias = alias_read(attr)
+            if alias is not None:
+                setattr(state, attr, bool(alias))
+            elif f"bleed{i}" in values:
                 setattr(state, attr, bool(values[f"bleed{i}"]))
         for i, attr in enumerate(("magneto_pos", "eng2_magneto_pos")):
             if f"ign_key{i}" in values:
@@ -726,9 +745,12 @@ class XPlaneSource:
         if doors:
             state.exits_open_pct = max(doors) * 100.0
         for i in range(4):
-            if f"door{i}" in values:
-                setattr(state, f"exit{i + 1}_open_pct",
-                        values[f"door{i}"] * 100.0)
+            attr = f"exit{i + 1}_open_pct"
+            alias = alias_read(attr)
+            if alias is not None:
+                setattr(state, attr, alias)
+            elif f"door{i}" in values:
+                setattr(state, attr, values[f"door{i}"] * 100.0)
         state.speedbrake_pct = max(0.0, values.get("speedbrake", 0.0)) * 100.0
         if "flow0" in values:
             state.eng_fuel_flow_pph = values["flow0"] * LB * 3600
@@ -759,12 +781,18 @@ class XPlaneSource:
         state.com1_transmit = values.get("transmit", 0) == 0
         # servos_on is a boolean, not the autopilot_mode enum of
         # sim/cockpit/autopilot: the AP is engaged where it reads non-zero.
-        state.autopilot = bool(values.get("control:ap_on",
-                                          values.get("autopilot_mode")))
+        alias = alias_read("autopilot")
+        state.autopilot = (bool(alias) if alias is not None else
+                           bool(values.get("control:ap_on",
+                                           values.get("autopilot_mode"))))
         # X-Plane's selector is its own enum (0 none, 1 left, 2 centre,
         # 3 right, 4 all, 5 aft); the state carries the SimConnect one.
-        state.fuel_selector = {0: 0, 1: 2, 2: 6, 3: 3, 4: 1, 5: 8}.get(
-            int(values.get("fuel_selector", -1)), -1)
+        alias = alias_read("fuel_selector")
+        if alias is None:
+            state.fuel_selector = {0: 0, 1: 2, 2: 6, 3: 3, 4: 1, 5: 8}.get(
+                int(values.get("fuel_selector", -1)), -1)
+        else:
+            state.fuel_selector = int(alias)
         state.gps_drives_nav1 = values.get("hsi_source", 0) in (2, 3)
         state.nav1_has_localizer = bool(int(values.get("nav_type", 0)) & (8 | 16))
         state.ambient_precip_state = (4 if values.get("rain", 0) > 0

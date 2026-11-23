@@ -5,7 +5,7 @@ custom dataref on X-Plane."""
 
 from types import SimpleNamespace
 
-from meridianatc.sim import models, xplane
+from meridianatc.sim import models
 from meridianatc.sim.models import (
     MSFS_ALIASES,
     msfs_model_key,
@@ -38,8 +38,8 @@ def test_the_acf_path_names_the_xplane_model():
 
 def test_the_msfs_definition_asks_the_lvar():
     helper = SimpleNamespace(list={
-        "ELECTRICAL_MASTER_BATTERY:index": [
-            "d", b"ELECTRICAL MASTER BATTERY:index", b"Bool", "N"],
+        "ELECTRICAL_MASTER_BATTERY": [
+            "d", b"ELECTRICAL MASTER BATTERY", b"Bool", "N"],
         "APU_PCT_RPM": ["d", b"APU PCT RPM", b"Percent", "N"],
     })
     source = SimConnectSource.__new__(SimConnectSource)
@@ -48,10 +48,10 @@ def test_the_msfs_definition_asks_the_lvar():
     assert source._definition_for("APU_PCT_RPM") == (b"APU PCT RPM",
                                                      b"Percent")
     source._model = "fbw_a32nx"
-    var, unit = source._definition_for("ELECTRICAL_MASTER_BATTERY:1")
+    var, unit = source._definition_for("ELECTRICAL_MASTER_BATTERY")
     assert var == b"L:A32NX_OVHD_ELEC_BAT_1_PB_IS_AUTO"
     assert unit == b"Number"
-    assert source._definition_for("APU_PCT_RPM") == (b"L:A32NX_APU_N",
+    assert source._definition_for("APU_PCT_RPM") == (b"L:A32NX_APU_N_RAW",
                                                      b"Number")
 
 
@@ -78,6 +78,26 @@ def test_the_xplane_read_prefers_the_alias_answer():
     assert link.read().parking_brake is False
 
 
+def test_the_xplane_alias_wins_over_the_derived_fill():
+    link = XPlaneSource()
+    link._model = "zibo_738"
+    # Stock per-engine refs answer 0; the add-on's own refs say on.
+    link._values = {"fuelpump0": 0.0, "bleed0": 0.0, "control:ap_on": 0.0,
+                    "alias:fuel_pump_on": 1.0,
+                    "alias:bleed_air_on": 1.0,
+                    "alias:autopilot": 1.0}
+    # acf_relative_path arrives as a byte-per-ref string field; put a
+    # zibo path on the wire so the model stays zibo after read().
+    path = "B737-800X.acf"
+    link._values.update({f"acf_path:{i}": float(ord(path[i]))
+                         for i in range(len(path))})
+    link._subscribe_model_aliases()
+    state = link.read()
+    assert state.fuel_pump_on is True
+    assert state.bleed_air_on is True
+    assert state.autopilot is True
+
+
 def test_the_xplane_write_reaches_the_addon_dataref():
     link = XPlaneSource()
     link._model = "zibo_738"
@@ -96,8 +116,7 @@ def test_every_alias_table_names_a_model_the_detect_can_find():
         assert any(key == model for _f, model in models.MSFS_MODELS)
     # And every XP write target is a dataref the model was seen
     # publishing -- no invented names.
-    for key, table in models.XP_WRITE_ALIASES.items():
-        reads = models.XP_READ_ALIASES.get(key, {})
+    for table in models.XP_WRITE_ALIASES.values():
         for name, path in table.items():
             assert path.startswith(("laminar/", "b2707/", "AirbusFBW/"))
             assert name

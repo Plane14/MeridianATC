@@ -12,6 +12,7 @@
         "strobe_light",
         "beacon_light",
         "transponder_code",
+        "transponder_state",
         "kohlsman_hpa",
         "spoilers_armed",
         "pitot_heat",

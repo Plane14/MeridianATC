@@ -95,34 +95,32 @@ def xp_model_key(acf_path: str, title: str = "") -> str:
 # still drives the stock simvars for generators, starters, ignition,
 # lights, gear and flaps, so only the overhead pushbuttons and signs
 # need remapping.
+# Wire names as the request table and the first officer's write calls
+# spell them: the battery is asked without an index, the signs by
+# their CABIN ... ALERT names. A32NX_APU_N is an ARINC 429 word, not a
+# number -- the RAW variant is the plain percent. The transponder is
+# deliberately not aliased: the FBW mode knob's enum (0 STBY, 1 AUTO,
+# 2 ON, 3 ALT RPTG, 4 TA, 5 TA/RA) does not line up with the
+# SimConnect one a check compares against, and a translated read
+# would still leave the FO's writes wrong.
 _FBW: dict[str, str] = {
-    "ELECTRICAL MASTER BATTERY:1": "L:A32NX_OVHD_ELEC_BAT_1_PB_IS_AUTO",
-    "ELECTRICAL MASTER BATTERY:2": "L:A32NX_OVHD_ELEC_BAT_2_PB_IS_AUTO",
-    "SEAT BELTS SWITCH": "L:XMLVAR_SWITCH_OVHD_INTLT_SEATBELT_Position",
-    "NO SMOKING SWITCH": "L:XMLVAR_SWITCH_OVHD_INTLT_NOSMOKING_POSITION",
-    "BLEED AIR PACKAGE CONTROL SWITCH:1":
-        "L:A32NX_OVHD_COND_PACK_1_PB_IS_ON",
-    "BLEED AIR PACKAGE CONTROL SWITCH:2":
-        "L:A32NX_OVHD_COND_PACK_2_PB_IS_ON",
-    "APU BLEED AIR VALVE": "L:A32NX_OVHD_PNEU_APU_BLEED_PB_IS_ON",
+    "ELECTRICAL MASTER BATTERY": "L:A32NX_OVHD_ELEC_BAT_1_PB_IS_AUTO",
+    "CABIN SEATBELTS ALERT SWITCH":
+        "L:XMLVAR_SWITCH_OVHD_INTLT_SEATBELT_Position",
+    "CABIN NO SMOKING ALERT SWITCH":
+        "L:XMLVAR_SWITCH_OVHD_INTLT_NOSMOKING_POSITION",
+    "BLEED AIR APU": "L:A32NX_OVHD_PNEU_APU_BLEED_PB_IS_ON",
     "BLEED AIR ENGINE:1": "L:A32NX_OVHD_PNEU_ENG_1_BLEED_PB_IS_AUTO",
     "BLEED AIR ENGINE:2": "L:A32NX_OVHD_PNEU_ENG_2_BLEED_PB_IS_AUTO",
     "APU SWITCH": "L:A32NX_OVHD_APU_MASTER_SW_PB_IS_ON",
-    "APU PCT RPM": "L:A32NX_APU_N",
-    "EXTERNAL POWER ON:1": "L:A32NX_OVHD_ELEC_EXT_PWR_PB_IS_ON",
-    "TRANSPONDER STATE:1": "L:A32NX_TRANSPONDER_MODE",
+    "APU PCT RPM": "L:A32NX_APU_N_RAW",
 }
 
 _FBW_A380X: dict[str, str] = {
     **_FBW,
-    # Four engines and four external-power channels on the 380.
+    # Four engines on the 380.
     "BLEED AIR ENGINE:3": "L:A32NX_OVHD_PNEU_ENG_3_BLEED_PB_IS_AUTO",
     "BLEED AIR ENGINE:4": "L:A32NX_OVHD_PNEU_ENG_4_BLEED_PB_IS_AUTO",
-    "ELECTRICAL MASTER BATTERY:3":
-        "L:A32NX_OVHD_ELEC_BAT_APU_PB_IS_AUTO",
-    "EXTERNAL POWER ON:2": "L:A32NX_OVHD_ELEC_EXT_PWR_2_PB_IS_ON",
-    "EXTERNAL POWER ON:3": "L:A32NX_OVHD_ELEC_EXT_PWR_3_PB_IS_ON",
-    "EXTERNAL POWER ON:4": "L:A32NX_OVHD_ELEC_EXT_PWR_4_PB_IS_ON",
 }
 
 MSFS_ALIASES: dict[str, dict[str, str]] = {
@@ -162,7 +160,6 @@ _MAD_A320_READ: dict[str, tuple[str, float]] = {
     "window_heat_on": ("laminar/A333/buttons/window_probe_ice", 1),
     "pitot_heat": ("laminar/A333/buttons/window_probe_ice", 1),
     "aoa_heat_on": ("laminar/A333/buttons/window_probe_ice", 1),
-    "wing_heat": ("laminar/A333/buttons/wing_anti_ice", 1),
     "seatbelt_sign": ("laminar/A333/switches/fasten_seatbelts", 1),
     "no_smoking_sign": ("laminar/A333/switches/no_smoking", 1),
     "parking_brake": ("laminar/A333/switches/park_brake_pos", 1),
@@ -177,15 +174,13 @@ _MAD_A320_WRITE: dict[str, str] = {
     "GENERAL ENG GENERATOR SWITCH:1": "laminar/A333/buttons/gen1_pos",
     "GENERAL ENG GENERATOR SWITCH:2": "laminar/A333/buttons/gen2_pos",
     "APU GENERATOR SWITCH": "laminar/A333/buttons/gen_apu_pos",
-    "APU BLEED AIR VALVE": "laminar/A333/buttons/apu_bleed_pos",
+    "BLEED AIR APU": "laminar/A333/buttons/apu_bleed_pos",
     "BLEED AIR ENGINE:1": "laminar/A333/buttons/eng_bleed_1_pos",
     "BLEED AIR ENGINE:2": "laminar/A333/buttons/eng_bleed_2_pos",
-    "BLEED AIR PACKAGE CONTROL SWITCH:1":
-        "laminar/A333/buttons/pack_1_pos",
-    "BLEED AIR PACKAGE CONTROL SWITCH:2":
-        "laminar/A333/buttons/pack_2_pos",
-    "SEAT BELTS SWITCH": "laminar/A333/switches/fasten_seatbelts",
-    "NO SMOKING SWITCH": "laminar/A333/switches/no_smoking",
+    "APU PACKS": "laminar/A333/buttons/pack_1_pos",
+    "CABIN SEATBELTS ALERT SWITCH":
+        "laminar/A333/switches/fasten_seatbelts",
+    "CABIN NO SMOKING ALERT SWITCH": "laminar/A333/switches/no_smoking",
     "BRAKE PARKING POSITION": "laminar/A333/switches/park_brake_pos",
 }
 
@@ -206,16 +201,17 @@ _ZIBO_READ: dict[str, tuple[str, float]] = {
     "engine_anti_ice_on": ("laminar/B738/ice/eng1_heat_pos", 1),
     "eng2_engine_anti_ice_on": ("laminar/B738/ice/eng2_heat_pos", 1),
     "window_heat_on": ("laminar/B738/ice/window_heat_l_fwd_pos", 1),
-    "wing_heat": ("laminar/B738/ice/wing_heat_pos", 1),
     "pitot_heat": ("laminar/B738/toggle_switch/capt_probes_pos", 1),
     "spoilers_armed": ("laminar/B738/annunciator/speedbrake_armed", 1),
     "parking_brake": ("laminar/B738/annunciator/parking_brake", 1),
     "autopilot": ("laminar/B738/autopilot/cmd_a_status", 1),
     "autothrottle": ("laminar/B738/autopilot/autothrottle_status", 1),
-    "starter_active": ("laminar/B738/engine/starter1_pos", 1),
-    "fuel_selector": ("laminar/B738/knobs/cross_feed_pos", 1),
     "kohlsman_hpa": ("laminar/B738/EFIS/baro_sel_in_hg_pilot", 33.8639),
     "minimums_ft": ("laminar/B738/fmod/dh_minimum_pilot", 1),
+    # Deliberately not aliased: the starter-detent and crossfeed enums
+    # do not line up with the SimConnect positions a check compares
+    # against, and wing_heat is only an extra write target, not a
+    # state attribute the readers fill.
 }
 
 _ZIBO_WRITE: dict[str, str] = {
@@ -223,11 +219,10 @@ _ZIBO_WRITE: dict[str, str] = {
         "laminar/B738/fuel/fuel_tank_pos_lft1",
     "GENERAL ENG FUEL PUMP SWITCH:2":
         "laminar/B738/fuel/fuel_tank_pos_rgt1",
-    "APU BLEED AIR VALVE": "laminar/B738/toggle_switch/bleed_air_apu_pos",
+    "BLEED AIR APU": "laminar/B738/toggle_switch/bleed_air_apu_pos",
     "BLEED AIR ENGINE:1": "laminar/B738/toggle_switch/bleed_air_1_pos",
     "BLEED AIR ENGINE:2": "laminar/B738/toggle_switch/bleed_air_2_pos",
-    "BLEED AIR PACKAGE CONTROL SWITCH:1": "laminar/B738/air/l_pack_pos",
-    "BLEED AIR PACKAGE CONTROL SWITCH:2": "laminar/B738/air/r_pack_pos",
+    "APU PACKS": "laminar/B738/air/l_pack_pos",
 }
 
 # Devinci B2707-300 Concorde -- names from the installed plugin's
@@ -247,7 +242,8 @@ _B2707_READ: dict[str, tuple[str, float]] = {
     "eng2_fuel_pump_on": ("b2707/fuel/panel/boost_pump_2", 1),
     "eng3_fuel_pump_on": ("b2707/fuel/panel/boost_pump_3", 1),
     "eng4_fuel_pump_on": ("b2707/fuel/panel/boost_pump_4", 1),
-    "exit1_open_pct": ("b2707/doors/position", 100),
+    # doors/position is kept out: what it counts was not verified, and
+    # an exits check with the wrong scale fails doors that are shut.
 }
 
 _B2707_WRITE: dict[str, str] = {
