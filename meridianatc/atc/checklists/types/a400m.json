@@ -110,7 +110,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "apu_bleed_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "Navigation Lights",
@@ -245,7 +250,7 @@
           "check": {
             "var": "throttle_pct",
             "op": "max",
-            "value": 5
+            "value": 10
           },
           "accept": [
             "set",
@@ -330,7 +335,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "apu_bleed_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "Generators",
@@ -415,11 +425,6 @@
         {
           "challenge": "Thrust Levers",
           "response": "thrust.",
-          "check": {
-            "var": "throttle_pct",
-            "op": "min",
-            "value": 85
-          },
           "accept": [
             "set",
             "on",
@@ -484,11 +489,6 @@
         {
           "challenge": "Thrust Levers",
           "response": "detent.",
-          "check": {
-            "var": "throttle_pct",
-            "op": "min",
-            "value": 85
-          },
           "accept": [
             "set",
             "on",
@@ -601,9 +601,9 @@
             "check"
           ],
           "check": {
-            "var": "brake_left_pct",
+            "var": "autobrake_pos",
             "op": "min",
-            "value": 10
+            "value": 1
           }
         },
         {

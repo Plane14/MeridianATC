@@ -258,7 +258,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "max",
-            "value": 5
+            "value": 10
           },
           "accept": [
             "set",
@@ -510,7 +510,7 @@
           "check": {
             "var": "throttle_pct",
             "op": "max",
-            "value": 5
+            "value": 10
           },
           "accept": [
             "set",
@@ -588,11 +588,6 @@
         {
           "challenge": "Throttle",
           "response": "full.",
-          "check": {
-            "var": "throttle_pct",
-            "op": "min",
-            "value": 85
-          },
           "accept": [
             "set",
             "on",
@@ -667,11 +662,6 @@
         {
           "challenge": "Throttle",
           "response": "full.",
-          "check": {
-            "var": "throttle_pct",
-            "op": "min",
-            "value": 85
-          },
           "accept": [
             "set",
             "on",
@@ -950,7 +940,7 @@
           "check": {
             "var": "throttle_pct",
             "op": "max",
-            "value": 5
+            "value": 10
           },
           "accept": [
             "set",
@@ -995,7 +985,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "max",
-            "value": 5
+            "value": 10
           },
           "accept": [
             "set",

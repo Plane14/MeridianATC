@@ -18,6 +18,28 @@ import sys
 
 FILES = "meridianatc/atc/checklists/**/*.json"
 
+# Every variable this pass can write into a check. Re-running the sweep
+# recomputes only items whose check carries one of these -- hand-written
+# and first-pass checks are left alone.
+EMITTED = frozenset({
+    "magneto_pos", "eng2_magneto_pos", "ignition_on", "eng2_ignition_on",
+    "starter_active", "fuel_pump_on", "eng2_fuel_pump_on",
+    "eng3_fuel_pump_on", "eng4_fuel_pump_on", "generator_on",
+    "eng2_generator_on", "eng3_generator_on", "eng4_generator_on",
+    "alternator_on", "eng2_alternator_on", "oil_pressure_psi",
+    "eng2_oil_pressure_psi", "battery_amps", "main_bus_volts",
+    "suction_inhg", "exits_open_pct", "brake_left_pct",
+    "brake_right_pct", "carb_heat_pct", "yaw_damper_on", "antiskid_on",
+    "autobrake_pos", "speedbrake_pct", "apu_on", "apu_pct", "apu_gen_on",
+    "apu_bleed_on", "pack_left_on", "bleed_air_on", "eng2_bleed_air_on",
+    "eng3_bleed_air_on", "eng4_bleed_air_on", "engine_anti_ice_on",
+    "wing_deice_on", "window_heat_on", "prop_deice_on", "aoa_heat_on",
+    "hydraulic_pressure", "hydraulic_pump_on", "cabin_altitude_ft",
+    "cabin_altitude_goal_ft", "minimums_ft", "oxygen_on", "wiper_pos",
+    "no_smoking_sign", "logo_light", "wing_light", "recog_light",
+    "eng_fuel_flow_pph", "rotor_rpm_pct", "rotor_gov_target_pct",
+    "throttle_pct", "condition_pct", "prop_pct", "mixture_pct"})
+
 
 def _en(words):
     if isinstance(words, dict):
@@ -74,6 +96,15 @@ RULES = (
      lambda c, r: _switch(c, r, "ignition_on")),
     (r"starter|starter switch|starter key|starter button|start valve",
      lambda c, r: _starter(c, r)),
+    # The qualified switches first: the generic engine rules they shadow
+    # would mis-read "auto brake" as a toe brake and an "APU generator"
+    # as an engine's.
+    (r"apu.{0,12}(gen|bleed|air)",
+     lambda c, r: _switch(c, r, "apu_bleed_on"
+                          if re.search(r"bleed|air", _en(c))
+                          else "apu_gen_on", per_engine=False)),
+    (r"apu",
+     lambda c, r: _apu(c, r)),
     (r"fuel pump|boost pump|fuel.?pump",
      lambda c, r: None if re.search(r"two seconds|then off", _en(r))
      else _switch(c, r, "fuel_pump_on")),
@@ -94,6 +125,10 @@ RULES = (
      lambda c, r: {"var": "suction_inhg", "op": "min", "value": 3.5}),
     (r"\bdoor|\bexits?\b|windows and doors|seats, belts",
      lambda c, r: _doors(c, r)),
+    (r"auto.?brake|autobrake",
+     lambda c, r: _autobrake(r)),
+    (r"anti.?skid|antiskid",
+     lambda c, r: _switch(c, r, "antiskid_on", per_engine=False)),
     (r"brake (accumulator|pressure|hydraulic)|accumulator",
      lambda c, r: {"var": "hydraulic_pressure", "op": "min",
                    "value": 500}),
@@ -106,19 +141,8 @@ RULES = (
            if _onoff(r) is True else None)),
     (r"yaw ?damp",
      lambda c, r: _switch(c, r, "yaw_damper_on", per_engine=False)),
-    (r"anti.?skid|antiskid",
-     lambda c, r: _switch(c, r, "antiskid_on", per_engine=False)),
-    (r"auto.?brake|autobrake",
-     lambda c, r: _autobrake(r)),
     (r"speed.?brake|speedbrake|spoilers|lift dump|air brake",
      lambda c, r: _speedbrake(r)),
-    (r"apu (gen|bleed|air)", lambda c, r: None),
-    (r"apu generator|apu gen",
-     lambda c, r: _switch(c, r, "apu_gen_on", per_engine=False)),
-    (r"apu bleed|apu air",
-     lambda c, r: _switch(c, r, "apu_bleed_on", per_engine=False)),
-    (r"apu",
-     lambda c, r: _apu(c, r)),
     (r"packs?\b",
      lambda c, r: _switch(c, r, "pack_left_on", per_engine=False)),
     (r"engine bleed|bleed air|eng.?bleed",
@@ -338,15 +362,24 @@ def main(write=False):
             if not isinstance(cl, dict):
                 continue
             for item in cl.get("items") or []:
-                if not isinstance(item, dict) or item.get("check"):
+                if not isinstance(item, dict):
+                    continue
+                # An item already checked by this pass is recomputed so
+                # a rule-order fix repairs it; one another pass or a
+                # hand wrote keeps its check.
+                existing = item.get("check") or {}
+                if existing and existing.get("var") not in EMITTED:
                     continue
                 ch, rs = item.get("challenge"), item.get("response")
                 text = _en(ch)
                 for pat, maker in RULES:
                     if re.search(pat, text):
                         check = maker(ch, rs)
-                        if check:
-                            item["check"] = check
+                        if check != item.get("check"):
+                            if check:
+                                item["check"] = check
+                            else:
+                                item.pop("check", None)
                             changed = True
                             added += 1
                         break

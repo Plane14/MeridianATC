@@ -144,9 +144,8 @@
           ],
           "check": {
             "var": "condition_pct",
-            "op": "near",
-            "value": 50,
-            "tolerance": 15
+            "op": "min",
+            "value": 40
           }
         },
         {
@@ -568,9 +567,8 @@
           ],
           "check": {
             "var": "condition_pct",
-            "op": "near",
-            "value": 50,
-            "tolerance": 15
+            "op": "min",
+            "value": 40
           }
         }
       ]

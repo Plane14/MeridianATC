@@ -88,7 +88,12 @@
           "accept": [
             "on",
             "set"
-          ]
+          ],
+          "check": {
+            "var": "apu_bleed_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "Pneumatic cross valves",
@@ -178,7 +183,12 @@
           "accept": [
             "off",
             "set"
-          ]
+          ],
+          "check": {
+            "var": "apu_bleed_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "APU master",

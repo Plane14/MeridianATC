@@ -114,7 +114,7 @@
             "set"
           ],
           "check": {
-            "var": "generator_on",
+            "var": "apu_gen_on",
             "op": "eq",
             "value": true
           }
@@ -149,7 +149,12 @@
           "accept": [
             "on",
             "set"
-          ]
+          ],
+          "check": {
+            "var": "apu_bleed_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "MCDU",
@@ -237,7 +242,7 @@
             "set"
           ],
           "check": {
-            "var": "generator_on",
+            "var": "apu_bleed_on",
             "op": "eq",
             "value": false
           }
@@ -358,7 +363,12 @@
           "accept": [
             "set",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "autobrake_pos",
+            "op": "min",
+            "value": 1
+          }
         }
       ]
     },
@@ -596,7 +606,12 @@
           "accept": [
             "set",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "autobrake_pos",
+            "op": "min",
+            "value": 1
+          }
         },
         {
           "challenge": "Flaps",

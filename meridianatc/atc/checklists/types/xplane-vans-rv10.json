@@ -81,7 +81,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "min",
-            "value": 95
+            "value": 90
           }
         },
         {
@@ -411,7 +411,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "min",
-            "value": 95
+            "value": 90
           }
         },
         {
@@ -497,7 +497,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "max",
-            "value": 5
+            "value": 10
           }
         },
         {
