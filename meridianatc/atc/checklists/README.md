@@ -146,10 +146,28 @@ The variables are the fields of the program's aircraft state
 | `collective_position`, `tail_rotor_pedal_position` | the levers, per cent |
 | `rotor_rpm_pct`, `rotor_gov_target_pct` | main rotor per cent of rated RPM; the governor's target |
 | `num_main_rotors`, `rotor_clutch_active`, `rotor_brake_active`, `rotor_brake_handle_pos`, `rotor_brake_available` | the rotor installation and its brake and clutch |
+| `magneto_pos`, `eng2_magneto_pos` | the piston ignition key per engine: 0 off, 1 left, 2 right, 3 both, 4 start (the two switch booleans `magneto1_left`…`magneto2_right` are its parts) |
+| `ignition_on`, `eng2_ignition_on`, `starter_active` | the turbine ignition switches; the starter cranking |
+| `fuel_pump_on`…`eng4_fuel_pump_on` | the fuel pumps, per engine |
+| `generator_on`…`eng4_generator_on`, `alternator_on`, `eng2_alternator_on` | the generators (X-Plane's one switch answers the alternator's name too) |
+| `oil_pressure_psi`, `eng2_oil_pressure_psi`, `suction_inhg`, `eng_fuel_flow_pph`, `battery_amps` | the gauges |
+| `exits_open_pct`, `exit1_open_pct`…`exit4_open_pct` | how open the most-open exit is, per cent; the per-door reads |
+| `brake_left_pct`, `brake_right_pct` | the toe brakes, per cent |
+| `carb_heat_pct`, `engine_anti_ice_on`, `wing_deice_on`, `window_heat_on`, `prop_deice_on`, `aoa_heat_on` | the ice protection's knob and switches |
+| `antiskid_on`, `autobrake_pos`, `speedbrake_pct`, `yaw_damper_on` | the brake system and the speed-brake handle |
+| `apu_on`, `apu_pct`, `apu_gen_on`, `apu_bleed_on`, `pack_left_on`, `pack_right_on` | the APU and the packs |
+| `bleed_air_on`…`eng4_bleed_air_on` | the engine bleed valves, per engine |
+| `hydraulic_pressure`, `hydraulic_pump_on` | the system's pressure (units are the model's; checks read nonzero) and the pump |
+| `cabin_altitude_ft`, `cabin_altitude_goal_ft`, `pressurization_diff_psi` | the pressurisation's reads and the landing-altitude setting |
+| `minimums_ft` | the approach minimums bug |
+| `no_smoking_sign`, `logo_light`, `wing_light`, `recog_light` | the sign and the lamps past the usual six |
+| `wiper_pos`, `oxygen_on` | the wipers' speed detent; the oxygen valve |
 
-The last five rows are the MSFS helicopter variables, UNVERIFIED on a
-running 2024 and missing on models that do not publish them; a value that
-never arrives simply never checks anything.
+The MSFS helicopter variables were UNVERIFIED on a running 2024 at the
+time they were added, and any of these can be missing on models that do
+not publish them; a value that never arrives simply never checks
+anything. On X-Plane `unavailable` names the fields the model never
+answered, so a file can skip them instead.
 
 A variable that is not in the state is reported as a problem and the item
 is read without a check.

@@ -194,6 +194,84 @@ class _The_checklist_answered:
             # flying path uses too.
             "flaps_index": lambda: self._checklist_flaps(state, expected),
             "spoilers": lambda: d.spoilers(min(1.0, float(expected))),
+            # The systems the second checklist sweep checks, written
+            # under the same SimConnect names the state reader uses;
+            # X-Plane's WRITABLE table maps each to its dataref.
+            "fuel_pump_on": lambda: d.write(
+                "GENERAL ENG FUEL PUMP SWITCH:1", 1.0 if want_on else 0.0),
+            "eng2_fuel_pump_on": lambda: d.write(
+                "GENERAL ENG FUEL PUMP SWITCH:2", 1.0 if want_on else 0.0),
+            "eng3_fuel_pump_on": lambda: d.write(
+                "GENERAL ENG FUEL PUMP SWITCH:3", 1.0 if want_on else 0.0),
+            "eng4_fuel_pump_on": lambda: d.write(
+                "GENERAL ENG FUEL PUMP SWITCH:4", 1.0 if want_on else 0.0),
+            "generator_on": lambda: (want_on or parked) and d.write(
+                "GENERAL ENG GENERATOR SWITCH:1", 1.0 if want_on else 0.0),
+            "eng2_generator_on": lambda: (want_on or parked) and d.write(
+                "GENERAL ENG GENERATOR SWITCH:2", 1.0 if want_on else 0.0),
+            "alternator_on": lambda: (want_on or parked) and d.write(
+                "GENERAL ENG MASTER ALTERNATOR:1", 1.0 if want_on else 0.0),
+            "eng2_alternator_on": lambda: (want_on or parked) and d.write(
+                "GENERAL ENG MASTER ALTERNATOR:2", 1.0 if want_on else 0.0),
+            "ignition_on": lambda: d.write(
+                "TURB ENG IGNITION SWITCH:1", 1.0 if want_on else 0.0),
+            "eng2_ignition_on": lambda: d.write(
+                "TURB ENG IGNITION SWITCH:2", 1.0 if want_on else 0.0),
+            # The key's five stops: X-Plane's single enum answers the
+            # one write; SimConnect's two switches are the sum's parts.
+            "magneto_pos": lambda: self._magneto(d, 1, expected),
+            "eng2_magneto_pos": lambda: self._magneto(d, 2, expected),
+            "carb_heat_pct": lambda: d.write(
+                "GENERAL ENG ANTI ICE POSITION:1",
+                float(expected) / 100.0),
+            "exits_open_pct": lambda: d.write(
+                "EXIT OPEN:1", float(expected)),
+            "brake_left_pct": lambda: d.write(
+                "BRAKE LEFT POSITION", float(expected)),
+            "brake_right_pct": lambda: d.write(
+                "BRAKE RIGHT POSITION", float(expected)),
+            "yaw_damper_on": lambda: d.write(
+                "AUTOPILOT YAW DAMPER", 1.0 if want_on else 0.0),
+            "antiskid_on": lambda: d.write(
+                "ANTISKID BRAKES ACTIVE", 1.0 if want_on else 0.0),
+            "autobrake_pos": lambda: d.write(
+                "AUTO BRAKE SWITCH CB", float(expected)),
+            "speedbrake_pct": lambda: d.write(
+                "SPOILERS HANDLE POSITION", float(expected)),
+            "apu_on": lambda: d.write(
+                "APU SWITCH", 1.0 if want_on else 0.0),
+            "apu_gen_on": lambda: d.write(
+                "APU GENERATOR SWITCH", 1.0 if want_on else 0.0),
+            "apu_bleed_on": lambda: d.write(
+                "BLEED AIR APU", 1.0 if want_on else 0.0),
+            "pack_left_on": lambda: d.write(
+                "APU PACKS", 1.0 if want_on else 0.0),
+            "bleed_air_on": lambda: d.write(
+                "BLEED AIR ENGINE:1", 1.0 if want_on else 0.0),
+            "eng2_bleed_air_on": lambda: d.write(
+                "BLEED AIR ENGINE:2", 1.0 if want_on else 0.0),
+            "engine_anti_ice_on": lambda: d.write(
+                "ENG ANTI ICE:1", 1.0 if want_on else 0.0),
+            "wing_deice_on": lambda: d.write(
+                "STRUCTURAL DEICE SWITCH", 1.0 if want_on else 0.0),
+            "window_heat_on": lambda: d.write(
+                "WINDSHIELD DEICE SWITCH", 1.0 if want_on else 0.0),
+            "prop_deice_on": lambda: d.write(
+                "PROP DEICE SWITCH:1", 1.0 if want_on else 0.0),
+            "aoa_heat_on": lambda: d.write(
+                "PANEL ANTI ICE SWITCH", 1.0 if want_on else 0.0),
+            "hydraulic_pump_on": lambda: d.write(
+                "HYDRAULIC SWITCH:1", 1.0 if want_on else 0.0),
+            "cabin_altitude_goal_ft": lambda: d.write(
+                "PRESSURIZATION CABIN ALTITUDE GOAL", float(expected)),
+            "minimums_ft": lambda: d.write(
+                "DECISION HEIGHT", float(expected)),
+            "no_smoking_sign": lambda: d.write(
+                "CABIN NO SMOKING ALERT SWITCH", 1.0 if want_on else 0.0),
+            "oxygen_on": lambda: d.write(
+                "OXYGEN SWITCH", 1.0 if want_on else 0.0),
+            "wiper_pos": lambda: d.write(
+                "WIPER SWITCH", float(expected)),
         }
         action = table.get(var)
         if action is None:
@@ -204,6 +282,24 @@ class _The_checklist_answered:
             log.debug("checklist switch %s failed", var, exc_info=True)
             return False
         return True
+
+    @staticmethod
+    def _magneto(d, engine: int, expected) -> bool:
+        """The magneto key's five stops on either sim: X-Plane's
+        ignition_key is the enum outright; SimConnect's two switches
+        sum to it (start keeps them on both and cranks -- the off,
+        left, right and both a checklist asks for are the two)."""
+        pos = expected[0] if isinstance(expected, (list, tuple)) \
+            else expected
+        pos = int(pos)
+        if d.write(f"IGNITION_KEY:{engine}", float(pos)):
+            return True
+        left, right = pos in (1, 3, 4), pos in (2, 3, 4)
+        wrote = False
+        for name, on in ((f"RECIP ENG LEFT MAGNETO:{engine}", left),
+                         (f"RECIP ENG RIGHT MAGNETO:{engine}", right)):
+            wrote = d.write(name, 1.0 if on else 0.0) or wrote
+        return wrote
 
     def _checklist_flaps(self, state, expected) -> bool:
         """The flap detent a checklist item names, behind the same

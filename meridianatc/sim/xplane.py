@@ -127,6 +127,42 @@ DATAREFS = {
     "eng_n2_pct": ("sim/flightmodel/engine/ENGN_N2_[0]", 1),
     "eng_itt_c": ("sim/flightmodel/engine/ENGN_EGT_c[0]", 1),
     "eng_rpm": ("sim/cockpit2/engine/indicators/engine_speed_rpm[0]", 1),
+    # The rest of the cockpit the checklists name (the same fields the
+    # SimConnect source fills): starter, gauges, brakes, de-ice, the
+    # APU, packs, hydraulics, the cabin and the minimums bug. A dataref
+    # a model does not publish leaves its field None and the check
+    # reads it as agreement, never an objection.
+    "starter_active": ("sim/flightmodel2/engines/starter_is_running[0]", 1),
+    "oil_pressure_psi": ("sim/cockpit2/engine/indicators/oil_pressure_psi[0]", 1),
+    "eng2_oil_pressure_psi": ("sim/cockpit2/engine/indicators/oil_pressure_psi[1]", 1),
+    "suction_inhg": ("sim/cockpit/misc/vacuum", 1),
+    "battery_amps": ("sim/cockpit2/electrical/battery_amps[0]", 1),
+    "brake_left_pct": ("sim/cockpit2/controls/left_brake_ratio", 100),
+    "brake_right_pct": ("sim/cockpit2/controls/right_brake_ratio", 100),
+    "carb_heat_pct": ("sim/cockpit2/engine/actuators/carb_heat_ratio[0]", 100),
+    "yaw_damper_on": ("sim/cockpit2/switches/yaw_damper_on", 1),
+    "autobrake_pos": ("sim/cockpit2/switches/auto_brake_level", 1),
+    "apu_on": ("sim/cockpit/engine/APU_switch", 1),
+    "apu_pct": ("sim/cockpit2/electrical/APU_N1_percent", 1),
+    "apu_gen_on": ("sim/cockpit2/electrical/APU_generator_on", 1),
+    "apu_bleed_on": ("sim/cockpit2/bleedair/actuators/apu_bleed", 1),
+    "pack_left_on": ("sim/cockpit2/bleedair/actuators/pack_left", 1),
+    "pack_right_on": ("sim/cockpit2/bleedair/actuators/pack_right", 1),
+    "engine_anti_ice_on": ("sim/cockpit2/ice/ice_inlet_heat_on", 1),
+    "window_heat_on": ("sim/cockpit2/ice/ice_window_heat_on", 1),
+    "prop_deice_on": ("sim/cockpit2/ice/ice_prop_heat_on", 1),
+    "aoa_heat_on": ("sim/cockpit2/ice/ice_AOA_heat_on", 1),
+    "cabin_altitude_ft": ("sim/cockpit2/pressurization/indicators/cabin_altitude_ft", 1),
+    "cabin_altitude_goal_ft": ("sim/cockpit2/pressurization/actuators/cabin_altitude_ft", 1),
+    "pressurization_diff_psi": ("sim/cockpit2/pressurization/indicators/pressure_diffential_psi", 1),
+    "minimums_ft": ("sim/cockpit2/gauges/actuators/radio_altimeter_bug_ft_pilot", 1),
+    "no_smoking_sign": ("sim/cockpit2/switches/no_smoking", 1),
+    "wiper_pos": ("sim/cockpit2/switches/wiper_speed", 1),
+    "oxygen_on": ("sim/cockpit2/oxygen/actuators/o2_valve_on", 1),
+    "hydraulic_pressure": ("sim/cockpit2/hydraulics/indicators/hydraulic_pressure_1", 1),
+    "hydraulic_pump_on": ("sim/cockpit2/switches/electric_hydraulic_pump_on", 1),
+    "rotor_brake_handle_pos": ("sim/cockpit2/switches/rotor_brake_ratio", 100),
+    "rotor_lateral_trim_pct": ("sim/cockpit2/controls/rotor_trim", 100),
 }
 for _radio in (1, 2):
     for _standby in (False, True):
@@ -223,6 +259,31 @@ for _engine in range(16):
 for _tank in range(9):
     EXTRA[f"tank{_tank}"] = f"sim/flightmodel/weight/m_fuel[{_tank}]"
     EXTRA[f"tank_ratio{_tank}"] = f"sim/aircraft/overflow/acf_tank_rat[{_tank}]"
+# The checklist systems' per-engine switches: fuel pumps, generators,
+# magneto keys, turbine ignition and bleed valves.
+for _engine in range(4):
+    EXTRA[f"fuelpump{_engine}"] = \
+        f"sim/cockpit2/engine/actuators/fuel_pump_on[{_engine}]"
+    EXTRA[f"gen{_engine}"] = \
+        f"sim/cockpit2/electrical/generator_on[{_engine}]"
+    EXTRA[f"bleed{_engine}"] = \
+        f"sim/cockpit2/bleedair/actuators/engine_bleed_sov[{_engine}]"
+for _engine in range(2):
+    EXTRA[f"ign_key{_engine}"] = \
+        f"sim/cockpit2/engine/actuators/ignition_key[{_engine}]"
+    EXTRA[f"ignition_on{_engine}"] = \
+        f"sim/cockpit2/engine/actuators/ignition_on[{_engine}]"
+# The doors' open ratios, the rotor's free-turbine percent and
+# governor switch (a helicopter's Nr and its governor's presence),
+# the yaw pedals (its anti-torque channel), and the wing de-ice's
+# two spellings (boots and the hot surface -- XP's "surfce" typo).
+for _door in range(10):
+    EXTRA[f"door{_door}"] = f"sim/flightmodel2/misc/door_open_ratio[{_door}]"
+EXTRA["n2_0"] = "sim/cockpit2/engine/indicators/N2_percent[0]"
+EXTRA["gov_0"] = "sim/cockpit2/engine/actuators/governor_on[0]"
+EXTRA["pedal_yaw"] = "sim/cockpit2/controls/yoke_heading_ratio"
+EXTRA["wing_boot"] = "sim/cockpit2/ice/ice_surface_boot_on"
+EXTRA["wing_heat"] = "sim/cockpit2/ice/ice_surfce_heat_on"
 
 # The gear table's ten slots: Plane Maker's types are 0 none, 1 wheel,
 # 2 skid, 3 float -- a float anywhere is a float-fitted airframe, which
@@ -246,6 +307,35 @@ DERIVED = {
     "autopilot": ("autopilot_mode",),
     "spoilers_armed": ("speedbrake",),
     "engines_running": tuple(f"running{i}" for i in range(16)),
+    "speedbrake_pct": ("speedbrake",),
+    "fuel_pump_on": ("fuelpump0",),
+    "eng2_fuel_pump_on": ("fuelpump1",),
+    "eng3_fuel_pump_on": ("fuelpump2",),
+    "eng4_fuel_pump_on": ("fuelpump3",),
+    "generator_on": ("gen0",),
+    "eng2_generator_on": ("gen1",),
+    "eng3_generator_on": ("gen2",),
+    "eng4_generator_on": ("gen3",),
+    "alternator_on": ("gen0",),
+    "eng2_alternator_on": ("gen1",),
+    "bleed_air_on": ("bleed0",),
+    "eng2_bleed_air_on": ("bleed1",),
+    "eng3_bleed_air_on": ("bleed2",),
+    "eng4_bleed_air_on": ("bleed3",),
+    "magneto_pos": ("ign_key0",),
+    "eng2_magneto_pos": ("ign_key1",),
+    "magneto1_left": ("ign_key0",),
+    "magneto1_right": ("ign_key0",),
+    "magneto2_left": ("ign_key1",),
+    "magneto2_right": ("ign_key1",),
+    "ignition_on": ("ignition_on0",),
+    "eng2_ignition_on": ("ignition_on1",),
+    "exits_open_pct": ("door0",),
+    "exit1_open_pct": ("door0",),
+    "exit2_open_pct": ("door1",),
+    "exit3_open_pct": ("door2",),
+    "exit4_open_pct": ("door3",),
+    "eng_fuel_flow_pph": ("flow0",),
 }
 
 WRITABLE = {
@@ -259,7 +349,46 @@ WRITABLE = {
     "LIGHT NAV": ("nav_light", 1),
     "LIGHT STROBE": ("strobe_light", 1),
     "KOHLSMAN SETTING MB": ("kohlsman_hpa", 1 / 33.86389),
+    # The checklist systems' switches, under the SimConnect names the
+    # FO's switch table asks for on both sims. The first four slots
+    # write a percent over the dataref's ratio; the rest are booleans
+    # and enumerations at their own scale.
+    "GENERAL ENG ANTI ICE POSITION:1": ("carb_heat_pct", 0.01),
+    "BRAKE LEFT POSITION": ("brake_left_pct", 0.01),
+    "BRAKE RIGHT POSITION": ("brake_right_pct", 0.01),
+    "SPOILERS HANDLE POSITION": ("speedbrake", 0.01),
+    "EXIT OPEN:1": ("door0", 0.01),
+    "AUTOPILOT YAW DAMPER": ("yaw_damper_on", 1),
+    "AUTO BRAKE SWITCH CB": ("autobrake_pos", 1),
+    "APU SWITCH": ("apu_on", 1),
+    "APU GENERATOR SWITCH": ("apu_gen_on", 1),
+    "BLEED AIR APU": ("apu_bleed_on", 1),
+    "APU PACKS": ("pack_left_on", 1),
+    "ENG ANTI ICE:1": ("engine_anti_ice_on", 1),
+    "STRUCTURAL DEICE SWITCH": ("wing_heat", 1),
+    "WINDSHIELD DEICE SWITCH": ("window_heat_on", 1),
+    "PROP DEICE SWITCH:1": ("prop_deice_on", 1),
+    "PANEL ANTI ICE SWITCH": ("aoa_heat_on", 1),
+    "HYDRAULIC SWITCH:1": ("hydraulic_pump_on", 1),
+    "PRESSURIZATION CABIN ALTITUDE GOAL": ("cabin_altitude_goal_ft", 1),
+    "DECISION HEIGHT": ("minimums_ft", 1),
+    "CABIN NO SMOKING ALERT SWITCH": ("no_smoking_sign", 1),
+    "OXYGEN SWITCH": ("oxygen_on", 1),
+    "WIPER SWITCH": ("wiper_pos", 1),
+    "IGNITION_KEY:1": ("ign_key0", 1),
+    "IGNITION_KEY:2": ("ign_key1", 1),
+    "TURB ENG IGNITION SWITCH:1": ("ignition_on0", 1),
+    "TURB ENG IGNITION SWITCH:2": ("ignition_on1", 1),
 }
+for _slot in range(4):
+    WRITABLE[f"GENERAL ENG FUEL PUMP SWITCH:{_slot + 1}"] = (
+        f"fuelpump{_slot}", 1)
+    WRITABLE[f"GENERAL ENG GENERATOR SWITCH:{_slot + 1}"] = (
+        f"gen{_slot}", 1)
+    WRITABLE[f"BLEED AIR ENGINE:{_slot + 1}"] = (f"bleed{_slot}", 1)
+for _slot in range(2):
+    WRITABLE[f"GENERAL ENG MASTER ALTERNATOR:{_slot + 1}"] = (
+        f"gen{_slot}", 1)
 
 
 class XPlaneSource:
@@ -485,6 +614,68 @@ class XPlaneSource:
         # keeps the collective's name for it.
         if state.engine_type in (1, 5) and "collective_position" in values:
             state.prop_pct = state.collective_position
+        # The checklists' remaining cockpit, per engine first: fuel
+        # pumps, generators (the one electrical switch answers the
+        # piston alternator's name too), bleeds, the magneto keys'
+        # five stops, and the turbine ignition switches.
+        for i, attr in enumerate(("fuel_pump_on", "eng2_fuel_pump_on",
+                                  "eng3_fuel_pump_on", "eng4_fuel_pump_on")):
+            if f"fuelpump{i}" in values:
+                setattr(state, attr, bool(values[f"fuelpump{i}"]))
+        for i, attr in enumerate(("generator_on", "eng2_generator_on",
+                                  "eng3_generator_on", "eng4_generator_on")):
+            if f"gen{i}" in values:
+                on = bool(values[f"gen{i}"])
+                setattr(state, attr, on)
+                if i == 0:
+                    state.alternator_on = on
+                elif i == 1:
+                    state.eng2_alternator_on = on
+        for i, attr in enumerate(("bleed_air_on", "eng2_bleed_air_on",
+                                  "eng3_bleed_air_on", "eng4_bleed_air_on")):
+            if f"bleed{i}" in values:
+                setattr(state, attr, bool(values[f"bleed{i}"]))
+        for i, attr in enumerate(("magneto_pos", "eng2_magneto_pos")):
+            if f"ign_key{i}" in values:
+                pos = int(values[f"ign_key{i}"])
+                setattr(state, attr, pos)
+                # The two switches the position is the sum of, for the
+                # files that check a magneto on its own.
+                setattr(state, "magneto1_left" if i == 0 else "magneto2_left",
+                        pos in (1, 3, 4))
+                setattr(state, "magneto1_right" if i == 0 else "magneto2_right",
+                        pos in (2, 3, 4))
+        for i, attr in enumerate(("ignition_on", "eng2_ignition_on")):
+            if f"ignition_on{i}" in values:
+                setattr(state, attr, bool(values[f"ignition_on{i}"]))
+        # The doors: per-exit reads plus the most-open figure a
+        # "doors ... closed" item checks.
+        doors = [values[f"door{i}"] for i in range(10) if f"door{i}" in values]
+        if doors:
+            state.exits_open_pct = max(doors) * 100.0
+        for i in range(4):
+            if f"door{i}" in values:
+                setattr(state, f"exit{i + 1}_open_pct",
+                        values[f"door{i}"] * 100.0)
+        state.speedbrake_pct = max(0.0, values.get("speedbrake", 0.0)) * 100.0
+        if "flow0" in values:
+            state.eng_fuel_flow_pph = values["flow0"] * LB * 3600
+        wing = [bool(values[k]) for k in ("wing_boot", "wing_heat")
+                if k in values]
+        if wing:
+            state.wing_deice_on = any(wing)
+        # The helicopter's rotor instruments XP publishes no dedicated
+        # names for: the free-turbine percent is its Nr, the governor's
+        # switch is its target's presence, and the yaw channel is the
+        # anti-torque pedals.
+        if state.category == "Helicopter":
+            if "n2_0" in values:
+                state.rotor_rpm_pct = values["n2_0"]
+            if "gov_0" in values:
+                state.rotor_gov_target_pct = \
+                    100.0 if values["gov_0"] else 0.0
+            if "pedal_yaw" in values:
+                state.tail_rotor_pedal_position = values["pedal_yaw"] * 100.0
         state.flaps_index = round(values.get("flaps", 0) * max(0, values.get("flap_detents", 1) - 1))
         state.transponder_state = {0: 0, 1: 1, 2: 3, 3: 4, 4: 2, 5: 4, 6: 4, 7: 4}.get(
             int(values.get("xp_transponder", 0)), 0)
@@ -622,6 +813,14 @@ class XPlaneSource:
             known.add("condition_pct")
         if state.engine_type in (1, 5) and "collective_position" in values:
             known.add("prop_pct")
+        if "wing_boot" in values or "wing_heat" in values:
+            known.add("wing_deice_on")
+        if state.category == "Helicopter":
+            for attr, src in (("rotor_rpm_pct", "n2_0"),
+                              ("rotor_gov_target_pct", "gov_0"),
+                              ("tail_rotor_pedal_position", "pedal_yaw")):
+                if src in values:
+                    known.add(attr)
         if state.ap_max_bank_deg:
             known.add("ap_max_bank_deg")
         known.add("relocated")
@@ -790,7 +989,10 @@ class XPlaneSource:
             if mapping is None:
                 return False
             attribute, scale = mapping
-            return self._dref(DATAREFS[attribute][0], float(value) * scale)
+            entry = DATAREFS.get(attribute) or EXTRA.get(attribute)
+            if entry is None:
+                return False
+            return self._dref(entry[0], float(value) * scale)
         except (TypeError, ValueError, OverflowError):
             return False
 

@@ -1,112 +1,755 @@
 {
   "_comment": "X-Plane 12 McDonnell Douglas MD-82 manual checklists (x-plane.com/support/manuals/), mapped onto the standard names.",
   "source": "X-Plane 12 McDonnell Douglas MD-82 manual, checklists section",
-  "match": [ "mcdonnell douglas md-82", "md-82" ],
+  "match": [
+    "mcdonnell douglas md-82",
+    "md-82"
+  ],
   "checklists": {
     "after_start": {
       "title": "cold and dark to engine start",
       "items": [
-        { "challenge": "Parking brake", "response": "check on, lever up", "accept": ["on", "check"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
-        { "challenge": "Battery master", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
-        { "challenge": "Engine start pump", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "APU master", "response": "start then run", "accept": ["set", "on"], "note": "Wait for the APU power available light." },
-        { "challenge": "APU left and right bus", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "Left and right generators", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "APU air", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "Pneumatic cross valves", "response": "open, up", "accept": ["set", "check"] },
-        { "challenge": "Aux transfer pump", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "Left, center and right fuel pumps", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "Engine start system", "response": "select A or B", "accept": ["set", "check"] },
-        { "challenge": "Right engine", "response": "start, hold for twenty percent N-two; fuel control lever up", "accept": ["set", "on"] },
-        { "challenge": "Left engine", "response": "start, hold for twenty percent N-two; fuel control lever up", "accept": ["set", "on"] },
-        { "challenge": "Engine start pump", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "AC bus cross-tie", "response": "auto", "accept": ["set", "check"] },
-        { "challenge": "APU bus left and right", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "APU air", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "APU master", "response": "off", "accept": ["off", "set"] }
+        {
+          "challenge": "Parking brake",
+          "response": "check on, lever up",
+          "accept": [
+            "on",
+            "check"
+          ],
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Battery master",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Engine start pump",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ]
+        },
+        {
+          "challenge": "APU master",
+          "response": "start then run",
+          "accept": [
+            "set",
+            "on"
+          ],
+          "note": "Wait for the APU power available light.",
+          "check": {
+            "var": "apu_on",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "APU left and right bus",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "apu_on",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Left and right generators",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "eng2_generator_on",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "APU air",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Pneumatic cross valves",
+          "response": "open, up",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Aux transfer pump",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Left, center and right fuel pumps",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "eng2_fuel_pump_on",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Engine start system",
+          "response": "select A or B",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Right engine",
+          "response": "start, hold for twenty percent N-two; fuel control lever up",
+          "accept": [
+            "set",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Left engine",
+          "response": "start, hold for twenty percent N-two; fuel control lever up",
+          "accept": [
+            "set",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Engine start pump",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ]
+        },
+        {
+          "challenge": "AC bus cross-tie",
+          "response": "auto",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "APU bus left and right",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ],
+          "check": {
+            "var": "apu_pct",
+            "op": "max",
+            "value": 5
+          }
+        },
+        {
+          "challenge": "APU air",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ]
+        },
+        {
+          "challenge": "APU master",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ],
+          "check": {
+            "var": "apu_pct",
+            "op": "max",
+            "value": 5
+          }
+        }
       ]
     },
     "taxi": {
       "title": "before taxi",
       "items": [
-        { "challenge": "Seatbelt sign", "response": "on", "accept": ["on"], "check": {"var": "seatbelt_sign", "op": "eq", "value": true} },
-        { "challenge": "Elevator trim", "response": "set for takeoff, plus ten degrees", "accept": ["set", "check"] },
-        { "challenge": "Flaps", "response": "set, fifteen degrees", "accept": ["set", "check"] },
-        { "challenge": "Flight controls", "response": "checked, pitch roll yaw", "accept": ["check"] },
-        { "challenge": "Speed bugs", "response": "set", "accept": ["set", "check"], "note": "The manual's example: V1 125, VR 130, V2 139, flaps-up 150 KIAS." },
-        { "challenge": "Nose and taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
-        { "challenge": "Transponder", "response": "standby", "accept": ["set", "on"] , "check": {"var": "transponder_state", "op": "eq", "value": 1} },
-        { "challenge": "Pitot heat", "response": "captain", "accept": ["on", "set"], "check": {"var": "pitot_heat", "op": "eq", "value": true} },
-        { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} }
+        {
+          "challenge": "Seatbelt sign",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "seatbelt_sign",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Elevator trim",
+          "response": "set for takeoff, plus ten degrees",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flaps",
+          "response": "set, fifteen degrees",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flight controls",
+          "response": "checked, pitch roll yaw",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Speed bugs",
+          "response": "set",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "note": "The manual's example: V1 125, VR 130, V2 139, flaps-up 150 KIAS."
+        },
+        {
+          "challenge": "Nose and taxi lights",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "taxi_light",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Transponder",
+          "response": "standby",
+          "accept": [
+            "set",
+            "on"
+          ],
+          "check": {
+            "var": "transponder_state",
+            "op": "eq",
+            "value": 1
+          }
+        },
+        {
+          "challenge": "Pitot heat",
+          "response": "captain",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "pitot_heat",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Parking brake",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": false
+          }
+        }
       ]
     },
     "before_takeoff": {
       "title": "before takeoff",
       "items": [
-        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
-        { "challenge": "Engine start system", "response": "override", "accept": ["set", "check"] },
-        { "challenge": "Annunciator panel", "response": "checked", "accept": ["check"] },
-        { "challenge": "Transponder", "response": "transponder", "accept": ["on", "set"], "check": {"var": "transponder_state", "op": "in", "value": [3, 4]}, "note": "UNVERIFIED: TRANSPONDER STATE values are program-defined and unmeasured on a live sim." },
-        { "challenge": "Wing and landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true} },
-        { "challenge": "Nose and taxi lights", "response": "off", "accept": ["off"], "check": {"var": "taxi_light", "op": "eq", "value": false} }
+        {
+          "challenge": "Altimeter",
+          "response": "set",
+          "accept": [
+            "set",
+            "value"
+          ],
+          "check": {
+            "var": "kohlsman_hpa",
+            "op": "near",
+            "value": "$qnh",
+            "tolerance": 1.0
+          }
+        },
+        {
+          "challenge": "Engine start system",
+          "response": "override",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Annunciator panel",
+          "response": "checked",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Transponder",
+          "response": "transponder",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "transponder_state",
+            "op": "in",
+            "value": [
+              3,
+              4
+            ]
+          },
+          "note": "UNVERIFIED: TRANSPONDER STATE values are program-defined and unmeasured on a live sim."
+        },
+        {
+          "challenge": "Wing and landing lights",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Nose and taxi lights",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "taxi_light",
+            "op": "eq",
+            "value": false
+          }
+        }
       ]
     },
     "after_takeoff": {
       "title": "after takeoff",
       "items": [
-        { "challenge": "Landing gear", "response": "up", "accept": ["up"], "check": {"var": "gear_down", "op": "eq", "value": false} },
-        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
-        { "challenge": "Thrust", "response": "set as required", "accept": ["set", "check"] },
-        { "challenge": "Engine start system", "response": "off", "accept": ["off", "set"] }
+        {
+          "challenge": "Landing gear",
+          "response": "up",
+          "accept": [
+            "up"
+          ],
+          "check": {
+            "var": "gear_down",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Flaps",
+          "response": "retracted",
+          "accept": [
+            "up"
+          ],
+          "check": {
+            "var": "flaps_index",
+            "op": "eq",
+            "value": 0
+          }
+        },
+        {
+          "challenge": "Thrust",
+          "response": "set as required",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Engine start system",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ]
+        }
       ]
     },
     "cruise": {
       "title": "cruise",
       "items": [
-        { "challenge": "Seatbelt sign", "response": "off", "accept": ["off"], "check": {"var": "seatbelt_sign", "op": "eq", "value": false} },
-        { "challenge": "Wing and landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
-        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} }
+        {
+          "challenge": "Seatbelt sign",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "seatbelt_sign",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Wing and landing lights",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Altimeter",
+          "response": "set",
+          "accept": [
+            "set",
+            "value"
+          ],
+          "check": {
+            "var": "kohlsman_hpa",
+            "op": "near",
+            "value": "$qnh",
+            "tolerance": 1.0
+          }
+        }
       ]
     },
     "before_landing": {
       "title": "before landing",
       "items": [
-        { "challenge": "Seatbelt sign", "response": "on", "accept": ["on"], "check": {"var": "seatbelt_sign", "op": "eq", "value": true} },
-        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
-        { "challenge": "Wing and landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true} },
-        { "challenge": "Nav radios", "response": "set", "accept": ["set", "check"] },
-        { "challenge": "Speed brakes", "response": "set as required", "accept": ["set", "check"] },
-        { "challenge": "Flaps", "response": "set as required", "accept": ["set", "down"] },
-        { "challenge": "Landing gear", "response": "down", "accept": ["down"], "check": {"var": "gear_down", "op": "eq", "value": true} },
-        { "challenge": "Engine start system", "response": "override", "accept": ["set", "check"] },
-        { "challenge": "Annunciator panel", "response": "checked", "accept": ["check"] }
+        {
+          "challenge": "Seatbelt sign",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "seatbelt_sign",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Altimeter",
+          "response": "set",
+          "accept": [
+            "set",
+            "value"
+          ],
+          "check": {
+            "var": "kohlsman_hpa",
+            "op": "near",
+            "value": "$qnh",
+            "tolerance": 1.0
+          }
+        },
+        {
+          "challenge": "Wing and landing lights",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Nav radios",
+          "response": "set",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Speed brakes",
+          "response": "set as required",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flaps",
+          "response": "set as required",
+          "accept": [
+            "set",
+            "down"
+          ]
+        },
+        {
+          "challenge": "Landing gear",
+          "response": "down",
+          "accept": [
+            "down"
+          ],
+          "check": {
+            "var": "gear_down",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Engine start system",
+          "response": "override",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Annunciator panel",
+          "response": "checked",
+          "accept": [
+            "check"
+          ]
+        }
       ]
     },
     "after_landing": {
       "title": "after landing",
       "items": [
-        { "challenge": "Flaps", "response": "set, fifteen degrees", "accept": ["set", "check"], "note": "The manual keeps fifteen degrees after landing until parked." },
-        { "challenge": "Speed brakes", "response": "retracted", "accept": ["set", "check"], "check": {"var": "spoilers_armed", "op": "eq", "value": false} },
-        { "challenge": "Wing and landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
-        { "challenge": "Nose and taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
-        { "challenge": "Transponder", "response": "standby", "accept": ["set", "off"] , "check": {"var": "transponder_state", "op": "eq", "value": 1} }
+        {
+          "challenge": "Flaps",
+          "response": "set, fifteen degrees",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "note": "The manual keeps fifteen degrees after landing until parked."
+        },
+        {
+          "challenge": "Speed brakes",
+          "response": "retracted",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "spoilers_armed",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Wing and landing lights",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Nose and taxi lights",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "taxi_light",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Transponder",
+          "response": "standby",
+          "accept": [
+            "set",
+            "off"
+          ],
+          "check": {
+            "var": "transponder_state",
+            "op": "eq",
+            "value": 1
+          }
+        }
       ]
     },
     "shutdown": {
       "title": "parking",
       "items": [
-        { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
-        { "challenge": "Seatbelt sign", "response": "off", "accept": ["off"], "check": {"var": "seatbelt_sign", "op": "eq", "value": false} },
-        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
-        { "challenge": "Fuel control levers", "response": "down, off", "accept": ["off", "set"] , "check": {"var": "engines_running", "op": "eq", "value": false} },
-        { "challenge": "Left, center and right fuel pumps", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "Aux transfer pump", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "AC bus cross-tie", "response": "open", "accept": ["set", "check"] },
-        { "challenge": "Pneumatic cross valves", "response": "closed, down", "accept": ["set", "check"] },
-        { "challenge": "Pitot heat", "response": "off", "accept": ["off"], "check": {"var": "pitot_heat", "op": "eq", "value": false} },
-        { "challenge": "Engine start system", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "Left and right generators", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "Battery master", "response": "off", "accept": ["off"], "check": {"var": "battery_master", "op": "eq", "value": false} }
+        {
+          "challenge": "Parking brake",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Seatbelt sign",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "seatbelt_sign",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Flaps",
+          "response": "retracted",
+          "accept": [
+            "up"
+          ],
+          "check": {
+            "var": "flaps_index",
+            "op": "eq",
+            "value": 0
+          }
+        },
+        {
+          "challenge": "Fuel control levers",
+          "response": "down, off",
+          "accept": [
+            "off",
+            "set"
+          ],
+          "check": {
+            "var": "engines_running",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Left, center and right fuel pumps",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ],
+          "check": {
+            "var": "eng2_fuel_pump_on",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Aux transfer pump",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ]
+        },
+        {
+          "challenge": "AC bus cross-tie",
+          "response": "open",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Pneumatic cross valves",
+          "response": "closed, down",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Pitot heat",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "pitot_heat",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Engine start system",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Left and right generators",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ],
+          "check": {
+            "var": "eng2_generator_on",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Battery master",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": false
+          }
+        }
       ]
     }
   }

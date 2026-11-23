@@ -1,105 +1,712 @@
 {
   "_comment": "X-Plane 12 Cessna Citation X manual checklists (x-plane.com/support/manuals/), mapped onto the standard names.",
   "source": "X-Plane 12 Cessna Citation X manual, checklists section",
-  "match": [ "cessna citation x" ],
+  "match": [
+    "cessna citation x"
+  ],
   "checklists": {
     "after_start": {
       "title": "cold and dark to engine start",
       "items": [
-        { "challenge": "Cabin door", "response": "closed", "accept": ["check", "set"] },
-        { "challenge": "Parking brake", "response": "check on", "accept": ["on", "check"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
-        { "challenge": "Battery one and two", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
-        { "challenge": "APU master", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "APU start", "response": "lift, wait, release", "accept": ["set", "on"] },
-        { "challenge": "APU RPMs", "response": "wait for one hundred percent", "accept": ["check"] },
-        { "challenge": "APU generator", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "APU bleed", "response": "on, center position", "accept": ["on", "set"] },
-        { "challenge": "Avionics", "response": "on", "accept": ["on"], "check": {"var": "avionics_master", "op": "eq", "value": true} },
-        { "challenge": "EICAS", "response": "on, mode electric", "accept": ["on", "set"] },
-        { "challenge": "Throttles", "response": "idle", "accept": ["set", "check"] },
-        { "challenge": "Right engine", "response": "start, monitor ITT", "accept": ["set", "on"], "note": "Disengage the starter if required." },
-        { "challenge": "Left engine", "response": "start, monitor ITT", "accept": ["set", "on"] },
-        { "challenge": "Left-hand generator", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "Right-hand generator", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "APU bleed", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "APU generator", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "APU stop", "response": "depress, wait, release", "accept": ["set", "off"] },
-        { "challenge": "APU master", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "Left-hand center wing transfer", "response": "normal", "accept": ["set", "check"] },
-        { "challenge": "Right-hand center wing transfer", "response": "normal", "accept": ["set", "check"] }
+        {
+          "challenge": "Cabin door",
+          "response": "closed",
+          "accept": [
+            "check",
+            "set"
+          ],
+          "check": {
+            "var": "exits_open_pct",
+            "op": "max",
+            "value": 5
+          }
+        },
+        {
+          "challenge": "Parking brake",
+          "response": "check on",
+          "accept": [
+            "on",
+            "check"
+          ],
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Battery one and two",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "APU master",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "apu_on",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "APU start",
+          "response": "lift, wait, release",
+          "accept": [
+            "set",
+            "on"
+          ],
+          "check": {
+            "var": "apu_on",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "APU RPMs",
+          "response": "wait for one hundred percent",
+          "accept": [
+            "check"
+          ],
+          "check": {
+            "var": "apu_pct",
+            "op": "min",
+            "value": 80
+          }
+        },
+        {
+          "challenge": "APU generator",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "generator_on",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "APU bleed",
+          "response": "on, center position",
+          "accept": [
+            "on",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Avionics",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "avionics_master",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "EICAS",
+          "response": "on, mode electric",
+          "accept": [
+            "on",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Throttles",
+          "response": "idle",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "throttle_pct",
+            "op": "max",
+            "value": 10
+          }
+        },
+        {
+          "challenge": "Right engine",
+          "response": "start, monitor ITT",
+          "accept": [
+            "set",
+            "on"
+          ],
+          "note": "Disengage the starter if required."
+        },
+        {
+          "challenge": "Left engine",
+          "response": "start, monitor ITT",
+          "accept": [
+            "set",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Left-hand generator",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "generator_on",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Right-hand generator",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "eng2_generator_on",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "APU bleed",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ]
+        },
+        {
+          "challenge": "APU generator",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ],
+          "check": {
+            "var": "generator_on",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "APU stop",
+          "response": "depress, wait, release",
+          "accept": [
+            "set",
+            "off"
+          ]
+        },
+        {
+          "challenge": "APU master",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ],
+          "check": {
+            "var": "apu_pct",
+            "op": "max",
+            "value": 5
+          }
+        },
+        {
+          "challenge": "Left-hand center wing transfer",
+          "response": "normal",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Right-hand center wing transfer",
+          "response": "normal",
+          "accept": [
+            "set",
+            "check"
+          ]
+        }
       ]
     },
     "taxi": {
       "title": "before taxi",
       "items": [
-        { "challenge": "Seatbelt sign", "response": "on", "accept": ["on"], "check": {"var": "seatbelt_sign", "op": "eq", "value": true} },
-        { "challenge": "Stabilizer trim", "response": "set for takeoff, minus six degrees", "accept": ["set", "check"] },
-        { "challenge": "Flaps", "response": "set, five degrees", "accept": ["set", "check"] },
-        { "challenge": "Flight controls", "response": "checked, pitch roll yaw", "accept": ["check"] },
-        { "challenge": "Taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
-        { "challenge": "Transponder", "response": "standby", "accept": ["set", "on"] , "check": {"var": "transponder_state", "op": "eq", "value": 1} },
-        { "challenge": "Parking brake", "response": "off", "accept": ["off"], "check": {"var": "parking_brake", "op": "eq", "value": false} }
+        {
+          "challenge": "Seatbelt sign",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "seatbelt_sign",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Stabilizer trim",
+          "response": "set for takeoff, minus six degrees",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flaps",
+          "response": "set, five degrees",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flight controls",
+          "response": "checked, pitch roll yaw",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Taxi lights",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "taxi_light",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Transponder",
+          "response": "standby",
+          "accept": [
+            "set",
+            "on"
+          ],
+          "check": {
+            "var": "transponder_state",
+            "op": "eq",
+            "value": 1
+          }
+        },
+        {
+          "challenge": "Parking brake",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": false
+          }
+        }
       ]
     },
     "before_takeoff": {
       "title": "before takeoff",
       "items": [
-        { "challenge": "Flaps", "response": "check, five degrees", "accept": ["check", "set"] },
-        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
-        { "challenge": "Landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true} },
-        { "challenge": "Taxi lights", "response": "off", "accept": ["off"], "check": {"var": "taxi_light", "op": "eq", "value": false} },
-        { "challenge": "Transponder", "response": "ATC on", "accept": ["on", "set"], "check": {"var": "transponder_state", "op": "in", "value": [3, 4]}, "note": "UNVERIFIED: TRANSPONDER STATE values are program-defined and unmeasured on a live sim." }
+        {
+          "challenge": "Flaps",
+          "response": "check, five degrees",
+          "accept": [
+            "check",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Altimeter",
+          "response": "set",
+          "accept": [
+            "set",
+            "value"
+          ],
+          "check": {
+            "var": "kohlsman_hpa",
+            "op": "near",
+            "value": "$qnh",
+            "tolerance": 1.0
+          }
+        },
+        {
+          "challenge": "Landing lights",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Taxi lights",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "taxi_light",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Transponder",
+          "response": "ATC on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "transponder_state",
+            "op": "in",
+            "value": [
+              3,
+              4
+            ]
+          },
+          "note": "UNVERIFIED: TRANSPONDER STATE values are program-defined and unmeasured on a live sim."
+        }
       ]
     },
     "after_takeoff": {
       "title": "after takeoff",
       "items": [
-        { "challenge": "Landing gear", "response": "up", "accept": ["up"], "check": {"var": "gear_down", "op": "eq", "value": false} },
-        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
-        { "challenge": "Throttles", "response": "set as required", "accept": ["set", "check"] }
+        {
+          "challenge": "Landing gear",
+          "response": "up",
+          "accept": [
+            "up"
+          ],
+          "check": {
+            "var": "gear_down",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Flaps",
+          "response": "retracted",
+          "accept": [
+            "up"
+          ],
+          "check": {
+            "var": "flaps_index",
+            "op": "eq",
+            "value": 0
+          }
+        },
+        {
+          "challenge": "Throttles",
+          "response": "set as required",
+          "accept": [
+            "set",
+            "check"
+          ]
+        }
       ]
     },
     "cruise": {
       "title": "cruise",
       "items": [
-        { "challenge": "Seatbelt sign", "response": "off", "accept": ["off"], "check": {"var": "seatbelt_sign", "op": "eq", "value": false} },
-        { "challenge": "Landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
-        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} }
+        {
+          "challenge": "Seatbelt sign",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "seatbelt_sign",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Landing lights",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Altimeter",
+          "response": "set",
+          "accept": [
+            "set",
+            "value"
+          ],
+          "check": {
+            "var": "kohlsman_hpa",
+            "op": "near",
+            "value": "$qnh",
+            "tolerance": 1.0
+          }
+        }
       ]
     },
     "before_landing": {
       "title": "before landing",
       "items": [
-        { "challenge": "Seatbelt sign", "response": "on", "accept": ["on"], "check": {"var": "seatbelt_sign", "op": "eq", "value": true} },
-        { "challenge": "Altimeter", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
-        { "challenge": "Landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true} },
-        { "challenge": "Flaps", "response": "as required", "accept": ["set", "down"] },
-        { "challenge": "Speedbrakes", "response": "as required", "accept": ["set", "check"] },
-        { "challenge": "Flaps for landing", "response": "full", "accept": ["down", "set"] }
+        {
+          "challenge": "Seatbelt sign",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "seatbelt_sign",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Altimeter",
+          "response": "set",
+          "accept": [
+            "set",
+            "value"
+          ],
+          "check": {
+            "var": "kohlsman_hpa",
+            "op": "near",
+            "value": "$qnh",
+            "tolerance": 1.0
+          }
+        },
+        {
+          "challenge": "Landing lights",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Flaps",
+          "response": "as required",
+          "accept": [
+            "set",
+            "down"
+          ]
+        },
+        {
+          "challenge": "Speedbrakes",
+          "response": "as required",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flaps for landing",
+          "response": "full",
+          "accept": [
+            "down",
+            "set"
+          ]
+        }
       ]
     },
     "after_landing": {
       "title": "after landing",
       "items": [
-        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
-        { "challenge": "Speedbrakes", "response": "retracted", "accept": ["set", "check"], "check": {"var": "spoilers_armed", "op": "eq", "value": false} },
-        { "challenge": "Taxi lights", "response": "on", "accept": ["on"], "check": {"var": "taxi_light", "op": "eq", "value": true} },
-        { "challenge": "Landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
-        { "challenge": "Transponder", "response": "standby", "accept": ["set", "off"] , "check": {"var": "transponder_state", "op": "eq", "value": 1} }
+        {
+          "challenge": "Flaps",
+          "response": "retracted",
+          "accept": [
+            "up"
+          ],
+          "check": {
+            "var": "flaps_index",
+            "op": "eq",
+            "value": 0
+          }
+        },
+        {
+          "challenge": "Speedbrakes",
+          "response": "retracted",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "spoilers_armed",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Taxi lights",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "taxi_light",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Landing lights",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Transponder",
+          "response": "standby",
+          "accept": [
+            "set",
+            "off"
+          ],
+          "check": {
+            "var": "transponder_state",
+            "op": "eq",
+            "value": 1
+          }
+        }
       ]
     },
     "shutdown": {
       "title": "parking",
       "items": [
-        { "challenge": "Parking brake", "response": "on", "accept": ["on", "set"], "check": {"var": "parking_brake", "op": "eq", "value": true} },
-        { "challenge": "Throttles", "response": "cut off", "accept": ["off", "set"] , "check": {"var": "throttle_pct", "op": "max", "value": 5} },
-        { "challenge": "Seatbelt sign", "response": "off", "accept": ["off"], "check": {"var": "seatbelt_sign", "op": "eq", "value": false} },
-        { "challenge": "Left and right center wing transfer", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "Left and right generators", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "Avionics", "response": "off", "accept": ["off"], "check": {"var": "avionics_master", "op": "eq", "value": false} },
-        { "challenge": "EICAS", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "Battery one and two", "response": "off", "accept": ["off"], "check": {"var": "battery_master", "op": "eq", "value": false} },
-        { "challenge": "Cabin door", "response": "open", "accept": ["check", "set"] }
+        {
+          "challenge": "Parking brake",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "parking_brake",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Throttles",
+          "response": "cut off",
+          "accept": [
+            "off",
+            "set"
+          ],
+          "check": {
+            "var": "throttle_pct",
+            "op": "max",
+            "value": 5
+          }
+        },
+        {
+          "challenge": "Seatbelt sign",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "seatbelt_sign",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Left and right center wing transfer",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Left and right generators",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ],
+          "check": {
+            "var": "eng2_generator_on",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Avionics",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "avionics_master",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "EICAS",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Battery one and two",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Cabin door",
+          "response": "open",
+          "accept": [
+            "check",
+            "set"
+          ],
+          "check": {
+            "var": "exits_open_pct",
+            "op": "min",
+            "value": 50
+          }
+        }
       ]
     }
   }

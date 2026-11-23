@@ -41,7 +41,12 @@
           "accept": [
             "value",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "main_bus_volts",
+            "op": "min",
+            "value": 20
+          }
         },
         {
           "challenge": "Standby power",
@@ -89,7 +94,12 @@
           "accept": [
             "check",
             "complete"
-          ]
+          ],
+          "check": {
+            "var": "oxygen_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "Engine fire handles",
@@ -198,7 +208,12 @@
           "accept": [
             "on",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "fuel_pump_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "Anti-collision beacon",
@@ -219,7 +234,12 @@
           "accept": [
             "check",
             "on"
-          ]
+          ],
+          "check": {
+            "var": "exits_open_pct",
+            "op": "max",
+            "value": 5
+          }
         },
         {
           "challenge": "Thrust levers",
@@ -377,7 +397,12 @@
           "accept": [
             "check",
             "on"
-          ]
+          ],
+          "check": {
+            "var": "eng4_generator_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "Engine-driven hydraulics",
@@ -385,7 +410,12 @@
           "accept": [
             "check",
             "on"
-          ]
+          ],
+          "check": {
+            "var": "hydraulic_pressure",
+            "op": "min",
+            "value": 1
+          }
         },
         {
           "challenge": "Tank crossfeed",
@@ -401,7 +431,12 @@
           "accept": [
             "check",
             "on"
-          ]
+          ],
+          "check": {
+            "var": "eng4_bleed_air_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "Left air data heater",
@@ -425,7 +460,12 @@
           "accept": [
             "check",
             "on"
-          ]
+          ],
+          "check": {
+            "var": "pack_left_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "Air start cart",
@@ -464,7 +504,12 @@
           "accept": [
             "check",
             "on"
-          ]
+          ],
+          "check": {
+            "var": "hydraulic_pressure",
+            "op": "min",
+            "value": 1
+          }
         },
         {
           "challenge": "Nose visor and flight controls",
@@ -551,7 +596,12 @@
           "accept": [
             "check",
             "on"
-          ]
+          ],
+          "check": {
+            "var": "hydraulic_pressure",
+            "op": "min",
+            "value": 1
+          }
         },
         {
           "challenge": "Landing gear",
@@ -757,7 +807,12 @@
           "accept": [
             "check",
             "set"
-          ]
+          ],
+          "check": {
+            "var": "cabin_altitude_goal_ft",
+            "op": "min",
+            "value": 100
+          }
         }
       ]
     },
@@ -819,7 +874,12 @@
           "accept": [
             "value",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "cabin_altitude_ft",
+            "op": "max",
+            "value": 8000.0
+          }
         },
         {
           "challenge": "Supersonic cruise C G",
@@ -834,7 +894,12 @@
           "response": "systems A through D normal",
           "accept": [
             "check"
-          ]
+          ],
+          "check": {
+            "var": "hydraulic_pressure",
+            "op": "min",
+            "value": 1
+          }
         },
         {
           "challenge": "Generator load, generators one through four",
@@ -887,7 +952,12 @@
           "accept": [
             "check",
             "set"
-          ]
+          ],
+          "check": {
+            "var": "cabin_altitude_goal_ft",
+            "op": "min",
+            "value": 100
+          }
         },
         {
           "challenge": "Altimeters",
@@ -956,7 +1026,12 @@
             "set",
             "check",
             "value"
-          ]
+          ],
+          "check": {
+            "var": "minimums_ft",
+            "op": "min",
+            "value": 1
+          }
         },
         {
           "challenge": "Fuel and C G",
@@ -1137,7 +1212,12 @@
           "accept": [
             "check",
             "on"
-          ]
+          ],
+          "check": {
+            "var": "pack_left_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "Parking brake",
@@ -1204,7 +1284,12 @@
           "accept": [
             "check",
             "off"
-          ]
+          ],
+          "check": {
+            "var": "generator_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "Fuel boost pumps",
@@ -1212,7 +1297,12 @@
           "accept": [
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "fuel_pump_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "Battery master switch",
@@ -1233,7 +1323,12 @@
           "accept": [
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "wiper_pos",
+            "op": "eq",
+            "value": 0
+          }
         },
         {
           "challenge": "Crew oxygen masks",
@@ -1241,7 +1336,12 @@
           "accept": [
             "check",
             "complete"
-          ]
+          ],
+          "check": {
+            "var": "oxygen_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "Sliding windows",
@@ -1358,7 +1458,12 @@
           "accept": [
             "check",
             "off"
-          ]
+          ],
+          "check": {
+            "var": "generator_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "Engine fuel shutoff valve",
@@ -1374,7 +1479,12 @@
           "accept": [
             "check",
             "off"
-          ]
+          ],
+          "check": {
+            "var": "bleed_air_on",
+            "op": "eq",
+            "value": false
+          }
         }
       ]
     },
@@ -1411,7 +1521,12 @@
           "accept": [
             "check",
             "value"
-          ]
+          ],
+          "check": {
+            "var": "hydraulic_pressure",
+            "op": "min",
+            "value": 500
+          }
         },
         {
           "challenge": "Alternate gear extension checklist",
@@ -1466,7 +1581,12 @@
           "accept": [
             "check",
             "set"
-          ]
+          ],
+          "check": {
+            "var": "generator_on",
+            "op": "eq",
+            "value": false
+          }
         }
       ]
     },

@@ -94,7 +94,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "apu_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "APU Bleed",
@@ -144,7 +149,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "fuel_pump_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "FMC - Route",
@@ -221,7 +231,12 @@
           "response": "closed.",
           "accept": [
             "check"
-          ]
+          ],
+          "check": {
+            "var": "exits_open_pct",
+            "op": "max",
+            "value": 5
+          }
         },
         {
           "challenge": "Thrust Levers",
@@ -246,7 +261,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "pack_left_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "Engine Master",
@@ -279,7 +299,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "bleed_air_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "Packs",
@@ -289,7 +314,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "pack_left_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "APU Bleed",
@@ -374,7 +404,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "brake_left_pct",
+            "op": "min",
+            "value": 10
+          }
         },
         {
           "challenge": "Thrust Levers",
@@ -563,7 +598,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "brake_left_pct",
+            "op": "min",
+            "value": 10
+          }
         },
         {
           "challenge": "ATC Clearance",
@@ -817,7 +857,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "fuel_pump_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "Navigation Lights",

@@ -89,7 +89,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "magneto_pos",
+            "op": "eq",
+            "value": 0
+          }
         },
         {
           "challenge": "MASTER Switch",
@@ -215,7 +220,15 @@
             "off",
             "check"
           ],
-          "note": "START - release when engine starts."
+          "note": "START - release when engine starts.",
+          "check": {
+            "var": "magneto_pos",
+            "op": "in",
+            "value": [
+              3,
+              4
+            ]
+          }
         },
         {
           "challenge": "Oil Pressure",
@@ -223,7 +236,12 @@
           "accept": [
             "check"
           ],
-          "note": "CHECK - verify increases into green arc."
+          "note": "CHECK - verify increases into green arc.",
+          "check": {
+            "var": "oil_pressure_psi",
+            "op": "min",
+            "value": 10
+          }
         },
         {
           "challenge": "AVIONICS Switch",
@@ -731,7 +749,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "magneto_pos",
+            "op": "eq",
+            "value": 0
+          }
         },
         {
           "challenge": "MASTER Switch",

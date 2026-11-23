@@ -269,6 +269,114 @@ class AircraftState:
     rotor_brake_available: bool = False
     rotor_clutch_active: bool = False
     rotor_gov_target_pct: float = 0.0
+    # The rest of the cockpit the checklists name, engine one first like
+    # engines_running. Every one of them is None until the simulator has
+    # said -- and stays None on a sim or model that never publishes it --
+    # because a check against None reads as agreement, never an
+    # objection: a C172 without an autobrake must not fail "Auto Brake
+    # ... off" for having no such knob to check.
+    #
+    # The magneto/ignition keys, 0 off, 1 left, 2 right, 3 both, 4 start
+    # -- the enum the piston twins' "left/right magneto switch" items
+    # name. The turbine start/ignition switches ride beside them, True
+    # where the switch is on; and the starter itself while it cranks.
+    magneto_pos: int | None = None
+    eng2_magneto_pos: int | None = None
+    magneto1_left: bool | None = None
+    magneto1_right: bool | None = None
+    magneto2_left: bool | None = None
+    magneto2_right: bool | None = None
+    ignition_on: bool | None = None
+    eng2_ignition_on: bool | None = None
+    starter_active: bool | None = None
+    # The fuel-pump, generator and alternator switches, per engine. On
+    # X-Plane the one electrical switch per engine answers both the
+    # generator's and the alternator's name.
+    fuel_pump_on: bool | None = None
+    eng2_fuel_pump_on: bool | None = None
+    eng3_fuel_pump_on: bool | None = None
+    eng4_fuel_pump_on: bool | None = None
+    generator_on: bool | None = None
+    eng2_generator_on: bool | None = None
+    eng3_generator_on: bool | None = None
+    eng4_generator_on: bool | None = None
+    alternator_on: bool | None = None
+    eng2_alternator_on: bool | None = None
+    # The gauges a "check"/"green" item names: oil pressure engine one
+    # and two, psi; the vacuum gauge, inHg; engine one's live fuel
+    # flow, pounds an hour; the battery's charge current, amps --
+    # positive charging.
+    oil_pressure_psi: float | None = None
+    eng2_oil_pressure_psi: float | None = None
+    suction_inhg: float | None = None
+    eng_fuel_flow_pph: float | None = None
+    battery_amps: float | None = None
+    # How open the most-open exit is, per cent, and the per-exit reads
+    # it is the max of (0 closed .. 100 open).
+    exits_open_pct: float | None = None
+    exit1_open_pct: float | None = None
+    exit2_open_pct: float | None = None
+    exit3_open_pct: float | None = None
+    exit4_open_pct: float | None = None
+    # The toe brakes' live positions, per cent of travel.
+    brake_left_pct: float | None = None
+    brake_right_pct: float | None = None
+    # Carb heat, per cent applied -- MSFS models it as the piston
+    # engine's anti-ice position; and the de-ice family's switches:
+    # engine inlets, wing boots or heat, windshield, props, and the
+    # angle-of-attack/panel probe heat.
+    carb_heat_pct: float | None = None
+    engine_anti_ice_on: bool | None = None
+    wing_deice_on: bool | None = None
+    window_heat_on: bool | None = None
+    prop_deice_on: bool | None = None
+    aoa_heat_on: bool | None = None
+    # The brakes' own systems: the anti-skid switch (which only MSFS
+    # publishes), the autobrake dial's position (0 off, the rest
+    # model-numbered), the speedbrake lever per cent out, and the yaw
+    # damper.
+    antiskid_on: bool | None = None
+    autobrake_pos: int | None = None
+    speedbrake_pct: float | None = None
+    yaw_damper_on: bool | None = None
+    # The APU: master switch, generator switch, bleed valve, and RPM
+    # per cent of rated. And the packs' switches, which only X-Plane
+    # publishes.
+    apu_on: bool | None = None
+    apu_pct: float | None = None
+    apu_gen_on: bool | None = None
+    apu_bleed_on: bool | None = None
+    pack_left_on: bool | None = None
+    pack_right_on: bool | None = None
+    # The engines' bleed-air valves, per engine.
+    bleed_air_on: bool | None = None
+    eng2_bleed_air_on: bool | None = None
+    eng3_bleed_air_on: bool | None = None
+    eng4_bleed_air_on: bool | None = None
+    # The hydraulic system's pressure (in the sim's own units) and its
+    # electric pump's switch.
+    hydraulic_pressure: float | None = None
+    hydraulic_pump_on: bool | None = None
+    # The cabin: its altitude, the pressurization controller's
+    # altitude target, and the differential, psi.
+    cabin_altitude_ft: float | None = None
+    cabin_altitude_goal_ft: float | None = None
+    pressurization_diff_psi: float | None = None
+    # The radio-altimeter decision-height bug, feet -- what a
+    # "minimums ... set" item names.
+    minimums_ft: float | None = None
+    # The signs and lamps past the usual six: the no-smoking sign
+    # beside the seatbelts, and the logo, wing-inspection and
+    # recognition lamps MSFS publishes (X-Plane offers only generic
+    # lamp channels no standard name reaches, so they stay None there).
+    no_smoking_sign: bool | None = None
+    logo_light: bool | None = None
+    wing_light: bool | None = None
+    recog_light: bool | None = None
+    # The wiper speed setting and the crew oxygen valve -- X-Plane
+    # publishes both; on MSFS they stay None.
+    wiper_pos: int | None = None
+    oxygen_on: bool | None = None
     # The pushback service's own words for what it is doing: whether the
     # stand can have a tug at all, whether one has been asked for and is
     # still coming, and whether it is on the nosewheel now. ``available``

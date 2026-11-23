@@ -1,110 +1,670 @@
 {
   "_comment": "X-Plane 12 Beechcraft King Air C90B manual checklists (x-plane.com/support/manuals/), mapped onto the standard names.",
   "source": "X-Plane 12 Beechcraft King Air C90B manual, checklists section",
-  "match": [ "king air c90", "c90b" ],
+  "match": [
+    "king air c90",
+    "c90b"
+  ],
   "checklists": {
     "before_start": {
       "title": "before starting engines",
       "items": [
-        { "challenge": "Exterior inspection", "response": "completed", "accept": ["complete", "check"], "note": "Passenger door closed; control surfaces, flaps and all exterior lights checked." },
-        { "challenge": "Power levers", "response": "idle", "accept": ["set", "check"] },
-        { "challenge": "Propeller levers", "response": "full forward", "accept": ["set", "check"] },
-        { "challenge": "Condition levers", "response": "cut off", "accept": ["set", "check"], "check": { "var": "condition_pct", "op": "max", "value": 10 } },
-        { "challenge": "All switches", "response": "off", "accept": ["off", "check"] },
-        { "challenge": "Battery switch", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
-        { "challenge": "Fuel quantity", "response": "check", "accept": ["check"] }
+        {
+          "challenge": "Exterior inspection",
+          "response": "completed",
+          "accept": [
+            "complete",
+            "check"
+          ],
+          "note": "Passenger door closed; control surfaces, flaps and all exterior lights checked."
+        },
+        {
+          "challenge": "Power levers",
+          "response": "idle",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Propeller levers",
+          "response": "full forward",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "prop_pct",
+            "op": "min",
+            "value": 90
+          }
+        },
+        {
+          "challenge": "Condition levers",
+          "response": "cut off",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "condition_pct",
+            "op": "max",
+            "value": 10
+          }
+        },
+        {
+          "challenge": "All switches",
+          "response": "off",
+          "accept": [
+            "off",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Battery switch",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "battery_master",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Fuel quantity",
+          "response": "check",
+          "accept": [
+            "check"
+          ]
+        }
       ]
     },
     "after_start": {
       "title": "engine start",
       "items": [
-        { "challenge": "Inverter one or two", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "Right engine auto ignition arm", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "Right ignition and engine start switch", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "At twelve percent turbine RPM, right condition lever", "response": "low idle", "accept": ["set", "check"], "check": { "var": "condition_pct", "op": "near", "value": 50, "tolerance": 15 } },
-        { "challenge": "Right engine oil pressure and turbine RPM", "response": "check", "accept": ["check", "green"] },
-        { "challenge": "Right generator", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "Left engine auto ignition arm", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "Left ignition and engine start switch", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "At twelve percent turbine RPM, left condition lever", "response": "low idle", "accept": ["set", "check"], "check": { "var": "condition_pct", "op": "near", "value": 50, "tolerance": 15 } },
-        { "challenge": "Left engine oil pressure and turbine RPM", "response": "check", "accept": ["check", "green"] },
-        { "challenge": "Left generator", "response": "on", "accept": ["on", "set"] }
+        {
+          "challenge": "Inverter one or two",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Right engine auto ignition arm",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "eng2_ignition_on",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Right ignition and engine start switch",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "eng2_ignition_on",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "At twelve percent turbine RPM, right condition lever",
+          "response": "low idle",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "condition_pct",
+            "op": "near",
+            "value": 50,
+            "tolerance": 15
+          }
+        },
+        {
+          "challenge": "Right engine oil pressure and turbine RPM",
+          "response": "check",
+          "accept": [
+            "check",
+            "green"
+          ],
+          "check": {
+            "var": "eng2_oil_pressure_psi",
+            "op": "min",
+            "value": 10
+          }
+        },
+        {
+          "challenge": "Right generator",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "eng2_generator_on",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Left engine auto ignition arm",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "ignition_on",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Left ignition and engine start switch",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "ignition_on",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "At twelve percent turbine RPM, left condition lever",
+          "response": "low idle",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "condition_pct",
+            "op": "near",
+            "value": 50,
+            "tolerance": 15
+          }
+        },
+        {
+          "challenge": "Left engine oil pressure and turbine RPM",
+          "response": "check",
+          "accept": [
+            "check",
+            "green"
+          ],
+          "check": {
+            "var": "oil_pressure_psi",
+            "op": "min",
+            "value": 10
+          }
+        },
+        {
+          "challenge": "Left generator",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "generator_on",
+            "op": "eq",
+            "value": true
+          }
+        }
       ]
     },
     "taxi": {
       "title": "before taxi",
       "items": [
-        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
-        { "challenge": "Avionics master switch", "response": "on", "accept": ["on"], "check": {"var": "avionics_master", "op": "eq", "value": true} },
-        { "challenge": "EFIS power", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "Lights", "response": "as required", "accept": ["set", "check"] },
-        { "challenge": "Radios", "response": "as required", "accept": ["set", "check"] },
-        { "challenge": "Transponder", "response": "on and set", "accept": ["on", "set"] , "check": {"var": "transponder_state", "op": "in", "value": [3, 4, 5]} }
+        {
+          "challenge": "Flaps",
+          "response": "retracted",
+          "accept": [
+            "up"
+          ],
+          "check": {
+            "var": "flaps_index",
+            "op": "eq",
+            "value": 0
+          }
+        },
+        {
+          "challenge": "Avionics master switch",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "avionics_master",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "EFIS power",
+          "response": "on",
+          "accept": [
+            "on",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Lights",
+          "response": "as required",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Radios",
+          "response": "as required",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Transponder",
+          "response": "on and set",
+          "accept": [
+            "on",
+            "set"
+          ],
+          "check": {
+            "var": "transponder_state",
+            "op": "in",
+            "value": [
+              3,
+              4,
+              5
+            ]
+          }
+        }
       ]
     },
     "before_takeoff": {
       "title": "before takeoff",
       "items": [
-        { "challenge": "Condition levers", "response": "high idle", "accept": ["set", "check"], "check": { "var": "condition_pct", "op": "min", "value": 90 } },
-        { "challenge": "Elevator trim", "response": "set for takeoff, five degrees nose up recommended", "accept": ["set", "check"] },
-        { "challenge": "Flaps", "response": "set to approach, one notch", "accept": ["set", "check"] },
-        { "challenge": "Autopilot", "response": "off", "accept": ["off"], "check": {"var": "autopilot", "op": "eq", "value": false} }
+        {
+          "challenge": "Condition levers",
+          "response": "high idle",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "condition_pct",
+            "op": "min",
+            "value": 90
+          }
+        },
+        {
+          "challenge": "Elevator trim",
+          "response": "set for takeoff, five degrees nose up recommended",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flaps",
+          "response": "set to approach, one notch",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Autopilot",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "autopilot",
+            "op": "eq",
+            "value": false
+          }
+        }
       ]
     },
     "after_takeoff": {
       "title": "takeoff and climb",
       "items": [
-        { "challenge": "Brakes", "response": "on, then off", "accept": ["set", "check"], "note": "Takeoff: brakes on, takeoff power set, monitor ITT and torque, brakes off." },
-        { "challenge": "Propeller levers", "response": "check full forward", "accept": ["check", "set"] },
-        { "challenge": "Condition levers", "response": "check high idle", "accept": ["check", "set"], "check": { "var": "condition_pct", "op": "min", "value": 90 } },
-        { "challenge": "Throttles", "response": "takeoff power", "accept": ["set", "check"] },
-        { "challenge": "Rotate", "response": "ninety plus knots, climb away one hundred plus", "accept": ["check"] },
-        { "challenge": "Landing gear", "response": "up", "accept": ["up"], "check": {"var": "gear_down", "op": "eq", "value": false} },
-        { "challenge": "Flaps", "response": "check retracted", "accept": ["up", "check"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
-        { "challenge": "Climb power", "response": "set", "accept": ["set", "check"] },
-        { "challenge": "Propeller RPM", "response": "two thousand", "accept": ["set", "check"] },
-        { "challenge": "Auto feather", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "Engine instruments", "response": "monitor", "accept": ["check"] },
-        { "challenge": "Landing and taxi lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} }
+        {
+          "challenge": "Brakes",
+          "response": "on, then off",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "note": "Takeoff: brakes on, takeoff power set, monitor ITT and torque, brakes off.",
+          "check": {
+            "var": "brake_left_pct",
+            "op": "max",
+            "value": 10
+          }
+        },
+        {
+          "challenge": "Propeller levers",
+          "response": "check full forward",
+          "accept": [
+            "check",
+            "set"
+          ],
+          "check": {
+            "var": "prop_pct",
+            "op": "min",
+            "value": 90
+          }
+        },
+        {
+          "challenge": "Condition levers",
+          "response": "check high idle",
+          "accept": [
+            "check",
+            "set"
+          ],
+          "check": {
+            "var": "condition_pct",
+            "op": "min",
+            "value": 90
+          }
+        },
+        {
+          "challenge": "Throttles",
+          "response": "takeoff power",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Rotate",
+          "response": "ninety plus knots, climb away one hundred plus",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Landing gear",
+          "response": "up",
+          "accept": [
+            "up"
+          ],
+          "check": {
+            "var": "gear_down",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Flaps",
+          "response": "check retracted",
+          "accept": [
+            "up",
+            "check"
+          ],
+          "check": {
+            "var": "flaps_index",
+            "op": "eq",
+            "value": 0
+          }
+        },
+        {
+          "challenge": "Climb power",
+          "response": "set",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Propeller RPM",
+          "response": "two thousand",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Auto feather",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Engine instruments",
+          "response": "monitor",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Landing and taxi lights",
+          "response": "off",
+          "accept": [
+            "off"
+          ],
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": false
+          }
+        }
       ]
     },
     "cruise": {
       "title": "cruise",
       "items": [
-        { "challenge": "Cruise power", "response": "set", "accept": ["set", "check"] },
-        { "challenge": "Engine instruments", "response": "checked", "accept": ["check"] },
-        { "challenge": "Fuel system", "response": "checked", "accept": ["check"] }
+        {
+          "challenge": "Cruise power",
+          "response": "set",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Engine instruments",
+          "response": "checked",
+          "accept": [
+            "check"
+          ]
+        },
+        {
+          "challenge": "Fuel system",
+          "response": "checked",
+          "accept": [
+            "check"
+          ]
+        }
       ]
     },
     "descent": {
       "title": "descent",
       "items": [
-        { "challenge": "Altimeters", "response": "set", "accept": ["set", "value"], "check": {"var": "kohlsman_hpa", "op": "near", "value": "$qnh", "tolerance": 1.0} },
-        { "challenge": "Descent power", "response": "set", "accept": ["set", "check"] },
-        { "challenge": "Engine instruments", "response": "checked", "accept": ["check"] }
+        {
+          "challenge": "Altimeters",
+          "response": "set",
+          "accept": [
+            "set",
+            "value"
+          ],
+          "check": {
+            "var": "kohlsman_hpa",
+            "op": "near",
+            "value": "$qnh",
+            "tolerance": 1.0
+          }
+        },
+        {
+          "challenge": "Descent power",
+          "response": "set",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Engine instruments",
+          "response": "checked",
+          "accept": [
+            "check"
+          ]
+        }
       ]
     },
     "before_landing": {
       "title": "before landing",
       "items": [
-        { "challenge": "Auto feather", "response": "arm", "accept": ["on", "set"] },
-        { "challenge": "Flaps", "response": "as required", "accept": ["set", "down"] },
-        { "challenge": "Landing gear", "response": "down", "accept": ["down"], "check": {"var": "gear_down", "op": "eq", "value": true} },
-        { "challenge": "Landing lights", "response": "on", "accept": ["on"], "check": {"var": "landing_light", "op": "eq", "value": true} },
-        { "challenge": "Taxi lights", "response": "as required", "accept": ["set", "on"] },
-        { "challenge": "Propeller levers", "response": "full forward", "accept": ["set", "check"] },
-        { "challenge": "Power", "response": "as required", "accept": ["set", "check"] }
+        {
+          "challenge": "Auto feather",
+          "response": "arm",
+          "accept": [
+            "on",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Flaps",
+          "response": "as required",
+          "accept": [
+            "set",
+            "down"
+          ]
+        },
+        {
+          "challenge": "Landing gear",
+          "response": "down",
+          "accept": [
+            "down"
+          ],
+          "check": {
+            "var": "gear_down",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Landing lights",
+          "response": "on",
+          "accept": [
+            "on"
+          ],
+          "check": {
+            "var": "landing_light",
+            "op": "eq",
+            "value": true
+          }
+        },
+        {
+          "challenge": "Taxi lights",
+          "response": "as required",
+          "accept": [
+            "set",
+            "on"
+          ]
+        },
+        {
+          "challenge": "Propeller levers",
+          "response": "full forward",
+          "accept": [
+            "set",
+            "check"
+          ],
+          "check": {
+            "var": "prop_pct",
+            "op": "min",
+            "value": 90
+          }
+        },
+        {
+          "challenge": "Power",
+          "response": "as required",
+          "accept": [
+            "set",
+            "check"
+          ]
+        }
       ]
     },
     "after_landing": {
       "title": "after landing",
       "items": [
-        { "challenge": "Landing and taxi lights", "response": "as required", "accept": ["set", "check"] },
-        { "challenge": "Auto feather", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "Both engine auto ignition arms", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "Elevator trim", "response": "zero", "accept": ["set", "check"] },
-        { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
-        { "challenge": "Transponder", "response": "off", "accept": ["off", "set"] }
+        {
+          "challenge": "Landing and taxi lights",
+          "response": "as required",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Auto feather",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ]
+        },
+        {
+          "challenge": "Both engine auto ignition arms",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ],
+          "check": {
+            "var": "ignition_on",
+            "op": "eq",
+            "value": false
+          }
+        },
+        {
+          "challenge": "Elevator trim",
+          "response": "zero",
+          "accept": [
+            "set",
+            "check"
+          ]
+        },
+        {
+          "challenge": "Flaps",
+          "response": "retracted",
+          "accept": [
+            "up"
+          ],
+          "check": {
+            "var": "flaps_index",
+            "op": "eq",
+            "value": 0
+          }
+        },
+        {
+          "challenge": "Transponder",
+          "response": "off",
+          "accept": [
+            "off",
+            "set"
+          ]
+        }
       ]
     }
   }

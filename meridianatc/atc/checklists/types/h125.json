@@ -240,7 +240,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "starter_active",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "Throttle",
@@ -259,7 +264,12 @@
           "accept": [
             "check"
           ],
-          "note": "CHECK - verify increases into green arc."
+          "note": "CHECK - verify increases into green arc.",
+          "check": {
+            "var": "oil_pressure_psi",
+            "op": "min",
+            "value": 10
+          }
         },
         {
           "challenge": "AVIONICS Switch",

@@ -687,6 +687,87 @@ class SimConnectSource:
         ("PUSHBACK_AVAILABLE", "pushback_available", "bool", "slow"),
         ("PUSHBACK_WAIT", "pushback_wait", "bool", "slow"),
         ("PUSHBACK_ATTACHED", "pushback_attached", "bool", "slow"),
+        # The rest of the cockpit the checklists name (the same fields
+        # the X-Plane source fills from datarefs): keys and switches
+        # per engine first, gauges, doors, brakes, de-ice, the APU,
+        # bleeds, hydraulics, the cabin and the minimums bug. A model
+        # that never answers one keeps its None after a few silent
+        # passes -- and a check against None is agreement, so an
+        # unmodelled system can never fail an item.
+        ("GENERAL_ENG_FUEL_PUMP_SWITCH:1", "fuel_pump_on", "bool", "slow"),
+        ("GENERAL_ENG_FUEL_PUMP_SWITCH:2", "eng2_fuel_pump_on", "bool", "slow"),
+        ("GENERAL_ENG_FUEL_PUMP_SWITCH:3", "eng3_fuel_pump_on", "bool", "slow"),
+        ("GENERAL_ENG_FUEL_PUMP_SWITCH:4", "eng4_fuel_pump_on", "bool", "slow"),
+        ("GENERAL_ENG_GENERATOR_SWITCH:1", "generator_on", "bool", "slow"),
+        ("GENERAL_ENG_GENERATOR_SWITCH:2", "eng2_generator_on", "bool", "slow"),
+        ("GENERAL_ENG_GENERATOR_SWITCH:3", "eng3_generator_on", "bool", "slow"),
+        ("GENERAL_ENG_GENERATOR_SWITCH:4", "eng4_generator_on", "bool", "slow"),
+        # The piston alternators' own switch name -- the jets read it
+        # as the generator's above.
+        ("GENERAL_ENG_MASTER_ALTERNATOR:1", "alternator_on", "bool", "slow"),
+        ("GENERAL_ENG_MASTER_ALTERNATOR:2", "eng2_alternator_on", "bool", "slow"),
+        # The magneto keys as their two switches; magneto_pos is
+        # derived from them (off/left/right/both plus start while the
+        # starter cranks), the enum X-Plane's ignition_key answers.
+        ("RECIP_ENG_LEFT_MAGNETO:1", "magneto1_left", "bool", "slow"),
+        ("RECIP_ENG_RIGHT_MAGNETO:1", "magneto1_right", "bool", "slow"),
+        ("RECIP_ENG_LEFT_MAGNETO:2", "magneto2_left", "bool", "slow"),
+        ("RECIP_ENG_RIGHT_MAGNETO:2", "magneto2_right", "bool", "slow"),
+        ("GENERAL_ENG_STARTER_ACTIVE:1", "starter_active", "bool", "slow"),
+        # The turbine start/ignition switches: on or off, not the
+        # piston key's five stops.
+        ("TURB_ENG_IGNITION_SWITCH:1", "ignition_on", "bool", "slow"),
+        ("TURB_ENG_IGNITION_SWITCH:2", "eng2_ignition_on", "bool", "slow"),
+        ("GENERAL_ENG_OIL_PRESSURE:1", "oil_pressure_psi", "raw", "slow"),
+        ("GENERAL_ENG_OIL_PRESSURE:2", "eng2_oil_pressure_psi", "raw", "slow"),
+        # Carb heat rides the piston engine's anti-ice position -- the
+        # channel a 172's carb-heat knob writes. Percent over 100.
+        ("GENERAL_ENG_ANTI_ICE_POSITION:1", "carb_heat_pct", "pct", "slow"),
+        ("ENG_FUEL_FLOW_PPH:1", "eng_fuel_flow_pph", "raw", "slow"),
+        ("SUCTION_PRESSURE", "suction_inhg", "raw", "slow"),   # inHg
+        ("ELECTRICAL_BATTERY_BUS_AMPS", "battery_amps", "raw", "slow"),
+        # Every exit's open percent; the doors item checks the max.
+        ("EXIT_OPEN:1", "exit1_open_pct", "pct", "slow"),
+        ("EXIT_OPEN:2", "exit2_open_pct", "pct", "slow"),
+        ("EXIT_OPEN:3", "exit3_open_pct", "pct", "slow"),
+        ("EXIT_OPEN:4", "exit4_open_pct", "pct", "slow"),
+        ("BRAKE_LEFT_POSITION", "brake_left_pct", "pct", "slow"),
+        ("BRAKE_RIGHT_POSITION", "brake_right_pct", "pct", "slow"),
+        ("AUTOPILOT_YAW_DAMPER", "yaw_damper_on", "bool", "slow"),
+        ("ANTISKID_BRAKES_ACTIVE", "antiskid_on", "bool", "slow"),
+        ("AUTO_BRAKE_SWITCH_CB", "autobrake_pos", "int", "slow"),
+        ("SPOILERS_HANDLE_POSITION", "speedbrake_pct", "pct", "slow"),
+        ("APU_SWITCH", "apu_on", "bool", "slow"),
+        ("APU_PCT_RPM", "apu_pct", "pct_wide", "slow"),
+        ("APU_GENERATOR_SWITCH", "apu_gen_on", "bool", "slow"),
+        ("BLEED_AIR_APU", "apu_bleed_on", "bool", "slow"),
+        ("BLEED_AIR_ENGINE:1", "bleed_air_on", "bool", "slow"),
+        ("BLEED_AIR_ENGINE:2", "eng2_bleed_air_on", "bool", "slow"),
+        ("BLEED_AIR_ENGINE:3", "eng3_bleed_air_on", "bool", "slow"),
+        ("BLEED_AIR_ENGINE:4", "eng4_bleed_air_on", "bool", "slow"),
+        # The de-ice family's switches: engine inlets, wing boots, the
+        # windshield, the props, and the panel/AoA probe.
+        ("ENG_ANTI_ICE:1", "engine_anti_ice_on", "bool", "slow"),
+        ("STRUCTURAL_DEICE_SWITCH", "wing_deice_on", "bool", "slow"),
+        ("WINDSHIELD_DEICE_SWITCH", "window_heat_on", "bool", "slow"),
+        ("PROP_DEICE_SWITCH:1", "prop_deice_on", "bool", "slow"),
+        ("PANEL_ANTI_ICE_SWITCH", "aoa_heat_on", "bool", "slow"),
+        # The engine-driven hydraulic pressure and the electric pump's
+        # switch (the var's own units vary by model -- a "pressure
+        # normal" check reads it as nonzero, not as a figure).
+        ("HYDRAULIC_PRESSURE:1", "hydraulic_pressure", "raw", "slow"),
+        ("HYDRAULIC_SWITCH:1", "hydraulic_pump_on", "bool", "slow"),
+        ("PRESSURIZATION_CABIN_ALTITUDE", "cabin_altitude_ft", "raw", "slow"),
+        ("PRESSURIZATION_CABIN_ALTITUDE_GOAL", "cabin_altitude_goal_ft",
+         "raw", "slow"),
+        ("PRESSURIZATION_PRESSURE_DIFFERENTIAL", "pressurization_diff_psi",
+         "raw", "slow"),
+        ("DECISION_HEIGHT", "minimums_ft", "raw", "slow"),     # Feet
+        # The signs and lamps past the usual six.
+        ("CABIN_NO_SMOKING_ALERT_SWITCH", "no_smoking_sign", "bool", "slow"),
+        ("LIGHT_LOGO_ON", "logo_light", "bool", "slow"),
+        ("LIGHT_WING_ON", "wing_light", "bool", "slow"),
+        ("LIGHT_RECOGNITION", "recog_light", "bool", "slow"),
     )
 
     def __init__(self, poll_interval: float = 0.25, request_timeout_ms: int = 400,
@@ -1501,6 +1582,24 @@ class SimConnectSource:
         if state.engine_count > 0:
             for i in range(state.engine_count + 1, 5):
                 setattr(state, f"eng{i}_combustion", None)
+
+        # The piston key's five stops from its two magneto switches and
+        # the starter: off, left, right, both, and start while it cranks
+        # -- the enum X-Plane's ignition_key answers with one read.
+        for pos_attr, left, right, in (
+                ("magneto_pos", state.magneto1_left, state.magneto1_right),
+                ("eng2_magneto_pos", state.magneto2_left, state.magneto2_right)):
+            if left is not None or right is not None:
+                setattr(state, pos_attr, (1 if left else 0) + (2 if right else 0))
+        if state.starter_active and state.magneto_pos is not None:
+            state.magneto_pos = 4
+
+        # The doors' single figure: how open the most-open exit is.
+        exits = [p for p in (state.exit1_open_pct, state.exit2_open_pct,
+                             state.exit3_open_pct, state.exit4_open_pct)
+                 if p is not None]
+        if exits:
+            state.exits_open_pct = max(exits)
 
     # ------------------------------------------------------------------
     # writing back: the panel is a radio too

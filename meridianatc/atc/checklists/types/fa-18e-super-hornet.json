@@ -183,7 +183,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "starter_active",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "RPM",
@@ -199,7 +204,12 @@
           "accept": [
             "check"
           ],
-          "note": "CHECK - verify green arc."
+          "note": "CHECK - verify green arc.",
+          "check": {
+            "var": "oil_pressure_psi",
+            "op": "min",
+            "value": 10
+          }
         },
         {
           "challenge": "Hydraulic Pressure",
@@ -207,7 +217,12 @@
           "accept": [
             "check"
           ],
-          "note": "CHECK - verify green arc."
+          "note": "CHECK - verify green arc.",
+          "check": {
+            "var": "hydraulic_pressure",
+            "op": "min",
+            "value": 1
+          }
         },
         {
           "challenge": "Generators",
@@ -316,7 +331,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "oxygen_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "Afterburner",
@@ -358,7 +378,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "brake_left_pct",
+            "op": "min",
+            "value": 10
+          }
         },
         {
           "challenge": "Throttle",
@@ -718,7 +743,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "oxygen_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "Avionics",

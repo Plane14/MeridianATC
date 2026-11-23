@@ -96,7 +96,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "apu_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "APU Bleed",
@@ -156,7 +161,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "fuel_pump_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "FMC - INIT Page",
@@ -281,7 +291,12 @@
           "response": "closed.",
           "accept": [
             "check"
-          ]
+          ],
+          "check": {
+            "var": "exits_open_pct",
+            "op": "max",
+            "value": 5
+          }
         },
         {
           "challenge": "Thrust Levers",
@@ -306,7 +321,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "pack_left_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "Engine Mode Selector",
@@ -359,7 +379,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "bleed_air_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "Pack Switches",
@@ -369,7 +394,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "pack_left_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "APU Bleed",
@@ -387,7 +417,12 @@
           "accept": [
             "check"
           ],
-          "note": "VERIFY ON."
+          "note": "VERIFY ON.",
+          "check": {
+            "var": "generator_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "Flight Controls",
@@ -426,7 +461,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "brake_left_pct",
+            "op": "min",
+            "value": 10
+          }
         },
         {
           "challenge": "Taxi Light",
@@ -567,7 +607,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "brake_left_pct",
+            "op": "min",
+            "value": 10
+          }
         },
         {
           "challenge": "Thrust Levers",
@@ -799,7 +844,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "brake_left_pct",
+            "op": "min",
+            "value": 10
+          }
         },
         {
           "challenge": "ILS Frequency",
@@ -1132,7 +1182,12 @@
             "off",
             "check"
           ],
-          "note": "ALL OFF."
+          "note": "ALL OFF.",
+          "check": {
+            "var": "fuel_pump_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "Navigation Lights",
@@ -1168,7 +1223,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "apu_pct",
+            "op": "max",
+            "value": 5
+          }
         },
         {
           "challenge": "Battery",

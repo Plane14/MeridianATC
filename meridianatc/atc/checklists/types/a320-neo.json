@@ -88,7 +88,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "apu_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "APU Start",
@@ -99,7 +104,12 @@
             "on",
             "off"
           ],
-          "note": "ON - wait for AVAIL light on ECAM (~1 min)."
+          "note": "ON - wait for AVAIL light on ECAM (~1 min).",
+          "check": {
+            "var": "apu_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "APU Bleed",
@@ -119,7 +129,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "oxygen_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "ADIRS 1, 2, 3",
@@ -336,7 +351,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "apu_pct",
+            "op": "max",
+            "value": 5
+          }
         },
         {
           "challenge": "Generator Switches",
@@ -538,7 +558,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "brake_left_pct",
+            "op": "min",
+            "value": 10
+          }
         },
         {
           "challenge": "Thrust Levers",
@@ -953,7 +978,12 @@
           "accept": [
             "check"
           ],
-          "note": "VERIFY DEPLOYED."
+          "note": "VERIFY DEPLOYED.",
+          "check": {
+            "var": "speedbrake_pct",
+            "op": "min",
+            "value": 50
+          }
         },
         {
           "challenge": "Reverse Thrust",
@@ -1072,7 +1102,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "apu_pct",
+            "op": "max",
+            "value": 5
+          }
         },
         {
           "challenge": "Battery 1 & 2",
