@@ -2596,8 +2596,8 @@ class CrewDirector:
         flaps = None
         if book is not None and "before_takeoff" in book.checklists:
             for item in book.checklists["before_takeoff"].items:
-                if item.check is not None and item.check.var == "flaps_index":
-                    flaps = item.check
+                flaps = flaps or next(
+                    (c for c in item.checks if c.var == "flaps_index"), None)
         qnh = float(getattr(session, "altimeter", 0.0) or 0.0)
         if qnh != self._qnh_seen:
             self._qnh_seen, self._qnh_at = qnh, time.monotonic()

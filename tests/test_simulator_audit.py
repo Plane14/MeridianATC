@@ -46,11 +46,11 @@ def test_checklist_derived_reads_and_unknown_values(link):
     runner = ChecklistRunner(Mock(), fresh=source.read_now)
     runner._state = source.read()
     runner._note = Mock()
-    unknown = Item({"en": "Rotor"}, {"en": "set"}, check=Check("rotor_rpm_pct", value=0))
+    unknown = Item({"en": "Rotor"}, {"en": "set"}, checks=(Check("rotor_rpm_pct", value=0),))
     assert runner._verify(unknown, SimpleNamespace(value=None))[0] is None
     assert not runner._agrees_now(unknown)
     runner._note.assert_called_once()
-    gear = Item({"en": "Gear"}, {"en": "down"}, check=Check("gear_down", value=True))
+    gear = Item({"en": "Gear"}, {"en": "down"}, checks=(Check("gear_down", value=True),))
     assert runner._verify(gear, SimpleNamespace(value=None))[0] is False
 
 

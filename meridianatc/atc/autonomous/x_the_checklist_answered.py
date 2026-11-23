@@ -78,9 +78,16 @@ class _The_checklist_answered:
         nothing the FO can reach, or nothing at all, is not performed --
         the answer simply reports what is.
         """
-        check = getattr(item, "check", None)
-        if check is None:
+        checks = getattr(item, "checks", None) or ()
+        if not checks:
             return False
+        asked_any = False
+        for check in checks:
+            if self._move_for_check(state, check):
+                asked_any = True
+        return asked_any
+
+    def _move_for_check(self, state, check) -> bool:
         runner = self.crew.checklists
         try:
             expected = runner._expected(check)
