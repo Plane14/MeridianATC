@@ -3654,6 +3654,62 @@ def test_the_prop_and_mixture_levers_fall_back_to_events():
         assert value == 16383
 
 
+def test_the_condition_levers_write_every_engine_as_detents():
+    """A turboprop's third lever: the stops are the enum's three
+    detents -- 0 cut-off, 1 low idle, 2 high idle -- on every engine,
+    the way the quadrant's other levers go out."""
+    from meridianatc.atc.ap import FlightDirector
+    writes = []
+
+    class Sim:
+        def set_variable(self, name, value, unit="Number"):
+            writes.append((name, value, unit))
+            return True
+
+    director = FlightDirector(Sim())
+    assert director.condition(2.0)
+    names = {w[0] for w in writes
+             if "CONDITION LEVER POSITION" in w[0]}
+    assert names == {f"TURB ENG CONDITION LEVER POSITION:{n}"
+                     for n in (1, 2, 3, 4)}
+    assert all(w[1] == 2.0 for w in writes)
+
+
+def test_a_condition_lever_the_variable_cannot_reach_still_moves():
+    """A model whose own code owns the lever (a refused variable)
+    still gets its stops: the fuel valve carries the cut-off edge and
+    the mixture channel is the same three detents where the red knob
+    is the lever."""
+    from meridianatc.atc.ap import FlightDirector
+    sent = []
+
+    class Sim:
+        connected = True
+
+        def set_variable(self, name, value, unit=None):
+            return False
+
+        def _send(self, name, value):
+            sent.append((name, value))
+            return True
+
+    director = FlightDirector(Sim())
+    # Cut-off: the valve closes.
+    assert director.condition(0.0)
+    valves = {name: value for name, value in sent
+              if name.startswith(b"SET_FUEL_VALVE_ENG")}
+    assert {b"SET_FUEL_VALVE_ENG1", b"SET_FUEL_VALVE_ENG2"} <= set(valves)
+    assert all(value == 0 for value in valves.values())
+    # High idle: the valve opens and the mixture goes to the top stop.
+    sent.clear()
+    assert director.condition(2.0)
+    valves = {name: value for name, value in sent
+              if name.startswith(b"SET_FUEL_VALVE_ENG")}
+    assert all(value == 1 for value in valves.values())
+    assert any(name == b"MIXTURE_SET" and value == 16383
+               for name, value in sent)
+
+
 def test_the_taxi_leg_stops_short_of_a_route_that_crosses_the_runway():
     """The LPPR incursion: routing stand -> E5 rode 600 m down runway 17's
     centreline and the hold the walk-back picked sat on the FAR side

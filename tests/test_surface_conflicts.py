@@ -781,6 +781,21 @@ def test_prop_levers_forward_on_a_prop_aeroplane():
     fo._prop_levers()
     fo._dir.prop.assert_called_once_with(1.0)
     fo._dir.mixture.assert_called_once_with(1.0)
+    # A piston's red knob is the mixture -- there is no third lever.
+    fo._dir.condition.assert_not_called()
+
+
+def test_condition_levers_high_idle_on_a_turboprop():
+    # The same accident shape on a turbine: a takeoff rolled with the
+    # condition levers still at low idle is a prop that cannot take the
+    # power -- the levers' full stop is high idle, on every engine.
+    from meridianatc.atc import aircraft_class as ac
+    fo = _fo()
+    fo._aircraft_class = ac.TURBOPROP_TWIN
+    fo._prop_levers()
+    fo._dir.prop.assert_called_once_with(1.0)
+    fo._dir.mixture.assert_called_once_with(1.0)
+    fo._dir.condition.assert_called_once_with(2.0)
 
 
 @pytest.mark.parametrize("cls", ["helicopter", "business_jet",

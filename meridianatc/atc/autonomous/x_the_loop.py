@@ -66,6 +66,11 @@ class _The_loop:
         # tank with fuel still aboard is a selector position, and it is
         # moved now rather than after the engine has quit.
         self._manage_fuel_tanks(state)
+        # And a turboprop's condition lever is the same kind of watch --
+        # the fuel cock and the governor's floor in one handle, lifted
+        # off a stop the phase cannot run on before the engine starves
+        # or the prop refuses the power.
+        self._manage_condition(state)
         if not self._enabled:
             return
         # Emergencies outrank the phase: a MAYDAY changes what the flight

@@ -375,6 +375,30 @@ def test_lever_writes_reach_the_engines_use_path(xp):
                              8 + 37 * (0.15 + 0.55 * 0.5)))
 
 
+def test_the_condition_lever_rides_the_mixture_channel(xp):
+    # X-Plane has no condition-lever dataref: on its turboprops the
+    # model wires that lever to the mixture channel, so the SimConnect
+    # detents go out through the mixture write -- override flag, use
+    # path and all.
+    peer, source = xp
+    act = "sim/cockpit2/engine/actuators/"
+    eng = "sim/flightmodel/engine/"
+
+    def wrote(path, expected):
+        return any(p == path and v == pytest.approx(expected)
+                   for p, v in peer.writes)
+
+    # High idle, engine one: the detent's top stop is the full lever.
+    assert source.set_variable("TURB ENG CONDITION LEVER POSITION:1", 2)
+    eventually(lambda: wrote(act + "mixture_ratio[0]", 1.0)
+               and wrote(eng + "ENGN_mixt[0]", 1.0))
+    # Low idle, engine two: half a lever. A stop off the scale is refused.
+    assert source.set_variable("TURB ENG CONDITION LEVER POSITION:2", 1)
+    eventually(lambda: wrote(act + "mixture_ratio[1]", .5))
+    assert not source.set_variable(
+        "TURB ENG CONDITION LEVER POSITION:1", 3)
+
+
 def test_the_software_governor_holds_the_levers_rpm(xp):
     # The override carries no governor: the lever asks an RPM and the
     # loop walks the blade angle to it. The parked Baron's 3000-plus

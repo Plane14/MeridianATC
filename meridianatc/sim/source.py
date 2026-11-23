@@ -561,6 +561,14 @@ class SimConnectSource:
         ("TURB_ENG_N2:1", "eng_n2_pct", "raw", "slow"),
         ("TURB_ENG_ITT:1", "eng_itt_c", "raw", "slow"),
         ("GENERAL_ENG_RPM:1", "eng_rpm", "raw", "slow"),
+        # The turboprop's third lever: cut-off / low idle / high idle as
+        # the enum's three stops, scaled onto the percent the rest of the
+        # cockpit speaks. Only meaningful on turboprops -- and only where
+        # the model publishes it at all: engines.cfg types whose mixture
+        # controls are not disabled carry the lever on the mixture axis
+        # instead, which read() then answers it with.
+        ("TURB_ENG_CONDITION_LEVER_POSITION:1", "condition_pct",
+         "condition", "slow"),
         # The cooling watch's instruments: engine one's cylinder-head
         # and oil temperatures, and where its cowl flap is, per cent
         # open. A model without cowl flaps never reports the last one;
@@ -1299,6 +1307,12 @@ class SimConnectSource:
             self._last_geo = (state.latitude, state.longitude, now)
         state.relocated = now < self._relocated_until
         self._derive(state)
+        # A turboprop whose own condition-lever variable never answered
+        # carries that lever on the mixture axis -- the engines.cfg
+        # without DisableMixtureControls is why the red knob is the same
+        # three stops there.
+        if state.engine_type == 5 and "condition_pct" not in self._values:
+            state.condition_pct = state.mixture_pct
         with self._lock:
             self._state = state
         return state
@@ -1430,6 +1444,11 @@ class SimConnectSource:
             # that doubled scale.
             value = float(raw)
             return value / 100.0 if value > 100.0 else value
+        if kind == "condition":
+            # The condition lever's three stops as the enum answers
+            # them -- 0 cut-off, 1 low idle, 2 high idle -- scaled onto
+            # the percent every lever field speaks: 0, 50, 100.
+            return min(100.0, max(0.0, float(raw) * 50.0))
         if kind == "fps_kt":
             # The design-performance speeds are asked for in the
             # wrapper's native feet per second; one foot per second is

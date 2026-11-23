@@ -105,6 +105,14 @@ class AircraftState:
     # 2 left, 3 right, ... 16 both).
     fuel_selector: int = -1
     mixture_pct: float = 0.0
+    # The turboprop's third lever, 0 cut-off .. ~50 low idle .. 100 high
+    # idle: TURB ENG CONDITION LEVER POSITION where the sim publishes one
+    # (an enum of three stops, scaled), and the mixture channel where it
+    # does not -- X-Plane wires a turboprop's condition lever to the red
+    # lever outright, which a parked C90 shows as props forward, mixture
+    # zero. Published only on turboprops; a piston's or a jet's quadrant
+    # has no such stop and the field joins state.unavailable.
+    condition_pct: float = 0.0
     autopilot: bool = False
     gps_drives_nav1: bool = False
     pitot_heat: bool = False

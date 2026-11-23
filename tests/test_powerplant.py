@@ -332,6 +332,81 @@ def test_an_unpublished_selector_is_never_moved():
     fo._dir.write.assert_not_called()
 
 
+# -- the condition lever ------------------------------------------------
+
+
+def _running(**kw):
+    return AircraftState(engines_running=True, **kw)
+
+
+def test_a_condition_lever_at_cutoff_on_the_ground_is_lifted_to_low_idle():
+    """The parked King Air's lever: a shut fuel cock on a running
+    engine is the low-idle detent's business, not a warning's."""
+    fo = _fo(_aircraft_class="turboprop_twin")
+    fo._manage_condition(_running(on_ground=True, condition_pct=0.0))
+    fo._dir.condition.assert_called_once_with(1.0)
+    assert "autonomous.condition.lever" in _emit_keys(fo)
+
+
+def test_high_idle_is_the_flight_detent():
+    """Low idle in the air is the prop governor's floor: a go-around
+    from it is seconds of nothing before the engine answers."""
+    fo = _fo(_aircraft_class="turboprop_twin")
+    fo._manage_condition(_running(on_ground=False, condition_pct=50.0))
+    fo._dir.condition.assert_called_once_with(2.0)
+
+
+def test_the_line_up_wants_high_idle_on_the_ground():
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo = _fo(_aircraft_class="turboprop_twin")
+    fo.state.phase = AutonomousPhase.LINE_UP
+    fo._manage_condition(_running(on_ground=True, condition_pct=50.0))
+    fo._dir.condition.assert_called_once_with(2.0)
+
+
+def test_low_idle_on_the_taxi_is_the_detent_the_phase_asks():
+    """The ground's own stop: a running engine at low idle is normal
+    ground ops, and a lever at high idle there is the pilot's to keep."""
+    fo = _fo(_aircraft_class="turboprop_twin")
+    for lever in (50.0, 100.0):
+        fo._manage_condition(_running(on_ground=True,
+                                      condition_pct=lever))
+    fo._dir.condition.assert_not_called()
+
+
+def test_a_pistons_red_knob_is_never_a_condition_lever():
+    """A piston's lever is a mixture and a jet has neither handle: the
+    field reads zero there and must not move either."""
+    fo = _fo(_aircraft_class="piston_single")
+    fo._manage_condition(_running(on_ground=True, condition_pct=0.0))
+    fo._dir.condition.assert_not_called()
+
+
+def test_an_unpublished_condition_lever_is_never_moved():
+    fo = _fo(_aircraft_class="turboprop_twin")
+    fo._manage_condition(_running(on_ground=True, condition_pct=0.0,
+                                  unavailable=("condition_pct",)))
+    fo._dir.condition.assert_not_called()
+
+
+def test_engines_not_running_leaves_the_lever_at_the_checklists_stop():
+    """The shutdown's own item puts the levers at cut-off -- the watch
+    is not there to argue with it."""
+    fo = _fo(_aircraft_class="turboprop_twin")
+    fo._manage_condition(AircraftState(on_ground=True,
+                                       engines_running=False,
+                                       condition_pct=0.0))
+    fo._dir.condition.assert_not_called()
+
+
+def test_the_condition_lever_is_not_written_twice_in_the_same_breath():
+    fo = _fo(_aircraft_class="turboprop_twin")
+    state = _running(on_ground=True, condition_pct=0.0)
+    fo._manage_condition(state)
+    fo._manage_condition(state)
+    fo._dir.condition.assert_called_once()
+
+
 def test_deadband_does_not_hide_an_engine_over_limit():
     """On-target speed is the deadband the throttle servo leaves alone --
     but a gauge drifting past its red line at that speed still gets the

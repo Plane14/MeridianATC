@@ -162,6 +162,11 @@ class _The_checklist_answered:
             # fraction on every engine -- a twin whose second mixture
             # was never written runs at whatever the pilot left it.
             "mixture_pct": lambda: d.mixture(float(expected) / 100.0),
+            # The condition lever's check names a percent where its
+            # stops live -- under 10 cut-off, ~50 low idle, over 90 high
+            # idle -- and the lever is the enum's three detents.
+            "condition_pct": lambda: d.condition(
+                round(float(expected) / 50.0)),
             "transponder_code": lambda: d.transponder(str(expected)),
             "kohlsman_hpa": lambda: d.kohlsman(
                 self._altimeter_hpa(expected)),
@@ -614,13 +619,20 @@ class _The_checklist_answered:
         collective, and a full-forward write there is a climb nobody
         asked for; a jet has neither lever."""
         from .. import aircraft_class as ac
-        if getattr(self, "_aircraft_class", "") not in (
-                ac.PISTON_SINGLE, ac.PISTON_TWIN,
-                ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN):
+        cls = getattr(self, "_aircraft_class", "")
+        if cls not in (ac.PISTON_SINGLE, ac.PISTON_TWIN,
+                       ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN):
             return
         d = self.director
         d.prop(prop)
         d.mixture(mixture)
+        # A turboprop's third lever is its condition lever -- fuel cock
+        # and idle select in one -- and high idle is the detent the
+        # propeller can take takeoff power from: the lever left at low
+        # idle governs the prop down to an engine that cannot give it,
+        # the same accident the prop lever's low pitch writes.
+        if cls in (ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN):
+            d.condition(2.0)
 
     def _set_takeoff_power(self, state=None) -> None:
         """Takeoff thrust: advanced the way a hand moves the levers --

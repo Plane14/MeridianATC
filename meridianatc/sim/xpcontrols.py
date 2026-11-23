@@ -374,6 +374,21 @@ class XPlaneControls:
             # ENGN_thro_use: write both or the handle moves and the
             # engine never hears it.
             return self._throttle_use(value / 100, index) and ok
+        # The turboprop's condition lever, named as its SimConnect detents
+        # (0 cut-off, 1 low idle, 2 high idle): X-Plane has no such dataref
+        # because the model wires that lever to the mixture channel
+        # outright, so the detent is the same lever at half its travel and
+        # the write goes through the mixture path, override and all.
+        if name.startswith("TURB ENG CONDITION LEVER POSITION:"):
+            try:
+                index = int(name.rsplit(":", 1)[1]) - 1
+            except ValueError:
+                return False
+            if not (0 <= index < 16 and 0.0 <= value <= 2.0):
+                return False
+            return self.set_variable(
+                f"GENERAL ENG MIXTURE LEVER POSITION:{index + 1}",
+                value * 50.0)
         # The levers that are not the throttle, same 0..100 caller scale.
         # Each latches its own joystick override the way the axes do: a
         # quadrant lever left partway would otherwise re-take the

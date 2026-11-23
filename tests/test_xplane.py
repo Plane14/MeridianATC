@@ -610,6 +610,38 @@ def test_a_one_foot_pound_red_line_is_not_a_limit(xp):
     assert "eng_torque_pct" in state.unavailable
 
 
+def test_the_condition_lever_is_the_mixture_on_a_turboprop(xp):
+    """X-Plane has no condition-lever dataref: on its turboprops the
+    model wires that lever to the mixture channel -- the parked C90's
+    props forward, mixture zero is the condition levers at cut-off.
+    Half a lever is the low-idle detent."""
+    server, link = xp
+    server.values.update({EXTRA["xp_engine_type"]: 2,   # turboprop
+                          DATAREFS["mixture_pct"][0]: .5})
+    assert link.connect()
+    eventually(lambda: "mixture_pct" in link._values)
+    state = link.read()
+    assert state.engine_type == 5
+    assert state.mixture_pct == pytest.approx(50.0)
+    assert state.condition_pct == pytest.approx(50.0)
+    assert "condition_pct" not in state.unavailable
+
+
+def test_a_piston_has_no_condition_lever_to_publish(xp):
+    """A piston's red knob is a mixture, not a fuel cock and governor
+    floor in one: the lever stays unpublished rather than reading its
+    mixture as a detent."""
+    server, link = xp
+    server.values.update({EXTRA["xp_engine_type"]: 0,   # piston
+                          DATAREFS["mixture_pct"][0]: .9})
+    assert link.connect()
+    eventually(lambda: "mixture_pct" in link._values)
+    state = link.read()
+    assert state.engine_type == 0
+    assert state.condition_pct == 0.0
+    assert "condition_pct" in state.unavailable
+
+
 def test_xplane_radio_power():
     from meridianatc.atc.radio_power import decide
 

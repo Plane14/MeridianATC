@@ -453,3 +453,63 @@ class _The_engines:
         name = self._TANK_NAMES.get(selector, "selected")
         return 1, (f"{name} tank down to {selected:.1f} gal "
                    f"with {fullest:.1f} aboard")
+
+    # -- the condition lever: the third lever a turboprop carries --------
+
+    # Where each stop sits on the published scale (state.condition_pct):
+    # cut-off below the low-idle band, low idle around its detent, high
+    # idle at the top of the travel.
+    _COND_LOW = 35.0    # under this the fuel cock is shut
+    _COND_HIGH = 90.0   # under this the governor still limits the prop
+    _COND_WRITE_S = 10.0
+
+    def _manage_condition(self, state) -> None:
+        """The condition levers at the detent the phase wants.
+
+        A turboprop's third lever is fuel cock and idle select in one
+        handle: CUT-OFF closes the fuel to a running engine, LOW IDLE is
+        the ground's detent -- the start, the taxi, the wait at the
+        hold -- and HIGH IDLE is the flight's, because the propeller
+        governor cannot give takeoff or go-around power from the lower
+        stop. The checklist's own sequence says as much: low idle at
+        twelve per cent, high idle before the brakes come off.
+
+        Only the floor is enforced: a lever below the detent the phase
+        asks is lifted to it, while a pilot's own choice above it -- high
+        idle kept on the taxi out, the POH's ground-fine answer -- is
+        left alone. The lever only exists on turboprops, which the
+        class is the gate for: a piston's red knob is a mixture and a
+        jet has neither handle.
+        """
+        from .. import aircraft_class as ac
+        if getattr(self, "_aircraft_class", "") not in (
+                ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN):
+            return
+        if not getattr(state, "engines_running", False):
+            return
+        if "condition_pct" in set(getattr(state, "unavailable", ()) or ()):
+            return
+        if time.monotonic() - getattr(self, "_condition_at", 0.0) \
+                < self._COND_WRITE_S:
+            return
+        # The stops the phase needs under the lever: the flight's high
+        # idle from the line-up until the wheels are back on the ground,
+        # the ground's low idle before it and after.
+        flying = not getattr(state, "on_ground", True) \
+            or self.state.phase in (AutonomousPhase.LINE_UP,
+                                    AutonomousPhase.TAKEOFF)
+        lever = float(getattr(state, "condition_pct", 0.0) or 0.0)
+        want, floor = (2.0, self._COND_HIGH) if flying \
+            else (1.0, self._COND_LOW)
+        if lever >= floor:
+            return
+        # The clock is latched on the attempt like the selector's: a
+        # model that refuses is re-asked on the gauge's own cadence.
+        self._condition_at = time.monotonic()
+        if self.director.condition(want):
+            self._emit("info",
+                       "Condition levers to "
+                       + ("high idle" if want > 1.5 else "low idle")
+                       + ("" if lever >= self._COND_LOW
+                          else " -- the fuel cock was shut"),
+                       "autonomous.condition.lever")

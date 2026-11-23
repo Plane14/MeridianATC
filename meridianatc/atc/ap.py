@@ -403,6 +403,36 @@ class FlightDirector:
                 ok = True
         return ok
 
+    def condition(self, detent: float) -> bool:
+        """The condition levers, as stops: 0 cut-off, 1 low idle, 2
+        high idle -- the turboprop's third lever, fuel cock and idle
+        speed select in one handle.
+
+        Every engine, the way the throttles and mixtures do it: a twin
+        whose second lever was left at cut-off starves the engine the
+        first lever just started. The variable is an enum on the sims
+        that publish it; where it does not reach the lever -- add-ons
+        that drive it through their own variables, or models whose
+        mixture channel doubles as the condition lever -- the fallbacks
+        do the work the stop itself does: the fuel valve carries the
+        cut-off edge, and a full-rich mixture write is high idle on the
+        models where the red knob is the lever."""
+        detent = max(0.0, min(2.0, float(detent)))
+        ok = False
+        for engine in range(1, 5):
+            name = f"TURB ENG CONDITION LEVER POSITION:{engine}"
+            if self.write(name, detent, unit="Enum") \
+                    or self.write(name, detent):
+                ok = True
+        if ok:
+            return True
+        ok = False
+        for engine in range(1, 5):
+            if self.send(f"SET_FUEL_VALVE_ENG{engine}".encode(),
+                         1 if detent > 0 else 0):
+                ok = True
+        return self.mixture(detent / 2.0) or ok
+
     def throttle_idle(self) -> bool:
         return self.throttle(0.0)
 

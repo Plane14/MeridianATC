@@ -7,7 +7,7 @@
       "title": "cold and dark to engine start",
       "items": [
         { "challenge": "Cabin door", "response": "closed", "accept": ["check", "set"] },
-        { "challenge": "Condition lever", "response": "cutoff", "accept": ["set", "check"] },
+        { "challenge": "Condition lever", "response": "cutoff", "accept": ["set", "check"], "check": { "var": "condition_pct", "op": "max", "value": 10 } },
         { "challenge": "Propeller lever", "response": "feather", "accept": ["set", "check"] },
         { "challenge": "Power lever", "response": "idle", "accept": ["set", "check"] },
         { "challenge": "Battery one", "response": "on", "accept": ["on"], "check": {"var": "battery_master", "op": "eq", "value": true} },
@@ -17,7 +17,7 @@
         { "challenge": "Fuel pump", "response": "on", "accept": ["on", "set"] },
         { "challenge": "Engine start", "response": "press and hold", "accept": ["set", "on"] },
         { "challenge": "Oil pressure", "response": "check moves off zero", "accept": ["check", "green"] },
-        { "challenge": "At NG of thirteen percent or greater, condition lever", "response": "low idle", "accept": ["set", "check"] },
+        { "challenge": "At NG of thirteen percent or greater, condition lever", "response": "low idle", "accept": ["set", "check"], "check": { "var": "condition_pct", "op": "near", "value": 50, "tolerance": 15 } },
         { "challenge": "Engine start", "response": "release when engine is running", "accept": ["check", "set"] },
         { "challenge": "Ignition", "response": "off", "accept": ["off", "set"] },
         { "challenge": "Fuel pump", "response": "off", "accept": ["off", "set"] },
@@ -25,7 +25,7 @@
         { "challenge": "Cabin dump", "response": "check off", "accept": ["off", "check"] },
         { "challenge": "Door seals", "response": "on", "accept": ["on", "set"] },
         { "challenge": "Bleed air", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "Condition lever", "response": "full forward, high idle", "accept": ["set", "check"] },
+        { "challenge": "Condition lever", "response": "full forward, high idle", "accept": ["set", "check"], "check": { "var": "condition_pct", "op": "min", "value": 90 } },
         { "challenge": "Generator", "response": "on", "accept": ["on", "set"] },
         { "challenge": "DC power", "response": "on", "accept": ["on", "set"] },
         { "challenge": "Propeller lever", "response": "full forward, high RPM", "accept": ["set", "check"] }
@@ -81,7 +81,7 @@
       "items": [
         { "challenge": "Flaps", "response": "retracted", "accept": ["up"], "check": {"var": "flaps_index", "op": "eq", "value": 0} },
         { "challenge": "Transponder", "response": "on", "accept": ["on", "set"] },
-        { "challenge": "Condition lever", "response": "low idle", "accept": ["set", "check"] }
+        { "challenge": "Condition lever", "response": "low idle", "accept": ["set", "check"], "check": { "var": "condition_pct", "op": "near", "value": 50, "tolerance": 15 } }
       ]
     },
     "shutdown": {
@@ -91,7 +91,7 @@
         { "challenge": "DC power", "response": "off", "accept": ["off", "set"] },
         { "challenge": "Generator", "response": "off", "accept": ["off", "set"] },
         { "challenge": "Bleed air", "response": "off", "accept": ["off", "set"] },
-        { "challenge": "Condition lever", "response": "cut off", "accept": ["off", "set"] },
+        { "challenge": "Condition lever", "response": "cut off", "accept": ["off", "set"], "check": { "var": "condition_pct", "op": "max", "value": 10 } },
         { "challenge": "Landing lights", "response": "off", "accept": ["off"], "check": {"var": "landing_light", "op": "eq", "value": false} },
         { "challenge": "Strobes", "response": "off", "accept": ["off"], "check": {"var": "strobe_light", "op": "eq", "value": false} },
         { "challenge": "Nav lights", "response": "off", "accept": ["off"], "check": {"var": "nav_light", "op": "eq", "value": false} },

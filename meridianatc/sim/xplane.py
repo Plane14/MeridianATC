@@ -469,6 +469,14 @@ class XPlaneSource:
         state.category = "Helicopter" if values.get("helicopter") else "Airplane"
         if state.category == "Helicopter":
             state.engine_type = 3 if state.engine_type == 5 else state.engine_type
+        # X-Plane has no condition-lever dataref: on a turboprop the
+        # model wires that lever to the mixture channel outright -- a
+        # parked C90 reads props forward, mixture zero, which is the
+        # condition levers at cut-off. The single-lever scheme the 12.1
+        # joystick curves added ("Prop Lever with Feather and Shutoff")
+        # is Plane-Maker opt-in and would instead read prop at zero here.
+        if state.engine_type == 5 and "mixture_pct" in values:
+            state.condition_pct = state.mixture_pct
         state.flaps_index = round(values.get("flaps", 0) * max(0, values.get("flap_detents", 1) - 1))
         state.transponder_state = {0: 0, 1: 1, 2: 3, 3: 4, 4: 2, 5: 4, 6: 4, 7: 4}.get(
             int(values.get("xp_transponder", 0)), 0)
@@ -602,6 +610,8 @@ class XPlaneSource:
                 known.add(derived)
         if trq is not None and trq_red > 0.0:
             known.add("eng_torque_pct")
+        if state.engine_type == 5 and "mixture_pct" in values:
+            known.add("condition_pct")
         if state.ap_max_bank_deg:
             known.add("ap_max_bank_deg")
         known.add("relocated")
