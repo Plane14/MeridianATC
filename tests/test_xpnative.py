@@ -44,6 +44,7 @@ class NativePlugin(FakePlugin):
 
     def status(self, **overrides):
         overrides.setdefault("native_cap", 1)
+        overrides.setdefault("native", len(self.planes))
         overrides.setdefault("native_ac", list(self.planes))
         super().status(**overrides)
 
