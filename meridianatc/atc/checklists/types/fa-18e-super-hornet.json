@@ -452,18 +452,18 @@
         {
           "challenge": "Throttle",
           "response": "detent.",
-          "check": {
-            "var": "throttle_pct",
-            "op": "min",
-            "value": 85
-          },
           "accept": [
             "set",
             "on",
             "off",
             "check"
           ],
-          "note": "CLIMB DETENT."
+          "note": "CLIMB DETENT.",
+          "check": {
+            "var": "throttle_pct",
+            "op": "min",
+            "value": 85
+          }
         },
         {
           "challenge": "Flaps",

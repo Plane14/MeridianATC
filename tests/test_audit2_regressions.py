@@ -97,7 +97,7 @@ def test_a_toggle_switch_is_asked_once_per_checklist_item():
     state = SimpleNamespace(seatbelt_sign=False)
     check = SimpleNamespace(
         var="seatbelt_sign", value=1, op="eq", tolerance=0.0)
-    item = SimpleNamespace(check=check)
+    item = SimpleNamespace(checks=(check,))
 
     assert flight._perform_check_item(state, item) is True
     assert flight._perform_check_item(state, item) is True

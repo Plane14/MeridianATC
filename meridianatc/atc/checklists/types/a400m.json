@@ -110,7 +110,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "apu_bleed_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "Navigation Lights",
@@ -330,7 +335,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "apu_bleed_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "Generators",
@@ -415,18 +425,18 @@
         {
           "challenge": "Thrust Levers",
           "response": "thrust.",
-          "check": {
-            "var": "throttle_pct",
-            "op": "min",
-            "value": 85
-          },
           "accept": [
             "set",
             "on",
             "off",
             "check"
           ],
-          "note": "TAKEOFF THRUST."
+          "note": "TAKEOFF THRUST.",
+          "check": {
+            "var": "throttle_pct",
+            "op": "min",
+            "value": 85
+          }
         },
         {
           "challenge": "Brakes",
@@ -484,18 +494,18 @@
         {
           "challenge": "Thrust Levers",
           "response": "detent.",
-          "check": {
-            "var": "throttle_pct",
-            "op": "min",
-            "value": 85
-          },
           "accept": [
             "set",
             "on",
             "off",
             "check"
           ],
-          "note": "CLIMB DETENT."
+          "note": "CLIMB DETENT.",
+          "check": {
+            "var": "throttle_pct",
+            "op": "min",
+            "value": 85
+          }
         },
         {
           "challenge": "Flaps",
@@ -601,9 +611,9 @@
             "check"
           ],
           "check": {
-            "var": "brake_left_pct",
+            "var": "autobrake_pos",
             "op": "min",
-            "value": 10
+            "value": 1
           }
         },
         {

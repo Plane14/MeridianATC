@@ -92,7 +92,7 @@
             "set"
           ],
           "check": {
-            "var": "generator_on",
+            "var": "apu_gen_on",
             "op": "eq",
             "value": true
           }
@@ -103,7 +103,12 @@
           "accept": [
             "on",
             "set"
-          ]
+          ],
+          "check": {
+            "var": "apu_bleed_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "Avionics",
@@ -187,7 +192,12 @@
           "accept": [
             "off",
             "set"
-          ]
+          ],
+          "check": {
+            "var": "apu_bleed_on",
+            "op": "eq",
+            "value": false
+          }
         },
         {
           "challenge": "APU generator",
@@ -197,7 +207,7 @@
             "set"
           ],
           "check": {
-            "var": "generator_on",
+            "var": "apu_gen_on",
             "op": "eq",
             "value": false
           }

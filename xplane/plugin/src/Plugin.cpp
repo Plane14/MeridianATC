@@ -717,13 +717,32 @@ Json Status(double now) {
     // plane (e.g. another plugin holding the slots).
     Json nativeIds = Json::array();
     for (const auto& [slot, pair] : nativeSlots) nativeIds.push_back(pair.first);
-    return {{"v", 1}, {"t", "status"}, {"plugin", "MeridianATC-XP"}, {"version", Version},
+    Json status = {{"v", 1}, {"t", "status"}, {"plugin", "MeridianATC-XP"}, {"version", Version},
         {"xpmp2", MERIDIAN_XPMP2_VERSION}, {"xplane", xp}, {"csl_models", XPMPGetNumberOfInstalledModels()},
         {"aircraft", session.snapshot.size()}, {"drawn", drawn}, {"unmatched", unmatched},
         {"followme", session.FollowmeActive(now)}, {"sysroot", system},
         {"native_cap", nativeBlocked ? 0 : 1}, {"native", static_cast<int>(nativeSlots.size())},
         {"native_ac", nativeIds},
         {"fms", FmsPlan()}, {"models", models}};
+    // One datagram holds the whole report, and the wire ends at 65507
+    // bytes: a busy apron's per-aircraft block on a long FMS can outrun
+    // it and the datagram dies whole, every read-back with it. Shed
+    // weight the checks miss last -- the extras first, then the
+    // entries of planes not drawn at all.
+    if (status.dump().size() > 60000) {
+        for (auto& [id, entry] : models.items())
+            for (const char* key : {"pos", "agl", "gnd", "gear", "flaps",
+                                    "thr", "lights"})
+                entry.erase(key);
+        status["models"] = models;
+    }
+    if (status.dump().size() > 60000) {
+        Json drawnOnly = Json::object();
+        for (const auto& id : drawn)
+            if (models.contains(id)) drawnOnly[id] = models[id];
+        status["models"] = drawnOnly;
+    }
+    return status;
 }
 void AnswerMatch(const Packet& packet, const sockaddr_in& to) {
     // What this type and paint would draw as -- XPMP2's own score, which

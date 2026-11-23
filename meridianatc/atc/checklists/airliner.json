@@ -1020,7 +1020,12 @@
           "accept": [
             "on",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "apu_bleed_on",
+            "op": "eq",
+            "value": true
+          }
         },
         {
           "challenge": "Engines",

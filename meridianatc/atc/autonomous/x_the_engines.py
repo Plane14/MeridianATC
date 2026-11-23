@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 
+from ...sim.state import engine_vars
 from ..notices import (
     LEFT_TANKS,
     LOW_TANK_GAL,
@@ -11,7 +12,6 @@ from ..notices import (
 )
 from ..powerplant import cooling_for, limits_for
 from ._shared import AutonomousPhase
-from ...sim.state import engine_vars
 
 
 class _The_engines:

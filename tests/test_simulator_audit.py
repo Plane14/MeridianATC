@@ -46,11 +46,11 @@ def test_checklist_derived_reads_and_unknown_values(link):
     runner = ChecklistRunner(Mock(), fresh=source.read_now)
     runner._state = source.read()
     runner._note = Mock()
-    unknown = Item({"en": "Rotor"}, {"en": "set"}, check=Check("rotor_rpm_pct", value=0))
+    unknown = Item({"en": "Rotor"}, {"en": "set"}, checks=(Check("rotor_rpm_pct", value=0),))
     assert runner._verify(unknown, SimpleNamespace(value=None))[0] is None
     assert not runner._agrees_now(unknown)
     runner._note.assert_called_once()
-    gear = Item({"en": "Gear"}, {"en": "down"}, check=Check("gear_down", value=True))
+    gear = Item({"en": "Gear"}, {"en": "down"}, checks=(Check("gear_down", value=True),))
     assert runner._verify(gear, SimpleNamespace(value=None))[0] is False
 
 
@@ -295,13 +295,13 @@ def test_a_check_holds_on_every_engine_not_just_the_first():
     lever is idle too: the eng2_ slot is checked, and the disagreement
     it names is the second engine's figure, not engine one's."""
     item = Item({"en": "Throttles"}, {"en": "idle"},
-                check=Check("throttle_pct", op="max", value=5.0))
+                checks=(Check("throttle_pct", op="max", value=5.0),))
     state = AircraftState(throttle_pct=0.0, eng2_throttle_pct=85.0)
     runner = ChecklistRunner(
         Mock(), fresh=lambda name: getattr(state, name, None))
     runner._state = state
     runner._note = Mock()
-    verdict, actual, _expected, _again = runner._verify(
+    verdict, actual, _expected, _again, _failed = runner._verify(
         item, SimpleNamespace(value=None))
     assert verdict is False and actual == 85.0
     # Both levers at the stop: agreement.

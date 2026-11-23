@@ -588,17 +588,17 @@
         {
           "challenge": "Throttle",
           "response": "full.",
-          "check": {
-            "var": "throttle_pct",
-            "op": "min",
-            "value": 85
-          },
           "accept": [
             "set",
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "throttle_pct",
+            "op": "min",
+            "value": 85
+          }
         },
         {
           "challenge": "Mixture",
@@ -667,17 +667,17 @@
         {
           "challenge": "Throttle",
           "response": "full.",
-          "check": {
-            "var": "throttle_pct",
-            "op": "min",
-            "value": 85
-          },
           "accept": [
             "set",
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "throttle_pct",
+            "op": "min",
+            "value": 85
+          }
         },
         {
           "challenge": "Mixture",

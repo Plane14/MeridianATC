@@ -53,11 +53,11 @@ import time
 from dataclasses import dataclass, field
 
 from ..logs import CREW
+from ..sim.state import engine_vars as _engine_vars
 from . import interphone as ip
 from .checklist_files import STANDARD_CHECKLISTS, Book, Check, Checklist, Item
 from .crew_lines import CHECKLIST_DIGITS, CHECKLIST_STATES, CHECKLIST_WORDS
 from .session import Phase
-from ..sim.state import engine_vars as _engine_vars
 
 log = logging.getLogger(__name__)
 
@@ -643,12 +643,12 @@ class ChecklistRunner:
                        answers=list(kinds),
                        expected=item.response_in("en"))
             return
-        verdict, actual, expected, fresh = self._verify(item, said)
+        verdict, actual, expected, fresh, check = self._verify(item, said)
         if verdict is False:
             # Every one, objected to or not: the list of what a study-level
             # add-on does not publish grows from these
             # (meridianatc/atc/checklists/types/).
-            self._note("mismatch", run, var=item.check.var, read=actual,
+            self._note("mismatch", run, var=check.var, read=actual,
                        expected=expected, answer=list(kinds),
                        value=getattr(said, "value", None),
                        title=self.aircraft_title)
@@ -657,9 +657,9 @@ class ChecklistRunner:
                 self._advance(run, now)
                 return
             run.objected = run.disagreed = True
-            self._say_disagreement(item, actual, expected)
+            self._say_disagreement(item, check, actual, expected)
             run.state = QUEUED
-            self._note("objected", run, var=item.check.var, actual=actual,
+            self._note("objected", run, var=check.var, actual=actual,
                        expected=expected, fresh=fresh)
             return
         self._note("accepted", run, verified=verdict,
@@ -679,61 +679,72 @@ class ChecklistRunner:
         return value
 
     def _verify(self, item: Item, said):
-        """(agrees, actual, expected, read again): agrees is None when
-        nothing could be checked, which is not an objection."""
-        check = item.check
-        if check is None:
-            return None, None, None, False
-        expected = self._expected(check, getattr(said, "value", None))
-        if expected is None:
-            self._note("unchecked", self._run, var=check.var,
-                       why=f"nothing to check {check.value} against")
-            return None, None, None, False
-        if check.var in getattr(self._state, "unavailable", ()):
-            self._note("unchecked", self._run, var=check.var,
-                       why="the simulator does not report this variable")
-            return None, None, expected, False
-        ok, actual = _engine_check(self._state, check, expected)
-        if ok:
-            return True, actual, expected, False
-        # The state disagrees somewhere. Before saying so, every slot the
-        # simulator reports, read again now: engine one's scalar like
-        # before, and on a twin the other engines' answers too -- a
-        # second lever that never moved is not excused for being unread.
-        # A slot the state does not carry is no engine: asking it would
-        # pull SimConnect's phantom zero for an index past the count.
-        fresh_values = []
-        if self.fresh is not None:
-            for name in _engine_vars(check.var):
-                if getattr(self._state, name, None) is None:
-                    continue
-                try:
-                    value = self.fresh(name)
-                except Exception:
-                    log.debug("could not read %s again", name,
-                              exc_info=True)
-                    value = None
-                if value is not None:
-                    fresh_values.append(value)
-        if not fresh_values:
-            self._note("unchecked", self._run, var=check.var, stale=actual,
-                       why="the simulator gave no answer when read again")
-            return None, None, expected, True
-        actual = next((value for value in fresh_values
-                       if not holds(check, value, expected)),
-                      fresh_values[0])
-        return all(holds(check, value, expected)
-                   for value in fresh_values), actual, expected, True
+        """(agrees, actual, expected, read again, check): agrees is None
+        when nothing could be checked, which is not an objection. Every
+        condition of a multi-switch item must hold, and each condition
+        holds on every engine the sim reports; a check the sim cannot
+        answer is agreement, the way a missing check is."""
+        said_value = getattr(said, "value", None)
+        verified = False
+        for check in item.checks:
+            expected = self._expected(check, said_value)
+            if expected is None:
+                self._note("unchecked", self._run, var=check.var,
+                           why=f"nothing to check {check.value} against")
+                continue
+            if check.var in getattr(self._state, "unavailable", ()):
+                self._note("unchecked", self._run, var=check.var,
+                           why="the simulator does not report this variable")
+                continue
+            ok, actual = _engine_check(self._state, check, expected)
+            if ok:
+                verified = True
+                continue
+            # The state disagrees somewhere. Before saying so, every slot
+            # the simulator reports, read again now: engine one's scalar
+            # like before, and on a twin the other engines' answers too --
+            # a second lever that never moved is not excused for being
+            # unread. A slot the state does not carry is no engine: asking
+            # it would pull SimConnect's phantom zero for an index past
+            # the count.
+            fresh_values = []
+            if self.fresh is not None:
+                for name in _engine_vars(check.var):
+                    if getattr(self._state, name, None) is None:
+                        continue
+                    try:
+                        value = self.fresh(name)
+                    except Exception:
+                        log.debug("could not read %s again", name,
+                                  exc_info=True)
+                        value = None
+                    if value is not None:
+                        fresh_values.append(value)
+            if not fresh_values:
+                self._note("unchecked", self._run, var=check.var, stale=actual,
+                           why="the simulator gave no answer when read again")
+                continue
+            if not all(holds(check, value, expected)
+                       for value in fresh_values):
+                actual = next((value for value in fresh_values
+                               if not holds(check, value, expected)),
+                              fresh_values[0])
+                return False, actual, expected, True, check
+            # The re-read cleared this condition; the rest still stand.
+            verified = True
+        return (True if verified else None), None, None, False, None
 
     def _agrees_now(self, item: Item) -> bool:
-        check = item.check
-        if check is None or check.var in getattr(self._state, "unavailable", ()):
-            return False
-        expected = self._expected(check)
-        if expected is None:
-            return False
-        ok, actual = _engine_check(self._state, check, expected)
-        return ok and actual is not None
+        for check in item.checks:
+            if check.var in getattr(self._state, "unavailable", ()):
+                return False
+            expected = self._expected(check)
+            if expected is None:
+                return False
+            ok, actual = _engine_check(self._state, check, expected)
+            if not ok or actual is None:
+                return False
+        return bool(item.checks)
 
     def _digits(self, value) -> str:
         table = CHECKLIST_DIGITS.get(self.language, CHECKLIST_DIGITS["en"])
@@ -748,8 +759,8 @@ class ChecklistRunner:
     def _count(self, n: int) -> str:
         return CHECKLIST_DIGITS.get(self.language, CHECKLIST_DIGITS["en"])[n]
 
-    def _say_disagreement(self, item: Item, actual, expected) -> None:
-        var = item.check.var
+    def _say_disagreement(self, item: Item, check, actual, expected) -> None:
+        var = check.var
         challenge = item.challenge_in(self.language).rstrip(".!? ")
         states = CHECKLIST_STATES.get(self.language, CHECKLIST_STATES["en"])
         if var == "flaps_index":

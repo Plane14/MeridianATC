@@ -101,9 +101,18 @@ class Item:
     response: dict
     accept: tuple[str, ...] = ("check",)
     rules: str = "any"
-    check: Check | None = None
+    #: The conditions the aeroplane must agree with; one challenge can
+    #: name several switches ("APU generator and bleed"), so the check
+    #: is a conjunction. An empty tuple is an answer-only item.
+    checks: tuple[Check, ...] = ()
     #: Why the item is there, or why it is not sure it belongs.
     note: str = ""
+
+    @property
+    def check(self) -> Check | None:
+        """The first condition, or None -- for the callers that only
+        need to name a variable (notes, disagreement phrasing)."""
+        return self.checks[0] if self.checks else None
 
     def challenge_in(self, language: str) -> str:
         return _in(self.challenge, language)
@@ -163,9 +172,20 @@ def _words(value) -> dict:
     return {}
 
 
-def _check(raw, where: str, problems: list[str]) -> Check | None:
+def _checks(raw, where: str, problems: list[str]) -> tuple[Check, ...]:
+    """One check dict, or a list of them for a step that names several
+    switches -- every condition must hold for the item to pass."""
     if raw is None:
-        return None
+        return ()
+    if isinstance(raw, list):
+        return tuple(c for c in (
+            _check(e, f"{where} check {i + 1}", problems)
+            for i, e in enumerate(raw)) if c is not None)
+    check = _check(raw, where, problems)
+    return (check,) if check is not None else ()
+
+
+def _check(raw, where: str, problems: list[str]) -> Check | None:
     if not isinstance(raw, dict) or "var" not in raw:
         problems.append(f"{where}: a check needs a \"var\"")
         return None
@@ -232,7 +252,7 @@ def _item(raw, where: str, problems: list[str]) -> Item | None:
                 response=response,
                 accept=tuple(accept),
                 rules=_rules(raw.get("rules"), where, problems),
-                check=_check(raw.get("check"), where, problems),
+                checks=_checks(raw.get("check"), where, problems),
                 note=str(raw.get("note", "")))
 
 
@@ -357,14 +377,19 @@ def _merge(aircraft_class: str, type_code: str, files: list[Path]) -> Book:
 def _uncheck(book: Book, variables: set[str]) -> None:
     """Take the checks on ``variables`` off every checklist in ``book``."""
     for name, checklist in list(book.checklists.items()):
-        items = tuple(
-            dataclasses.replace(i, check=None,
-                                note=(i.note + "; " if i.note else "")
-                                + "unchecked: the add-on does not "
-                                  "publish it")
-            if i.check is not None and i.check.var in variables else i
-            for i in checklist.items)
-        book.checklists[name] = dataclasses.replace(checklist, items=items)
+        items = []
+        for item in checklist.items:
+            remaining = tuple(c for c in item.checks
+                              if c.var not in variables)
+            if len(remaining) == len(item.checks):
+                items.append(item)
+                continue
+            items.append(dataclasses.replace(
+                item, checks=remaining,
+                note=(item.note + "; " if item.note else "")
+                + "unchecked: the add-on does not publish it"))
+        book.checklists[name] = dataclasses.replace(
+            checklist, items=tuple(items))
 
 
 _cache: dict[tuple, tuple[tuple, Book]] = {}
