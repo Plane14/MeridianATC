@@ -96,6 +96,10 @@ def test_the_xplane_alias_wins_over_the_derived_fill():
     assert state.fuel_pump_on is True
     assert state.bleed_air_on is True
     assert state.autopilot is True
+    # CMD B alone must also answer autopilot on.
+    link._values["alias:autopilot"] = 0.0
+    link._values["alias:autopilot2"] = 1.0
+    assert link.read().autopilot is True
 
 
 def test_the_xplane_write_reaches_the_addon_dataref():

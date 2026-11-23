@@ -782,9 +782,12 @@ class XPlaneSource:
         # servos_on is a boolean, not the autopilot_mode enum of
         # sim/cockpit/autopilot: the AP is engaged where it reads non-zero.
         alias = alias_read("autopilot")
-        state.autopilot = (bool(alias) if alias is not None else
-                           bool(values.get("control:ap_on",
-                                           values.get("autopilot_mode"))))
+        alias2 = alias_read("autopilot2")  # a second AP channel (CMD B)
+        if alias is not None or alias2 is not None:
+            state.autopilot = bool(alias) or bool(alias2)
+        else:
+            state.autopilot = bool(values.get("control:ap_on",
+                                              values.get("autopilot_mode")))
         # X-Plane's selector is its own enum (0 none, 1 left, 2 centre,
         # 3 right, 4 all, 5 aft); the state carries the SimConnect one.
         alias = alias_read("fuel_selector")

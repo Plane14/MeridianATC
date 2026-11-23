@@ -164,6 +164,8 @@ _MAD_A320_READ: dict[str, tuple[str, float]] = {
     "no_smoking_sign": ("laminar/A333/switches/no_smoking", 1),
     "parking_brake": ("laminar/A333/switches/park_brake_pos", 1),
     "oxygen_on": ("laminar/A333/buttons/oxy/crew_valve_pos", 1),
+    # The FMA's AP1+2 annunciation, nonzero while either channel flies.
+    "autopilot": ("laminar/A333/PFD/FMAs/autopilot_12_status", 1),
 }
 
 _MAD_A320_WRITE: dict[str, str] = {
@@ -205,6 +207,10 @@ _ZIBO_READ: dict[str, tuple[str, float]] = {
     "spoilers_armed": ("laminar/B738/annunciator/speedbrake_armed", 1),
     "parking_brake": ("laminar/B738/annunciator/parking_brake", 1),
     "autopilot": ("laminar/B738/autopilot/cmd_a_status", 1),
+    # A flight with only CMD B engaged answers autopilot off through
+    # the first channel alone; the second is a separate slot the
+    # reader ORs in.
+    "autopilot2": ("laminar/B738/autopilot/cmd_b_status", 1),
     "autothrottle": ("laminar/B738/autopilot/autothrottle_status", 1),
     "kohlsman_hpa": ("laminar/B738/EFIS/baro_sel_in_hg_pilot", 33.8639),
     "minimums_ft": ("laminar/B738/fmod/dh_minimum_pilot", 1),
