@@ -51,6 +51,7 @@ class AircraftState:
     tail_number: str = ""
     type_code: str = ""                 # ICAO type, e.g. B739
     title: str = ""                     # sim's own aircraft title
+    acf_path: str = ""                  # XP's acf_relative_path (add-on id)
 
     # --- configuration ---
     # Engine one's combustion flag (GENERAL ENG COMBUSTION:1). None is
