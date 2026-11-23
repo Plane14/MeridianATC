@@ -161,11 +161,19 @@ class TrafficAircraft : public XPMP2::Aircraft {
     XPLMProbeRef probe = nullptr;
 public:
     std::string modelKey;
+    // What the sim was last told to draw -- the status report's
+    // read-back answers this against the drawn position, the way
+    // SimConnect's own object reads do on the other sim.
+    AircraftState applied;
+    // The drawn reference point's height over the probed terrain,
+    // feet; -1 until the first ground probe answers.
+    double agl_ft = -1.0;
     TrafficAircraft(const AircraftState& s, double now) :
         Aircraft(s.type, s.op, s.livery, 0, "", s.id), motion(s, now),
         modelKey(s.type + "\n" + s.op + "\n" + s.livery) { Apply(s, now, false); }
     ~TrafficAircraft() override { if (probe) XPLMDestroyProbe(probe); }
     void Apply(const AircraftState& s, double now, bool update = true) {
+        applied = s;
         if (update) motion.Update(s, now);
         label = s.id;
         std::snprintf(acInfoTexts.tailNum, sizeof(acInfoTexts.tailNum), "%s", s.reg.c_str());
@@ -197,6 +205,7 @@ public:
                                            static_cast<float>(z), &info) == xplm_ProbeHitTerrain) {
                 double lat, lon, altitude;
                 XPLMLocalToWorld(info.locationX, info.locationY, info.locationZ, &lat, &lon, &altitude);
+                agl_ft = s.alt - altitude / .3048;
                 s.alt = altitude / .3048;
             }
         }
@@ -689,7 +698,19 @@ Json Status(double now) {
         if (ac->IsVisible() && ac->IsRendered()) drawn.push_back(id);
         // What each one is actually drawn as, and how well it matched --
         // the engine's model audit reads this, not a guess.
-        models[id] = {{"m", ac->GetModelName()}, {"q", ac->GetMatchQuality()}};
+        // The drawn pose and the systems the sim carries, so the engine
+        // verifies live traffic the way SimConnect's object reads let it
+        // on the other sim: the reference point's place, its height over
+        // the terrain, and the gear, flaps, thrust and lights applied.
+        double lat, lon, alt_ft;
+        ac->GetLocation(lat, lon, alt_ft);
+        models[id] = {{"m", ac->GetModelName()}, {"q", ac->GetMatchQuality()},
+            {"pos", {lat, lon, alt_ft}}, {"agl", ac->agl_ft},
+            {"gear", ac->applied.gear}, {"flaps", ac->applied.flaps},
+            {"gnd", ac->applied.ground},
+            {"thr", std::clamp(ac->applied.gs / (ac->applied.ground ? 40.0 : 250.0), 0.0, 1.0)},
+            {"lights", {ac->applied.taxi, ac->applied.land, ac->applied.beacon,
+                        ac->applied.strobe, ac->applied.nav}}};
     }
     // The callsigns whose planes the sim actually carries, so the engine
     // can tell a confirmed slot from a roster entry that never became a
