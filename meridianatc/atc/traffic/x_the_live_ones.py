@@ -420,10 +420,11 @@ class _The_live_ones:
             and written[3].isdigit()) else None
         language = (operator.speaks_at(self.field.ident) if operator
                     else reply_language(self.field.ident, "en"))
-        forms = every_language(written, type_code,
-                               dialect=self.profile.dialect_for(self.field.ident))
+        dialect = self.profile.dialect_for(self.field.ident)
+        forms = every_language(written, type_code, dialect=dialect)
         aircraft = Aircraft(forms["en"], type_code, wake_suffix(type_code),
-                            callsigns=forms)
+                            callsigns=forms,
+                            wake_every=(dialect == "faa"))
         # Reserved, so the invented traffic never hands the same number to a
         # second aeroplane while this one is on the field.
         self._used_callsigns.add(written)

@@ -194,6 +194,10 @@ class Aircraft:
     #: takeoff and "Oscar Oscar Alpha Bravo Charlie" again to the next
     #: report. Only where the short form differs: an airline's never does.
     kept_short: bool = False
+    #: ICAO/CAP 413 says the wake suffix on the initial call to a unit;
+    #: the FAA says it on every transmission with a terminal facility.
+    #: False where the controller works to CAP 413.
+    wake_every: bool = True
 
     def for_language(self, language: str) -> sp.Callsign:
         return self.callsigns.get((language or "en")[:2], self.callsign)
@@ -203,8 +207,11 @@ class Aircraft:
         if abbreviated and callsign.spoken_short \
                 and callsign.spoken_short != callsign.spoken_full:
             self.kept_short = True
-        base = callsign.spoken(abbreviated or self.kept_short)
-        return f"{base} {self.wake}".strip() if self.wake else base
+        said_short = abbreviated or self.kept_short
+        base = callsign.spoken(said_short)
+        if self.wake and (self.wake_every or not said_short):
+            return f"{base} {self.wake}".strip()
+        return base
 
     def variants(self) -> list[str]:
         """Every spoken and written form, for matching what the pilot said."""
@@ -248,6 +255,9 @@ class Weather:
     # the log. One report is one source: the simulator's calm wind once
     # carried Lille's 45 kt gust.
     wind_from: dict = field(default_factory=dict)
+    # The METAR's DDHHMMZ observation time; the ATIS quotes it, not the
+    # moment it composed the broadcast. Empty for sim-only weather.
+    observed_utc: str = ""
 
 
 def spoken_wind_direction(weather: Weather) -> float | str:
@@ -312,8 +322,15 @@ class Phraseology:
         return sp.digits(value, self.digit_dialect)
 
     def alt(self, feet: float, transition: int = 0, level_from: int = 0) -> str:
-        return sp.altitude(feet, self.digit_dialect,
-                           transition or self.transition, level_from)
+        words = sp.altitude(feet, self.digit_dialect,
+                            transition or self.transition, level_from)
+        if self.dialect == "icao" and float(feet) > 0 \
+                and not sp.is_flight_level(
+                    feet, transition or self.transition, level_from):
+            # CAP 413 gives the unit so an altitude cannot be taken for a
+            # level: "climb to three thousand feet".
+            words += " feet"
+        return words
 
     def vfr_alt(self, feet: float, transition: int = 0) -> str:
         """A VFR altitude: feet, or metres in the metric region.
@@ -1609,13 +1626,20 @@ class Phraseology:
         spoken_fix = fix_name(fix, fix_spoken)
         turn = (f"turn {direction} heading {self.hdg(heading)}" if direction
                 else f"fly heading {self.hdg(heading)}")
+        # What the aircraft establishes on: the localizer where there is
+        # one, the final approach course otherwise -- the same selection
+        # ``cleared_approach`` makes.
+        first = (approach.split() or [""])[0].upper()
+        established = ("the localizer"
+                       if first in ("ILS", "LOC", "LOCALIZER", "LDA", "SDF")
+                       else "the final approach course")
         if self.dialect == "faa":
             parts = [
                 aircraft.spoken(True),
                 f"{sp.distance(distance_nm, self.digit_dialect)} from {spoken_fix}",
                 turn,
-                f"maintain {self.alt(altitude_ft, transition_altitude)} until established "
-                f"on the localizer",
+                f"maintain {self.alt(altitude_ft, transition_altitude)} "
+                f"until established on {established}",
                 f"cleared {approach} runway {self.rwy(runway)} approach",
             ]
         else:
@@ -1625,8 +1649,8 @@ class Phraseology:
                 aircraft.spoken(True),
                 f"{sp.distance(distance_nm, self.digit_dialect)} from {spoken_fix}",
                 turn,
-                f"maintain {self.alt(altitude_ft, transition_altitude)} until established "
-                f"on the localizer",
+                f"maintain {self.alt(altitude_ft, transition_altitude)} "
+                f"until established on {established}",
                 f"cleared {approach} approach runway {self.rwy(runway)}",
                 "report established",
             ]

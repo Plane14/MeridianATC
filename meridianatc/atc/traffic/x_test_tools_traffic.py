@@ -289,10 +289,11 @@ class _Test_tools_traffic:
         # was grouped the American way -- "Air Portugal two fourteen" for
         # TAP0214 at Madeira, which no Portuguese controller would say and
         # which the user's own callsign, read correctly, sat next to.
-        forms = every_language(written, type_code,
-                               dialect=self.profile.dialect_for(self.field.ident))
+        dialect = self.profile.dialect_for(self.field.ident)
+        forms = every_language(written, type_code, dialect=dialect)
         aircraft = Aircraft(forms["en"], type_code, wake_suffix(type_code),
-                            callsigns=forms, language=language)
+                            callsigns=forms, language=language,
+                            wake_every=(dialect == "faa"))
 
         runway = self._pick_runway(arriving, type_code)
         flight = Flight(

@@ -201,6 +201,9 @@ class _Session:
         callsign = alternatives["en"]
         aircraft = Aircraft(callsign, type_code, wake_suffix(type_code),
                             callsigns=alternatives,
+                            wake_every=(profile.dialect_for(
+                                departure.ident if departure else "")
+                                == "faa"),
                             on_floats=bool(getattr(self.state,
                                                    "on_floats", False)))
 

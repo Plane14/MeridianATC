@@ -352,7 +352,7 @@ TELEPHONY_FR: dict[str, str] = {
     "AUA": "Austrian",
     "BEL": "Beeline",
     "CSA": "CSA Lines",
-    "LOT": "Lot",
+    "LOT": "Pollot",
     "MSR": "Egyptair",
     "RAM": "Royal Air Maroc",
     "TAR": "Tunair",

@@ -264,10 +264,11 @@ class CentreTraffic:
 
     def _flight(self, written: str, type_code: str, operator,
                 language: str) -> Flight:
-        forms = every_language(written, type_code,
-                               dialect=self.profile.dialect_for(self._ident))
+        dialect = self.profile.dialect_for(self._ident)
+        forms = every_language(written, type_code, dialect=dialect)
         aircraft = Aircraft(forms["en"], type_code, wake_suffix(type_code),
-                            callsigns=forms, language=language)
+                            callsigns=forms, language=language,
+                            wake_every=(dialect == "faa"))
         return Flight(written=written, type_code=type_code, aircraft=aircraft,
                       language=language, operator=operator, arriving=False,
                       phase="cruise", on_ground=False)

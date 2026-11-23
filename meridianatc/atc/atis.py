@@ -15,6 +15,7 @@ wind shift.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -218,7 +219,7 @@ class AtisGenerator:
             return self._compose_french(letter, wx, runways,
                                         departing if split else None)
         p = self.phrase
-        now = datetime.now(UTC)
+        now = self._obs_time(wx)
         name = self.airport.spoken
 
         parts: list[str] = []
@@ -235,56 +236,53 @@ class AtisGenerator:
                 f"{sp.time_utc(now.hour, now.minute, p.digit_dialect)}"
             )
 
-        # --- runways in use ---
+        # --- the weather, first in both dialects: JO 7110.65 2-9-3 puts
+        # it before the approach and runways, and Annex 11 reads the
+        # same way ---
+        weather = [p.wind(wx)]
+        weather.extend(self._visibility(wx))
+        weather.append(self._clouds(wx))
+        weather.append(
+            f"temperature {self._signed(wx.temperature_c)}, "
+            f"dew point {self._signed(wx.dewpoint_c)}"
+        )
+        weather.append(p.pressure(
+            wx.altimeter_inhg if p.dialect == "faa" else wx.qnh_hpa
+        ))
+        parts.extend(weather)
+
+        # --- runways and the approach in use ---
         if split:
             landing = " and ".join(p.rwy(r) for r in runways)
             taking_off = " and ".join(p.rwy(r) for r in departing)
+            if p.dialect == "icao":
+                # Annex 11 order: the approach, then the runway.
+                parts.append(
+                    f"expect {self._approach_type(runways)} approach")
             parts.append(
                 f"landing runway{'s' if len(runways) > 1 else ''} "
                 f"{landing}, departure runway"
                 f"{'s' if len(departing) > 1 else ''} {taking_off}")
-            if p.dialect == "icao":
-                parts.append(f"expect {self._approach_type(runways)} approach")
         elif runways:
+            if p.dialect == "icao":
+                parts.append(
+                    f"expect {self._approach_type(runways)} approach")
             if len(runways) == 1:
                 parts.append(f"landing and departing runway {p.rwy(runways[0])}")
             else:
                 spoken = " and ".join(p.rwy(r) for r in runways)
                 parts.append(f"landing and departing runways {spoken}")
-            if p.dialect == "icao":
-                parts.append(f"expect {self._approach_type(runways)} approach")
         if runways and p.dialect == "faa":
             # JO 7110.65 2-9-3: the instrument approach in use, by name.
             parts.append(f"{self._approach_type(runways)} runway "
                          f"{p.rwy(runways[0])} approach in use")
         parts.extend(self._vfr_part(runways))
 
-        # --- wind ---
-        parts.append(p.wind(wx))
-
-        # --- visibility ---
-        if p.dialect == "faa":
-            parts.append(sp.visibility(wx.visibility_sm, p.digit_dialect))
-        else:
-            metres = int(min(9999, round(wx.visibility_sm * 1609.34 / 100.0) * 100))
-            if metres >= 9999:
-                parts.append("visibility one zero kilometres or more")
-            else:
-                parts.append(f"visibility {p.d(metres)} metres")
-
-        # --- cloud ---
-        parts.append(self._clouds(wx))
-
-        # --- temperature and dew point ---
-        parts.append(
-            f"temperature {self._signed(wx.temperature_c)}, "
-            f"dew point {self._signed(wx.dewpoint_c)}"
-        )
-
-        # --- pressure ---
-        parts.append(p.pressure(
-            wx.altimeter_inhg if p.dialect == "faa" else wx.qnh_hpa
-        ))
+        # --- transition level: ATIS item h for every ICAO broadcast ---
+        if p.dialect != "faa" and self.transition_altitude:
+            level = self._transition_level(wx)
+            if level:
+                parts.append(f"transition level {sp.flight_level(level)}")
 
         # --- remarks ---
         parts.extend(self._remarks(wx))
@@ -383,7 +381,7 @@ class AtisGenerator:
         from . import speech_fr as sfr
 
         p = self.phrase
-        now = datetime.now(UTC)
+        now = self._obs_time(wx)
         parts: list[str] = [
             f"Ici {self.airport.spoken}, information {sfr.letters(letter)}, "
             f"{sfr.time_utc(now.hour, now.minute)}"
@@ -412,9 +410,73 @@ class AtisGenerator:
             f"point de rosée {sfr.temperature(wx.dewpoint_c)}"
         )
         parts.append(p.pressure(wx.qnh_hpa))
+        if self.transition_altitude:
+            level = self._transition_level(wx)
+            if level:
+                parts.append(f"niveau de transition {sfr.flight_level(level)}")
         parts.append(f"accusez réception de l'information {sfr.letters(letter)}")
 
         return ". ".join(part.strip().rstrip(".") for part in parts if part.strip()) + "."
+
+    @staticmethod
+    def _obs_time(wx: Weather) -> datetime:
+        """The weather's own time where the report gives one: a METAR's
+        observation group, so the time and the weather agree. The
+        compose moment where it does not -- sim-only weather has no
+        observation time to quote."""
+        stamp = getattr(wx, "observed_utc", "") or ""
+        m = re.fullmatch(r"(\d{2})(\d{2})(\d{2})Z", stamp)
+        if m:
+            now = datetime.now(UTC)
+            return now.replace(day=int(m.group(1)),
+                               hour=int(m.group(2)),
+                               minute=int(m.group(3)),
+                               second=0, microsecond=0)
+        return datetime.now(UTC)
+
+    def _visibility(self, wx: Weather) -> list[str]:
+        """The visibility item, or CAVOK when the sky allows it.
+
+        Annex 10: CAVOK when the visibility is ten kilometres or better,
+        no cloud below five thousand feet or the highest minimum sector
+        altitude, no cumulonimbus or towering cumulus, and no significant
+        weather -- said instead of the visibility and the cloud.
+        """
+        p = self.phrase
+        if p.dialect == "faa":
+            return [sp.visibility(wx.visibility_sm, p.digit_dialect)]
+        metres = int(min(9999, round(wx.visibility_sm * 1609.34 / 100.0) * 100))
+        low_cloud = any(h < 5000 for _cover, h in (wx.clouds or []))
+        if metres >= 9999 and not low_cloud and not wx.cb \
+                and not (wx.present or "").strip():
+            return ["CAVOK"]
+        if metres >= 9999:
+            return ["visibility one zero kilometres or more"]
+        # Whole hundreds and thousands are read as such, not digit by
+        # digit: two thousand metres, not two zero zero zero.
+        if metres % 1000 == 0:
+            words = f"{sp.cardinal(metres // 1000)} thousand"
+        elif metres % 100 == 0:
+            words = f"{sp.cardinal(metres // 100)} hundred"
+        else:
+            words = p.d(metres)
+        return [f"visibility {words} metres"]
+
+    def _transition_level(self, wx: Weather) -> int:
+        """The transition level in flight levels, from the airport's
+        transition altitude and the QNH: the altitude plus five hundred
+        feet for every step the pressure is below standard, which is how
+        the lowest usable flight level stays clear of it."""
+        base = int(self.transition_altitude)
+        if base <= 0:
+            return 0
+        level = base // 100
+        qnh = float(wx.qnh_hpa or 1013.25)
+        if qnh < 1013.25:
+            level += 5
+        if qnh < 980.0:
+            level += 5
+        return level
 
     def _clouds_french(self, wx: Weather) -> str:
         from . import speech_fr as sfr
@@ -467,9 +529,8 @@ class AtisGenerator:
 def letter_from_text(text: str) -> str:
     """Recover the information letter a pilot reported having.
 
-    Whisper transcribes "information Bravo" reliably, but pilots also say just
-    "with Bravo" or "I have Bravo", so any phonetic word in the utterance is
-    treated as a candidate.
+    Kept for callers that add it back; nothing in the program uses it
+    today.
     """
     from .speech import _ALPHABET_REVERSE
 

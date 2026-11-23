@@ -162,6 +162,10 @@ def parse_metar(raw: str) -> Weather:
     # Everything after RMK is a coded remark, not part of the observation.
     body = text.split(" RMK", 1)[0]
 
+    m = _RE_TIME.search(body)
+    if m:
+        wx.observed_utc = "".join(m.groups()) + "Z"
+
     m = _RE_WIND.search(body)
     if m:
         direction, speed, gust, unit = m.groups()

@@ -715,10 +715,12 @@ class _The_tower_watching:
         user = self.user
         if user is None:
             return None
+        dialect = self.profile.dialect_for(self.field.ident)
         forms = every_language(user.callsign or "UNKNOWN", user.type_code,
-                               dialect=self.profile.dialect_for(self.field.ident))
+                               dialect=dialect)
         aircraft = Aircraft(forms["en"], user.type_code,
-                            wake_suffix(user.type_code), callsigns=forms)
+                            wake_suffix(user.type_code), callsigns=forms,
+                            wake_every=(dialect == "faa"))
         final = self._final_for(user)
         return Flight(
             written=user.callsign, type_code=user.type_code,
