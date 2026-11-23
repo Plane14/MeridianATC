@@ -163,7 +163,11 @@ class _The_passing_ones:
         callsign, type_code, _ = drawn
         perf = perftable.traffic_performance(type_code, light=True)
         tas = self._cruise_tas(type_code, perf)
-        cruise = self.random.uniform(2500.0, 7500.0)
+        # A light aeroplane's cruise altitude is above the ground, like
+        # the helicopter's below -- at a high field the bare figure put
+        # it inside the terrain.
+        cruise = self.field.elevation_ft + self.random.uniform(2500.0,
+                                                             7500.0)
         if self.random.random() < 0.3:
             transit = self._transit_descend(
                 callsign, type_code, "", perf, tas, jet=False,

@@ -115,6 +115,12 @@ class CpdlcLink:
         if msg is None or answer not in ANSWERS:
             return None
         instruction = msg.instruction
+        if answer == "roger" and instruction is not None \
+                and getattr(instruction, "readback_required", True):
+            # ROGER acknowledges; it is not compliance. An uplink whose
+            # instruction still needs a readback stays open for WILCO or
+            # UNABLE, exactly as the spoken "roger" settles nothing.
+            return None
         msg.closed = answer
         self.pending = None
         self.messages.append(Message(

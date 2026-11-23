@@ -481,8 +481,11 @@ def circle_legs(recipe: ApproachRecipe, navdb, state) -> list | None:
                     CIRCLE_BASE_OUT_NM + 2.0, s * CIRCLE_OFFSET_NM * 0.5),
         frame_point(final.lat, final.lon, final.course,
                     CIRCLE_BASE_OUT_NM, 0.0),
+        # legs() ends its point list past the threshold (negative
+        # along-course); circle() has to match or the caller joins it
+        # to a waypoint two miles the wrong side of the runway.
         frame_point(final.lat, final.lon, final.course,
-                    PAST_THRESHOLD_NM, 0.0),
+                    -PAST_THRESHOLD_NM, 0.0),
     ]
     return [(state.latitude, state.longitude)] + points
 

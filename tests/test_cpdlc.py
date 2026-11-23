@@ -113,9 +113,17 @@ class TestDownlink:
     def test_roger_acknowledges_without_applying(self):
         session = _session()
         link = open_link("Shanwick Radio")
-        link.uplink(_instruction())
+        link.uplink(_instruction(readback=False))
         down = link.respond("roger", session)
         assert down.text == "ROGER"
+        assert session.applied == []
+
+    def test_roger_does_not_settle_a_readback(self):
+        session = _session()
+        link = open_link("Shanwick Radio")
+        link.uplink(_instruction())
+        assert link.respond("roger", session) is None
+        assert link.pending is not None
         assert session.applied == []
 
     def test_answer_with_nothing_open_is_none(self):

@@ -296,11 +296,20 @@ class WeatherProvider:
         if not isinstance(data, dict):
             log.warning("weather cache is not a mapping; ignoring it")
             return
+        now = time.time()
         for station, entry in data.items():
             if not isinstance(entry, dict):
                 continue
-            wx = parse_metar(entry.get("raw", ""))
-            self._memory[station] = (entry.get("fetched", 0.0), wx, entry.get("raw", ""))
+            # METARs are issued at least hourly; a cache file surviving a
+            # restart must not serve last week's sky as this hour's.
+            raw = entry.get("raw", "")
+            if now - (entry.get("fetched", 0.0) or 0.0) > 3 * 3600.0:
+                continue
+            obs = _obs_epoch(raw, now)
+            if obs is not None and now - obs > 3 * 3600.0:
+                continue
+            wx = parse_metar(raw)
+            self._memory[station] = (entry.get("fetched", 0.0), wx, raw)
 
     def _save_cache(self) -> None:
         try:

@@ -1375,7 +1375,9 @@ class _The_live_ones:
                 continue
             along, across = offset_from_track(user.latitude, user.longitude,
                                               end[0], end[1], end[2])
-            if (abs(across) <= RUNWAY_WIDTH_NM
+            # The pavement, not the safety strip: ninety metres off the
+            # centreline counted the pilot holding short as on the runway.
+            if (abs(across) <= self.ON_RUNWAY_NM
                     and -0.15 <= along <= RUNWAY_LENGTH_NM):
                 return True
         return False

@@ -284,9 +284,11 @@ class _The_field:
         # rolled, an arrival until it has landed. The shallowest queue
         # takes the new strip, which is how two working runways actually
         # fill -- not round-robin turns but whoever can take them sooner.
-        pending = {"inbound", "final"} if arriving else {
-            "clearance", "pushback", "taxi", "holding", "ready",
-            "lineup", "takeoff"}
+        pending = {"inbound", "waiting", "joining", "circuit", "downwind",
+                   "base", "final", "go_around", "missed_hold"} \
+            if arriving else {
+                "clearance", "pushback", "taxi", "holding", "ready",
+                "line_up", "lineup", "takeoff"}
         usable = [e for e in ends if self._threshold(e) is not None] \
             or list(ends)
         counts = {end: 0 for end in usable}

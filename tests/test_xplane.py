@@ -152,7 +152,8 @@ def test_connect_converts_state_and_strings(xp):
     assert state.transponder_code == "0042" and state.flaps_index == 2
     assert state.beacon_light and state.seatbelt_sign and state.paused
     assert state.fuel_total_lb == pytest.approx(100 * LB)
-    assert state.fuel_total_gal == pytest.approx(100 * LB / 6)
+    # xp_engine_type 9 is a turboprop; Jet-A is 6.7 lb to the gallon.
+    assert state.fuel_total_gal == pytest.approx(100 * LB / 6.7)
     assert state.ambient_wind_velocity == pytest.approx(10 * KT)
     assert state.ambient_visibility_m == pytest.approx(5 * 1609.344)
     assert state.sea_level_pressure_hpa == pytest.approx(1013.25)

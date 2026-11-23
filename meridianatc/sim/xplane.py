@@ -126,7 +126,9 @@ DATAREFS = {
     # the protection stands down, which is the wanted answer.
     "eng_n1_pct": ("sim/flightmodel/engine/ENGN_N1_[0]", 1),
     "eng_n2_pct": ("sim/flightmodel/engine/ENGN_N2_[0]", 1),
-    "eng_itt_c": ("sim/flightmodel/engine/ENGN_EGT_c[0]", 1),
+    # X-Plane publishes ITT on its own dataref; EGT is the fallback on
+    # models that carry only exhaust temperature.
+    "eng_itt_c": ("sim/flightmodel/engine/ENGN_ITT_c[0]", 1),
     "eng_rpm": ("sim/cockpit2/engine/indicators/engine_speed_rpm[0]", 1),
     # The rest of the cockpit the checklists name (the same fields the
     # SimConnect source fills): starter, gauges, brakes, de-ice, the
@@ -270,7 +272,7 @@ for _engine in range(1, 4):
     EXTRA[f"trq_nm{_engine}"] = \
         f"sim/flightmodel/engine/ENGN_TRQ[{_engine}]"
     EXTRA[f"itt{_engine}"] = \
-        f"sim/flightmodel/engine/ENGN_EGT_c[{_engine}]"
+        f"sim/flightmodel/engine/ENGN_ITT_c[{_engine}]"
     EXTRA[f"n1_{_engine}"] = \
         f"sim/flightmodel/engine/ENGN_N1_[{_engine}]"
     EXTRA[f"n2_{_engine}"] = \
@@ -810,15 +812,17 @@ class XPlaneSource:
             if 1 <= bank_mode <= 6 and f"bank_angle{bank_mode - 1}" in values
             else 0.0)
         state.spoilers_armed = values.get("speedbrake", 0) < 0
-        # X-Plane reports fuel mass, not volume; use the same nominal 6 lb/gal
+        # X-Plane reports fuel mass, not volume. Density follows the fuel:
+        # Jet-A on the turbine types, 100LL everywhere else.
         # as ManualSource where the model does not declare a fuel density.
-        state.fuel_total_gal = state.fuel_total_lb / 6
-        state.fuel_capacity_gal = values.get("fuel_capacity_kg", 0) * LB / 6
+        lb_per_gal = 6.7 if state.engine_type in (1, 5) else 6.0
+        state.fuel_total_gal = state.fuel_total_lb / lb_per_gal
+        state.fuel_capacity_gal = values.get("fuel_capacity_kg", 0) * LB / lb_per_gal
         state.est_fuel_flow_pph = sum(values.get(f"flow{i}", 0) for i in range(16)) * LB * 3600
         if "fuel_left_kg" in values:
-            state.fuel_left_gal = values["fuel_left_kg"] * LB / 6
+            state.fuel_left_gal = values["fuel_left_kg"] * LB / lb_per_gal
         if "fuel_right_kg" in values:
-            state.fuel_right_gal = values["fuel_right_kg"] * LB / 6
+            state.fuel_right_gal = values["fuel_right_kg"] * LB / lb_per_gal
         # The SimConnect COM STATUS's two honest answers onto the power
         # switch X-Plane publishes: on means working, off means no
         # electricity. Not fitted and failed it cannot say.
@@ -1263,9 +1267,11 @@ class XPlaneSource:
         with self._lock:
             values = self._values.copy()
         capacity = values.get("fuel_capacity_kg", 0)
+        lb_per_gal = 6.7 if int(values.get("xp_engine_type", -1)) in (1, 5) \
+            else 6.0
         return [(f"sim/flightmodel/weight/m_fuel[{i}]",
-                 capacity * values[f"tank_ratio{i}"] * LB / 6,
-                 values.get(f"tank{i}", 0) * LB / 6)
+                 capacity * values[f"tank_ratio{i}"] * LB / lb_per_gal,
+                 values.get(f"tank{i}", 0) * LB / lb_per_gal)
                 for i in range(9) if values.get(f"tank_ratio{i}", 0) > 0]
 
     def set_fuel(self, gallons):
@@ -1280,14 +1286,14 @@ class XPlaneSource:
             gallons = float(gallons)
             if not math.isfinite(gallons) or gallons < 0:
                 return False
+            with self._lock:
+                values = self._values.copy()
             tanks = self.fuel_tanks()
             capacity = sum(cap for _, cap, _ in tanks)
             if capacity > 0:
                 fraction = min(1, gallons / capacity)
                 wanted = [(path, cap * fraction) for path, cap, _ in tanks]
             else:
-                with self._lock:
-                    values = self._values.copy()
                 present = [f"sim/flightmodel/weight/m_fuel[{i}]"
                            for i in range(9)
                            if values.get(f"tank{i}", 0) > 0
@@ -1295,7 +1301,10 @@ class XPlaneSource:
                 if not present:
                     return False
                 wanted = [(path, gallons / len(present)) for path in present]
-            writes = [self._dref(path, gal * 6 / LB) for path, gal in wanted]
+            lb_per_gal = 6.7 if int(values.get("xp_engine_type", -1)) in (1, 5) \
+                else 6.0
+            writes = [self._dref(path, gal * lb_per_gal / LB)
+                      for path, gal in wanted]
             return any(writes)
         except (ValueError, TypeError):
             return False

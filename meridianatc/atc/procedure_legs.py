@@ -183,9 +183,12 @@ def _find(table: dict[str, TerminalProcedure], name: str
         if parts and other and parts == other:
             return proc
         # The spoken form ("ROUSY 1L") against the stored six characters.
+        # The digit has to match too: "ROUSY 2R" is not "ROUSY 1L",
+        # and `digit in wanted` was always true, the digit coming from
+        # `wanted` itself.
         if namesake(key) and namesake(key) in wanted:
             digit = parts[1] if parts else ""
-            if digit and digit in wanted:
+            if digit and other and digit == other[1]:
                 return proc
     return None
 

@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 import logging
+import socket
 import threading
 import time
 from collections import deque
@@ -75,7 +77,29 @@ class PanelFiles(StaticFiles):
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
 
 
-def _origin_ok(origin: str) -> bool:
+def _host_name(host: str) -> str:
+    return (host or "").split(":", 1)[0].strip("[]").lower()
+
+
+def _host_ok(host: str) -> bool:
+    """Whether the addressed Host is one a DNS answer cannot fake.
+
+    An IP literal cannot be re-bound, and neither can this machine's own
+    name; a stranger's domain pointed at loopback is what DNS rebinding
+    is, so any other name is refused.
+    """
+    name = _host_name(host)
+    if not name:
+        return True                        # HTTP/1.0 carries no Host
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        pass
+    return name in _LOCAL_HOSTS or name == socket.gethostname().lower()
+
+
+def _origin_ok(origin: str, host: str = "") -> bool:
     """Whether the page a request came from is one that may call the API."""
     if origin == "null":
         # Opaque origins: a file:// page, the simulator's own panel frames.
@@ -85,17 +109,25 @@ def _origin_ok(origin: str) -> bool:
         return True                # the simulator's panel
     if parts.scheme not in ("http", "https"):
         return False
-    return (parts.hostname or "").lower() in _LOCAL_HOSTS
+    name = (parts.hostname or "").lower()
+    if name in _LOCAL_HOSTS:
+        return True
+    # A page this server itself served comes back with the request's own
+    # host -- that is how the panel works over the LAN (--host 0.0.0.0).
+    return bool(host) and name == _host_name(host)
 
 
 def _same_machine(scope) -> bool:
     """Whether an ASGI request may reach the API under the origin rules."""
     headers = {key.lower(): value
                for key, value in scope.get("headers") or ()}
+    host = headers.get(b"host", b"").decode("latin-1")
+    if not _host_ok(host):
+        return False
     if headers.get(b"sec-fetch-site") == b"cross-site":
         return False
     origin = headers.get(b"origin")
-    return origin is None or _origin_ok(origin.decode("latin-1"))
+    return origin is None or _origin_ok(origin.decode("latin-1"), host)
 
 
 class _OwnMachineOnly:

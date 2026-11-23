@@ -392,7 +392,8 @@ TITLE_TO_TYPE: tuple[tuple[str, str], ...] = (
     ("king air", "B350"), ("baron", "BE58"), ("bonanza", "BE36"),
     ("da40", "DA40"), ("da62", "DA62"), ("diamond da40", "DA40"),
     ("bonanza g36", "BE36"), ("longitude", "C700"),
-    ("cub", "PA18"), ("piper", "P28A"), ("archer", "P28A"), ("arrow", "P28R"),
+    ("cub", "PA18"), ("arrow", "P28R"), ("archer", "P28A"),
+    ("piper", "P28A"),
     ("mooney", "M20P"), ("husky", "BL8"), ("icon a5", "A5"),
     ("vision jet", "SF50"), ("sf50", "SF50"),
     ("global 7500", "GL7T"), ("longitude", "C700"),
@@ -421,7 +422,7 @@ _PER_ENGINE_REQUESTS: tuple[tuple[str, str, str, str], ...] = tuple(
     for name, attr, kind in (
         ("ENG_TORQUE:{i}", "torque_nm", "ftpds_nm"),
         ("ENG_TORQUE_PERCENT:{i}", "torque_pct", "pct_wide"),
-        ("TURB_ENG_ITT:{i}", "itt_c", "raw"),
+        ("TURB_ENG_ITT:{i}", "itt_c", "rankine_c"),
         ("TURB_ENG_N1:{i}", "n1_pct", "raw"),
         ("TURB_ENG_N2:{i}", "n2_pct", "raw"),
         ("GENERAL_ENG_RPM:{i}", "rpm", "raw"),
@@ -602,7 +603,7 @@ class SimConnectSource:
         # Ng, an ITT in hundreds of Celsius, an RPM in thousands).
         ("TURB_ENG_N1:1", "eng_n1_pct", "raw", "slow"),
         ("TURB_ENG_N2:1", "eng_n2_pct", "raw", "slow"),
-        ("TURB_ENG_ITT:1", "eng_itt_c", "raw", "slow"),
+        ("TURB_ENG_ITT:1", "eng_itt_c", "rankine_c", "slow"),
         ("GENERAL_ENG_RPM:1", "eng_rpm", "raw", "slow"),
         # The turboprop's third lever: cut-off / low idle / high idle as
         # the enum's three stops, scaled onto the percent the rest of the
@@ -618,7 +619,7 @@ class SimConnectSource:
         # the field joins state.unavailable and the watch stands down.
         ("RECIP_ENG_CYLINDER_HEAD_TEMPERATURE:1", "eng_cht_c", "raw",
          "slow"),
-        ("RECIP_ENG_OIL_TEMPERATURE:1", "eng_oil_temp_c", "raw", "slow"),
+        ("GENERAL_ENG_OIL_TEMPERATURE:1", "eng_oil_temp_c", "rankine_c", "slow"),
         ("RECIP_ENG_COWL_FLAP_POSITION:1", "eng_cowl_pct", "pct", "slow"),
         ("ROTOR_LATERAL_TRIM_PCT", "rotor_lateral_trim_pct", "pct",
          "slow"),
@@ -648,14 +649,14 @@ class SimConnectSource:
         # the model wires one, and the angle of attack against the angle
         # the book says the warning sounds at. Signed like the pitch --
         # a negative alpha is a reading, not a wrap.
-        ("STALL WARNING", "stall_warning", "bool", "fast"),
-        ("INCIDENCE ALPHA", "aoa_deg", "signed_rad", "fast"),
-        ("STALL ALPHA", "stall_aoa_deg", "signed_rad", "slow"),
+        ("STALL_WARNING", "stall_warning", "bool", "fast"),
+        ("INCIDENCE_ALPHA", "aoa_deg", "signed_rad", "fast"),
+        ("STALL_ALPHA", "stall_aoa_deg", "signed_rad", "slow"),
         ("NAV_HAS_LOCALIZER:1", "nav1_has_localizer", "bool", "slow"),
         ("NAV_CDI:1", "nav1_cdi", "raw", "slow"),
         ("NAV_HAS_GLIDE_SLOPE:1", "nav1_has_glideslope", "bool", "slow"),
         ("NAV_GSI:1", "nav1_gsi", "raw", "slow"),
-        ("NAV ACTIVE FREQUENCY:1", "nav1_freq", "navfreq", "slow"),
+        ("NAV_ACTIVE_FREQUENCY:1", "nav1_freq", "navfreq", "slow"),
         ("AUTOPILOT_AIRSPEED_HOLD_VAR", "ap_airspeed_kt", "raw", "slow"),
         ("AUTOPILOT_ALTITUDE_LOCK_VAR:1", "ap_altitude_ft", "raw", "slow"),
         ("AUTOPILOT_HEADING_LOCK_DIR", "ap_heading_deg", "raw", "slow"),
@@ -1611,6 +1612,11 @@ class SimConnectSource:
             return float(raw) * 0.592484
         if kind == "m_ft":
             return float(raw) * 3.28084
+        if kind == "rankine_c":
+            # ITT and oil temperature arrive in Rankine, the unit the
+            # wrapper's table declares; the state keeps Celsius, the
+            # unit X-Plane's ENGN_ITT_c already speaks.
+            return (float(raw) - 491.67) * 5.0 / 9.0
         return float(raw)
 
     @staticmethod
@@ -1904,8 +1910,8 @@ class SimConnectSource:
     }
 
     _NAV_VARIABLES: dict[int, str] = {
-        1: "NAV ACTIVE FREQUENCY:1",
-        2: "NAV ACTIVE FREQUENCY:2",
+        1: "NAV_ACTIVE_FREQUENCY:1",
+        2: "NAV_ACTIVE_FREQUENCY:2",
     }
 
     def set_nav(self, mhz: float, radio: int = 1) -> bool:

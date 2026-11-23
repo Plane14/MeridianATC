@@ -533,6 +533,38 @@ class _Running_them:
             stretch.append(node)
         return stretch
 
+    def _crossed_runway(self, stretch: list) -> str:
+        """The runway the stretch actually lies on, as its published ident.
+
+        The taxi route can carry an aeroplane over a strip that is not
+        the one it was cleared for, and the holds have to name the
+        pavement under the wheels -- a crossing guarded only by the
+        flight's own runway let one be driven across a live parallel.
+        """
+        layout = self.ground
+        if not stretch or layout is None:
+            return ""
+        thresholds = getattr(self.field, "thresholds", {}) or {}
+        surfaces = getattr(self.field, "surfaces", {}) or {}
+        for name, end in thresholds.items():
+            try:
+                threshold_xy = layout.to_xy(end[0], end[1])
+            except (AttributeError, TypeError, ValueError):
+                continue
+            surface = surfaces.get(name)
+            length_m = (surface[2] * self._M_PER_NM
+                        if surface else 2000.0)
+            for node in stretch[:4]:
+                try:
+                    along, across = layout.runway_frame(
+                        *layout.xy[node], threshold_xy, end[2])
+                except (AttributeError, TypeError, ValueError, KeyError):
+                    continue
+                if -50.0 <= along <= length_m + 50.0 \
+                        and abs(across) <= groundwork.RUNWAY_HALF_M:
+                    return name
+        return ""
+
     def _may_cross_runway(self, flight: Flight, position: int,
                           now: float) -> bool:
         """Whether it may go onto the runway for the stretch ahead, and if it
@@ -543,12 +575,13 @@ class _Running_them:
                      for a, b in zip(stretch, stretch[1:], strict=False))
         # Off the far side as well: the tail has to clear it, not the nose.
         takes = metres / groundwork.TURN_MS + 30.0
-        if (self.runway_occupied(now, ignore=flight, runway=flight.runway)
-                or self._somebody_lined_up(flight, runway=flight.runway)
-                or self._nearest_arrival_s(flight) < takes
+        crossing = self._crossed_runway(stretch) or flight.runway
+        if (self.runway_occupied(now, ignore=flight, runway=crossing)
+                or self._somebody_lined_up(flight, runway=crossing)
+                or self._nearest_arrival_s(flight, runway=crossing) < takes
                 + self.CROSS_CLEAR_S):
             return False
-        self._hold_runway(flight.runway, now, takes)
+        self._hold_runway(crossing, now, takes)
         return True
 
     def _claim_runway_stretch(self, flight: Flight, position: int) -> None:

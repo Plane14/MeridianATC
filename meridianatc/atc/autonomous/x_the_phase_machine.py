@@ -1213,11 +1213,13 @@ class _The_phase_machine:
                             self.state.rotate_speed_kt or 0.0, "rotate")
             d.elevator(self._g_pull_cap(state, pull))
             d.takeoff_power()
-            if late and (ias < v1 or elapsed > 25.0):
-                # Rotated and still on the ground with the speed gone
-                # (or nothing answering at all): the model is not
-                # flying itself off; lower the nose and reject rather
-                # than porpoise down the runway.
+            if late and ias < v1:
+                # Rotated and still on the ground below V1 with the
+                # speed gone (or nothing answering at all): the model
+                # is not flying itself off; lower the nose and reject
+                # rather than porpoise down the runway. Past V1 the
+                # stop is no longer the answer -- the takeoff is
+                # continued, which is what V1 means.
                 d.elevator(0.0)
                 self.state.rejected = True
                 self._goto_sub("abort")
@@ -1394,7 +1396,11 @@ class _The_phase_machine:
             # configuration until clear of the shear.
             shear = (self.state.windshear_since
                      and now - self.state.windshear_since < 15.0)
-            if state.flaps_index and ias > self._flap_up_kt() and not shear:
+            # Flaps come up no lower than the 400 ft AGL the books give
+            # for the first configuration change -- speed alone is not
+            # the gate, a low fast aeroplane is not ready either.
+            if state.flaps_index and ias > self._flap_up_kt() \
+                    and not shear and agl > 400.0:
                 d.flaps(0.0)
             # Gear up after a positive rate, where the model has one.
             # AGL alone is not the rate: an aeroplane settling back is

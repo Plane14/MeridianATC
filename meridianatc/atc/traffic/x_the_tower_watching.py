@@ -595,10 +595,11 @@ class _The_tower_watching:
         slows down and the gap opens. It only works while there is still room
         to lose speed, so it is not offered to anything already committed.
         """
-        # Below this there is nothing left to give: an aeroplane at two miles
-        # is at its threshold speed and slowing it further is not a spacing
-        # instruction, it is a stall warning.
-        if flight.distance_nm < STABLE_BY_NM:
+        # 7110.65 5-7-3: no speed adjustments inside five miles of the
+        # runway -- and below this there is nothing left to give anyway:
+        # an aeroplane at its threshold speed cannot take "reduce" for an
+        # instruction, it is already at the number.
+        if flight.distance_nm < max(STABLE_BY_NM, 5.0):
             return
         ahead = self._ahead_of(flight)
         gap = (flight.distance_nm - ahead.distance_nm) if ahead else 99.0
@@ -621,8 +622,11 @@ class _The_tower_watching:
         # instead of opening.
         wanted = min(approach_speed(ahead.distance_nm, flight.performance) - 15.0,
                      flight.performance.approach_kt)
-        slower = max(round(wanted / 10.0) * 10,
-                     round(flight.performance.approach_kt * 0.85 / 10.0) * 10)
+        # 7110.65 5-7-3: the floor is 170 knots on anything that flies its
+        # approach that fast, 150 on the rest -- not a fraction of the
+        # type's own speed, which asked a jet for 140.
+        floor_kt = 170.0 if flight.performance.approach_kt >= 160 else 150.0
+        slower = max(round(wanted / 10.0) * 10, floor_kt)
         self._exchange(
             flight, now, flight.position,
             controller=lambda c, a, s: c.speed_restriction(a, slower),
