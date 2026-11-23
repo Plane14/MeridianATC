@@ -786,6 +786,10 @@ class _Shared_helpers:
         if ias <= 20.0:
             return
         lever = self._lever_position(state)
+        # The lever the sim reports is the only position a slew can
+        # start from: seeded anywhere else, the first write of a pass
+        # is the jump the rate limit exists to prevent.
+        self._last_lever = lever
         # A climb that still owes height keeps climb power: the speed is
         # the pitch's and the bug's to mind up there -- a servo that
         # idles the engine six hundred feet up for being ten knots fast
@@ -847,8 +851,11 @@ class _Shared_helpers:
             lever = min(lever, descent_cap)
         if not overspeed:
             lever = max(lever, climb_floor)
-        self._last_lever = lever
-        self.director.throttle(lever)
+        # The servo moves the lever at a hand's speed like the takeoff
+        # ramp does: a step to where the speed wants it is a slammed
+        # fuel unit, and a turbine answers the slam with the EGT spike
+        # the limit watch reads straight back as an exceedance.
+        self.director.throttle(self._slew_lever(lever, up_per_s=0.30))
 
     def _surface_position(self, positions: tuple[str, ...]):
         """The departure field's station in one of these positions, where

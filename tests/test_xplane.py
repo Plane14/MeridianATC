@@ -594,6 +594,22 @@ def test_parity_instruments_absent_when_the_model_is_silent(xp):
     assert state.barber_pole_mach == 0.0
 
 
+def test_a_one_foot_pound_red_line_is_not_a_limit(xp):
+    """The King Air's acf_TRQ read 1.0 ft-lbs -- a field the model never
+    filled, not an engine's ceiling: against it a healthy torque read
+    seventeen hundred times the line and the collective limiter flapped
+    every tick. An implausible red line is the same "unpublished" the
+    absent one is."""
+    server, link = xp
+    server.values.update({EXTRA["trq_nm"]: 2500.0,
+                          EXTRA["trq_red_hi_ftpds"]: 1.0})
+    assert link.connect()
+    eventually(lambda: "trq_nm" in link._values)
+    state = link.read()
+    assert state.eng_torque_pct == 0.0
+    assert "eng_torque_pct" in state.unavailable
+
+
 def test_xplane_radio_power():
     from meridianatc.atc.radio_power import decide
 

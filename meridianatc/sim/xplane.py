@@ -519,6 +519,12 @@ class XPlaneSource:
         if "mach_max_operate" in values and "barber_pole_mach" not in values:
             state.barber_pole_mach = state.mach_max_operate
         trq, trq_red = values.get("trq_nm"), values.get("trq_red_hi_ftpds", 0.0)
+        if trq_red < 50.0:
+            # A 1 ft-lb red line is a field the model did not fill in, not
+            # a limit any engine has -- reading it as real made a King
+            # Air's healthy torque report seventeen hundred times its
+            # ceiling and flapped the collective limiter every tick.
+            trq_red = 0.0
         if trq is not None and trq_red > 0.0:
             # N-m against the book's ft-lbs red line, the per cent of
             # rated the collective limit reads.
@@ -594,7 +600,7 @@ class XPlaneSource:
                                     ("ambient_in_cloud", "cloud_cov0")):
             if source_key in values:
                 known.add(derived)
-        if values.get("trq_nm") is not None and values.get("trq_red_hi_ftpds", 0.0) > 0.0:
+        if trq is not None and trq_red > 0.0:
             known.add("eng_torque_pct")
         if state.ap_max_bank_deg:
             known.add("ap_max_bank_deg")

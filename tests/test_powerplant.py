@@ -92,6 +92,7 @@ def _emit_keys(fo):
 
 def test_limit_cap_eases_the_lever_over_the_red_line():
     fo = _fo()
+    fo._OVER_PERSIST_S = 0.0
     # A B738 over its continuous EGT in cruise: the cap comes off.
     hot = AircraftState(on_ground=False, engines_running=True,
                         eng_itt_c=960.0)
@@ -105,6 +106,7 @@ def test_limit_cap_eases_the_lever_over_the_red_line():
 
 def test_takeoff_rating_governs_the_roll():
     fo = _fo()
+    fo._OVER_PERSIST_S = 0.0
     # 940 C is over the 925 continuous figure, under the 950 takeoff one.
     roll = AircraftState(on_ground=True, engines_running=True,
                          eng_itt_c=940.0)
@@ -134,6 +136,7 @@ def test_ng_and_piston_rpm_are_watched_too():
 
 def test_the_watch_emits_once_and_rearms():
     fo = _fo()
+    fo._OVER_PERSIST_S = 0.0
     hot = AircraftState(on_ground=False, engines_running=True,
                         eng_itt_c=960.0)
     fo._watch_engines(hot, 10.0)
@@ -145,13 +148,201 @@ def test_the_watch_emits_once_and_rearms():
     assert not fo.state.eng_warned
 
 
+def test_a_spike_across_the_line_is_not_an_over_limit():
+    """A King Air's EGT feed swung 150 C between quarter-second reads --
+    enough to dip under the line and cross it again inside a second.
+    The cap and the call wait for a reading that stays there, the way a
+    hand on the lever does."""
+    import time as _time
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo = _fo()
+    fo.state.phase = AutonomousPhase.CRUISE
+    fo.state.sub = "level"
+    hot = AircraftState(on_ground=False, engines_running=True,
+                        eng_itt_c=960.0)
+    cool = AircraftState(on_ground=False, engines_running=True,
+                         eng_itt_c=800.0)
+    now = _time.monotonic()
+    # A first read over the line starts the clock, not the cap.
+    fo._watch_engines(hot, now)
+    assert fo._engine_limit_cap(hot) == pytest.approx(1.0)
+    assert "autonomous.engines.overlimit" not in _emit_keys(fo)
+    # The gauge dipping back under restarts the clock, so the spike can
+    # never accumulate -- and the sustained read two seconds on counts.
+    fo._watch_engines(cool, now + 0.5)
+    fo._watch_engines(hot, now + 0.7)
+    assert "autonomous.engines.overlimit" not in _emit_keys(fo)
+    fo._watch_engines(hot, now + 2.8)
+    assert "autonomous.engines.overlimit" in _emit_keys(fo)
+
+
+def test_engines_stopping_forgets_the_over_clock():
+    fo = _fo()
+    fo._over_since = {"itt": 5.0}
+    quiet = AircraftState(on_ground=False, engines_running=False)
+    fo._watch_engines(quiet, 10.0)
+    assert fo._over_since == {}
+
+
+# -- the fuel selector --------------------------------------------------------
+
+
+def _airborne(**kw):
+    return AircraftState(on_ground=False, engines_running=True, **kw)
+
+
+def test_a_dry_selected_tank_is_switched_to_the_full_side():
+    """The PA-28 case: still on the left tank, right wing full."""
+    fo = _fo()
+    fo._manage_fuel_tanks(_airborne(fuel_selector=2,
+                                    fuel_left_gal=0.4,
+                                    fuel_right_gal=14.0))
+    fo._dir.write.assert_called_once_with("FUEL TANK SELECTOR:1", 3.0)
+    assert "autonomous.fuel.tank_switch" in _emit_keys(fo)
+
+
+def test_a_healthy_selected_tank_is_left_alone():
+    fo = _fo()
+    fo._manage_fuel_tanks(_airborne(fuel_selector=2,
+                                    fuel_left_gal=12.0,
+                                    fuel_right_gal=14.0))
+    fo._dir.write.assert_not_called()
+
+
+def test_nothing_with_fuel_is_a_tank_change_with_nowhere_to_go():
+    fo = _fo()
+    fo._manage_fuel_tanks(_airborne(fuel_selector=2,
+                                    fuel_left_gal=0.4,
+                                    fuel_right_gal=0.6))
+    fo._dir.write.assert_not_called()
+
+
+def test_all_and_off_are_the_crews_own_positions():
+    """ALL already feeds from every tank aboard; OFF is for the pilot
+    to answer -- the selector is never moved to either by this watch."""
+    fo = _fo()
+    for position in (0, 1, 16):
+        fo._manage_fuel_tanks(_airborne(fuel_selector=position,
+                                        fuel_left_gal=0.4,
+                                        fuel_right_gal=14.0))
+    fo._dir.write.assert_not_called()
+
+
+def test_the_right_tank_mirrors_to_the_left():
+    fo = _fo()
+    fo._manage_fuel_tanks(_airborne(fuel_selector=20,
+                                    fuel_left_gal=18.0,
+                                    fuel_right_gal=0.3))
+    fo._dir.write.assert_called_once_with("FUEL TANK SELECTOR:1", 19.0)
+
+
+def _jet_tanks(center_qty: float, wing_qty: float = 200.0):
+    return [("FUEL TANK CENTER QUANTITY", 300.0, center_qty),
+            ("FUEL TANK LEFT MAIN QUANTITY", 250.0, wing_qty),
+            ("FUEL TANK RIGHT MAIN QUANTITY", 250.0, wing_qty)]
+
+
+def test_a_dry_centre_tank_feeds_from_all():
+    """A jet whose centre has burnt out still has the wings -- ALL is
+    the position that reaches them without naming one."""
+    fo = _fo()
+    fo.sim = Mock()
+    fo.sim.fuel_tanks.return_value = _jet_tanks(0.2)
+    fo._dir.sim = fo.sim
+    fo._manage_fuel_tanks(_airborne(fuel_selector=6,
+                                    fuel_left_gal=200.0,
+                                    fuel_right_gal=200.0))
+    fo._dir.write.assert_called_once_with("FUEL TANK SELECTOR:1", 1.0)
+
+
+def test_a_centre_tank_with_fuel_is_left_alone():
+    fo = _fo()
+    fo.sim = Mock()
+    fo.sim.fuel_tanks.return_value = _jet_tanks(50.0)
+    fo._dir.sim = fo.sim
+    fo._manage_fuel_tanks(_airborne(fuel_selector=6))
+    fo._dir.write.assert_not_called()
+
+
+def test_xplane_tank_indexes_answer_the_same_list():
+    """m_fuel[2] is the centre in the Plane-Maker order."""
+    fo = _fo()
+    fo.sim = Mock()
+    fo.sim.fuel_tanks.return_value = [
+        ("sim/flightmodel/weight/m_fuel[0]", 50.0, 10.0),
+        ("sim/flightmodel/weight/m_fuel[1]", 50.0, 30.0),
+        ("sim/flightmodel/weight/m_fuel[2]", 40.0, 0.1)]
+    fo._dir.sim = fo.sim
+    fo._manage_fuel_tanks(_airborne(fuel_selector=6))
+    fo._dir.write.assert_called_once_with("FUEL TANK SELECTOR:1", 1.0)
+
+
+def test_an_aux_position_is_judged_by_the_list_not_the_gauges():
+    """The side gauges read the mains: a dry left aux under full mains
+    would look healthy to the gauges -- the list is what knows."""
+    fo = _fo()
+    fo.sim = Mock()
+    fo.sim.fuel_tanks.return_value = _jet_tanks(200.0) + [
+        ("FUEL TANK LEFT AUX QUANTITY", 30.0, 0.2)]
+    fo._dir.sim = fo.sim
+    fo._manage_fuel_tanks(_airborne(fuel_selector=4,
+                                    fuel_left_gal=200.0,
+                                    fuel_right_gal=200.0))
+    fo._dir.write.assert_called_once_with("FUEL TANK SELECTOR:1", 1.0)
+
+
+def test_the_selector_is_not_written_twice_in_the_same_breath():
+    fo = _fo()
+    state = _airborne(fuel_selector=2, fuel_left_gal=0.4,
+                      fuel_right_gal=14.0)
+    fo._manage_fuel_tanks(state)
+    fo._manage_fuel_tanks(state)
+    fo._dir.write.assert_called_once()
+
+
+def test_a_refused_write_is_not_hammered_every_tick():
+    fo = _fo()
+    fo._dir.write.return_value = False
+    state = _airborne(fuel_selector=2, fuel_left_gal=0.4,
+                      fuel_right_gal=14.0)
+    fo._manage_fuel_tanks(state)
+    # The attempt still latches the cooldown: a model that cannot take
+    # the position is asked again on the gauge's cadence, not every
+    # pass.
+    fo._manage_fuel_tanks(state)
+    fo._dir.write.assert_called_once()
+
+
+def test_an_engine_not_running_is_not_a_tank_problem():
+    fo = _fo()
+    fo._manage_fuel_tanks(AircraftState(on_ground=False,
+                                        engines_running=False,
+                                        fuel_selector=2,
+                                        fuel_left_gal=0.0,
+                                        fuel_right_gal=14.0))
+    fo._dir.write.assert_not_called()
+
+
+def test_an_unpublished_selector_is_never_moved():
+    fo = _fo()
+    fo._manage_fuel_tanks(AircraftState(
+        on_ground=False, engines_running=True, fuel_selector=-1,
+        fuel_left_gal=0.0, fuel_right_gal=14.0,
+        unavailable=("fuel_selector",)))
+    fo._dir.write.assert_not_called()
+
+
 def test_deadband_does_not_hide_an_engine_over_limit():
     """On-target speed is the deadband the throttle servo leaves alone --
     but a gauge drifting past its red line at that speed still gets the
     power pulled; an exceedance is not a deadband case."""
     from meridianatc.atc.autonomous import AutonomousPhase
+    import time as _time
     fo = _fo()
+    fo._OVER_PERSIST_S = 0.0
     fo.state.phase = AutonomousPhase.CRUISE
+    # A slew clock a second old: the lever has room to reach the cap.
+    fo._lever_at = _time.monotonic() - 1.0
     fo._manage_throttle(AircraftState(
         on_ground=False, engines_running=True,
         indicated_airspeed_kt=140.0, throttle_pct=95.0,
@@ -189,6 +380,7 @@ def test_heli_watch_judges_departure_on_the_takeoff_rating():
     the watch would hold a legal takeoff power to the continuous line --
     the H125's 800 C is over 775 continuous and under 846 takeoff."""
     fo = _fo(_aircraft_class="helicopter", _is_helicopter=True)
+    fo._OVER_PERSIST_S = 0.0
     fo.session.aircraft = SimpleNamespace(type_code="H125", title="")
     fo._heli = SimpleNamespace(state=SimpleNamespace(stage="departure"))
     legal = AircraftState(on_ground=False, engines_running=True,

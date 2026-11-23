@@ -198,11 +198,12 @@ class _The_checklist_answered:
     def _configure_for_takeoff(self, state) -> None:
         """Set flaps, trim, lights for takeoff."""
         d = self.director
-        # Takeoff flaps: the profile's detent where the type declares one,
-        # else the first detent -- whatever the lever was left at, which
-        # is the point of setting it.
-        takeoff_flaps = self.performance.takeoff_flaps or 0.25
-        d.flaps(takeoff_flaps)
+        # Takeoff flaps: the profile's detent where the type declares
+        # one -- detent zero, a King Air's flaps-up takeoff, is a
+        # declaration -- else the first detent, whatever the lever was
+        # left at, which is the point of setting it.
+        takeoff_flaps = self.performance.takeoff_flaps
+        d.flaps(takeoff_flaps if takeoff_flaps >= 0.0 else 0.25)
         d.landing_light(True)
         d.strobes(True)
 

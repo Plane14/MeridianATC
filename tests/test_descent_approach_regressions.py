@@ -98,10 +98,21 @@ def _airspeed_state(**kw):
 def test_a_descent_above_its_level_brings_the_lever_back():
     """Ninety-two percent all the way down was the sawtooth: above the
     cleared level with the speed on target, descent power is idle-ish,
-    and the pitch-vs owns the rate."""
+    and the pitch-vs owns the rate. The lever walks back at a hand's
+    speed rather than jumping the travel -- each pass moves it at most
+    the down rate, so the pull is measured over the ramp."""
+    import time as _time
     fo = _fo_descent()
-    fo._manage_throttle(_airspeed_state(), 105.0)
+    for _ in range(4):
+        fo._lever_at = _time.monotonic() - 1.0
+        # The sim's lever follows the last write the way it does live.
+        fo._manage_throttle(_airspeed_state(
+            throttle_pct=(fo.throttle_writes[-1] * 100.0
+                          if fo.throttle_writes else 92.0)), 105.0)
     assert fo.throttle_writes and fo.throttle_writes[-1] <= 0.20
+    # And the walk was monotonic down, never an up-swing on the way.
+    writes = fo.throttle_writes
+    assert all(b <= a for a, b in zip(writes, writes[1:]))
 
 
 def test_a_level_leg_in_the_descent_keeps_normal_power():

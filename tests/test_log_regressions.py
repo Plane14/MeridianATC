@@ -979,6 +979,47 @@ def test_a_taxi_asked_with_the_layout_dead_gets_the_invented_route():
     assert session.phase is Phase.TAXI_OUT
 
 
+def test_the_taxi_instructions_pressure_reaches_the_instruction_values():
+    """A pressure spoken but never recorded is a figure the FO can
+    never dial: the King Air that levelled at 4,000 with the box still
+    on standard heard "QNH one zero two one" in the taxi call and the
+    instruction's values carried no altimeter -- tower then queried an
+    altitude that was only wrong on the subscale."""
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    brain = _ground_brain(pending=False)
+    station = _ground_station()
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    session.departure_runway = "35"
+    weather = SimpleNamespace(qnh_hpa=1021, altimeter_inhg=30.12)
+    p = brain.for_station(station)
+    reply = brain._issue_taxi(session, station, weather, p)
+    # The instruction keeps the same figure the transmission said,
+    # whichever dialect said it.
+    expected = (weather.altimeter_inhg if p.dialect == "faa"
+                else weather.qnh_hpa)
+    assert reply.instruction.values["altimeter"] == expected
+    session.apply(reply.instruction.values)
+    assert session.altimeter == expected
+
+
+def test_an_already_given_pressure_is_not_repeated_or_recorded_again():
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    brain = _ground_brain(pending=False)
+    station = _ground_station()
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    session.departure_runway = "35"
+    session.altimeter_issued = True
+    weather = SimpleNamespace(qnh_hpa=1021, altimeter_inhg=30.12)
+    reply = brain._issue_taxi(
+        session, station, weather, brain.for_station(station))
+    # Said once already: not said again, and not remembered again.
+    assert "altimeter" not in reply.instruction.values
+
+
 def test_the_straight_line_waits_while_the_layout_reads():
     """No route and nobody to ask is still not a reason to aim at the
     runway while the field's taxiways are mid-read."""

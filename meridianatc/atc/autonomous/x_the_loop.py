@@ -62,6 +62,10 @@ class _The_loop:
         # The cowl flaps ride the same watch: a lever change belongs to
         # the phase, a CHT running hot cannot wait for the next one.
         self._manage_cooling(state)
+        # Neither can a tank running dry: an engine fed from an empty
+        # tank with fuel still aboard is a selector position, and it is
+        # moved now rather than after the engine has quit.
+        self._manage_fuel_tanks(state)
         if not self._enabled:
             return
         # Emergencies outrank the phase: a MAYDAY changes what the flight

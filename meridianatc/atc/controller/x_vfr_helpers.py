@@ -130,7 +130,8 @@ class _Vfr_helpers:
                      altitude_ft=altitude, point=point.name if point else None)
             instruction = session.remember(
                 Instruction("svfr_entry", station_key(station), text,
-                            {"vfr_ceiling_ft": altitude}))
+                            {"vfr_ceiling_ft": altitude,
+                             **({"altimeter": pressure} if pressure else {})}))
             return Reply(text, station, instruction=instruction)
 
         departure_station = (self.navdb.station_for(station.ident, "DEP")
@@ -156,6 +157,8 @@ class _Vfr_helpers:
                  altitude_ft=altitude, point=point.name if point else None)
         values: dict[str, Any] = {"squawk": session.squawk,
                                   "vfr_ceiling_ft": float(altitude)}
+        if pressure:
+            values["altimeter"] = pressure
         if freq:
             values["frequency"] = freq
         if point is not None:

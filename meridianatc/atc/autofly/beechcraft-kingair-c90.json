@@ -12,6 +12,7 @@
     "approachSpeedKnots": 100,
     "touchdownSpeedKnots": 85,
     "goAroundSpeedKnots": 100,
+    "takeoffFlaps": 0,
     "landingFlaps": 4,
     "maxBankDegrees": 25,
     "climbRateFpm": 1955,

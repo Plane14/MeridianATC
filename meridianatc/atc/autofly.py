@@ -136,7 +136,9 @@ def _performance_patch(prof: dict) -> dict:
              if isinstance(perf.get(k), (int, float))}
     for k, v in _FLAP_MAP.items():
         detent = perf.get(k)
-        if isinstance(detent, (int, float)) and detent > 0:
+        if isinstance(detent, (int, float)) and detent >= 0:
+            # Detent zero is a real answer too -- the flaps-up takeoff
+            # a King Air's POH wants -- not a missing one.
             patch[v] = min(1.0, float(detent) / 4.0)
     for k, (v, lo, hi) in _G_MAP.items():
         limit = perf.get(k)

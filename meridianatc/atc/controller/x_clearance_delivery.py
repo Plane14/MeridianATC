@@ -533,6 +533,9 @@ class _Clearance_delivery:
         # say it again with the taxi.
         session.altimeter_issued = weather is not None
 
+        pressure = (0.0 if weather is None else
+                    weather.altimeter_inhg if p.region == "faa"
+                    else weather.qnh_hpa)
         text = p.vfr_departure_clearance(
             session.aircraft,
             self._station_name(station, p) if not session.established_with(station) else "",
@@ -546,11 +549,11 @@ class _Clearance_delivery:
             # setting is the one a release exists to prevent. The way out of
             # the zone is the direction until there are reporting points to
             # name (Phase 4 of the VFR plan).
-            pressure=(0.0 if weather is None else
-                      weather.altimeter_inhg if p.region == "faa"
-                      else weather.qnh_hpa),
+            pressure=pressure,
         )
         values: dict[str, Any] = {"squawk": session.squawk}
+        if pressure:
+            values["altimeter"] = pressure
         if freq:
             values["frequency"] = freq
         if ceiling:

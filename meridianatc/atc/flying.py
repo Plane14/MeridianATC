@@ -122,11 +122,14 @@ class Performance:
     # go-around climbs away at, the bank a pilot would take as his limit
     # for "stable", and the flap lever positions this type uses for
     # takeoff and landing (0..1 of travel). Zero means the class's own
-    # figure -- a profile that does not say does not guess.
+    # figure -- a profile that does not say does not guess. For
+    # takeoff_flaps, zero itself *is* a figure -- a flaps-up takeoff a
+    # King Air's POH calls for -- so "not said" is a negative sentinel
+    # and the takeoff configures its first detent instead.
     touchdown_kt: float = 0.0
     goaround_kt: float = 0.0
     max_bank_deg: float = 0.0
-    takeoff_flaps: float = 0.0
+    takeoff_flaps: float = -1.0
     landing_flaps: float = 0.0
     # The structural load limits the autonomous envelope is held inside,
     # positive and negative G. Zeros mean "the class figure": the

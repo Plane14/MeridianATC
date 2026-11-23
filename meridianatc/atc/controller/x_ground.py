@@ -369,6 +369,8 @@ class _Ground:
             weather.altimeter_inhg if p.dialect == "faa" else weather.qnh_hpa
         )
         said = say_words(station.ident, route)
+        said_altimeter = (0.0 if getattr(session, "altimeter_issued", False)
+                          else altimeter)
         text = p.taxi_to_runway(
             session.aircraft,
             self._station_name(station, p) if not session.established_with(station) else "",
@@ -377,8 +379,7 @@ class _Ground:
             # release or an approval has already said it -- an IFR
             # clearance does not carry it, so an IFR flight hears it
             # here (the earlier clearance_issued guard left it unheard).
-            altimeter=(0.0 if getattr(session, "altimeter_issued", False)
-                       else altimeter),
+            altimeter=said_altimeter,
             abbreviated=session.established_with(station),
             hold_short_taxiway=(say_words(station.ident, [hold_at])[0]
                                 if hold_at else ""),
@@ -386,6 +387,8 @@ class _Ground:
         session.phase = Phase.TAXI_OUT
 
         values: dict[str, Any] = {"runway": runway}
+        if said_altimeter:
+            values["altimeter"] = said_altimeter
         if hold_short:
             values["hold_short"] = hold_short
         if route:
