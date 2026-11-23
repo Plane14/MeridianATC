@@ -481,6 +481,10 @@ class XPlaneTraffic:
         altitude in feet), from the status report's read-back; None
         until the first status carrying positions lands (a plugin that
         predates them answers None forever, the same as no read)."""
+        # Only a plane the plugin still draws counts: a hidden one keeps
+        # reporting where it was, which is a drawing that is not there.
+        if callsign not in self._drawn:
+            return None
         pos = self._model(callsign).get("pos")
         if isinstance(pos, list) and len(pos) == 3 \
                 and all(type(v) in (int, float) for v in pos):
@@ -492,6 +496,8 @@ class XPlaneTraffic:
         the plugin's probe of the drawn spot; None airborne or before
         the first ground probe answers. Its doors hang from it the same
         way the SimConnect read does."""
+        if callsign not in self._drawn:
+            return None
         model = self._model(callsign)
         agl = model.get("agl")
         if model.get("gnd") and type(agl) in (int, float) and agl >= 0:
