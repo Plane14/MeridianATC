@@ -82,7 +82,16 @@ class _Fuel_planning:
         return {0: 80.0, 1: 4500.0, 5: 900.0}.get(kind, 1200.0) * count
 
     def _reserve_hours(self) -> float:
-        """The reserve the legs are planned to, in hours."""
+        """The reserve the legs are planned to, in hours.
+
+        Per the ruleset being flown: the IFR figure (14 CFR 91.167's
+        forty-five minutes past the alternate) is the configured one;
+        VFR wants only thirty minutes past the destination (91.151),
+        and a VFR leg priced at the IFR figure calls fuel-critical a
+        Sunday flight that never filed a plan.
+        """
+        if not getattr(self.session, "ifr", True):
+            return max(0.25, min(30.0, self._reserve_min) / 60.0)
         return max(0.25, self._reserve_min / 60.0)
 
     def _pick_alternate(self, state, destination=None) -> Airport | None:
@@ -147,14 +156,34 @@ class _Fuel_planning:
                 dest.lat, dest.lon, alt.lat, alt.lon)) / speed
         per_gal = self._lb_per_gal(state)
         leg_gal = leg_hr * flow / per_gal
-        divert_gal = divert_hr * flow / per_gal
+        # The pieces the great-circle figure is short by, priced the way
+        # a load sheet prices them: the taxi and run-up at idle flow, the
+        # climb out at climb power, and the contingency the ruleset
+        # holds against the weather and the routing -- five per cent of
+        # the leg, ICAO Annex 6's figure.
+        taxi_gal = 0.25 * flow * 0.3 / per_gal
+        climb_alt = float(getattr(self.session, "cruise_altitude_ft",
+                                  0.0) or 8000.0) or 8000.0
+        climb_hr = min(leg_hr, climb_alt / (1200.0 * 60.0))
+        climb_gal = climb_hr * flow * 0.5 / per_gal
+        contingency_gal = (leg_gal + climb_gal) * 0.05
+        # Alternate fuel is an IFR requirement (91.169); a VFR leg does
+        # not file one and is not priced for a field it will never
+        # divert to.
+        ifr = getattr(self.session, "ifr", True)
+        divert_gal = divert_hr * flow / per_gal if ifr else 0.0
         reserve_gal = self._reserve_hours() * flow / per_gal
         unusable = float(getattr(state, "fuel_unusable_gal", 0.0) or 0.0)
+        total = (leg_gal + taxi_gal + climb_gal + contingency_gal
+                 + divert_gal + reserve_gal + unusable)
         return {"leg_gal": leg_gal + unusable,
+                "taxi_gal": taxi_gal,
+                "climb_gal": climb_gal,
+                "contingency_gal": contingency_gal,
                 "divert_gal": divert_gal,
                 "reserve_gal": reserve_gal,
-                "total_gal": leg_gal + divert_gal + reserve_gal + unusable,
-                "alternate": alt}
+                "total_gal": total,
+                "alternate": alt if ifr else None}
 
     def _declare_emergency(self, kind: str, state, mayday: bool = True) -> None:
         """The call, the squawk, a divert, and the plan changed to match.
