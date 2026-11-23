@@ -377,14 +377,19 @@ def _merge(aircraft_class: str, type_code: str, files: list[Path]) -> Book:
 def _uncheck(book: Book, variables: set[str]) -> None:
     """Take the checks on ``variables`` off every checklist in ``book``."""
     for name, checklist in list(book.checklists.items()):
-        items = tuple(
-            dataclasses.replace(i, check=None,
-                                note=(i.note + "; " if i.note else "")
-                                + "unchecked: the add-on does not "
-                                  "publish it")
-            if i.check is not None and i.check.var in variables else i
-            for i in checklist.items)
-        book.checklists[name] = dataclasses.replace(checklist, items=items)
+        items = []
+        for item in checklist.items:
+            remaining = tuple(c for c in item.checks
+                              if c.var not in variables)
+            if len(remaining) == len(item.checks):
+                items.append(item)
+                continue
+            items.append(dataclasses.replace(
+                item, checks=remaining,
+                note=(item.note + "; " if item.note else "")
+                + "unchecked: the add-on does not publish it"))
+        book.checklists[name] = dataclasses.replace(
+            checklist, items=tuple(items))
 
 
 _cache: dict[tuple, tuple[tuple, Book]] = {}
