@@ -477,9 +477,25 @@ class XPlaneTraffic:
         return []
 
     def read_position(self, callsign):
+        """Where the sim last said it drew this flight: (lat, lon,
+        altitude in feet), from the status report's read-back; None
+        until the first status carrying positions lands (a plugin that
+        predates them answers None forever, the same as no read)."""
+        pos = self._model(callsign).get("pos")
+        if isinstance(pos, list) and len(pos) == 3 \
+                and all(type(v) in (int, float) for v in pos):
+            return tuple(pos)
         return None
 
     def height_above_ground(self, callsign):
+        """How high the drawn reference stands off the terrain, metres --
+        the plugin's probe of the drawn spot; None airborne or before
+        the first ground probe answers. Its doors hang from it the same
+        way the SimConnect read does."""
+        model = self._model(callsign)
+        agl = model.get("agl")
+        if model.get("gnd") and type(agl) in (int, float) and agl >= 0:
+            return agl * 0.3048
         return None
 
     def resting_pitch(self, callsign):
