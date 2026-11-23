@@ -553,6 +553,10 @@ class SimConnectSource:
         # 100" are the kinds _convert's pct rule already knows.
         # UNVERIFIED on a running 2024.
         ("ENG_TORQUE_PERCENT:1", "eng_torque_pct", "pct_wide", "slow"),
+        # The same torque as an absolute, ft-lbs of shaft against the
+        # type's published ceiling for the models whose red line is the
+        # gauge's paint rather than a number the sim can read back.
+        ("ENG_TORQUE:1", "eng_torque_nm", "ftpds_nm", "slow"),
         # The engine watch's instruments (atc.powerplant): the
         # gas-producer/fan and power-turbine per cent, the turbine
         # temperature, and the piston crankshaft RPM. All "raw" because
@@ -1528,6 +1532,10 @@ class SimConnectSource:
             # that doubled scale.
             value = float(raw)
             return value / 100.0 if value > 100.0 else value
+        if kind == "ftpds_nm":
+            # Shaft torque arrives in foot-pounds; the state keeps
+            # newton-metres, the unit X-Plane's ENGN_TRQ already speaks.
+            return float(raw) * 1.35582
         if kind == "condition":
             # The condition lever's three stops as the enum answers
             # them -- 0 cut-off, 1 low idle, 2 high idle -- scaled onto

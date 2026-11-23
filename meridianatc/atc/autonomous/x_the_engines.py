@@ -38,6 +38,11 @@ class _The_engines:
     _MARGIN_TQ = 1.0        # per cent torque
     _MARGIN_CHT = 5.0       # degrees C of CHT
 
+    # The slack an N-m torque comparison gets, where the per-cent margin
+    # above is of the scale: a King Air's 1,315 ft-lb ceiling in N-m is
+    # 1,783, and 40 is a couple of per cent of it.
+    _MARGIN_TQ_NM = 40.0
+
     # How long a gauge must read past its ceiling before the watch and
     # the lever cap believe it: a feed that jitters across the line
     # between reads is noise, not an over-temp -- a live probe watched a
@@ -86,8 +91,15 @@ class _The_engines:
         if lim.ng_max_pct and ng > lim.ng_max_pct + self._MARGIN_NG:
             over.append("ng")
         itt = float(getattr(state, "eng_itt_c", 0.0) or 0.0)
-        ceiling = (lim.itt_takeoff_c if takeoff and lim.itt_takeoff_c
-                   else lim.itt_max_c or lim.itt_takeoff_c)
+        # The model's own red line rules where it publishes one -- an
+        # X-Plane author who filled in red_hi_ITT knew the figure better
+        # than the class table does.
+        ceiling = (float(getattr(state, "eng_itt_takeoff_c", 0.0) or 0.0)
+                   if takeoff else
+                   float(getattr(state, "eng_itt_limit_c", 0.0) or 0.0))
+        if not ceiling:
+            ceiling = (lim.itt_takeoff_c if takeoff and lim.itt_takeoff_c
+                       else lim.itt_max_c or lim.itt_takeoff_c)
         if ceiling and itt > ceiling + self._MARGIN_ITT:
             over.append("itt")
         rpm = float(getattr(state, "eng_rpm", 0.0) or 0.0)
@@ -98,6 +110,21 @@ class _The_engines:
                       else lim.tq_cont_pct or lim.tq_takeoff_pct)
         if tq_ceiling and tq > tq_ceiling + self._MARGIN_TQ:
             over.append("tq")
+        elif not tq_ceiling:
+            # No per-cent reference: the model's own absolute ceiling
+            # where it published one (green_hi_TRQ / acf_max_TRQ), else
+            # the type's book figure -- the King Air whose torque gauge
+            # paints a 1,315 ft-lb red line onto a dataref that reads
+            # 1.0 gets its ceiling from the POH, not the paint.
+            trq_nm = float(getattr(state, "eng_torque_nm", 0.0) or 0.0)
+            nm_ceiling = (float(getattr(
+                state,
+                "eng_tq_takeoff_nm" if takeoff else "eng_tq_limit_nm",
+                0.0) or 0.0)
+                or (lim.tq_takeoff_nm if takeoff and lim.tq_takeoff_nm
+                    else lim.tq_max_nm or lim.tq_takeoff_nm))
+            if nm_ceiling and trq_nm > nm_ceiling + self._MARGIN_TQ_NM:
+                over.append("tq")
         # Cylinder-head temperature: the model's own red line where the
         # sim publishes one, the type's or the class's where it does not.
         # A piston's CHT is a limit like the turbine's ITT.

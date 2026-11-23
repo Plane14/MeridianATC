@@ -216,6 +216,41 @@ def test_the_fcu_windows_are_read(xp):
     assert state.ap_heading_deg == pytest.approx(210.0)
 
 
+def test_the_models_own_engine_limits_are_read(xp):
+    server, link = xp
+    server.values.update({EXTRA["trq_nm"]: 2500.0,
+                          EXTRA["acf_max_trq_nm"]: 0.0,
+                          EXTRA["trq_grn_hi_ftpds"]: 1.0,
+                          EXTRA["trq_red_hi_ftpds"]: 1.0,
+                          EXTRA["itt_red_hi_c"]: 700.0,
+                          EXTRA["itt_grn_hi_c"]: 695.0})
+    assert link.connect()
+    eventually(lambda: "itt_red_hi_c" in link._values)
+    state = link.read()
+    assert state.eng_torque_nm == pytest.approx(2500.0)
+    # The C90's torque red line is paint: 1.0 ft-lb is not a ceiling,
+    # and neither is the same number on the green arc.
+    assert state.eng_tq_limit_nm == 0.0
+    assert state.eng_tq_takeoff_nm == 0.0
+    assert "eng_tq_limit_nm" in state.unavailable
+    # The ITT red line is real, and the green top under it is the
+    # continuous figure.
+    assert state.eng_itt_takeoff_c == pytest.approx(700.0)
+    assert state.eng_itt_limit_c == pytest.approx(695.0)
+    assert "eng_itt_limit_c" not in state.unavailable
+
+
+def test_a_published_green_arc_is_a_torque_ceiling(xp):
+    server, link = xp
+    server.values.update({EXTRA["trq_nm"]: 1200.0,
+                          EXTRA["trq_grn_hi_ftpds"]: 1315.0})
+    assert link.connect()
+    eventually(lambda: "trq_grn_hi_ftpds" in link._values)
+    state = link.read()
+    assert state.eng_tq_limit_nm == pytest.approx(1315.0 * 1.35582)
+    assert "eng_tq_limit_nm" not in state.unavailable
+
+
 def test_radio_and_command_writes_and_safe_noops(xp):
     server, link = xp
     assert not link.set_com(123.805)

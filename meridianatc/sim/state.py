@@ -119,6 +119,17 @@ class AircraftState:
     # collective instead, so the field joins state.unavailable there (a
     # fixed-pitch prop simply reads 100 for the lever it does not have).
     prop_pct: float = 0.0
+    # The gauges' own red lines, where the model publishes them as
+    # numbers rather than paint: ENGN_TRQ's shaft torque in N-m and the
+    # ITT/torque ceilings Plane Maker's limit fields carry when an author
+    # filled them in. Zero means the model published nothing and the
+    # type's or the class's book figures rule -- a King Air whose
+    # red_hi_TRQ reads 1.0 has a painted red line and no published one.
+    eng_torque_nm: float = 0.0
+    eng_tq_limit_nm: float = 0.0
+    eng_tq_takeoff_nm: float = 0.0
+    eng_itt_limit_c: float = 0.0
+    eng_itt_takeoff_c: float = 0.0
     autopilot: bool = False
     gps_drives_nav1: bool = False
     pitot_heat: bool = False

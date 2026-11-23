@@ -208,6 +208,10 @@ EXTRA = {
     # watches: shaft torque in N-m against the book's red line in ft-lbs.
     "trq_nm": "sim/flightmodel/engine/ENGN_TRQ[0]",
     "trq_red_hi_ftpds": "sim/aircraft/limits/red_hi_TRQ",
+    "trq_grn_hi_ftpds": "sim/aircraft/limits/green_hi_TRQ",
+    "acf_max_trq_nm": "sim/aircraft/engine/acf_max_TRQ",
+    "itt_red_hi_c": "sim/aircraft/limits/red_hi_ITT",
+    "itt_grn_hi_c": "sim/aircraft/limits/green_hi_ITT",
     # COM1's power switch, the honest half of the COM STATUS enum; and
     # the two tank gauges, kilograms like X-Plane's other fuel figures.
     "com1_powered": "sim/cockpit2/radios/actuators/com1_power",
@@ -736,6 +740,34 @@ class XPlaneSource:
             # N-m against the book's ft-lbs red line, the per cent of
             # rated the collective limit reads.
             state.eng_torque_pct = trq / (trq_red * 1.35582) * 100.0
+        if trq is not None:
+            state.eng_torque_nm = trq
+        # The model's own red lines, where it publishes them as numbers:
+        # Plane Maker's limit fields all default to paint (red_hi_TRQ
+        # reading 1.0 is a King Air's way of saying the author never set
+        # it), so every figure gets a plausibility gate before it can
+        # rule the lever cap.
+        tq_lim = tq_toff = 0.0
+        if values.get("acf_max_trq_nm", 0.0) >= 100.0:
+            tq_toff = values["acf_max_trq_nm"]
+        if values.get("trq_red_hi_ftpds", 0.0) >= 50.0:
+            tq_toff = tq_toff or values["trq_red_hi_ftpds"] * 1.35582
+        if values.get("trq_grn_hi_ftpds", 0.0) >= 50.0:
+            tq_lim = values["trq_grn_hi_ftpds"] * 1.35582
+        if not tq_toff:
+            tq_toff = tq_lim
+        if not tq_lim:
+            tq_lim = tq_toff
+        state.eng_tq_limit_nm, state.eng_tq_takeoff_nm = tq_lim, tq_toff
+        itt_red, itt_grn = (values.get("itt_red_hi_c", 0.0),
+                            values.get("itt_grn_hi_c", 0.0))
+        if 300.0 <= itt_red <= 1400.0:
+            state.eng_itt_takeoff_c = itt_red
+            state.eng_itt_limit_c = (itt_grn
+                                     if 300.0 <= itt_grn <= itt_red
+                                     else itt_red)
+        elif 300.0 <= itt_grn <= 1400.0:
+            state.eng_itt_takeoff_c = state.eng_itt_limit_c = itt_grn
         # The world-axes wind onto the body axes the weather watch
         # reads: along the nose and across the wing, knots.
         if "wind_x_ms" in values or "wind_z_ms" in values:
@@ -809,6 +841,14 @@ class XPlaneSource:
                 known.add(derived)
         if trq is not None and trq_red > 0.0:
             known.add("eng_torque_pct")
+        if trq is not None:
+            known.add("eng_torque_nm")
+        if state.eng_tq_limit_nm:
+            known.add("eng_tq_limit_nm")
+            known.add("eng_tq_takeoff_nm")
+        if state.eng_itt_limit_c:
+            known.add("eng_itt_limit_c")
+            known.add("eng_itt_takeoff_c")
         if state.engine_type == 5 and "mixture_pct" in values:
             known.add("condition_pct")
         if state.engine_type in (1, 5) and "collective_position" in values:

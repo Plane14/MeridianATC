@@ -47,6 +47,16 @@ def test_fixed_wing_limits_and_the_class_ladder():
     assert lim.tq_takeoff_pct == 0.0 and lim.itt_max_c == 0.0
 
 
+def test_the_king_air_torque_is_a_number_not_the_gauges_paint():
+    """The BE9L's red_hi_TRQ reads 1.0 ft-lb live -- every limit dataref
+    left at paint -- so the type carries the POH's own figures: 1,315
+    ft-lb is 1,783 N-m, the ceiling either way the sim reports it."""
+    be9l = limits_for("BE9L", "turboprop_twin")
+    assert be9l.tq_takeoff_nm == be9l.tq_max_nm == 1783.0
+    assert be9l.itt_takeoff_c == 700.0 and be9l.itt_max_c == 695.0
+    assert be9l.ng_max_pct == 101.5
+
+
 def test_ice_kits_match_the_types_systems():
     assert ice_kit_for("C152", "piston_single").carb_heat
     assert not ice_kit_for("C172", "piston_single").carb_heat
@@ -183,6 +193,56 @@ def test_engines_stopping_forgets_the_over_clock():
     quiet = AircraftState(on_ground=False, engines_running=False)
     fo._watch_engines(quiet, 10.0)
     assert fo._over_since == {}
+
+
+def _king_air(**kw):
+    fo = _fo(_aircraft_class="turboprop_twin")
+    fo.session.aircraft = SimpleNamespace(type_code="BE9L", title="")
+    fo._eng_limit_key = None
+    return fo
+
+
+def test_real_torque_is_limited_when_the_red_line_is_paint():
+    """The C90 reports honest N-m against a red_hi_TRQ of 1.0: the
+    per-cent path has nothing to divide by, so the type's 1,315 ft-lb
+    figure is the ceiling the shaft torque answers to."""
+    fo = _king_air()
+    over = AircraftState(on_ground=False, engines_running=True,
+                         eng_torque_nm=1900.0)
+    assert "tq" in fo._engines_over_limit(over)
+    fine = AircraftState(on_ground=False, engines_running=True,
+                         eng_torque_nm=1700.0)
+    assert "tq" not in fo._engines_over_limit(fine)
+
+
+def test_the_models_own_red_line_beats_the_class_table():
+    """A model that publishes green_hi_ITT gets its continuous ceiling
+    from that number, not the type's or the class's looser figure --
+    here the B738's own 925 line would wave 705 through."""
+    fo = _fo()
+    hot = AircraftState(on_ground=False, engines_running=True,
+                        eng_itt_c=705.0, eng_itt_limit_c=695.0,
+                        eng_itt_takeoff_c=700.0)
+    assert "itt" in fo._engines_over_limit(hot)
+    same_read_without_the_model_line = AircraftState(
+        on_ground=False, engines_running=True, eng_itt_c=705.0)
+    assert "itt" not in fo._engines_over_limit(
+        same_read_without_the_model_line)
+
+
+def test_percent_torque_still_governs_where_it_is_published():
+    """A model that does report a sane red_hi_TRQ keeps the per-cent
+    path; the N-m fallback does not double-derive its own ceiling."""
+    fo = _fo(_aircraft_class="helicopter")
+    fo.session.aircraft = SimpleNamespace(type_code="R66", title="")
+    fo._eng_limit_key = None
+    over = AircraftState(on_ground=False, engines_running=True,
+                         eng_torque_pct=102.0, eng_torque_nm=10.0)
+    assert "tq" in fo._engines_over_limit(over)
+    # Under the per-cent line, the same N-m reading is not a limit.
+    under = AircraftState(on_ground=False, engines_running=True,
+                          eng_torque_pct=80.0, eng_torque_nm=9000.0)
+    assert "tq" not in fo._engines_over_limit(under)
 
 
 # -- the fuel selector --------------------------------------------------------

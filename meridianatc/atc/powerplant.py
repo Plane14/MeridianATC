@@ -44,6 +44,11 @@ class EngineLimits:
 
     tq_takeoff_pct: float = 0.0
     tq_cont_pct: float = 0.0
+    # The same ceilings in shaft N-m, for the model that reports real
+    # torque but never fills in the red-line field the per-cent figure
+    # needs -- the King Air's painted 1,315 ft-lb gauge reads nothing.
+    tq_takeoff_nm: float = 0.0
+    tq_max_nm: float = 0.0
     ng_max_pct: float = 0.0
     itt_takeoff_c: float = 0.0
     itt_max_c: float = 0.0
@@ -273,6 +278,17 @@ _FW_LIMITS: dict[str, EngineLimits] = {
                          itt_max_c=800.0, itt_start_c=1000.0,
                          source="EASA TCDS IM.E.070 (PT6A-67B)",
                          unverified=True),
+    # King Air C90B (PT6A-21, flat-rated 550 shp): 1,315 ft-lb torque
+    # takeoff and max continuous alike (1,500 for 2 s transient),
+    # 695 C ITT for both ratings, start transient to 1,090, N1 101.5%.
+    # The N-m figures are the ones that matter on X-Plane, whose
+    # C90 model reports real shaft torque but leaves every red-line
+    # dataref at paint values (red_hi_TRQ = 1.0 ft-lb).
+    "BE9L": EngineLimits(tq_takeoff_nm=1783.0, tq_max_nm=1783.0,
+                         ng_max_pct=101.5,
+                         itt_takeoff_c=700.0, itt_max_c=695.0,
+                         itt_start_c=1090.0,
+                         source="King Air C90B POH / PT6A-21"),
     # CFM56 family (A320, 737NG): EGT 950 C takeoff, ~925 continuous;
     # N1 ceiling ~104%.
     "A319": EngineLimits(ng_max_pct=104.0, itt_takeoff_c=950.0,
