@@ -301,7 +301,7 @@ def test_a_check_holds_on_every_engine_not_just_the_first():
         Mock(), fresh=lambda name: getattr(state, name, None))
     runner._state = state
     runner._note = Mock()
-    verdict, actual, _expected, _again = runner._verify(
+    verdict, actual, _expected, _again, _failed = runner._verify(
         item, SimpleNamespace(value=None))
     assert verdict is False and actual == 85.0
     # Both levers at the stop: agreement.
