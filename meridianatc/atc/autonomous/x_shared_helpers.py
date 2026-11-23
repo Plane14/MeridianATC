@@ -457,6 +457,23 @@ class _Shared_helpers:
         return max(own, self.performance.cruise_kt) \
             or self.state.climb_kt
 
+    def _flap_up_kt(self) -> float:
+        """The airspeed the takeoff flap comes in at.
+
+        V2+20 is the transport schedule -- the second-segment figure a
+        jet's own climb speed already exceeds. A light aeroplane's book
+        climb sits under it -- a Cessna profile climbs at 74 where the
+        gate asks 75 -- and the flap's own drag is half of why it never
+        gets there, so a gate the climb cannot reach leaves the flap out
+        for the leg. Its retract number is the climb figure less the
+        slack a dirty wing still owes, floored just over rotation.
+        """
+        gate = (self.state.v2_kt or self.state.vr_kt or 0.0) + 20.0
+        climb = float(getattr(self.performance, "climb_kt", 0.0) or 0.0)
+        if climb and gate > climb:
+            gate = max((self.state.vr_kt or 0.0) + 5.0, climb - 15.0)
+        return gate
+
     def _speed_target(self, state) -> float:
         target = 0.0
         if self.session.assigned_speed_kt:

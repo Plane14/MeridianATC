@@ -1352,6 +1352,108 @@ def test_no_speed_restrictions_clears_the_assigned_speed():
     assert session.assigned_speed_kt is None
 
 
+def test_the_final_speed_is_capped_at_what_the_type_holds_on_approach():
+    """"Maintain one one zero until four DME" to a C172 is the full
+    throttle on the glide it cannot keep: the until-the-marker figure
+    is capped at a margin on the threshold speed, not the top of the
+    envelope, so the assignment is one the aeroplane can actually
+    fly -- ninety-five, which a 172 holds on the final."""
+    watch, session, station, state, destination, p = _speed_watch(
+        "C172", ias_kt=90.0)
+    session.advisories.add("arrival:cleared_approach")
+    reply = watch._speed_control(session, station, state, destination,
+                                 10.0, p)
+    assert reply is not None
+    assert reply.instruction.values["speed_kt"] == 95
+
+
+def test_the_final_speed_cap_leaves_the_jet_its_figure():
+    """A transport's threshold speed is high enough the 160-to-4-DME
+    figure is still the one given."""
+    watch, session, station, state, destination, p = _speed_watch("B738")
+    session.advisories.add("arrival:cleared_approach")
+    reply = watch._speed_control(session, station, state, destination,
+                                 10.0, p)
+    assert reply is not None
+    assert reply.instruction.values["speed_kt"] == 160
+
+
+def test_the_spent_speed_restriction_is_retired_with_the_final_segment():
+    """"Until four DME" is spent inside it: the session's assigned
+    speed goes with the segment's end, or the watch and the readback
+    keep answering a figure the aeroplane was released from."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.state = AutonomousState()
+    fo.get_state = lambda: None
+    fo._weather_reactions = False
+    fo.session = SimpleNamespace(
+        assigned_speed_kt=110.0,
+        destination=SimpleNamespace(lat=41.0, lon=-8.0, elev_ft=0.0))
+    fo.state.vapp_kt = 65.0
+
+    def far_state(agl, nm):
+        return SimpleNamespace(
+            altitude_agl_ft=agl, has_position=True,
+            latitude=40.9, longitude=-8.0,
+            distance_to=lambda lat, lon: nm)
+
+    assert fo._approach_speed(far_state(3000.0, 8.0)) == 110.0
+    assert fo._approach_speed(far_state(3000.0, 3.0)) == 65.0
+    assert fo.session.assigned_speed_kt is None
+
+
+def test_a_speed_report_is_heard_as_a_readback():
+    """"One one zero knots" is the answer "verify speed" was owed: the
+    unit alone is readback enough -- parsed unknown it was asked for
+    again for ever."""
+    from meridianatc.atc import intents
+    parsed = intents.IntentParser(
+        ["C172SP", "Cessna two Sierra Papa"]).parse(
+        "one one zero knots, Cessna two Sierra Papa", "en")
+    assert parsed.intent == intents.Intent.READBACK
+    assert parsed.values.get("speed_kt") == 110
+
+
+def test_cleared_to_land_stops_the_verify_calls():
+    """Cleared to land releases the numbers with the runway: the
+    glideslope and the approach's own speed are what is flown, and a
+    tower that cleared it does not verify what it no longer owes."""
+    from meridianatc.atc.watch import DeviationAssistWatch
+    watch = DeviationAssistWatch.__new__(DeviationAssistWatch)
+    watch._vs_avg = -600.0
+    watch._vs_at = 1.0
+    session = SimpleNamespace(
+        assigned_altitude_ft=1800.0, assigned_heading=None,
+        assigned_speed_kt=110.0, cleared_landing=True)
+    state = SimpleNamespace(
+        indicated_altitude_ft=900.0, altitude_ft=900.0,
+        indicated_airspeed_kt=65.0, vertical_speed_fpm=-600.0)
+    assert watch._off_now(session, state) == []
+    session.cleared_landing = False
+    assert set(watch._off_now(session, state)) == {"altitude", "speed"}
+
+
+def test_a_route_for_an_aeroplane_still_on_the_runway_leaves_by_an_exit():
+    """The arrival path starts at a taxiway node -- off the strip by
+    construction -- and an aeroplane handed it on the centreline used
+    to beeline to that first vertex across the grass. The route now
+    rolls to the junction the taxiway meets the runway at first."""
+    from meridianatc.atc.taxi import RunwayLine, _vacate_leg
+    line = RunwayLine(("03", "21"), (0.0, 0.0), (0.0, 3000.0), 15.0)
+    # Still on the strip mid-runway; the exit's first vertex is the
+    # connector node thirty metres west, further along.
+    leg = _vacate_leg([line], "21", (2.0, 1000.0),
+                      [(-30.0, 1200.0), (-30.0, 1600.0)])
+    assert leg == [(0.0, 1200.0)]
+    # Already off: nothing owed, no leg invented.
+    assert _vacate_leg([line], "21", (80.0, 1000.0),
+                       [(-30.0, 1200.0)]) == []
+    # A route that stays on the centreline (a backtrack) gets no leg.
+    assert _vacate_leg([line], "21", (2.0, 1000.0),
+                       [(0.0, 1500.0)]) == []
+
+
 def test_the_closest_approach_arithmetic():
     """The conflict probe's straight-line look ahead: head-on merges,
     in-trail does not, an opening pair is already past."""

@@ -658,7 +658,12 @@ class DeviationAssistWatch:
         # Judging against true altitude flags a correctly-flown level a
         # hundred-plus feet off on a high- or low-pressure day, exactly
         # the "verify altitude" calls a clean flight did not earn.
-        if session.assigned_altitude_ft:
+        # Cleared to land releases the tactical numbers with the
+        # runway: the path and the approach's own speed are what is
+        # flown to the pavement, and a tower that has said "cleared to
+        # land" does not verify a level or a figure it no longer owes.
+        released = getattr(session, "cleared_landing", False)
+        if not released and session.assigned_altitude_ft:
             delta = (session.assigned_altitude_ft
                      - (getattr(state, "indicated_altitude_ft", 0.0)
                         or getattr(state, "altitude_ft", 0.0) or 0.0))
@@ -684,7 +689,7 @@ class DeviationAssistWatch:
                 and _heading_off(self._magnetic(state),
                                  session.assigned_heading) > self.HDG_DEG:
             out.append("heading")
-        if session.assigned_speed_kt \
+        if not released and session.assigned_speed_kt \
                 and abs((getattr(state, "indicated_airspeed_kt", 0.0)
                          or getattr(state, "true_airspeed_kt", 0.0) or 0.0)
                         - session.assigned_speed_kt) > self.SPD_KT:

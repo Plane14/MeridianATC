@@ -750,9 +750,43 @@ def plan_arrival(layout: GroundLayout, latitude: float, longitude: float,
         if taxi is None:
             continue
         nodes = [node for node in taxi.nodes if node is not None]
-        return _plan(layout, nodes, taxi.points, lines, {runway, *reciprocal},
+        points = _vacate_leg(lines, runway, (x, z), list(taxi.points)) \
+            + list(taxi.points)
+        return _plan(layout, nodes, points, lines, {runway, *reciprocal},
                      inbound=True, stand=stand), ""
     return None, "no taxiway path to any free stand"
+
+
+def _vacate_leg(lines: list[RunwayLine], runway: str, at, points,
+                ) -> list[tuple[float, float]]:
+    """The leg an arrival route owes an aeroplane still on the strip.
+
+    The graph's path starts at the nearest node -- off the runway, the
+    way a taxiway has to be -- and an aeroplane handed the route on the
+    centreline steers the first vertex straight, which is the beeline
+    across the grass a controller never clears anybody for. Given an
+    on-runway start this answers the junction the route leaves by --
+    the first off-runway vertex projected onto the centreline -- so the
+    rolled leg is along the strip and the turn-off is at the exit, the
+    way a real vacate is driven.
+    """
+    line = next((l for l in lines
+                 if normalize_runway(runway) in l.ends), None)
+    if line is None or not points:
+        return []
+    if _point_to_segment(at, line.a, line.b) > line.half_width_m + 10.0:
+        return []
+    dx, dz = line.b[0] - line.a[0], line.b[1] - line.a[1]
+    span = dx * dx + dz * dz
+    if not span:
+        return []
+    for point in points[:8]:
+        if _point_to_segment(point, line.a, line.b) <= line.half_width_m:
+            continue
+        t = max(0.0, min(1.0, ((point[0] - line.a[0]) * dx
+                               + (point[1] - line.a[1]) * dz) / span))
+        return [(line.a[0] + t * dx, line.a[1] + t * dz)]
+    return []
 
 
 __all__ = ["TaxiPlan", "RunwayLine", "runway_lines", "crossings",

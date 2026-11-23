@@ -1394,8 +1394,7 @@ class _The_phase_machine:
             # configuration until clear of the shear.
             shear = (self.state.windshear_since
                      and now - self.state.windshear_since < 15.0)
-            flap_up_kt = (self.state.v2_kt or self.state.vr_kt or 0.0) + 20.0
-            if state.flaps_index and ias > flap_up_kt and not shear:
+            if state.flaps_index and ias > self._flap_up_kt() and not shear:
                 d.flaps(0.0)
             # Gear up after a positive rate, where the model has one.
             # AGL alone is not the rate: an aeroplane settling back is
@@ -1422,10 +1421,9 @@ class _The_phase_machine:
         # for the retract before the AP took over -- still comes clean,
         # on the same speed test the window used.
         ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
-        flap_up_kt = (self.state.v2_kt or self.state.vr_kt or 0.0) + 20.0
         shear = (self.state.windshear_since
                  and now - self.state.windshear_since < 15.0)
-        if state.flaps_index and ias > flap_up_kt and not shear:
+        if state.flaps_index and ias > self._flap_up_kt() and not shear:
             self.director.flaps(0.0)
         if not target:
             # Engaged in the air with no level anywhere: a crew levels
@@ -1500,6 +1498,15 @@ class _The_phase_machine:
     def _phase_cruise(self, state, now: float) -> None:
         """Cruise: NAV on the route, fuel watched, clearances followed."""
         self._run_checklist_for_phase("cruise")
+        # A flap out at cruise is a climb leftover, not a cruise
+        # configuration: the same test the climb ran, applied here so a
+        # climb under the gate does not fly the leg dirty.
+        ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
+        shear = (self.state.windshear_since
+                 and now - self.state.windshear_since < 15.0)
+        if getattr(state, "flaps_index", 0) and ias > self._flap_up_kt() \
+                and not shear:
+            self._set_flaps(state, 0.0)
         sid = self._sid_nav(state)
         if self.state.emergency_descent:
             # An emergency descent does not wait for the plan's top of
@@ -1644,6 +1651,17 @@ class _The_phase_machine:
                      else 2_500.0)
         vfe_late = min(lim["flap_max_kt"],
                        (self.performance.approach_kt or 90.0) + 15.0)
+        # A flap the climb's own test never took in is a leftover, not
+        # the schedule's first stage: it comes up on the same test until
+        # the extension gates below own the lever.
+        shear = (self.state.windshear_since
+                 and now - self.state.windshear_since < 15.0)
+        if self.state.configured == "" \
+                and getattr(state, "flaps_index", 0) \
+                and ias > self._flap_up_kt() and not shear \
+                and not (agl < first_agl
+                         or (distance is not None and distance < 12.0)):
+            self._set_flaps(state, 0.0)
         if self.state.configured == "" and ias <= lim["flap_max_kt"] \
                 and (agl < first_agl
                      or (distance is not None and distance < 12.0)):
@@ -2171,7 +2189,12 @@ class _The_phase_machine:
         # heard.
         if not self.state.vacated_call and self._manage_radio \
                 and self._radio_quiet():
-            self.state.vacated_call = self._fo_say("vacated")
+            off = self._centreline_offset_m(state)
+            if off is None or abs(off) > 30.0:
+                # Still on the strip is not vacated, whatever the phase
+                # says -- a stopped aeroplane reporting clear is the
+                # runway left blocked with nobody told.
+                self.state.vacated_call = self._fo_say("vacated")
         sub = self.state.sub or "taxi"
         if sub == "taxi":
             # The after-landing flow a pilot runs on the taxi: flaps

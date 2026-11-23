@@ -164,11 +164,20 @@ class _The_cleared_approach:
         assigned = float(self.session.assigned_speed_kt or 0.0)
         if assigned <= 0.0:
             return vapp
+        # The restriction says where it ends -- "until four DME" is
+        # spent inside the distance, and under fifteen hundred feet the
+        # checklist's figure governs either way. The session keeps what
+        # was assigned, so the spent figure is retired with it: left
+        # owed, the deviation watch keeps flagging the Vapp it was told
+        # to fly, and a "verify speed" is answered with a number the
+        # aeroplane has not flown in miles.
         agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)
         if 0.0 < agl < 1500.0:
+            self.session.assigned_speed_kt = None
             return vapp
         distance = self._distance_to_destination_nm(state)
         if distance is not None and distance < 4.0:
+            self.session.assigned_speed_kt = None
             return vapp
         return assigned
 

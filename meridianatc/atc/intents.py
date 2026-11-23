@@ -959,7 +959,7 @@ _COMPILED = [(intent, re.compile(pattern)) for intent, pattern in _RULES]
 _READBACK_MARKERS = re.compile(
     r"\b(cleared|climb|descend|maintain|turn|fly|heading|squawk|taxi|"
     r"hold short|line up|contact|altimeter|qnh|runway|via|direct|"
-    r"reduce|increase|speed|cross)\b"
+    r"reduce|increase|speed|knots?|cross)\b"
 )
 
 

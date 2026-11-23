@@ -199,6 +199,22 @@ def _type_speed_caps_kt(aircraft) -> list[float]:
                 caps.append(float(speed))
     return caps
 
+
+def _final_hold_kt(aircraft) -> float | None:
+    """The most a type can be asked to keep all the way to the marker:
+    a margin on its threshold speed, not on its envelope. "Maintain one
+    one zero to four DME" reads fine against a C172's top speed and is
+    unflyable on the glide it is given for -- full throttle chasing it
+    was the deviation the speed watch then nagged about for ever."""
+    code = (getattr(aircraft, "type_code", "") or "").strip()
+    if not code:
+        return None
+    from . import perftable
+    perf = perftable.type_perf(code)
+    if perf is None or perf.vat_kt <= 0.0:
+        return None
+    return float(perf.vat_kt) * 1.5
+
 # On a STAR that runs onto the final, the approach is cleared this far along
 # it from the join (after LocalTC: 25 nm).
 STAR_CLEAR_NM = 25.0
@@ -1028,6 +1044,9 @@ class ArrivalWatch:
             session.speed_given, session.speed_lifted = "final", False
             knots = min(FINAL_SPEED_KT, int(cap) // 5 * 5) \
                 if cap else FINAL_SPEED_KT
+            hold = _final_hold_kt(session.aircraft)
+            if hold:
+                knots = min(knots, int(hold) // 5 * 5)
             decision("speed", airport=destination.ident, event="final",
                      knots=knots, until_nm=FINAL_SPEED_UNTIL_NM,
                      behind=ahead.written)

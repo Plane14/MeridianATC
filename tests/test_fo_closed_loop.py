@@ -268,6 +268,41 @@ def test_the_descent_flies_its_path_down_without_a_level_leg(
     _assert_landed_on_the_runway(plant)
 
 
+def test_a_climb_under_the_transport_gate_still_comes_clean():
+    """A C172's book climb is 74 kt -- under the Vr+20 retract gate the
+    transport schedule asks (75): unreachable, and the takeoff flap
+    rode climb, cruise and descent for the whole leg (the live-flight
+    regression this covers). The light aeroplane's figure is its climb
+    speed less the dirty-wing slack, and the later phases run the same
+    test so a leftover cannot stay out for the flight.
+    """
+    from dataclasses import replace
+    from meridianatc.atc.autonomous import AutonomousPhase
+    plant = _start(5.0, 3000.0)
+    fo = _fo(plant)
+    fo.state.vr_kt, fo.state.v2_kt = 55.0, 0.0
+    fo._perf = replace(fo._perf, climb_kt=74.0)
+    fo.brain = SimpleNamespace(route=None, terminal_procedures={},
+                               route_progress=None, fms_idents=())
+    fo._run_checklist_for_phase = lambda *a, **k: None
+    fo.state.phase = AutonomousPhase.CLIMB
+    plant.flaps, plant.ias = 1, 61.0
+    fo._phase_climb(plant.state(), 1000.0)
+    assert plant.flaps == 0
+    # A jet's gate is untouched: the transport schedule still wants
+    # V2+20 before the flap moves.
+    fo._perf = replace(fo._perf, climb_kt=165.0)
+    fo.state.vr_kt, fo.state.v2_kt = 132.0, 141.0
+    assert fo._flap_up_kt() == 161.0
+    # The same leftover in cruise is a leftover, not a configuration.
+    fo.state.vr_kt, fo.state.v2_kt = 55.0, 0.0
+    fo._perf = replace(fo._perf, climb_kt=74.0)
+    fo.state.phase = AutonomousPhase.CRUISE
+    plant.flaps = 1
+    fo._phase_cruise(plant.state(), 1000.0)
+    assert plant.flaps == 0
+
+
 def test_a_flap_stage_refused_for_speed_is_selected_once_slow_enough():
     from meridianatc.atc.autonomous import AutonomousPhase
     plant = _start(5.0, 3000.0)

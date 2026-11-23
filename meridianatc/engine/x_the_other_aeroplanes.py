@@ -2303,8 +2303,12 @@ class _The_other_aeroplanes:
     HANDOFF_ABOVE_AGL_FT = 700.0
     HANDOFF_BELOW_KT = 35.0
     # The rollout's "when able, contact ground": slow enough that the
-    # rollout is made, still on the strip.
-    ROLLOUT_HANDOFF_BELOW_KT = 60.0
+    # rollout is made, still on the strip. A C172 lands at sixty, and
+    # the call going out the moment the wheels were on was the tower
+    # talking over the flare; thirty is the brisk taxi the figure
+    # intends -- fast enough the exit is near, slow enough the hands
+    # are free.
+    ROLLOUT_HANDOFF_BELOW_KT = 30.0
 
     def _hand_off_on_phase(self, state: AircraftState,
                            session: FlightSession) -> None:
