@@ -2648,7 +2648,12 @@ class Phraseology:
                 # Re-issue with the verb matching the direction the aircraft
                 # has to go; correcting a descent with the word "climb" is the
                 # exact confusion a readback exists to prevent.
-                descending = current_altitude_ft and float(value) < current_altitude_ft
+                # With no current altitude to compare, the instruction's
+                # own direction decides -- "climb" to a lower level is the
+                # confusion the verb exists to prevent.
+                descending = (float(value) < current_altitude_ft
+                              if current_altitude_ft
+                              else not values.get("climbing", True))
                 if self.dialect == "faa":
                     verb = "descend and maintain" if descending else "climb and maintain"
                 else:
@@ -2661,7 +2666,12 @@ class Phraseology:
             elif key == "squawk":
                 parts.append(f"squawk {self.d(value)}")
             elif key == "frequency":
-                parts.append(f"contact on {self.freq(value)}")
+                # Name the station, not just the frequency: "contact on
+                # one-one-eight decimal three" is a number, not a handoff.
+                unit = values.get("station")
+                parts.append(
+                    f"contact {unit} on {self.freq(value)}" if unit
+                    else f"contact on {self.freq(value)}")
             elif key == "speed_kt":
                 parts.append(f"speed {self.d(int(value))} knots")
             elif key == "vfr_ceiling_ft":

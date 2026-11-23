@@ -667,6 +667,10 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         # radio_busy so nobody starts a cabin line over a transmission that
         # is on its way to the speaker but not on it yet.
         self._radio_renders = 0
+        # Bumped on whichever thread asked for the render and decremented
+        # back on the loop -- the +=/-= both take the lock, or a traffic
+        # render starting mid-decrement is read as none outstanding.
+        self._radio_renders_lock = threading.Lock()
         # The debounced on-ground flag (see _debounced_ground).
         self._ground_seen: bool | None = None
         self._ground_disagrees = 0

@@ -21,6 +21,7 @@ from ._shared import (
     log,
     make_of,
     project,
+    wake_suffix,
     wind_snapshot,
 )
 
@@ -288,6 +289,26 @@ class _Where_it_is:
         theirs = _runway_key(other.runway or fallback)
         return theirs == strip or not _strips_parallel(theirs, strip)
 
+    def _wake_departure_wait_s(self, flight: Flight, now: float) -> float:
+        """Seconds still owed to the last roll's wake on this runway.
+
+        7110.65 3-9-7: two minutes behind a heavy, three behind a super,
+        before the next aeroplane lines up or is cleared on the same strip
+        or a crossing one -- the wake lies on the pavement and under the
+        climb-out either way.
+        """
+        rolled = getattr(self, "_wake_rolled", None)
+        if not rolled:
+            return 0.0
+        strip = _runway_key(flight.runway or self.field.departure_runway)
+        wait = 0.0
+        for other_strip, (rolled_at, wake) in rolled.items():
+            if other_strip != strip                     and _strips_parallel(other_strip, strip):
+                continue
+            need = 180.0 if wake == "super"                 else (120.0 if wake == "heavy" else 0.0)
+            wait = max(wait, rolled_at + need - now)
+        return max(0.0, wait)
+
     def _runway_taken_by_departure(self, flight: Flight) -> bool:
         """Whether another departure holds the runway: told to line up or
         to take off, and still on the ground."""
@@ -407,6 +428,11 @@ class _Where_it_is:
             flight.next_at = now + self.random.uniform(4.0, 8.0)
             return
 
+        wake_wait = self._wake_departure_wait_s(flight, now)
+        if wake_wait > 0.0 and not pressing:
+            flight.next_at = now + min(wake_wait, 20.0)
+            return
+
         if not pressing and not self._room_to_depart(flight, now):
             blocking = self._traffic_on_final(self.LINEUP_BLOCK_NM,
                                               ignore=flight,
@@ -491,6 +517,12 @@ class _Where_it_is:
                 command=("takeoff", {"runway": flight.runway}),
             )
         flight.wind_at_clearance = wind_snapshot(self.field.weather)
+        rolled = getattr(self, "_wake_rolled", None)
+        if rolled is None:
+            rolled = self._wake_rolled = {}
+        rolled[_runway_key(flight.runway
+                           or self.field.departure_runway)] = (
+            now, wake_suffix(flight.type_code))
         self._hold_runway(flight.runway, now, RUNWAY_ROLL_S)
         flight.next_at = now + RUNWAY_ROLL_S * 0.5
 

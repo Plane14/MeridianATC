@@ -37,6 +37,7 @@ from ._shared import (
     time,
     timed,
 )
+from .x_speaking import _render_count
 
 
 class _The_other_aeroplanes:
@@ -1261,7 +1262,7 @@ class _The_other_aeroplanes:
         # Same lane, same priority as a real transmission: the frequency is
         # what these aeroplanes are heard on, and the cabin yields to it the
         # moment it is asked for rather than once it can be heard.
-        self._radio_renders += 1
+        _render_count(self, 1)
         self.synth.render_soon(
             lambda: self.synth.speak(spoken, radio=radio_fx, **args),
             on_done=lambda tr, err: self._traffic_spoken(tr, err, call),
@@ -1269,7 +1270,7 @@ class _The_other_aeroplanes:
 
     def _traffic_spoken(self, transmission, error, call) -> None:
         """An AI transmission back from the lane: put it on the player."""
-        self._radio_renders = max(0, self._radio_renders - 1)
+        _render_count(self, -1)
         if error is not None:
             log.debug("traffic synthesis failed", exc_info=error)
             return

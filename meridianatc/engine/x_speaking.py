@@ -16,7 +16,23 @@ from ._shared import (
 )
 
 
+def _render_count(engine, delta: int) -> None:
+    """Move the outstanding-render counter under its lock.
+
+    The lock is created on the real engine in core.__init__; tests that
+    drive a bare namespace get the plain arithmetic -- the counter is
+    the same, only the locking is optional.
+    """
+    lock = getattr(engine, "_radio_renders_lock", None)
+    if lock is None:
+        engine._radio_renders = max(0, engine._radio_renders + delta)
+        return
+    with lock:
+        engine._radio_renders = max(0, engine._radio_renders + delta)
+
+
 class _Speaking:
+
     # ------------------------------------------------------------------
     # speaking
     # ------------------------------------------------------------------
@@ -69,7 +85,7 @@ class _Speaking:
                 language=language, distance_nm=station.distance_nm,
                 altitude_ft=altitude, profile=profile,
                 radio=radio_fx)
-        self._radio_renders += 1
+        _render_count(self, 1)
         self.synth.render_soon(
             render,
             on_done=lambda tr, err: self._spoken(tr, err, station),
@@ -77,7 +93,7 @@ class _Speaking:
 
     def _spoken(self, transmission, error, station: Station) -> None:
         """A rendered transmission handed back on the loop: play it."""
-        self._radio_renders = max(0, self._radio_renders - 1)
+        _render_count(self, -1)
         if isinstance(error, VoicesMissing):
             # Not a fault: a download that has not happened. It reads as one
             # every time the controller opens their mouth, so it is said once
@@ -161,7 +177,7 @@ class _Speaking:
                 crew._cast[seat] = transmission.voice_key
             self._spoken(transmission, error,
                          SimpleNamespace(callsign=callsign))
-        self._radio_renders += 1
+        _render_count(self, 1)
         self.synth.render_soon(render, on_done=done, priority=0)
 
     def play_atis(self, airport_ident: str | None = None,

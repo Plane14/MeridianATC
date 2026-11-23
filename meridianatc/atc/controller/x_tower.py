@@ -163,7 +163,9 @@ class _Tower:
                          self._station_name(nxt, p, short=True), nxt.mhz)
         instruction = session.remember(
             Instruction("handoff", station_key(station), text,
-                        {"frequency": nxt.mhz})
+                        {"frequency": nxt.mhz,
+                         "station": self._station_name(
+                             nxt, p, short=True)})
         )
         return Reply(text, station, instruction=instruction, handoff_to=nxt)
 

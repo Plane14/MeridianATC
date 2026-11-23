@@ -27,8 +27,14 @@ from typing import Any
 EQUIPPED = frozenset({"airliner", "business_jet", "turboprop_twin"})
 
 # What may be answered: WILCO and UNABLE for anything owed, ROGER for
-# what only needed acknowledging. STANDBY exists but buys nothing here.
-ANSWERS = ("wilco", "unable", "roger")
+# what only needed acknowledging, and STANDBY -- which buys time but
+# leaves the uplink open.
+ANSWERS = ("wilco", "unable", "roger", "standby")
+
+# An uplink nobody answers is not open for ever: crews are expected to
+# reply inside a few minutes, and after this the exchange is over and
+# the instruction goes back to the voice circuit.
+EXPIRE_S = 240.0
 
 # An UNABLE does not make the clearance wrong, it makes this pilot
 # unable: the same instruction is not offered again inside this many
@@ -50,7 +56,8 @@ class Message:
     direction: str                        # "up" | "down"
     text: str
     at: float = field(default_factory=time.monotonic)
-    # How it ended: "wilco", "unable", "roger", "expired"; "" while open.
+    # How it ended: "wilco", "unable", "roger", "standby" (still open --
+    # it is an answer, not an ending), "expired"; "" while open.
     closed: str = ""
     # The instruction an uplink delivers, so a WILCO can settle it.
     instruction: Any = None
@@ -80,8 +87,25 @@ class CpdlcLink:
     pending: Message | None = None
     refused: dict[str, float] = field(default_factory=dict)
 
+    def _expire_if_due(self) -> None:
+        """Close an uplink that outlived its answer time.
+
+        The instruction it carried goes back to voice: ``delivery`` is
+        cleared so the readback chase sees it again -- a controller whose
+        uplink dies unanswered asks on the frequency, he does not forget.
+        """
+        msg = self.pending
+        if msg is None or msg.at > time.monotonic() - EXPIRE_S:
+            return
+        instruction = msg.instruction
+        if instruction is not None:
+            instruction.delivery = "voice"
+        msg.closed = "expired"
+        self.pending = None
+
     def takes(self, instruction) -> bool:
         """Whether this instruction rides the link rather than the radio."""
+        self._expire_if_due()
         if not self.logged or self.pending is not None:
             return False
         if instruction.station_key != self.authority:
@@ -111,6 +135,7 @@ class CpdlcLink:
         ``roger`` closes what only wanted acknowledging, without applying
         it. Returns the downlink message, or None when nothing is open.
         """
+        self._expire_if_due()
         msg = self.pending
         if msg is None or answer not in ANSWERS:
             return None
@@ -121,11 +146,16 @@ class CpdlcLink:
             # instruction still needs a readback stays open for WILCO or
             # UNABLE, exactly as the spoken "roger" settles nothing.
             return None
-        msg.closed = answer
-        self.pending = None
         self.messages.append(Message(
             id=self.next_id, direction="down", text=answer.upper()))
         self.next_id += 1
+        if answer == "standby":
+            # STANDBY answers the uplink without settling it: the clock
+            # starts again and the exchange stays open.
+            msg.at = time.monotonic()
+            return self.messages[-1]
+        msg.closed = answer
+        self.pending = None
         if instruction is not None:
             if answer in ("wilco", "roger"):
                 instruction.read_back = True

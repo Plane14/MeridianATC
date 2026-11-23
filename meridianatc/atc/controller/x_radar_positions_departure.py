@@ -243,7 +243,9 @@ class _Radar_positions_departure:
                 text = p.handoff(aircraft, self._station_name(tower, p, short=True), tower.mhz)
                 instruction = session.remember(
                     Instruction("handoff", station_key(station), text,
-                                {"frequency": tower.mhz})
+                                {"frequency": tower.mhz,
+                                 "station": self._station_name(
+                                     tower, p, short=True)})
                 )
                 return Reply(text, station, instruction=instruction, handoff_to=tower)
             return Reply(p.roger(aircraft), station)

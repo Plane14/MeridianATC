@@ -31,6 +31,14 @@ class _Transmission:
         if self.microphone.recording:
             return
         try:
+            if self.player.busy:
+                # The radio is half-duplex: keying over a transmission
+                # blocks it -- nobody hears the rest of it, least of all
+                # the pilot transmitting, so it stops rather than ducks.
+                self.player.stop()
+        except Exception:
+            log.debug("could not cut the radio for key-down", exc_info=True)
+        try:
             self.microphone.start()
             # A streamed recogniser (Deepgram over a websocket) hears the
             # transmission as it is captured, so its answer is already back

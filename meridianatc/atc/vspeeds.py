@@ -256,6 +256,14 @@ def speeds_for(type_code: str, aircraft_class: str, *,
         found = replace(found, vr=float(sim_vr), unverified=False,
                         source=f"the simulator: the model's {which}; "
                                f"the rest from {found.source}")
+        # The table's other speeds were built for its own VR: swapped
+        # under a faster model VR they can order wrongly -- V1 above VR
+        # calls rotate before the decision, V2 below it calls safety
+        # speed before the wheels leave. Keep the order.
+        v1 = min(found.v1, found.vr) if found.v1 else found.v1
+        v2 = max(found.v2, found.vr + 10.0) if found.v2 else found.v2
+        if v1 != found.v1 or v2 != found.v2:
+            found = replace(found, v1=v1, v2=v2)
     if stated is not None and any(v is not None for v in (
             stated.v1, stated.vr, stated.v2, stated.vapp)):
         found = replace(

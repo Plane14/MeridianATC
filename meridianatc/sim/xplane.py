@@ -1157,6 +1157,17 @@ class XPlaneSource:
         except (ValueError, TypeError):
             return False
 
+    def set_adf(self, khz, radio=1):
+        """Tune an NDB on the ADF -- the receiver NAV cannot reach."""
+        try:
+            value = float(khz)
+            if radio != 1 or not 190.0 <= value <= 1750.0:
+                return False
+            return self._dref(
+                RADIOS + "adf1_frequency_hz", round(value * 1000.0))
+        except (ValueError, TypeError):
+            return False
+
     def set_squawk(self, code):
         code = str(code)
         if not (len(code) == 4 and all(c in "01234567" for c in code)):

@@ -303,9 +303,15 @@ def runway_end(runways, runway: str):
 
 def glide(threshold_lat: float, threshold_lon: float,
           threshold_elev_ft: float, distance_nm: float,
-          ft_per_nm: float = 318.0) -> float:
-    """Where a three-degree path is, that far from the threshold."""
-    return threshold_elev_ft + max(0.0, distance_nm) * ft_per_nm
+          ft_per_nm: float = 318.0, tch_ft: float = 50.0) -> float:
+    """Where a three-degree path is, that far from the threshold.
+
+    ``tch_ft`` is the threshold crossing height the path is hung on:
+    the glide aims at the touchdown point, about a thousand feet down
+    the strip, so it crosses the fence fifty feet up -- not at the
+    threshold's own elevation.
+    """
+    return threshold_elev_ft + tch_ft + max(0.0, distance_nm) * ft_per_nm
 
 
 def align(lat: float, lon: float, threshold_lat: float, threshold_lon: float,

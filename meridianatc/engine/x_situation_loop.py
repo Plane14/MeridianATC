@@ -96,6 +96,16 @@ class _Situation_loop:
                 if state.paused:
                     self.emit("info", "The simulator is paused.",
                               key="log.sim_paused")
+            # The readback clock runs on monotonic time and does not know
+            # the world stopped: a pilot who paused after an instruction
+            # would unpause to a controller already chasing the answer.
+            # Every held clock restarts each tick the sim is not running.
+            pending = getattr(session, "pending", None)
+            if pending is not None:
+                pending.hold_off()
+            held = getattr(session, "held", None)
+            if held is not None:
+                held.hold_off()
             return
         if self._was_paused or self._was_stalled:
             self._was_paused = False

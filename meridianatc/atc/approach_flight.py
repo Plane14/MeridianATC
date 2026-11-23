@@ -459,6 +459,24 @@ def circle_legs(recipe: ApproachRecipe, navdb, state) -> list | None:
         return None
     from .procedures import frame
 
+    # The pattern stays inside the category's circling protected area
+    # (FAA TERPS 2-7-1): 1.3 NM for Cat A up to 4.5 for Cat E. The
+    # category comes off the approach speed, as the charted minima's do.
+    try:
+        from .perftable import traffic_performance
+        vat = traffic_performance(getattr(state, "type_code", "")
+                                  or "").approach_kt
+    except Exception:
+        vat = 120.0
+    radius_nm = (1.3 if vat <= 91.0 else 1.5 if vat <= 121.0
+                 else 1.7 if vat <= 141.0 else 2.3 if vat <= 166.0
+                 else 4.5)
+    # A margin inside the radius: the aeroplane inside the area, its
+    # turning circle included.
+    offset_nm = min(CIRCLE_OFFSET_NM, radius_nm * 0.7)
+    base_out_nm = min(CIRCLE_BASE_OUT_NM, max(1.0, radius_nm - 0.4))
+    downwind_nm = max(CIRCLE_DOWNWIND_NM, -base_out_nm)
+
     _out, side = frame(final, state.latitude, state.longitude)
     bearing = _CIRCLE_SIDES.get(recipe.circle_side)
     if bearing is not None:
@@ -471,16 +489,16 @@ def circle_legs(recipe: ApproachRecipe, navdb, state) -> list | None:
         s = 1.0 if side >= 0 else -1.0
     points = [
         frame_point(final.lat, final.lon, final.course,
-                    CIRCLE_DOWNWIND_NM, s * CIRCLE_OFFSET_NM),
+                    downwind_nm, s * offset_nm),
         # The base leg does not arrive at final squared onto it: a
         # shallow intercept two miles further out, rolled onto the
         # centreline at under thirty degrees. Coming in steeper was the
         # rollout that reached the flare still turning, too misaligned
         # to ever stabilize inside the gate.
         frame_point(final.lat, final.lon, final.course,
-                    CIRCLE_BASE_OUT_NM + 2.0, s * CIRCLE_OFFSET_NM * 0.5),
+                    base_out_nm + 2.0, s * offset_nm * 0.5),
         frame_point(final.lat, final.lon, final.course,
-                    CIRCLE_BASE_OUT_NM, 0.0),
+                    base_out_nm, 0.0),
         # legs() ends its point list past the threshold (negative
         # along-course); circle() has to match or the caller joins it
         # to a waypoint two miles the wrong side of the runway.

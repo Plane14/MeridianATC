@@ -288,7 +288,7 @@ class _The_field:
                    "base", "final", "go_around", "missed_hold"} \
             if arriving else {
                 "clearance", "pushback", "taxi", "holding", "ready",
-                "line_up", "lineup", "takeoff"}
+                "waiting", "line_up", "lineup", "takeoff"}
         usable = [e for e in ends if self._threshold(e) is not None] \
             or list(ends)
         counts = {end: 0 for end in usable}

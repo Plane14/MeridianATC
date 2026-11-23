@@ -16,6 +16,7 @@ is the difference between an aeroplane and a spawn.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from ._shared import (
@@ -252,9 +253,15 @@ class _The_passing_ones:
         reach = min(55.0, self.radius_nm * 0.55)
         hdg = bearing_deg(self.field.latitude, self.field.longitude,
                           dest[0], dest[1])
+        dist = self.random.uniform(30.0, reach)
+        # Below about two and a half thousand over the field a transit
+        # does not come straight overhead -- that is circuit altitude
+        # here -- so the track is taken a few miles to the side.
+        abeam_nm = 0.0 if cruise_ft - self.field.elevation_ft > 3000.0 \
+            else self.random.uniform(3.0, 8.0)
+        side = math.degrees(math.asin(min(0.9, abeam_nm / dist)))
         lat, lon = project(self.field.latitude, self.field.longitude,
-                           (hdg + 180.0) % 360.0,
-                           self.random.uniform(30.0, reach))
+                           (hdg + 180.0 + side) % 360.0, dist)
         return _Transit(
             callsign=callsign, type_code=type_code, operator=operator,
             ifr=True, state="enroute", lat=lat, lon=lon, alt_ft=cruise_ft,

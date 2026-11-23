@@ -541,7 +541,8 @@ class _Flying_them:
             if not holding and along <= -self._base_nm(flight):
                 if self._room_on_final(
                         -along, ignore=flight,
-                        within_s=self._rollout_s(flight, across)):
+                        within_s=self._rollout_s(flight, across),
+                        runway=flight.runway):
                     flight.phase = "base"
                 else:
                     # No gap by the time it would be there. It carries on

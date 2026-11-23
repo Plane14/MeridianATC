@@ -22,6 +22,44 @@ from ._shared import (
 )
 
 
+def _small_class(type_code: str) -> bool:
+    """Whether the type is FAA 'small' for wake spacing -- light pistons
+    and rotorcraft, the aeroplanes the separation tables are written for."""
+    try:
+        from .. import aircraft_class
+        return aircraft_class.classify(type_code).name in (
+            aircraft_class.PISTON_SINGLE, aircraft_class.PISTON_TWIN,
+            aircraft_class.HELICOPTER, aircraft_class.TURBOPROP_SINGLE)
+    except Exception:
+        return False
+
+
+def _wake_gap_nm(leader: Flight | None, follower: Flight | None) -> float:
+    """The miles a follower needs behind a leader, for the wake.
+
+    7110.65 5-5-4 by the pair's categories: a light aeroplane keeps six
+    behind a heavy and eight behind a super; two mediums keep the tower's
+    own stream spacing. ``leader`` or ``follower`` None, or either one the
+    stand-in for the person flying, falls back to the stream figure.
+    """
+    if leader is None or follower is None:
+        return _The_tower_watching.SPACING_NM
+    lead = wake_suffix(leader.type_code)
+    small = _small_class(follower.type_code)
+    if lead == "super":
+        return 8.0 if small else (7.0 if wake_suffix(
+            follower.type_code) != "heavy" else 6.0)
+    if lead == "heavy":
+        if wake_suffix(follower.type_code) == "heavy":
+            return 4.0
+        return 6.0 if small else 5.0
+    # A large ahead of a small is the only other case the table stretches:
+    # four miles; everything else is the stream's own spacing.
+    if _small_class(leader.type_code):
+        return _The_tower_watching.SPACING_NM
+    return 4.0 if small else _The_tower_watching.SPACING_NM
+
+
 class _The_tower_watching:
     # ------------------------------------------------------------------
     # the tower, watching
@@ -416,7 +454,8 @@ class _The_tower_watching:
             flight, self._threshold(flight.runway)[2]) \
             if self._threshold(flight.runway) else (0.0, CIRCUIT_WIDTH_NM)
         room = self._room_on_final(flight.distance_nm, ignore=flight,
-                                   within_s=self._rollout_s(flight, across))
+                                   within_s=self._rollout_s(flight, across),
+                                   runway=flight.runway)
 
         # There is room to turn in, and somebody is standing at the hold
         # point waiting for it: tighten the circuit rather than stretch
@@ -527,16 +566,21 @@ class _The_tower_watching:
                 return True
         return False
 
-    def _approaching(self, ignore: Flight | None = None) -> list[Flight]:
+    def _approaching(self, ignore: Flight | None = None,
+                     runway: str = "") -> list[Flight]:
         """Everybody committed to this runway, in miles still to run.
 
         The person flying is in the list on the same terms as anybody else,
         because to everything that reads it they are another aeroplane on
-        final.
+        final. With ``runway`` given, only traffic on a conflicting strip
+        counts -- a parallel final is another runway's queue.
         """
         found = [f for f in self.flights
                  if f is not ignore and not f.done and not f.stuck
-                 and f.arriving and f.phase in ("inbound", "final", "base")]
+                 and f.arriving and f.phase in ("inbound", "final", "base")
+                 and (not runway
+                      or self._conflicts(runway, f,
+                                         self.field.arrival_runway))]
         # Only when they are on final, or in the circuit close to turning on
         # to it. The stand-in was added whatever the user was doing, at a
         # distance of nought when they were not on final -- so a pilot parked
@@ -550,14 +594,16 @@ class _The_tower_watching:
             to_run = self._user_in_circuit()
         if to_run is not None:
             user = self._user_flight(to_run)
-            if user is not None:
+            if user is not None and (not runway or self._conflicts(
+                    runway, user, self.field.arrival_runway)):
                 found.append(user)
         found.sort(key=lambda f: f.distance_nm)
         return found
 
     def _room_on_final(self, at_nm: float,
                        ignore: Flight | None = None,
-                       within_s: float = 0.0) -> bool:
+                       within_s: float = 0.0,
+                       runway: str = "") -> bool:
         """Whether an aeroplane could roll out there without crowding anybody.
 
         This is what the base turn actually waits for. Turning when the
@@ -569,10 +615,16 @@ class _The_tower_watching:
         # are now. An arrival at a hundred and eighty knots closes three
         # miles in the minute a base leg takes, and judging the gap as it
         # stood turned an aeroplane in front of one that then ran into it.
-        return all(abs(max(0.0, other.distance_nm
-                           - other.ground_speed_kt * within_s / 3600.0)
-                       - at_nm) >= self.SPACING_NM
-                   for other in self._approaching(ignore))
+        def clears(other) -> bool:
+            gap = abs(max(0.0, other.distance_nm
+                          - other.ground_speed_kt * within_s / 3600.0)
+                      - at_nm)
+            ahead = other.distance_nm < at_nm
+            needed = _wake_gap_nm(other if ahead else ignore,
+                                  ignore if ahead else other)
+            return gap >= needed
+        return all(clears(other)
+                   for other in self._approaching(ignore, runway))
 
     def _rollout_s(self, flight: Flight, across_nm: float) -> float:
         """How long from here to rolling out on final: the base leg and the
@@ -583,7 +635,8 @@ class _The_tower_watching:
 
     def _ahead_of(self, flight: Flight) -> Flight | None:
         """The aeroplane immediately in front of this one on the approach."""
-        nearer = [f for f in self._approaching(flight)
+        nearer = [f for f in self._approaching(
+            flight, runway=flight.runway)
                   if f.distance_nm < flight.distance_nm]
         return nearer[-1] if nearer else None
 
@@ -604,8 +657,9 @@ class _The_tower_watching:
         ahead = self._ahead_of(flight)
         gap = (flight.distance_nm - ahead.distance_nm) if ahead else 99.0
 
+        needed_nm = _wake_gap_nm(ahead, flight)
         if flight.assigned_speed_kt is not None:
-            if gap >= self.SPACING_NM * 1.6 or ahead is None:
+            if gap >= needed_nm * 1.6 or ahead is None:
                 if self._already_told(flight, "resume"):
                     return
                 self._exchange(
@@ -616,7 +670,7 @@ class _The_tower_watching:
                 )
             return
 
-        if gap >= self.SPACING_NM or self._already_told(flight, "speed"):
+        if gap >= needed_nm or self._already_told(flight, "speed"):
             return
         # Slower than the one in front, or the gap merely stops shrinking
         # instead of opening.

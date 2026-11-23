@@ -57,6 +57,7 @@ class RadioWriter(Protocol):
                 standby: bool = False) -> bool: ...
     def swap_com(self, radio: int = 1) -> bool: ...
     def set_nav(self, mhz: float, radio: int = 1) -> bool: ...
+    def set_adf(self, khz: float, radio: int = 1) -> bool: ...
     def pushback(self) -> bool: ...
     def set_squawk(self, code: str) -> bool: ...
 
@@ -296,6 +297,18 @@ def encode_hz(mhz: float) -> int:
     or an aircraft that does not have it.
     """
     return int(round(float(mhz) * 1_000_000.0))
+
+
+def encode_bcd32(hz: float) -> int:
+    """An ADF frequency in Hz as the packed BCD ``ADF_COMPLETE_SET`` wants.
+
+    Every digit its own nibble, unlike the COM16 packing: 356.5 kHz goes
+    in as 0x00356500 -- the whole Hz figure, no implied leading digit.
+    """
+    packed = 0
+    for digit in f"{int(round(float(hz))):08d}":
+        packed = (packed << 4) | int(digit)
+    return packed
 
 
 def encode_squawk(code: str) -> int:
@@ -877,6 +890,11 @@ class SimConnectSource:
         # remembered as unwritable rather than asked for again every tick.
         self._writers: dict[str, object] = {}
         self._unwritable: set[str] = set()
+        # send id -> simvar name for writes, so a NAME_UNRECOGNIZED
+        # exception that only arrives later can still be tied to the
+        # variable that caused it (writes answer S_OK at the call and
+        # refuse asynchronously, exactly like the read definitions).
+        self._write_send_names: dict[int, str] = {}
         # Replies to RequestSystemState, keyed by request ID, parked here by
         # the wrapped state handler until somebody asks for them. The reply
         # arrives on the wrapper's dispatch thread, so both sides take this
@@ -1101,6 +1119,14 @@ class SimConnectSource:
                     self._batch_set = frozenset(self._batch_names)
                     log.info("simvar %s refused in the batched "
                              "definition; reading without it", refused)
+                    return False
+                refused = self._write_send_names.pop(
+                    int(exc.UNKNOWN_SENDID), None)
+                if refused is not None:
+                    self._unwritable.add(refused)
+                    self._writers.pop(refused, None)
+                    log.info("simvar %s refused on write; "
+                             "marked unwritable", refused)
                 return False
             if data.contents.dwID not in _objectdata_ids():
                 return False
@@ -1929,7 +1955,10 @@ class SimConnectSource:
             value = float(mhz)
         except (TypeError, ValueError):
             return False
-        if not (0.1 <= value <= 118.0):
+        # The NAV receiver's band only: an NDB frequency fed to a VOR
+        # tuner is a write the simulator takes and nothing tunes, so it
+        # is refused here and the caller reaches for ``set_adf``.
+        if not (108.0 <= value <= 117.95):
             return False
 
         pair = self._NAV_EVENTS.get(int(radio))
@@ -1975,6 +2004,24 @@ class SimConnectSource:
                 return True
         return False
 
+    def set_adf(self, khz: float, radio: int = 1) -> bool:
+        """Tune an NDB on the ADF, where set_nav cannot reach.
+
+        NDB frequencies are kilohertz -- 190 to 1750 for the published
+        beacons -- and the NAV radios cannot tune them; only the ADF
+        receiver can, through its own event.
+        """
+        if not self._connected:
+            return False
+        try:
+            value = float(khz)
+        except (TypeError, ValueError):
+            return False
+        if not (190.0 <= value <= 1750.0) or int(radio) != 1:
+            return False
+        return self._send("ADF_COMPLETE_SET",
+                          encode_bcd32(value * 1000.0))
+
     def set_squawk(self, code: str) -> bool:
         """Set the transponder, so an assigned code is dialled in for you."""
         if not self._connected:
@@ -2013,6 +2060,14 @@ class SimConnectSource:
             self._writers[name] = writer
         try:
             writer.value = float(value)
+            try:
+                send_id = ctypes.c_uint32(0)
+                self._sim.dll.GetLastSentPacketID(
+                    self._sim.hSimConnect, ctypes.byref(send_id))
+                if send_id.value:
+                    self._write_send_names[int(send_id.value)] = name
+            except Exception:
+                pass
             # The setter swallows a refused definition, so the flag is the
             # only answer there is: False until AddToDataDefinition has
             # been accepted, which is the write's first failure point.
@@ -2396,6 +2451,10 @@ class ManualSource:
         return True
 
     def set_nav(self, mhz: float, radio: int = 1) -> bool:
+        """No radios without a simulator; answered False, not raised."""
+        return False
+
+    def set_adf(self, khz: float, radio: int = 1) -> bool:
         """No radios without a simulator; answered False, not raised."""
         return False
 
