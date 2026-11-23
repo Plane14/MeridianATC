@@ -52,6 +52,20 @@ class _The_engines:
     # tick and surged the power in the climb.
     _OVER_PERSIST_S = 2.0
 
+    # The lever ceiling's positions while a gauge sits past its red
+    # line: first the reflex pull, then the walk down a hand does while
+    # the needle is still out -- a fixed cap only stops things getting
+    # worse, and a model whose engines still run hot at 85 per cent
+    # needs the lever brought lower until the reading is inside. The
+    # floor keeps power on the aeroplane: off, never a kill.
+    _LIMIT_CAP_FIRST = 0.85
+    _LIMIT_CAP_STEP = 0.07
+    _LIMIT_CAP_FLOOR = 0.30
+    _LIMIT_STEP_S = 2.0
+    # Clean seconds the gauges must hold before the ceiling is let back
+    # out: a dip between reads is not the needle inside.
+    _LIMIT_CLEAR_S = 10.0
+
     # The CHT the flaps open at: this far under the red line. Closing
     # again is allowed a further 20C of hysteresis so a wandering needle
     # does not pump the levers.
@@ -193,20 +207,35 @@ class _The_engines:
         """The highest lever the engines may take right now, 0..1.
 
         1.0 where every gauge is inside its limit or no gauge is
-        published; otherwise a pull toward ~85 per cent of the travel --
-        the reflex, not the shutdown: an engine over its ceiling gets
-        power off it, never a kill.
+        published. Past one, the ceiling starts at the reflex pull and
+        keeps walking down while the needle stays out -- the hand's
+        travel to wherever the gauge comes back inside, floored where
+        power stays on the aeroplane.
         """
         over = self._over_limits(state, takeoff=takeoff)
+        now = time.monotonic()
         if not over:
-            return 1.0
+            if now - getattr(self, "_limit_clean", now) \
+                    >= self._LIMIT_CLEAR_S:
+                self._limit_cap = 1.0
+            return getattr(self, "_limit_cap", 1.0)
+        self._limit_clean = now
         if not getattr(self.state, "eng_warned", False):
             self.state.eng_warned = True
             self._emit("info",
                        "Engine limit reached (" + ", ".join(over) +
                        "): easing the power off",
                        "autonomous.engines.limit")
-        return 0.85
+        cap = getattr(self, "_limit_cap", 1.0)
+        if cap >= 1.0:
+            cap = self._LIMIT_CAP_FIRST
+            self._limit_step = now
+        elif now - getattr(self, "_limit_step", now) >= self._LIMIT_STEP_S:
+            self._limit_step = now
+            cap = max(self._LIMIT_CAP_FLOOR,
+                      cap - self._LIMIT_CAP_STEP)
+        self._limit_cap = cap
+        return cap
 
     def _watch_engines(self, state, now: float) -> None:
         """The monitor pass: limits are said once, whoever holds the levers.

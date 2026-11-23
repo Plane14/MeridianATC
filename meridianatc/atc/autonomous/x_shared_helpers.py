@@ -31,6 +31,14 @@ class _Shared_helpers:
     NAV_OFF_DEG = 80.0
     NAV_OFF_S = 45.0
 
+    # How fast over the bug a held speed may sit before the thing on the
+    # levers is judged no autothrottle, and for how long. A working AT
+    # keeps within a handful of knots of its figure; a change or a gust
+    # passes in seconds -- fifteen over for fifteen straight is the
+    # model's own logic on the engines, not a window being held.
+    _AT_ERR_KT = 15.0
+    _AT_ERR_S = 15.0
+
     def _nav_fallback_heading(self, state, now: float) -> float:
         """A heading to fly where the armed NAV is tracking nothing, -1 else.
 
@@ -766,10 +774,6 @@ class _Shared_helpers:
         """
         if not target_kt or state.on_ground or not state.engines_running:
             return
-        # A live autothrottle owns the levers: the servo's job only exists
-        # where there is none, and two hands on one lever is a porpoise.
-        if getattr(state, "autothrottle", False):
-            return
         if self.state.phase == AutonomousPhase.APPROACH:
             # The go-around owns the levers, and the pattern right after
             # it is still a climb to the missed altitude, not an arrival
@@ -785,6 +789,40 @@ class _Shared_helpers:
         ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
         if ias <= 20.0:
             return
+        # A live autothrottle owns the levers: the servo's job only
+        # exists where there is none, and two hands on one lever is a
+        # porpoise. Owns them while it holds the bug, that is: a model
+        # whose autothrottle drives its own target -- a King Air holding
+        # max-continuous power to 255 knots against a 210 window -- is
+        # the throttle's lever read at whatever it likes while the
+        # engines never hear it. The speed sitting over the figure it
+        # was given, for longer than a change or a gust takes, is the
+        # call that the thing on the levers is not an autothrottle: the
+        # disconnect goes once, the flag is distrusted while it stays
+        # up, and the levers come back to this servo.
+        if getattr(state, "autothrottle", False) \
+                and not getattr(self, "_at_distrusted", False):
+            if ias > target_kt + self._AT_ERR_KT:
+                now = time.monotonic()
+                since = getattr(self, "_at_bad_since", 0.0) or now
+                self._at_bad_since = since
+                if now - since < self._AT_ERR_S:
+                    return
+                self._at_distrusted = True
+                self._at_bad_since = 0.0
+                self.director.autothrottle_disconnect()
+                self._emit(
+                    "info",
+                    "Autothrottle not holding the speed "
+                    f"({ias:.0f} kt on a {target_kt:.0f} bug): "
+                    "taking the levers",
+                    "autonomous.at")
+            else:
+                self._at_bad_since = 0.0
+                return
+        elif not getattr(state, "autothrottle", False):
+            self._at_distrusted = False
+            self._at_bad_since = 0.0
         lever = self._lever_position(state)
         # The lever the sim reports is the only position a slew can
         # start from: seeded anywhere else, the first write of a pass

@@ -108,10 +108,103 @@ def test_limit_cap_eases_the_lever_over_the_red_line():
                         eng_itt_c=960.0)
     assert fo._engine_limit_cap(hot) == pytest.approx(0.85)
     assert "autonomous.engines.limit" in _emit_keys(fo)
-    # Inside the line: no cap at all.
+    # Inside the line from the start: no cap at all. (A gauge that just
+    # cleared keeps its ceiling a few clean seconds -- that is the
+    # ratchet test below, not this one's never-over aeroplane.)
+    fo2 = _fo()
+    fo2._OVER_PERSIST_S = 0.0
     warm = AircraftState(on_ground=False, engines_running=True,
                          eng_itt_c=900.0)
-    assert fo._engine_limit_cap(warm) == pytest.approx(1.0)
+    assert fo2._engine_limit_cap(warm) == pytest.approx(1.0)
+
+
+def test_the_cap_walks_down_until_the_needle_is_inside():
+    """A King Air still over its line at the reflex pull: the ceiling
+    keeps coming down a step at a time until the reading is in, floored
+    where power stays on the aeroplane -- and it is only let back out
+    once the gauges have held clean."""
+    import time as _time
+
+    fo = _king_air()
+    fo._OVER_PERSIST_S = 0.0
+    fo._LIMIT_STEP_S = 0.0
+    fo._LIMIT_CLEAR_S = 60.0
+    hot = AircraftState(on_ground=False, engines_running=True,
+                        eng_itt_c=710.0)
+    cool = AircraftState(on_ground=False, engines_running=True,
+                         eng_itt_c=600.0)
+    assert fo._engine_limit_cap(hot) == pytest.approx(0.85)
+    walked = [fo._engine_limit_cap(hot) for _ in range(3)]
+    assert walked == pytest.approx([0.78, 0.71, 0.64])
+    for _ in range(20):
+        cap = fo._engine_limit_cap(hot)
+    assert cap == pytest.approx(0.30)
+    # Just cleared: the ceiling holds where the walk left it.
+    assert fo._engine_limit_cap(cool) == pytest.approx(0.30)
+    # Held clean long enough, it is let back out.
+    fo._limit_clean = _time.monotonic() - 61.0
+    assert fo._engine_limit_cap(cool) == pytest.approx(1.0)
+
+
+# -- the autothrottle watchdog ----------------------------------------------
+
+
+def _cruising(ias: float, at: bool = True, lever: float = 0.9) -> AircraftState:
+    return AircraftState(on_ground=False, engines_running=True,
+                         autothrottle=at, indicated_airspeed_kt=ias,
+                         throttle_pct=lever * 100.0)
+
+
+def test_a_working_autothrottle_keeps_the_levers():
+    """On the bug, a live autothrottle is trusted with the levers: the
+    servo does not touch them and the doubt clock stays down."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo = _king_air()
+    fo.state.phase = AutonomousPhase.CRUISE
+    fo._manage_throttle(_cruising(210.0), 210.0)
+    fo._dir.throttle.assert_not_called()
+    assert getattr(fo, "_at_bad_since", 0.0) == 0.0
+
+
+def test_a_gust_over_the_bug_does_not_disconnect():
+    """Over the figure but not for long: an honest autothrottle is
+    given the window to pull it back, so the servo still stands down."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo = _king_air()
+    fo.state.phase = AutonomousPhase.CRUISE
+    fo._AT_ERR_S = 999.0
+    fo._manage_throttle(_cruising(255.0), 210.0)
+    fo._dir.throttle.assert_not_called()
+    fo._dir.autothrottle_disconnect.assert_not_called()
+    assert fo._at_bad_since > 0.0
+
+
+def test_an_autothrottle_off_the_speed_is_taken_off_the_levers():
+    """Fifteen knots over for as long as a change or a gust takes: the
+    thing on the engines is the model's own logic, not an autothrottle
+    -- it is disconnected once, flagged untrusted, and the FO's servo
+    runs the levers itself from then on."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo = _king_air()
+    fo.state.phase = AutonomousPhase.CRUISE
+    fo._AT_ERR_S = 0.0
+    fo._manage_throttle(_cruising(255.0), 210.0)
+    fo._dir.autothrottle_disconnect.assert_called_once()
+    assert "autonomous.at" in _emit_keys(fo)
+    assert fo._at_distrusted
+    # The servo itself now runs the speed: the lever comes back from
+    # where it was, a notch at a time (a hand's second between calls --
+    # the slew, not the target, holds the rate).
+    import time as _time
+    fo._dir.reset_mock()
+    fo._lever_at = _time.monotonic() - 1.0
+    fo._manage_throttle(_cruising(255.0, at=True, lever=0.9), 210.0)
+    assert fo._dir.throttle.called
+    assert fo._dir.throttle.call_args[0][0] == pytest.approx(0.84, abs=0.02)
+    # The flag dropping (disconnect landed, or the AT was switched)
+    # re-earns the benefit of the doubt for the next engagement.
+    fo._manage_throttle(_cruising(210.0, at=False, lever=0.5), 210.0)
+    assert not fo._at_distrusted
 
 
 def test_takeoff_rating_governs_the_roll():

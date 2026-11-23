@@ -4,6 +4,7 @@ from ._shared import (
     decision,
     log,
     os,
+    re,
     time,
 )
 
@@ -73,6 +74,9 @@ class _The_plan_the:
     # approach elements (ILS, localizer, glideslope, markers) are skipped.
     _FMS_ROUTE_TYPES = {1: "apt", 2: "ndb", 4: "vor", 512: "wpt",
                         1024: "wpt", 2048: "wpt", 4096: "vor"}
+    # A runway leg read back as a waypoint -- its altitude is the
+    # threshold's elevation, never a level to fly to.
+    _RUNWAY_IDENT = re.compile(r"^(?:RW|RWY)\d")
 
     def _use_fms_plan(self, entries) -> None:
         """The plugin's FMS entry list as the flight's route.
@@ -129,7 +133,12 @@ class _The_plan_the:
             # is built from the flight setting, so a sim plan adopted
             # without this sync is announced as the last field filed.
             flight.destination = route.destination
-        if route.cruise_ft:
+        if route.cruise_ft and (route.source != "sim"
+                                or not flight.cruise_altitude_ft):
+            # A route that files a level fills a blank cruise field. An
+            # FMS read-back's figure is only inferred from leg heights,
+            # though -- the level the pilot filed on the flight's own
+            # form beats it, and a guess may not unseat it.
             flight.cruise_altitude_ft = route.cruise_ft
         self.use_route(route)
         if self.session is not None:
@@ -172,18 +181,34 @@ class _The_plan_the:
             if f.ident not in airports \
                     and self.navdb.airport(f.ident) is not None:
                 airports.append(f.ident)
+        # The FMS carries no filed cruise field -- only each leg's
+        # altitude. The highest en-route one is the flight's level,
+        # which is how the cruise reaches the session instead of the
+        # default table. Departure legs are left out of the count: a
+        # runway entry carries the field's elevation and a SID fix a
+        # crossing constraint -- LECO's RW21 read back at 327 feet and
+        # the level became the runway's own height. The bar is the
+        # departure field's elevation, so a plan whose legs all sit at
+        # or under it simply files nothing.
+        origin_ft = 0.0
+        if airports:
+            navdb = getattr(self, "navdb", None)
+            airport = navdb.airport(airports[0]) if navdb is not None \
+                else None
+            origin_ft = float(getattr(airport, "elev_ft", 0.0) or 0.0) \
+                if airport is not None else 0.0
+            if not origin_ft:
+                origin_ft = next((f.alt_ft for f in fixes
+                                  if f.kind == "apt"
+                                  and f.ident == airports[0]), 0.0)
         return Route(fixes=tuple(fixes),
                      origin=airports[0] if airports else "",
                      destination=airports[-1] if airports else "",
-                     # The FMS carries no filed cruise field -- only each
-                     # leg's altitude. The highest en-route one is the
-                     # flight's level, which is how the cruise reaches
-                     # the session instead of the default table. Airport
-                     # legs are left out of the count: theirs is the
-                     # field's elevation, which read as the level capped
-                     # the cruise at the runway's own height.
                      cruise_ft=max((f.alt_ft for f in fixes
-                                    if f.kind != "apt"), default=0),
+                                    if f.kind != "apt"
+                                    and not self._RUNWAY_IDENT.match(f.ident)
+                                    and f.alt_ft > origin_ft),
+                                   default=0),
                      source="sim")
 
     def _use_pln_plan(self, path: str) -> None:

@@ -416,3 +416,56 @@ def test_route_from_fms_entries():
                                      "lat": 48.35, "lon": 11.79,
                                      "active": False}]) is None
     assert planner._route_from_fms([]) is None
+
+
+def test_fms_cruise_is_not_the_departure_fields_height():
+    """LECO's plan read back its runway leg at the field's own 327 feet
+    and the inferred cruise became the runway's height: departure
+    legs -- the runway and anything at or under the field -- are not
+    the level, so nothing was filed at all rather than 327."""
+    pytest.importorskip("scipy")
+    from meridianatc.engine.x_the_plan_the import _The_plan_the
+
+    planner = _The_plan_the()
+    route = planner._route_from_fms([
+        {"i": 0, "t": 1, "id": "LECO", "alt": 327,
+         "lat": 43.30, "lon": -8.38, "active": False},
+        {"i": 1, "t": 2048, "id": "RW21", "alt": 327,
+         "lat": 43.31, "lon": -8.39, "active": False},
+        {"i": 2, "t": 512, "id": "BERAX", "alt": 327,
+         "lat": 43.50, "lon": -8.30, "active": False},
+        {"i": 3, "t": 512, "id": "FORNO", "alt": 0,
+         "lat": 43.70, "lon": -8.10, "active": False},
+        {"i": 4, "t": 512, "id": "BBI", "alt": 0,
+         "lat": 42.60, "lon": -6.90, "active": False},
+        {"i": 5, "t": 1, "id": "LECU", "alt": 2000,
+         "lat": 40.37, "lon": -3.78, "active": False},
+    ])
+    assert route is not None
+    # The destination's own elevation is under the departure field's --
+    # the read-back's only en-route candidates were departure legs, so
+    # the plan files nothing rather than the runway's height.
+    assert route.cruise_ft == 0
+
+
+def test_fms_cruise_takes_the_enroute_leg_levels():
+    """A plan with legs genuinely up high still gets its level from
+    them -- the field-elevation floor only drops departure legs."""
+    pytest.importorskip("scipy")
+    from meridianatc.engine.x_the_plan_the import _The_plan_the
+
+    planner = _The_plan_the()
+    route = planner._route_from_fms([
+        {"i": 0, "t": 1, "id": "LECO", "alt": 327,
+         "lat": 43.30, "lon": -8.38, "active": False},
+        {"i": 1, "t": 2048, "id": "RW21", "alt": 327,
+         "lat": 43.31, "lon": -8.39, "active": False},
+        {"i": 2, "t": 512, "id": "FORNO", "alt": 8000,
+         "lat": 43.70, "lon": -8.10, "active": False},
+        {"i": 3, "t": 512, "id": "BBI", "alt": 20000,
+         "lat": 42.60, "lon": -6.90, "active": False},
+        {"i": 4, "t": 1, "id": "LECU", "alt": 2000,
+         "lat": 40.37, "lon": -3.78, "active": False},
+    ])
+    assert route is not None
+    assert route.cruise_ft == 20000

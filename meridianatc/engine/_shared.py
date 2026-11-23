@@ -21,6 +21,7 @@ import hashlib
 import logging
 import math
 import os
+import re
 import threading
 import time
 from collections import deque
