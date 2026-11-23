@@ -724,12 +724,14 @@ class ChecklistRunner:
                 self._note("unchecked", self._run, var=check.var, stale=actual,
                            why="the simulator gave no answer when read again")
                 continue
-            actual = next((value for value in fresh_values
-                           if not holds(check, value, expected)),
-                          fresh_values[0])
-            return (all(holds(check, value, expected)
-                        for value in fresh_values),
-                    actual, expected, True, check)
+            if not all(holds(check, value, expected)
+                       for value in fresh_values):
+                actual = next((value for value in fresh_values
+                               if not holds(check, value, expected)),
+                              fresh_values[0])
+                return False, actual, expected, True, check
+            # The re-read cleared this condition; the rest still stand.
+            verified = True
         return (True if verified else None), None, None, False, None
 
     def _agrees_now(self, item: Item) -> bool:
