@@ -190,9 +190,14 @@ class _Circling:
         self.director.speed(vapp)
 
     def _check_stabilized(self, state) -> None:
-        """The stabilized-approach call, once, below a thousand feet."""
-        if self.state.stabilized:
-            return
+        """The stabilized-approach call, re-judged on every tick.
+
+        A stable approach is one that STAYS stable: latched the first
+        time the numbers line up, a flag that never comes down reads
+        "stabilized" over a dive that started underneath it -- so the
+        verdict is computed fresh and only the rising edge is announced.
+        """
+        was = self.state.stabilized
         # The runway this judges against is the arrival's, and the pick
         # made leaving home is still on the state unless refreshed:
         # without this the line-up's threshold stands in for the field
@@ -228,9 +233,12 @@ class _Circling:
                 on_path = approach_flight.TCH_FT                     + to_go_m / 1852.0 * approach_flight.FT_PER_NM
                 aligned = aligned and above < on_path * 1.4 + 250.0
         bank_max = self.performance.max_bank_deg or 25.0
-        if vs < 1000.0 and abs(ias - target) < 12.0 \
-                and bank < bank_max and aligned:
-            self.state.stabilized = True
+        met = (vs < 1000.0 and target - 5.0 < ias < target + 10.0
+               and bank < bank_max and aligned)
+        # The band a check airman reads: Vapp +10/-5, sink under a
+        # thousand, inside the bank limit, lined up and on the path.
+        self.state.stabilized = met
+        if met and not was:
             self._emit("info", "Stabilized on final",
                        "autonomous.stabilized")
 

@@ -895,6 +895,8 @@ class SimConnectSource:
         # variable that caused it (writes answer S_OK at the call and
         # refuse asynchronously, exactly like the read definitions).
         self._write_send_names: dict[int, str] = {}
+        self._event_send_names: dict[int, bytes] = {}
+        self._dead_events: set[bytes] = set()
         # Replies to RequestSystemState, keyed by request ID, parked here by
         # the wrapped state handler until somebody asks for them. The reply
         # arrives on the wrapper's dispatch thread, so both sides take this
@@ -1127,6 +1129,18 @@ class SimConnectSource:
                     self._writers.pop(refused, None)
                     log.info("simvar %s refused on write; "
                              "marked unwritable", refused)
+                    return False
+                refused = self._event_send_names.pop(
+                    int(exc.UNKNOWN_SENDID), None)
+                if refused is not None:
+                    # An event name the sim never heard of: the send
+                    # answers True anyway, so the refusal has to be
+                    # learned here and remembered, or an ``ok``-chained
+                    # fallback could never fire.
+                    self._dead_events.add(refused)
+                    self._events.pop(refused, None)
+                    log.info("sim event %s refused; "
+                             "marked uncallable", refused)
                 return False
             if data.contents.dwID not in _objectdata_ids():
                 return False
@@ -1748,6 +1762,8 @@ class SimConnectSource:
     ))
 
     def _send(self, name: bytes, value: int) -> bool:
+        if name in self._dead_events:
+            return False
         event = self._event(name)
         if event is None or self._sim is None:
             return False
@@ -1761,10 +1777,26 @@ class SimConnectSource:
             except Exception:
                 return False
         try:
-            return bool(self._sim.send_event(event, DWORD(int(value) & 0xFFFFFFFF)))
+            sent = bool(self._sim.send_event(
+                event, DWORD(int(value) & 0xFFFFFFFF)))
         except Exception as exc:
             log.debug("event %s failed: %s", name, exc)
             return False
+        if sent:
+            # MapClientEventToSimEvent accepts any string and transmit is
+            # fire-and-forget, so a name the simulator does not have
+            # still answers True here. The refusal comes back on the pump
+            # against this send's id; recording it is what lets the next
+            # call reach its fallback event instead of "succeeding" again.
+            try:
+                send_id = ctypes.c_uint32(0)
+                self._sim.dll.GetLastSentPacketID(
+                    self._sim.hSimConnect, ctypes.byref(send_id))
+                if send_id.value:
+                    self._event_send_names[int(send_id.value)] = name
+            except Exception:
+                pass
+        return sent
 
     # Which event sets which radio, in both the Hz and the BCD form.
     _COM_EVENTS: dict[tuple[int, bool], tuple[bytes, bytes]] = {

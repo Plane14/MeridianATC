@@ -267,6 +267,34 @@ class _The_engines:
                        "autonomous.engines.overlimit")
         elif not over:
             self.state.eng_warned = False
+        self._lean_mixture(state)
+
+    def _lean_mixture(self, state) -> None:
+        """The red knob's cruise position on a piston, once per climb.
+
+        Full rich burns fuel the thin air cannot use: above three
+        thousand feet AGL the POH leans for economy, and the knob goes
+        rich again for the takeoff, the approach and the go-around by
+        ``_prop_levers``' own calls -- this only ever pulls it out, and
+        only where the air is thin enough to want it lean.
+        """
+        from .. import aircraft_class as ac
+        if getattr(self, "_aircraft_class", "") not in (
+                ac.PISTON_SINGLE, ac.PISTON_TWIN):
+            return
+        if self.state.phase not in (AutonomousPhase.CLIMB,
+                                    AutonomousPhase.CRUISE):
+            self._mixture_leaned = False
+            return
+        if getattr(self, "_mixture_leaned", False):
+            return
+        agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)
+        if agl < 3000.0:
+            return
+        self._mixture_leaned = True
+        self.director.mixture(0.75)
+        self._emit("info", "Mixture leaned for altitude",
+                   "autonomous.engines.lean")
 
     # -- carburetted induction ice --------------------------------------
 

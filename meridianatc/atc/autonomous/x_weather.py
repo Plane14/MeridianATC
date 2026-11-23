@@ -91,14 +91,11 @@ class _Weather:
                 or not state.on_ground:
             return
         elev = self._field_elevation(state)
-        if elev <= 0.0:
+        density_alt = self._density_altitude(state)
+        if density_alt is None:
             return
         oat_raw = getattr(state, "ambient_temperature_c", None)
-        # Zero Celsius is a reading, not a missing one -- ``or 15`` would
-        # warm a freezing day into a standard one.
         oat = 15.0 if oat_raw is None else float(oat_raw)
-        isa = 15.0 - 2.0 * (elev / 1000.0)
-        density_alt = elev + 120.0 * (oat - isa)
         if density_alt - elev < 2500.0 and density_alt < 7000.0:
             return
         self.state.density_alt_said = True
@@ -107,6 +104,23 @@ class _Weather:
             f"Density altitude {density_alt:,.0f} ft (field "
             f"{elev:,.0f} ft, {oat:.0f} C): expect a longer takeoff",
             "autonomous.weather.density")
+
+    def _density_altitude(self, state):
+        """The field's density altitude in feet, or None unsolved.
+
+        Pressure altitude corrected for temperature: the altitude the
+        airframe performs at rather than the one it sits at -- a five-
+        thousand-foot runway on a thirty-degree day flies like eight.
+        """
+        elev = self._field_elevation(state)
+        if elev <= 0.0:
+            return None
+        oat_raw = getattr(state, "ambient_temperature_c", None)
+        # Zero Celsius is a reading, not a missing one -- ``or 15`` would
+        # warm a freezing day into a standard one.
+        oat = 15.0 if oat_raw is None else float(oat_raw)
+        isa = 15.0 - 2.0 * (elev / 1000.0)
+        return elev + 120.0 * (oat - isa)
 
     def _watch_icing(self, state, now: float) -> None:
         """Ice protection on in visible moisture near freezing -- the

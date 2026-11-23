@@ -775,7 +775,7 @@ class _The_checklist_answered:
         d = self.director
         # Takeoff power on a prop aeroplane is props forward first --
         # full forward is where the lever can actually give it.
-        self._prop_levers()
+        self._prop_levers(mixture=self._takeoff_mixture(state))
         cap = (self._engine_limit_cap(state, takeoff=True)
                if state is not None else 1.0)
         lever = self._slew_lever(min(1.0, cap), up_per_s=0.45)
@@ -783,6 +783,20 @@ class _The_checklist_answered:
         if lever >= 1.0:
             d.takeoff_power()
         d.toga(True)
+
+    def _takeoff_mixture(self, state) -> float:
+        """The red knob for the roll: rich everywhere but a piston's
+        hot-and-high, where a full-rich sea-level takeoff floods the
+        power the density altitude already stole -- the POH's "lean for
+        maximum power" above roughly three thousand feet DA."""
+        from .. import aircraft_class as ac
+        if getattr(self, "_aircraft_class", "") not in (
+                ac.PISTON_SINGLE, ac.PISTON_TWIN) or state is None:
+            return 1.0
+        density_alt = self._density_altitude(state)
+        if density_alt is not None and density_alt > 3000.0:
+            return 0.8
+        return 1.0
 
     def _airborne_confirmed(self, state, now: float) -> bool:
         """Whether the aeroplane is really off -- the flag held long

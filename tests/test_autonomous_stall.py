@@ -59,7 +59,8 @@ def test_the_horn_held_hands_the_axes_to_the_recovery():
     assert fo.state.stall_recovering
     assert "autonomous.stall.enter" in _emit_keys(fo)
     fo._dir.autopilot.assert_called_with(False)
-    fo._dir.throttle.assert_called_with(1.0)
+    # The push comes first; full power waits for the wing to fly again.
+    fo._dir.throttle.assert_called_with(0.4)
     fo._dir.elevator.assert_called()
 
 

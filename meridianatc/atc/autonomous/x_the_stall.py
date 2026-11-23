@@ -88,6 +88,9 @@ class _The_stall:
         self.state.stall_recovering = True
         self.state.stall_count += 1
         self.state.stall_clear_since = 0.0
+        self._recovery_at = now
+        self._last_hdg = getattr(state, "heading_true", None)
+        self._last_hdg_at = now
         # The autopilot is part of how it got here -- the altitude or
         # vertical speed it was holding into the stall is what the bug
         # was set to. The recovery flies the aeroplane itself.
@@ -164,6 +167,22 @@ class _The_stall:
         self._emit("info", "Stall recovered -- resuming the flight",
                    "autonomous.stall.recovered")
 
+    def _yaw_rate(self, state, now: float) -> float:
+        """Heading change per second, kept between ticks.
+
+        No model on either sim publishes yaw rate on the requests the
+        batch already makes, so the rate is the heading's own delta --
+        good enough to tell a rotation from a heading change.
+        """
+        hdg = getattr(state, "heading_true", None)
+        last = getattr(self, "_last_hdg", None)
+        last_at = getattr(self, "_last_hdg_at", 0.0)
+        self._last_hdg, self._last_hdg_at = hdg, now
+        if hdg is None or last is None or now <= last_at:
+            return 0.0
+        delta = (float(hdg) - float(last) + 540.0) % 360.0 - 180.0
+        return delta / (now - last_at)
+
     def _fly_stall_recovery(self, state, now: float) -> None:
         """The recovery itself, every fast tick while it stands: full
         power, the drag in, a firm push, the wings levelled and the
@@ -172,7 +191,31 @@ class _The_stall:
         director = getattr(self, "director", None)
         if director is None:
             return
-        director.throttle(1.0)
+        # The heading's own clockwork tells a spin from a spiral: yawing
+        # fast with the wing quit is rotation, and rotation is a spin's
+        # first half -- an aileron push into it only stalls the other
+        # wing. Past forty degrees a second it is flown by the book:
+        # power off, ailerons neutral, rudder against the turn, nose
+        # full down.
+        yaw_rate = self._yaw_rate(state, now)
+        if abs(yaw_rate) > 40.0:
+            director.throttle(0.0)
+            director.spoilers(0.0)
+            director.aileron(0.0)
+            director.rudder(-1.0 if yaw_rate > 0.0 else 1.0)
+            director.elevator(_PUSH * 1.6)
+            return
+        # The wing quits on angle of attack alone, so the push comes
+        # first and the power after it: full throttle into a stalled,
+        # slow prop job adds torque and P-factor the rudder then has to
+        # fight. Half power keeps the slipstream over the surfaces
+        # while the nose comes down; the wing is let prove it flies --
+        # speed back over the book figure -- before it is asked to
+        # climb out of the hole.
+        stall_kt = float(self._limits(state).get("stall_kt") or 0.0)
+        ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
+        flying = stall_kt > 0.0 and ias >= stall_kt * 1.05
+        director.throttle(1.0 if flying else 0.4)
         director.spoilers(0.0)
         director.elevator(_PUSH)
         bank = float(getattr(state, "bank_deg", 0.0) or 0.0)

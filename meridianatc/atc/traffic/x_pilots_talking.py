@@ -157,14 +157,19 @@ class PilotsTalking:
 
         Only on frequencies where crews coordinate among themselves -- an
         uncontrolled field's advisory channel. Controlled fields go through
-        the controller; a pilot-to-pilot call there would be noise.
+        the controller; a pilot-to-pilot call there would be noise. A crew
+        asks once: nagging the same pilot every four minutes is not how a
+        real crew treats an unanswered call -- the flag clears when the
+        flight ends, not on a timer.
         """
         if station_position not in ("CTAF", "INFO"):
             return False
-        last = getattr(self, "_user_called_at", 0.0)
-        if now - last < 240.0:
-            return False
+        asked = getattr(self, "_asked_flights", None)
+        if asked is None:
+            asked = self._asked_flights = set()
         for flight in getattr(self, "flights", []):
+            if id(flight) in asked:
+                continue
             # A moving aeroplane is the one that wonders who else is on the
             # frequency; somebody parked or shutting down does not care.
             if flight.done or flight.phase in (
@@ -176,7 +181,7 @@ class PilotsTalking:
             reply = (f"{theirs}, {own}: say your position and intentions")
             self._say(flight, now, station_position, from_pilot=True,
                       make=lambda _b, _a, _n, r=reply: r)
-            self._user_called_at = now
+            asked.add(id(flight))
             log.debug("traffic crew %s calling the user", flight.written)
             return True
         return False

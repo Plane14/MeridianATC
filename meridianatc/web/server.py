@@ -103,7 +103,15 @@ def _origin_ok(origin: str, host: str = "") -> bool:
     """Whether the page a request came from is one that may call the API."""
     if origin == "null":
         # Opaque origins: a file:// page, the simulator's own panel frames.
-        return True
+        # Any website can produce one too, through a sandboxed iframe or a
+        # data: URL, so it is only trusted pointed at this machine itself.
+        name = _host_name(host)
+        if not name:
+            return True
+        try:
+            return ipaddress.ip_address(name).is_loopback
+        except ValueError:
+            return name in _LOCAL_HOSTS
     parts = urlsplit(origin)
     if parts.scheme == "coui":
         return True                # the simulator's panel
