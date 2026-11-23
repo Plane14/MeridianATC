@@ -1465,6 +1465,8 @@ function paintSettings() {
   // X-Plane only: which fleet draws the traffic. Ignored under MSFS.
   chips("renderer-chips", "renderer",
         config.traffic.xplane_renderer || "csl");
+  // X-Plane only, native/hybrid: who flies the spare AI-plane slots.
+  chips("fill-chips", "fill", config.traffic.xplane_fill || "sim");
   toggle("set-traffic-live", config.traffic.live ? config.traffic.live.enabled : false);
   if ($("set-traffic-live")) {
     // With FSLTL flying the traffic there is no live feed to switch on.
@@ -2936,6 +2938,10 @@ function wire() {
     on(chip, "click", () =>
       save({ "traffic.xplane_renderer": chip.dataset.renderer },
            "saved-traffic"));
+  }
+  for (const chip of $("fill-chips").querySelectorAll(".chip")) {
+    on(chip, "click", () =>
+      save({ "traffic.xplane_fill": chip.dataset.fill }, "saved-traffic"));
   }
   const switches = {
     "set-strict-digits": "atc.strict_icao_digits",

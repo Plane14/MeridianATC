@@ -519,6 +519,22 @@ class _The_other_aeroplanes:
                                              self.state.longitude,
                                              p["lat"], p["lon"]) <= radius_nm]
         self._choose_models(positions, now)
+        # Who flies the AI-plane slots the field's own flights did not
+        # claim (traffic.xplane_fill, native renderer only): "ambient"
+        # fills them with our transit aeroplanes on real legs, "none"
+        # leaves them empty, "sim" hands them back to X-Plane's own AI.
+        # Either way the exclusive flag tells the plugin not to let the
+        # simulator spawn into a gap while the roster is short.
+        if getattr(self.simtraffic, "native", False):
+            fill = getattr(self.config.traffic, "xplane_fill", "sim")
+            self.simtraffic.exclusive = fill in ("ambient", "none")
+            self.traffic.ambient_fill = fill == "ambient"
+            if self.traffic.ambient_fill:
+                room = self.simtraffic.MAX_SLOTS - len(positions)
+                if room > 0:
+                    positions += self.traffic.ambient_positions(now, room)
+        else:
+            self.traffic.ambient_fill = False
         with timed("tick.traffic.sync", warn_over_ms=500):
             self.simtraffic.sync(positions, now)
         self._follow_me_car()

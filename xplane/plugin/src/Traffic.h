@@ -69,6 +69,9 @@ struct Packet {
     // "native" roster: which ICAO type each AI-plane slot should be, so the
     // plugin can load default .acf models the engine then flies itself.
     std::vector<NativeAssign> native;
+    // When the roster owns every slot it wants: an unclaimed slot stays
+    // empty rather than being spawned into by the simulator's own AI.
+    bool exclusive = false;
     FollowMe followme;
     // The pilot's cleared taxi route for the map overlay, lat/lon pairs.
     std::vector<std::pair<double, double>> route;
@@ -136,6 +139,7 @@ inline Packet Parse(const std::string& wire) {
         return p;
     }
     if (p.kind == "native") {
+        p.exclusive = j.contains("exclusive") && Light(j, "exclusive");
         const auto& ac = j.at("ac");
         if (!ac.is_array() || ac.size() > 63)
             throw std::invalid_argument("native roster");

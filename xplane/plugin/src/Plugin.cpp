@@ -513,7 +513,7 @@ void ClearNative() {
     nativeBlocked = false;
     if (config.tcas && !xpmpOwned) TCAS();
 }
-void ApplyRoster(const std::vector<NativeAssign>& roster) {
+void ApplyRoster(const std::vector<NativeAssign>& roster, bool exclusive) {
     if (roster.empty()) { ClearNative(); return; }
     ScanAcf();
     EnableNative();
@@ -540,11 +540,12 @@ void ApplyRoster(const std::vector<NativeAssign>& roster) {
             if (ovrAuto) XPLMSetDatavi(ovrAuto, &zero, slot, 1);
         }
     nativeSlots = std::move(next);
-    // Every slot stays alive: the ones the roster did not claim were
-    // handed back above (ovrAuto 0), and the simulator's own AI fills
-    // them with its native traffic rather than leaving the sky empty.
-    // ``high`` only matters for the roster's half of the count.
-    XPLMSetActiveAircraftCount(1 + std::max(high, 19));
+    // Every slot stays alive unless the roster is exclusive: shared,
+    // the ones it did not claim were handed back above (ovrAuto 0) and
+    // the simulator's own AI fills them with its native traffic rather
+    // than leaving the sky empty; exclusive, a slot nobody claimed is
+    // simply absent -- the engine fills them itself or wants them empty.
+    XPLMSetActiveAircraftCount(1 + (exclusive ? high : std::max(high, 19)));
 }
 
 // The follow-me car is no aircraft: an instanced object placed on the
@@ -746,7 +747,7 @@ float Poll(float, float, int, void*) {
                     continue;
                 }
                 if (packet.kind == "native") {
-                    ApplyRoster(packet.native);
+                    ApplyRoster(packet.native, packet.exclusive);
                     peer = from;
                     continue;
                 }

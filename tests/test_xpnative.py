@@ -200,6 +200,24 @@ def test_hybrid_queues_the_drawings_while_native_flies(plugin):
         link.detach()
 
 
+def test_exclusive_flag_on_roster(plugin, link):
+    """traffic.xplane_fill != "sim" leaves a spare slot empty rather than
+    letting the simulator's own AI spawn into it."""
+    link.exclusive = True
+    link.sync([position()])
+    eventually(lambda: rosters(plugin))
+    assert rosters(plugin)[0]["exclusive"] is True
+    # Back to shared: the flag clears on the next roster rather than
+    # sticking at the last value sent.
+    link.exclusive = False
+    link.sync([position(), position("AAA")])
+    eventually(lambda: "exclusive" not in rosters(plugin)[-1])
+    # An unchanged roster still resends when the flag flips alone.
+    link.exclusive = True
+    link.sync([position(), position("AAA")])
+    eventually(lambda: rosters(plugin)[-1].get("exclusive") is True)
+
+
 def test_departed_callsign_keeps_its_slot(plugin, link):
     link.sync([position()])
     eventually(lambda: rosters(plugin))

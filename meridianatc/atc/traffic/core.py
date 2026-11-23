@@ -37,13 +37,14 @@ from .x_the_field import _The_field
 from .x_the_ground_driven import _The_ground_driven
 from .x_the_live_ones import _The_live_ones
 from .x_the_ones_standing import _The_ones_standing
+from .x_the_passing_ones import _The_passing_ones
 from .x_the_tower_watching import _The_tower_watching
 from .x_the_watchdog import _The_watchdog
 from .x_what_the_pilot import _What_the_pilot
 from .x_where_it_is import _Where_it_is
 
 
-class TrafficInjector(_The_field, _Flying_them, _What_the_pilot, _Making_aeroplanes, _The_ones_standing, _An_aeroplane_asked, _Test_tools_traffic, _The_ground_driven, _Running_them, _The_watchdog, _Instructions_and_being, _The_aeroplane_the, _Aeroplanes_somebody_else, _The_live_ones, _The_tower_watching, _Departures, _Where_it_is, _Arrivals, PilotsTalking, _Putting_words_together, _Small_facts_about):
+class TrafficInjector(_The_field, _Flying_them, _What_the_pilot, _Making_aeroplanes, _The_ones_standing, _The_passing_ones, _An_aeroplane_asked, _Test_tools_traffic, _The_ground_driven, _Running_them, _The_watchdog, _Instructions_and_being, _The_aeroplane_the, _Aeroplanes_somebody_else, _The_live_ones, _The_tower_watching, _Departures, _Where_it_is, _Arrivals, PilotsTalking, _Putting_words_together, _Small_facts_about):
     """Runs the other aeroplanes on the frequency.
 
     The engine calls :meth:`poll` on the situation loop and speaks whatever
@@ -127,6 +128,11 @@ class TrafficInjector(_The_field, _Flying_them, _What_the_pilot, _Making_aeropla
         # Whether anything is reporting the simulator's own traffic. Read only
         # to decide how much invented traffic to add on top of it.
         self.observed_count = 0
+        # Ambient fill for the X-Plane native renderer (traffic.xplane_fill):
+        # the engine turns this on, and the slots the frequency's own flights
+        # do not claim are flown by the transit aeroplanes of
+        # x_the_passing_ones rather than by the simulator's own AI.
+        self.ambient_fill = False
         # Aeroplanes the pilot asked for, waiting for the next tick to join
         # the roster -- see :meth:`spawn_on_runway`.
         self._asked_for: list[Flight] = []

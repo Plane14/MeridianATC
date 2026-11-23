@@ -778,6 +778,17 @@
             <div class="why" data-i18n="set.xplane_renderer_why">Lightweight models need the CSL packs installed but carry real airline liveries and as many aeroplanes as the field wants. X-Plane's own aircraft need nothing installed — the sim's flight model flies them, rotorcraft included — but there are at most 19, they wear no airline colours, and their taxiing is less precise.</div>
             <div class="why" data-i18n="set.source_next">Takes effect at the next session.</div>
           </div>
+          <!-- Who flies the AI-plane slots the field's own traffic does
+               not claim (traffic.xplane_fill): opt-in, native/hybrid only. -->
+          <div class="field-block">
+            <div class="label" data-i18n="set.xplane_fill">The spare X-Plane aircraft slots</div>
+            <div class="chips" id="fill-chips">
+              <button class="chip" data-fill="sim" data-i18n="set.fill_sim">X-Plane's own traffic</button>
+              <button class="chip" data-fill="ambient" data-i18n="set.fill_ambient">MeridianATC flights</button>
+              <button class="chip" data-fill="none" data-i18n="set.fill_none">Left empty</button>
+            </div>
+            <div class="why" data-i18n="set.xplane_fill_why">Only under "X-Plane's own aircraft" or "hybrid" above. X-Plane's own traffic: the simulator's AI fills the spare slots with its random flights. MeridianATC flights: every slot flies one of ours — real callsigns and types, IFR airliners at cruise, VFR light aircraft low, helicopters — on legs the aircraft could actually fly, off the frequency. Left empty: only the field's own flights are drawn.</div>
+          </div>
           <div class="setting">
             <div class="text">
               <div class="name" data-i18n="set.traffic_live">Live traffic (adsb.lol, adsb.fi)</div>

@@ -353,6 +353,10 @@ class XPNativeTraffic(XPlaneTraffic):
         self._assigned_at = {}    # id -> when its slot was claimed
         self._departed = {}       # id -> when it stopped being offered
         self._confirmed = set()   # ids the plugin's status reports as planes
+        # traffic.xplane_fill != "sim": an unclaimed slot stays empty
+        # rather than spawning one of the simulator's own AI planes.
+        self.exclusive = False
+        self._exclusive_sent = False
 
     @property
     def native(self):
@@ -406,16 +410,22 @@ class XPNativeTraffic(XPlaneTraffic):
                 f"{_POSITION}/plane{slot}_{key}")
 
     def _send_roster(self, roster, now):
-        if roster == self._roster and now - self._roster_at < self.HELLO_EVERY_S:
+        exclusive = bool(self.exclusive)
+        if (roster == self._roster and exclusive == self._exclusive_sent
+                and now - self._roster_at < self.HELLO_EVERY_S):
             return
-        if self._send({"v": 1, "t": "native",
-                       "ac": [{"id": ident, "slot": slot, "type": tcode,
-                               "op": op,
-                               "lat": pos[0], "lon": pos[1],
-                               "alt": pos[2]}
-                              for slot, ident, tcode, op, pos in roster]}):
+        packet = {"v": 1, "t": "native",
+                  "ac": [{"id": ident, "slot": slot, "type": tcode,
+                          "op": op,
+                          "lat": pos[0], "lon": pos[1],
+                          "alt": pos[2]}
+                         for slot, ident, tcode, op, pos in roster]}
+        if exclusive:
+            packet["exclusive"] = True
+        if self._send(packet):
             self._roster = roster
             self._roster_at = now
+            self._exclusive_sent = exclusive
 
     def sync(self, positions, now=None):
         with self._lock:

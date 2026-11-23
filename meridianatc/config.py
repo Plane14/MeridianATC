@@ -1179,6 +1179,14 @@ class TrafficConfig:
     # no CSL packs to install and real rotorcraft, at the price of the
     # sim's slot cap and generic looks.
     xplane_renderer: str = "csl"
+    # Who flies the AI-plane slots the field's own flights do not claim,
+    # when the native renderer is drawing. "sim" is X-Plane's own AI
+    # traffic on its random legs, as it always was. "ambient" fills
+    # every slot with this program's transit aeroplanes -- real callsigns
+    # and types on capability-matched legs, IFR and VFR -- and "none"
+    # keeps the spare slots empty. Opt-in: only "ambient" and "none"
+    # change anything, and only under the native or hybrid renderer.
+    xplane_fill: str = "sim"
     # Drawn every frame between the traffic's ticks (meridianatc.atc.follow),
     # frozen so the simulator does not move them itself; off writes each
     # aeroplane once a tick, which is what jumped on the taxiway and made a
@@ -1328,6 +1336,13 @@ describe(
                                          "set.renderer_hybrid"),
                             restart=True, label="set.xplane_renderer",
                             help="set.xplane_renderer_why"),
+    xplane_fill=Setting("traffic", "traffic",
+                        choices=("sim", "ambient", "none"),
+                        choice_keys=("set.fill_sim",
+                                     "set.fill_ambient",
+                                     "set.fill_none"),
+                        label="set.xplane_fill",
+                        help="set.xplane_fill_why"),
     density=Setting("traffic", "traffic", min=0, max=3, step=0.25,
                     widget="slider", label="set.how_busy"),
     parked=Setting("traffic", "traffic", min=0, max=80, restart=True),
