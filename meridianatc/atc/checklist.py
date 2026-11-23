@@ -53,11 +53,11 @@ import time
 from dataclasses import dataclass, field
 
 from ..logs import CREW
+from ..sim.state import engine_vars as _engine_vars
 from . import interphone as ip
 from .checklist_files import STANDARD_CHECKLISTS, Book, Check, Checklist, Item
 from .crew_lines import CHECKLIST_DIGITS, CHECKLIST_STATES, CHECKLIST_WORDS
 from .session import Phase
-from ..sim.state import engine_vars as _engine_vars
 
 log = logging.getLogger(__name__)
 
