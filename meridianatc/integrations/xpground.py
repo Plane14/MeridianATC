@@ -203,13 +203,18 @@ def _parse_block(text: str) -> _AirportBlock:
                 block.nodes[int(fields[4])] = (float(fields[1]),
                                                float(fields[2]))
             elif code == "1202" and len(fields) >= 5:
-                kind = fields[4].split(" ", 1)[0]
+                kind = fields[4]
                 if kind.startswith("runway"):
                     name = "runway"
-                elif kind == "taxiway":
-                    name = ""
-                elif kind.startswith("taxiway_"):
-                    name = kind[8:]
+                elif kind == "taxiway" or kind.startswith("taxiway_"):
+                    # taxiway_<letter> carries the pavement's size class
+                    # (A-F), never the name -- the ATC designator is the
+                    # token after it: "taxiway_A D2" is taxiway D2 of
+                    # width A, and a bare "taxiway_C" is an unnamed link.
+                    # The width letter read as the name called A
+                    # Coruña's taxiway S "Delta", and would call
+                    # Barajas's C5 "Charlie" the same way.
+                    name = " ".join(fields[5:])
                 else:
                     continue
                 block.edges.append((int(fields[1]), int(fields[2]),

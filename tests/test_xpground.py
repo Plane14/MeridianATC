@@ -23,6 +23,12 @@ APT_DAT = """A
 1201 48.354 11.773 0 2
 1202 1 2 twoway taxiway_A
 1300 48.3532 11.7722 90.0 gate jets A1
+1201 48.355 11.774 0 3
+1201 48.356 11.775 0 4
+1202 3 4 twoway taxiway_C S
+1201 48.357 11.776 0 5
+1201 48.358 11.777 0 6
+1202 5 6 twoway taxiway B2
 99
 """
 
@@ -72,6 +78,19 @@ def test_unknown_and_layout_still_work(xp_root):
     layout = ground.layout("EDDM")
     assert layout is not None and layout.ident == "EDDM"
     assert len(layout.stands) == 1 and layout.edges
+
+
+def test_taxiway_names_are_the_designator_not_the_size(xp_root):
+    """``taxiway_C S`` is taxiway S of width class C: the letter on the
+    ``taxiway_`` token is the pavement's size (A-F), and the name is
+    whatever follows it -- the read that said "Delta" for A Coruña's
+    taxiway S. The bare ``taxiway A`` form names it A; an edge with no
+    name after the class is unnamed."""
+    ground = XPlaneGround(root=xp_root)
+    layout = ground.layout("EDDM")
+    labels = sorted({label for near in layout.edges.values()
+                         for _o, _l, _r, label in near})
+    assert labels == ["", "B2", "S"]
 
 
 def test_no_install_means_no_answers():
