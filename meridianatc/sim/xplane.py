@@ -260,6 +260,28 @@ for _engine in range(16):
         f"sim/cockpit2/engine/indicators/prop_speed_rpm[{_engine}]"
     EXTRA[f"acf_des_rpm{_engine}"] = \
         f"sim/aircraft/prop/acf_des_rpm_prp[{_engine}]"
+for _engine in range(1, 4):
+    # Engines two through four's own gauges and levers: engine one's
+    # figures keep the scalar names in DATAREFS, these land under the
+    # state's eng2_/eng3_/eng4_ fields. acf_num_engines is the roster
+    # read() believes -- the arrays answer zeros past it, and a zero
+    # is not an engine.
+    EXTRA[f"trq_nm{_engine}"] = \
+        f"sim/flightmodel/engine/ENGN_TRQ[{_engine}]"
+    EXTRA[f"itt{_engine}"] = \
+        f"sim/flightmodel/engine/ENGN_EGT_c[{_engine}]"
+    EXTRA[f"n1_{_engine}"] = \
+        f"sim/flightmodel/engine/ENGN_N1_[{_engine}]"
+    EXTRA[f"n2_{_engine}"] = \
+        f"sim/flightmodel/engine/ENGN_N2_[{_engine}]"
+    EXTRA[f"rpm{_engine}"] = \
+        f"sim/cockpit2/engine/indicators/engine_speed_rpm[{_engine}]"
+    EXTRA[f"thr{_engine}"] = \
+        f"sim/cockpit2/engine/actuators/throttle_ratio[{_engine}]"
+    EXTRA[f"mix{_engine}"] = \
+        f"sim/cockpit2/engine/actuators/mixture_ratio[{_engine}]"
+    EXTRA[f"prop{_engine}"] = \
+        f"sim/cockpit2/engine/actuators/prop_ratio[{_engine}]"
 for _tank in range(9):
     EXTRA[f"tank{_tank}"] = f"sim/flightmodel/weight/m_fuel[{_tank}]"
     EXTRA[f"tank_ratio{_tank}"] = f"sim/aircraft/overflow/acf_tank_rat[{_tank}]"
@@ -768,6 +790,45 @@ class XPlaneSource:
                                      else itt_red)
         elif 300.0 <= itt_grn <= 1400.0:
             state.eng_itt_takeoff_c = state.eng_itt_limit_c = itt_grn
+        # Engines two through four, where the airframe has them: the
+        # same gauges and levers engine one's scalars report, under the
+        # eng2_/eng3_/eng4_ names. acf_num_engines is the roster -- the
+        # dataref arrays answer zeros past it, and a zero is not an
+        # engine -- so an absent count stands the whole row down rather
+        # than inventing three more engines' readings.
+        for i in range(1, 4):
+            if state.engine_count <= i:
+                break
+            eng = f"eng{i + 1}"
+            if f"thr{i}" in values:
+                setattr(state, f"{eng}_throttle_pct",
+                        values[f"thr{i}"] * 100.0)
+            if f"mix{i}" in values:
+                setattr(state, f"{eng}_mixture_pct",
+                        values[f"mix{i}"] * 100.0)
+                # On a turboprop the mixture channel is the condition
+                # lever, the same wiring engine one's condition_pct
+                # derives.
+                if state.engine_type == 5:
+                    setattr(state, f"{eng}_condition_pct",
+                            values[f"mix{i}"] * 100.0)
+            if f"prop{i}" in values and state.engine_type in (1, 5):
+                setattr(state, f"{eng}_prop_pct",
+                        values[f"prop{i}"] * 100.0)
+            if f"trq_nm{i}" in values:
+                setattr(state, f"{eng}_torque_nm", values[f"trq_nm{i}"])
+                if trq_red > 0.0:
+                    setattr(state, f"{eng}_torque_pct",
+                            values[f"trq_nm{i}"]
+                            / (trq_red * 1.35582) * 100.0)
+            if f"itt{i}" in values:
+                setattr(state, f"{eng}_itt_c", values[f"itt{i}"])
+            if f"n1_{i}" in values:
+                setattr(state, f"{eng}_n1_pct", values[f"n1_{i}"])
+            if f"n2_{i}" in values:
+                setattr(state, f"{eng}_n2_pct", values[f"n2_{i}"])
+            if f"rpm{i}" in values:
+                setattr(state, f"{eng}_rpm", values[f"rpm{i}"])
         # The world-axes wind onto the body axes the weather watch
         # reads: along the nose and across the wing, knots.
         if "wind_x_ms" in values or "wind_z_ms" in values:
@@ -853,6 +914,25 @@ class XPlaneSource:
             known.add("condition_pct")
         if state.engine_type in (1, 5) and "collective_position" in values:
             known.add("prop_pct")
+        for i in range(1, 4):
+            if state.engine_count <= i:
+                break
+            eng = f"eng{i + 1}"
+            for suffix, src in (("throttle_pct", f"thr{i}"),
+                                ("mixture_pct", f"mix{i}"),
+                                ("torque_nm", f"trq_nm{i}"),
+                                ("itt_c", f"itt{i}"),
+                                ("n1_pct", f"n1_{i}"),
+                                ("n2_pct", f"n2_{i}"),
+                                ("rpm", f"rpm{i}")):
+                if src in values:
+                    known.add(f"{eng}_{suffix}")
+            if f"prop{i}" in values and state.engine_type in (1, 5):
+                known.add(f"{eng}_prop_pct")
+            if f"mix{i}" in values and state.engine_type == 5:
+                known.add(f"{eng}_condition_pct")
+            if f"trq_nm{i}" in values and trq_red > 0.0:
+                known.add(f"{eng}_torque_pct")
         if "wing_boot" in values or "wing_heat" in values:
             known.add("wing_deice_on")
         if state.category == "Helicopter":

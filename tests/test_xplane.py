@@ -251,6 +251,53 @@ def test_a_published_green_arc_is_a_torque_ceiling(xp):
     assert "eng_tq_limit_nm" not in state.unavailable
 
 
+def test_a_twin_reports_its_second_engines_own_gauges(xp):
+    """The King Air's number two: the same gauges and levers engine
+    one's scalars carry, under the eng2_ names, gated on the count the
+    airframe reports -- a phantom index is no engine."""
+    server, link = xp
+    server.values[DATAREFS["engine_count"][0]] = 2
+    server.values.update({
+        EXTRA["xp_engine_type"]: 9,
+        EXTRA["thr1"]: .82, EXTRA["mix1"]: .95,
+        EXTRA["prop1"]: .9, EXTRA["trq_nm1"]: 1700.0,
+        EXTRA["itt1"]: 705.0, EXTRA["n1_1"]: 99.0,
+        EXTRA["n2_1"]: 95.0, EXTRA["rpm1"]: 2200.0,
+        # The ghosts: indexes past the count still answer zeros.
+        EXTRA["thr2"]: 0.0, EXTRA["itt2"]: 0.0, EXTRA["trq_nm2"]: 0.0,
+    })
+    assert link.connect()
+    eventually(lambda: "itt1" in link._values)
+    state = link.read()
+    assert state.eng2_throttle_pct == pytest.approx(82.0)
+    assert state.eng2_mixture_pct == pytest.approx(95.0)
+    # The turboprop's mixture channel is the condition lever, per engine.
+    assert state.eng2_condition_pct == pytest.approx(95.0)
+    assert state.eng2_prop_pct == pytest.approx(90.0)
+    assert state.eng2_torque_nm == pytest.approx(1700.0)
+    assert state.eng2_itt_c == pytest.approx(705.0)
+    assert state.eng2_n1_pct == pytest.approx(99.0)
+    assert state.eng2_n2_pct == pytest.approx(95.0)
+    assert state.eng2_rpm == pytest.approx(2200.0)
+    # The answering index past the count is not a third engine.
+    assert state.eng3_throttle_pct is None
+    assert state.eng3_itt_c is None
+    assert state.eng4_torque_nm is None
+    assert "eng2_itt_c" not in state.unavailable
+    assert "eng3_itt_c" in state.unavailable
+
+
+def test_a_single_reports_no_second_engine(xp):
+    server, link = xp
+    server.values[DATAREFS["engine_count"][0]] = 1
+    server.values.update({EXTRA["thr1"]: .5, EXTRA["itt1"]: 800.0})
+    assert link.connect()
+    eventually(lambda: "itt1" in link._values)
+    state = link.read()
+    assert state.eng2_throttle_pct is None
+    assert state.eng2_itt_c is None
+
+
 def test_radio_and_command_writes_and_safe_noops(xp):
     server, link = xp
     assert not link.set_com(123.805)

@@ -245,6 +245,44 @@ def test_percent_torque_still_governs_where_it_is_published():
     assert "tq" not in fo._engines_over_limit(under)
 
 
+def test_the_second_engines_limits_are_its_own():
+    """A King Air with the right engine running hot: engine one's
+    scalar reads fine, but the watch answers the slot that is over --
+    "itt #2" with its own persistence clock, not a false all-clear
+    from the engine that happens to be first."""
+    fo = _king_air()
+    hot_right = AircraftState(
+        on_ground=False, engines_running=True,
+        eng_itt_c=650.0, eng2_itt_c=760.0,
+        eng_itt_limit_c=695.0, eng_itt_takeoff_c=700.0)
+    over = fo._engines_over_limit(hot_right)
+    assert "itt #2" in over and "itt" not in over
+    # And the other way around: engine one's own scalar is #1.
+    hot_left = AircraftState(
+        on_ground=False, engines_running=True,
+        eng_itt_c=760.0, eng2_itt_c=650.0,
+        eng_itt_limit_c=695.0, eng_itt_takeoff_c=700.0)
+    over = fo._engines_over_limit(hot_left)
+    assert "itt" in over and "itt #2" not in over
+
+
+def test_the_second_engines_torque_is_capped_too():
+    fo = _king_air()
+    over = AircraftState(on_ground=False, engines_running=True,
+                         eng_torque_nm=1200.0, eng2_torque_nm=1900.0)
+    assert "tq #2" in fo._engines_over_limit(over)
+
+
+def test_an_unreported_slot_is_no_engine():
+    """A single has no eng2_ fields at all: the per-engine pass must
+    not read a second engine out of the defaults."""
+    fo = _fo()
+    state = AircraftState(on_ground=False, engines_running=True)
+    assert fo._engines_over_limit(state) == []
+    assert all(not name.endswith(("#2", "#3", "#4"))
+               for name in fo._engines_over_limit(state))
+
+
 # -- the fuel selector --------------------------------------------------------
 
 
@@ -458,6 +496,21 @@ def test_engines_not_running_leaves_the_lever_at_the_checklists_stop():
                                        engines_running=False,
                                        condition_pct=0.0))
     fo._dir.condition.assert_not_called()
+
+
+def test_the_second_levers_detent_counts_on_a_twin():
+    """A King Air whose number-two lever stayed at cut-off: the first
+    lever at the detent does not excuse it -- the floor is the lowest
+    lever, and the write moves them both."""
+    fo = _fo(_aircraft_class="turboprop_twin")
+    fo._manage_condition(_running(
+        on_ground=True, condition_pct=50.0, eng2_condition_pct=0.0))
+    fo._dir.condition.assert_called_once_with(1.0)
+    # And in the air: low idle on the second engine still wants high.
+    fo2 = _fo(_aircraft_class="turboprop_twin")
+    fo2._manage_condition(_running(
+        on_ground=False, condition_pct=100.0, eng2_condition_pct=50.0))
+    fo2._dir.condition.assert_called_once_with(2.0)
 
 
 def test_the_condition_lever_is_not_written_twice_in_the_same_breath():

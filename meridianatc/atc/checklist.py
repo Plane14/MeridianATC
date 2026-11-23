@@ -57,6 +57,7 @@ from . import interphone as ip
 from .checklist_files import STANDARD_CHECKLISTS, Book, Check, Checklist, Item
 from .crew_lines import CHECKLIST_DIGITS, CHECKLIST_STATES, CHECKLIST_WORDS
 from .session import Phase
+from ..sim.state import engine_vars as _engine_vars
 
 log = logging.getLogger(__name__)
 
@@ -169,6 +170,24 @@ def holds(check: Check, actual, expected) -> bool:
     if op == "max":
         return a <= e + tol
     return True
+
+
+def _engine_check(state, check: Check, expected):
+    """(all reported engines hold, the value that disagreed first).
+
+    Every slot the simulator reports is checked: engine one's scalar
+    first, then the eng2_/eng3_/eng4_ fields where the aircraft has
+    them. An unpublished slot holds by the unknown-is-agreement rule,
+    so a single answers on engine one alone, the way it always did.
+    """
+    actual = getattr(state, check.var, None)
+    for name in _engine_vars(check.var):
+        value = getattr(state, name, None)
+        if not holds(check, value, expected):
+            return False, value
+        if value is not None and actual is None:
+            actual = value
+    return True, actual
 
 
 class ChecklistRunner:
@@ -674,21 +693,37 @@ class ChecklistRunner:
             self._note("unchecked", self._run, var=check.var,
                        why="the simulator does not report this variable")
             return None, None, expected, False
-        actual = getattr(self._state, check.var, None)
-        if holds(check, actual, expected):
+        ok, actual = _engine_check(self._state, check, expected)
+        if ok:
             return True, actual, expected, False
-        # The state disagrees. Before saying so, the variable itself, now.
-        fresh = None
+        # The state disagrees somewhere. Before saying so, every slot the
+        # simulator reports, read again now: engine one's scalar like
+        # before, and on a twin the other engines' answers too -- a
+        # second lever that never moved is not excused for being unread.
+        # A slot the state does not carry is no engine: asking it would
+        # pull SimConnect's phantom zero for an index past the count.
+        fresh_values = []
         if self.fresh is not None:
-            try:
-                fresh = self.fresh(check.var)
-            except Exception:
-                log.debug("could not read %s again", check.var, exc_info=True)
-        if fresh is None:
+            for name in _engine_vars(check.var):
+                if getattr(self._state, name, None) is None:
+                    continue
+                try:
+                    value = self.fresh(name)
+                except Exception:
+                    log.debug("could not read %s again", name,
+                              exc_info=True)
+                    value = None
+                if value is not None:
+                    fresh_values.append(value)
+        if not fresh_values:
             self._note("unchecked", self._run, var=check.var, stale=actual,
                        why="the simulator gave no answer when read again")
             return None, None, expected, True
-        return holds(check, fresh, expected), fresh, expected, True
+        actual = next((value for value in fresh_values
+                       if not holds(check, value, expected)),
+                      fresh_values[0])
+        return all(holds(check, value, expected)
+                   for value in fresh_values), actual, expected, True
 
     def _agrees_now(self, item: Item) -> bool:
         check = item.check
@@ -697,8 +732,8 @@ class ChecklistRunner:
         expected = self._expected(check)
         if expected is None:
             return False
-        actual = getattr(self._state, check.var, None)
-        return actual is not None and holds(check, actual, expected)
+        ok, actual = _engine_check(self._state, check, expected)
+        return ok and actual is not None
 
     def _digits(self, value) -> str:
         table = CHECKLIST_DIGITS.get(self.language, CHECKLIST_DIGITS["en"])

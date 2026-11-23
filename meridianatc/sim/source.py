@@ -408,6 +408,38 @@ def type_from_title(title: str, model: str = "") -> str:
     return ""
 
 
+# Engines two through four's own gauges and levers: the variable names
+# are engine one's with the :1 index slid, and the answers land under
+# the state's eng2_/eng3_/eng4_ fields. NUMBER_OF_ENGINES is then the
+# roster read() believes, because an out-of-range index on SimConnect
+# answers -- a phantom zero or a phantom False that must never read as
+# a third engine on a twin.
+_PER_ENGINE_REQUESTS: tuple[tuple[str, str, str, str], ...] = tuple(
+    (name.format(i=i), f"eng{i}_{attr}", kind, "slow")
+    for i in (2, 3, 4)
+    for name, attr, kind in (
+        ("ENG_TORQUE:{i}", "torque_nm", "ftpds_nm"),
+        ("ENG_TORQUE_PERCENT:{i}", "torque_pct", "pct_wide"),
+        ("TURB_ENG_ITT:{i}", "itt_c", "raw"),
+        ("TURB_ENG_N1:{i}", "n1_pct", "raw"),
+        ("TURB_ENG_N2:{i}", "n2_pct", "raw"),
+        ("GENERAL_ENG_RPM:{i}", "rpm", "raw"),
+        ("GENERAL_ENG_THROTTLE_LEVER_POSITION:{i}", "throttle_pct",
+         "throttle"),
+        ("GENERAL_ENG_MIXTURE_LEVER_POSITION:{i}", "mixture_pct", "raw"),
+        ("GENERAL_ENG_PROPELLER_LEVER_POSITION:{i}", "prop_pct", "raw"),
+        ("TURB_ENG_CONDITION_LEVER_POSITION:{i}", "condition_pct",
+         "condition"),
+    ))
+
+# The engN_ field suffixes the count gate Nones: combustion (registered
+# the literal way above, before the table was generated) plus every
+# gauge and lever _PER_ENGINE_REQUESTS lands.
+_PER_ENGINE_SUFFIXES = ("combustion",) + tuple(
+    dict.fromkeys(attr for _name, attr, _kind, _tier
+                  in _PER_ENGINE_REQUESTS))
+
+
 class SimConnectSource:
     """Reads aircraft state from Microsoft Flight Simulator over SimConnect."""
 
@@ -772,7 +804,7 @@ class SimConnectSource:
         ("LIGHT_LOGO_ON", "logo_light", "bool", "slow"),
         ("LIGHT_WING_ON", "wing_light", "bool", "slow"),
         ("LIGHT_RECOGNITION", "recog_light", "bool", "slow"),
-    )
+    ) + _PER_ENGINE_REQUESTS
 
     def __init__(self, poll_interval: float = 0.25, request_timeout_ms: int = 400,
                  dll_path: str = ""):
@@ -1398,9 +1430,15 @@ class SimConnectSource:
         # A turboprop whose own condition-lever variable never answered
         # carries that lever on the mixture axis -- the engines.cfg
         # without DisableMixtureControls is why the red knob is the same
-        # three stops there.
+        # three stops there. Per engine, the way the levers sit: a twin
+        # can publish the enum on one axis and not the other.
         if state.engine_type == 5 and "condition_pct" not in self._values:
             state.condition_pct = state.mixture_pct
+        if state.engine_type == 5:
+            for i in (2, 3, 4):
+                if f"eng{i}_condition_pct" not in self._values:
+                    setattr(state, f"eng{i}_condition_pct",
+                            getattr(state, f"eng{i}_mixture_pct"))
         with self._lock:
             self._state = state
         return state
@@ -1585,11 +1623,16 @@ class SimConnectSource:
         # A combustion index past the reported engine count still answers
         # on SimConnect -- a False naming an engine that is not there,
         # which the engine watch reads as the failure that never
-        # happened. Only slots inside the count are engines; the rest
-        # are unpublished, and unpublished is None.
-        if state.engine_count > 0:
-            for i in range(state.engine_count + 1, 5):
-                setattr(state, f"eng{i}_combustion", None)
+        # happened. The lever and gauge indexes answer the same phantom
+        # way: a twin's :3 throttle reports 0 forever, which a checklist
+        # would check as a third engine's lever. Only slots inside the
+        # count are engines; the rest are unpublished, and unpublished
+        # is None. And where the count itself never answered, no index
+        # past the first is trusted at all.
+        for i in range(2, 5):
+            if not state.engine_count or i > state.engine_count:
+                for suffix in _PER_ENGINE_SUFFIXES:
+                    setattr(state, f"eng{i}_{suffix}", None)
 
         # The piston key's five stops from its two magneto switches and
         # the starter: off, left, right, both, and start while it cranks

@@ -11,6 +11,7 @@ from ..notices import (
 )
 from ..powerplant import cooling_for, limits_for
 from ._shared import AutonomousPhase
+from ...sim.state import engine_vars
 
 
 class _The_engines:
@@ -86,48 +87,72 @@ class _The_engines:
         warning and the lever cap tell the same story.
         """
         lim = self._engine_limits()
-        over = []
-        ng = float(getattr(state, "eng_n1_pct", 0.0) or 0.0)
-        if lim.ng_max_pct and ng > lim.ng_max_pct + self._MARGIN_NG:
-            over.append("ng")
-        itt = float(getattr(state, "eng_itt_c", 0.0) or 0.0)
-        # The model's own red line rules where it publishes one -- an
-        # X-Plane author who filled in red_hi_ITT knew the figure better
-        # than the class table does.
-        ceiling = (float(getattr(state, "eng_itt_takeoff_c", 0.0) or 0.0)
-                   if takeoff else
-                   float(getattr(state, "eng_itt_limit_c", 0.0) or 0.0))
-        if not ceiling:
-            ceiling = (lim.itt_takeoff_c if takeoff and lim.itt_takeoff_c
-                       else lim.itt_max_c or lim.itt_takeoff_c)
-        if ceiling and itt > ceiling + self._MARGIN_ITT:
-            over.append("itt")
-        rpm = float(getattr(state, "eng_rpm", 0.0) or 0.0)
-        if lim.rpm_max and rpm > lim.rpm_max + self._MARGIN_RPM:
-            over.append("rpm")
-        tq = float(getattr(state, "eng_torque_pct", 0.0) or 0.0)
+        # The ceilings once, the same for every engine: the model's own
+        # red lines where it publishes them -- an X-Plane author who
+        # filled in red_hi_ITT knew the figure better than the class
+        # table does -- the type's or the class's where it does not.
+        itt_ceiling = (float(getattr(state, "eng_itt_takeoff_c", 0.0)
+                             or 0.0)
+                       if takeoff else
+                       float(getattr(state, "eng_itt_limit_c", 0.0) or 0.0))
+        if not itt_ceiling:
+            itt_ceiling = (lim.itt_takeoff_c
+                           if takeoff and lim.itt_takeoff_c
+                           else lim.itt_max_c or lim.itt_takeoff_c)
         tq_ceiling = (lim.tq_takeoff_pct if takeoff and lim.tq_takeoff_pct
                       else lim.tq_cont_pct or lim.tq_takeoff_pct)
-        if tq_ceiling and tq > tq_ceiling + self._MARGIN_TQ:
-            over.append("tq")
-        elif not tq_ceiling:
-            # No per-cent reference: the model's own absolute ceiling
-            # where it published one (green_hi_TRQ / acf_max_TRQ), else
-            # the type's book figure -- the King Air whose torque gauge
-            # paints a 1,315 ft-lb red line onto a dataref that reads
-            # 1.0 gets its ceiling from the POH, not the paint.
-            trq_nm = float(getattr(state, "eng_torque_nm", 0.0) or 0.0)
+        # No per-cent reference gets an absolute ceiling: the model's
+        # own published one (green_hi_TRQ / acf_max_TRQ), else the
+        # type's book figure -- the King Air whose torque gauge paints
+        # a 1,315 ft-lb red line onto a dataref that reads 1.0 gets its
+        # ceiling from the POH, not the paint.
+        nm_ceiling = 0.0
+        if not tq_ceiling:
             nm_ceiling = (float(getattr(
                 state,
                 "eng_tq_takeoff_nm" if takeoff else "eng_tq_limit_nm",
                 0.0) or 0.0)
                 or (lim.tq_takeoff_nm if takeoff and lim.tq_takeoff_nm
                     else lim.tq_max_nm or lim.tq_takeoff_nm))
-            if nm_ceiling and trq_nm > nm_ceiling + self._MARGIN_TQ_NM:
-                over.append("tq")
-        # Cylinder-head temperature: the model's own red line where the
-        # sim publishes one, the type's or the class's where it does not.
-        # A piston's CHT is a limit like the turbine's ITT.
+        over = []
+        # Every engine the sim reports: engine one's figures are the
+        # scalars, engines two through four carry the eng2_/eng3_/eng4_
+        # names, and a slot that never answered is no engine. The tag
+        # names the engine for the call, and its own persistence clock
+        # -- a twin's second PT6 running hot is "itt #2", not "itt".
+        for name in engine_vars("eng_n1_pct"):
+            ng = getattr(state, name, None)
+            tag = "" if name == "eng_n1_pct" else " #" + name[3]
+            if ng is not None and lim.ng_max_pct \
+                    and float(ng) > lim.ng_max_pct + self._MARGIN_NG:
+                over.append(f"ng{tag}")
+        for name in engine_vars("eng_itt_c"):
+            itt = getattr(state, name, None)
+            tag = "" if name == "eng_itt_c" else " #" + name[3]
+            if itt is not None and itt_ceiling \
+                    and float(itt) > itt_ceiling + self._MARGIN_ITT:
+                over.append(f"itt{tag}")
+        for name in engine_vars("eng_rpm"):
+            rpm = getattr(state, name, None)
+            tag = "" if name == "eng_rpm" else " #" + name[3]
+            if rpm is not None and lim.rpm_max \
+                    and float(rpm) > lim.rpm_max + self._MARGIN_RPM:
+                over.append(f"rpm{tag}")
+        for name in engine_vars("eng_torque_pct"):
+            tq = getattr(state, name, None)
+            tag = "" if name == "eng_torque_pct" else " #" + name[3]
+            if tq is not None and tq_ceiling \
+                    and float(tq) > tq_ceiling + self._MARGIN_TQ:
+                over.append(f"tq{tag}")
+        if not tq_ceiling:
+            for name in engine_vars("eng_torque_nm"):
+                trq_nm = getattr(state, name, None)
+                tag = "" if name == "eng_torque_nm" else " #" + name[3]
+                if trq_nm is not None and nm_ceiling \
+                        and float(trq_nm) > nm_ceiling + self._MARGIN_TQ_NM:
+                    over.append(f"tq{tag}")
+        # Cylinder-head temperature stays a single line: the scalar is
+        # already the hottest head the engines report.
         cht = float(getattr(state, "eng_cht_c", 0.0) or 0.0)
         ceiling = self._cht_limit(state)
         if ceiling and cht > ceiling + self._MARGIN_CHT:
@@ -525,7 +550,15 @@ class _The_engines:
         flying = not getattr(state, "on_ground", True) \
             or self.state.phase in (AutonomousPhase.LINE_UP,
                                     AutonomousPhase.TAKEOFF)
-        lever = float(getattr(state, "condition_pct", 0.0) or 0.0)
+        # Every lever the sim reports has to reach the detent: engine
+        # one's scalar, and on a twin the others under the eng2_/eng3_/
+        # eng4_ names -- the lowest of them is the lever the phase still
+        # owes, and the write below moves them all.
+        levers = [v for v in (getattr(state, name, None)
+                              for name in engine_vars("condition_pct"))
+                  if v is not None]
+        lever = min(levers) if levers \
+            else float(getattr(state, "condition_pct", 0.0) or 0.0)
         want, floor = (2.0, self._COND_HIGH) if flying \
             else (1.0, self._COND_LOW)
         if lever >= floor:

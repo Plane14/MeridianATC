@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from ._shared import (
+    _engine_check,
     _gs_band,
     _nws_fade,
     _yaw_rate_cap,
-    holds,
     ip,
     log,
     time,
@@ -86,8 +86,8 @@ class _The_checklist_answered:
             expected = runner._expected(check)
         except Exception:
             expected = check.value
-        actual = getattr(state, check.var, None)
-        if holds(check, actual, expected):
+        ok, _actual = _engine_check(state, check, expected)
+        if ok:
             return False
         if check.var in self._TOGGLED_ONCE \
                 and check.var in self._checklist_sent:

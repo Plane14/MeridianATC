@@ -45,7 +45,7 @@ from .. import approach_flight, auto_nav, procedure_legs, vspeeds
 from .. import flying as fly
 from .. import interphone as ip
 from ..ap import FlightDirector
-from ..checklist import holds
+from ..checklist import holds, _engine_check
 from ..controller import ControllerBrain
 from ..crew import CrewDirector
 from ..session import FlightSession, Phase, station_key
@@ -484,6 +484,7 @@ __all__ = [
     "ip",
     "FlightDirector",
     "holds",
+    "_engine_check",
     "ControllerBrain",
     "CrewDirector",
     "FlightSession",

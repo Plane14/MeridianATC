@@ -264,6 +264,45 @@ class AircraftState:
     eng2_combustion: bool | None = None
     eng3_combustion: bool | None = None
     eng4_combustion: bool | None = None
+    # The same for every gauge and lever the engine watch and the
+    # checklists read: engine one's figure keeps the scalar's name and
+    # engines two through four carry it under the eng2_/eng3_/eng4_
+    # prefix. A lever item like "throttles ... idle" or "mixture ...
+    # rich" then answers for every engine the sim reports, not only the
+    # first -- a twin whose second lever never moved cannot pass the
+    # check on the first's say-so. None where the engine is not there
+    # or the model does not publish it, which is agreement, never an
+    # objection (and never a ghost lever at zero).
+    eng2_itt_c: float | None = None
+    eng3_itt_c: float | None = None
+    eng4_itt_c: float | None = None
+    eng2_n1_pct: float | None = None
+    eng3_n1_pct: float | None = None
+    eng4_n1_pct: float | None = None
+    eng2_n2_pct: float | None = None
+    eng3_n2_pct: float | None = None
+    eng4_n2_pct: float | None = None
+    eng2_rpm: float | None = None
+    eng3_rpm: float | None = None
+    eng4_rpm: float | None = None
+    eng2_torque_nm: float | None = None
+    eng3_torque_nm: float | None = None
+    eng4_torque_nm: float | None = None
+    eng2_torque_pct: float | None = None
+    eng3_torque_pct: float | None = None
+    eng4_torque_pct: float | None = None
+    eng2_throttle_pct: float | None = None
+    eng3_throttle_pct: float | None = None
+    eng4_throttle_pct: float | None = None
+    eng2_mixture_pct: float | None = None
+    eng3_mixture_pct: float | None = None
+    eng4_mixture_pct: float | None = None
+    eng2_prop_pct: float | None = None
+    eng3_prop_pct: float | None = None
+    eng4_prop_pct: float | None = None
+    eng2_condition_pct: float | None = None
+    eng3_condition_pct: float | None = None
+    eng4_condition_pct: float | None = None
     # What a helicopter's instruments say (MSFS 2024 "Helicopter
     # Variables"): the collective lever, per cent depressed; the main
     # rotor's per cent of rated RPM; how many main rotors the model has;
@@ -490,6 +529,23 @@ class AircraftState:
         relative = self.relative_bearing(lat, lon)
         hour = int(round(relative / 30.0)) % 12
         return 12 if hour == 0 else hour
+
+
+def engine_vars(var: str):
+    """A state variable's per-engine names, engine one first.
+
+    Engine one's figure keeps the scalar's name and engines two through
+    four carry it under the eng2_/eng3_/eng4_ prefix -- ``eng_itt_c``
+    to ``eng2_itt_c`` like ``engines_running`` to ``eng2_combustion``,
+    and ``throttle_pct`` to ``eng2_throttle_pct`` like ``fuel_pump_on``
+    to ``eng2_fuel_pump_on``. A variable with no per-engine fields
+    yields names that read back None, and a check against None is
+    agreement: a single answers on engine one alone.
+    """
+    yield var
+    for n in (2, 3, 4):
+        stem = var[4:] if var.startswith("eng_") else var
+        yield f"eng{n}_{stem}"
 
 
 def normalize_angle(value: float, source_is_radians: bool | None = None) -> float:

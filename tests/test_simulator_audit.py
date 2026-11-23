@@ -290,6 +290,51 @@ def test_api_snapshot_and_settings_validation(monkeypatch):
         server._check_all({"sim.simulator": "bad", "traffic.xplane_plugin_port": 49010})
 
 
+def test_a_check_holds_on_every_engine_not_just_the_first():
+    """A twin's "throttles ... idle" is only idle where the second
+    lever is idle too: the eng2_ slot is checked, and the disagreement
+    it names is the second engine's figure, not engine one's."""
+    item = Item({"en": "Throttles"}, {"en": "idle"},
+                check=Check("throttle_pct", op="max", value=5.0))
+    state = AircraftState(throttle_pct=0.0, eng2_throttle_pct=85.0)
+    runner = ChecklistRunner(
+        Mock(), fresh=lambda name: getattr(state, name, None))
+    runner._state = state
+    runner._note = Mock()
+    verdict, actual, _expected, _again = runner._verify(
+        item, SimpleNamespace(value=None))
+    assert verdict is False and actual == 85.0
+    # Both levers at the stop: agreement.
+    state.eng2_throttle_pct = 0.0
+    verdict = runner._verify(item, SimpleNamespace(value=None))[0]
+    assert verdict is True
+    # No second engine reported at all: engine one's scalar rules alone.
+    state.eng2_throttle_pct = None
+    verdict = runner._verify(item, SimpleNamespace(value=None))[0]
+    assert verdict is True
+    # A ghost slot never answers an engine that is not there: a bare
+    # state has no eng2_ fields, so nothing phantom can object.
+    bare = AircraftState(throttle_pct=0.0)
+    runner._state = bare
+    assert runner._agrees_now(item)
+
+
+def test_msfs_registers_the_per_engine_gauges_and_levers():
+    """The twin's other three engine slots ride the same SimConnect
+    names as engine one's, indexed -- the slow rotation carries them."""
+    kinds = {attr: kind for _var, attr, kind, _rate
+             in sources.SimConnectSource.REQUESTS}
+    for n in (2, 3, 4):
+        for attr in ("throttle_pct", "mixture_pct", "prop_pct",
+                     "condition_pct", "itt_c", "torque_nm",
+                     "torque_pct", "n1_pct", "n2_pct", "rpm"):
+            assert kinds.get(f"eng{n}_{attr}"), f"eng{n}_{attr}"
+    names = {var for var, _attr, _kind, _rate
+             in sources.SimConnectSource.REQUESTS}
+    assert "TURB_ENG_ITT:2" in names and "ENG_TORQUE:4" in names
+    assert "GENERAL_ENG_THROTTLE_LEVER_POSITION:3" in names
+
+
 def test_msfs_refuses_standby_channel_bcd_cannot_say(monkeypatch):
     # 118.005 MHz is a legal 8.33 kHz channel that no 25 kHz BCD event
     # can name; accepting it tunes the radio to a frequency ATC never
