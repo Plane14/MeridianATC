@@ -1109,10 +1109,15 @@ class XPlaneSource:
             if mapping is None:
                 return False
             attribute, scale = mapping
-            entry = DATAREFS.get(attribute) or EXTRA.get(attribute)
-            if entry is None:
+            # DATAREFS entries are (path, factor) pairs, EXTRA entries
+            # the path alone -- the two shapes, not one.
+            if attribute in DATAREFS:
+                path = DATAREFS[attribute][0]
+            else:
+                path = EXTRA.get(attribute)
+            if not path:
                 return False
-            return self._dref(entry[0], float(value) * scale)
+            return self._dref(path, float(value) * scale)
         except (TypeError, ValueError, OverflowError):
             return False
 
