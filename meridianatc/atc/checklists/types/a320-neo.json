@@ -233,7 +233,7 @@
           "check": {
             "var": "throttle_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           },
           "accept": [
             "set",
@@ -449,7 +449,7 @@
           "check": {
             "var": "autobrake_pos",
             "op": "min",
-            "value": 1
+            "value": 3
           }
         },
         {
@@ -589,7 +589,12 @@
             "off",
             "check"
           ],
-          "note": "ADVANCE to 50% N1 - stabilise engines before applying takeoff thrust."
+          "note": "ADVANCE to 50% N1 - stabilise engines before applying takeoff thrust.",
+          "check": {
+            "var": "throttle_pct",
+            "op": "min",
+            "value": 85
+          }
         },
         {
           "challenge": "Brakes",
@@ -615,7 +620,12 @@
             "off",
             "check"
           ],
-          "note": "FLX/MCT or TOGA."
+          "note": "FLX/MCT or TOGA.",
+          "check": {
+            "var": "throttle_pct",
+            "op": "min",
+            "value": 85
+          }
         },
         {
           "challenge": "FMA",

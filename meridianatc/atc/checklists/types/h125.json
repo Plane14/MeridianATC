@@ -185,7 +185,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           },
           "accept": [
             "set",
@@ -201,7 +201,7 @@
           "check": {
             "var": "throttle_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           },
           "accept": [
             "set",
@@ -587,7 +587,7 @@
           "check": {
             "var": "throttle_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           },
           "accept": [
             "set",
@@ -603,7 +603,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           },
           "accept": [
             "set",

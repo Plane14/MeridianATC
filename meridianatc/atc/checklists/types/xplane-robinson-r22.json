@@ -149,7 +149,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "min",
-            "value": 90
+            "value": 95
           }
         },
         {
@@ -316,7 +316,7 @@
           "check": {
             "var": "rotor_gov_target_pct",
             "op": "min",
-            "value": 80
+            "value": 1
           }
         }
       ]
@@ -381,7 +381,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           }
         },
         {

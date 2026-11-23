@@ -241,11 +241,18 @@
             "off",
             "set"
           ],
-          "check": {
-            "var": "apu_bleed_on",
-            "op": "eq",
-            "value": false
-          }
+          "check": [
+            {
+              "var": "apu_gen_on",
+              "op": "eq",
+              "value": false
+            },
+            {
+              "var": "apu_bleed_on",
+              "op": "eq",
+              "value": false
+            }
+          ]
         },
         {
           "challenge": "Engine bleeds one and two",
@@ -367,7 +374,7 @@
           "check": {
             "var": "autobrake_pos",
             "op": "min",
-            "value": 1
+            "value": 3
           }
         }
       ]

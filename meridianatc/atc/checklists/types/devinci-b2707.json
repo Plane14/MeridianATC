@@ -247,7 +247,7 @@
           "check": {
             "var": "throttle_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           },
           "accept": [
             "check",
@@ -1445,7 +1445,7 @@
           "check": {
             "var": "throttle_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           },
           "accept": [
             "check",
@@ -1633,7 +1633,7 @@
           "check": {
             "var": "throttle_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           },
           "accept": [
             "check",

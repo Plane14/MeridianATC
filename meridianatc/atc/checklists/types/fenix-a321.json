@@ -308,7 +308,7 @@
           "check": {
             "var": "throttle_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           },
           "accept": [
             "set",
@@ -632,7 +632,12 @@
             "off",
             "check"
           ],
-          "note": "ADVANCE to takeoff thrust."
+          "note": "ADVANCE to takeoff thrust.",
+          "check": {
+            "var": "throttle_pct",
+            "op": "min",
+            "value": 85
+          }
         },
         {
           "challenge": "Brakes",
@@ -711,7 +716,12 @@
             "off",
             "check"
           ],
-          "note": "CL detent."
+          "note": "CL detent.",
+          "check": {
+            "var": "throttle_pct",
+            "op": "min",
+            "value": 85
+          }
         },
         {
           "challenge": "Autopilot",

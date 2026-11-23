@@ -249,7 +249,7 @@
           "check": {
             "var": "throttle_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           },
           "accept": [
             "set",
@@ -430,7 +430,12 @@
             "off",
             "check"
           ],
-          "note": "TAKEOFF THRUST."
+          "note": "TAKEOFF THRUST.",
+          "check": {
+            "var": "throttle_pct",
+            "op": "min",
+            "value": 85
+          }
         },
         {
           "challenge": "Brakes",
@@ -494,7 +499,12 @@
             "off",
             "check"
           ],
-          "note": "CLIMB DETENT."
+          "note": "CLIMB DETENT.",
+          "check": {
+            "var": "throttle_pct",
+            "op": "min",
+            "value": 85
+          }
         },
         {
           "challenge": "Flaps",

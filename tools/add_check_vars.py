@@ -21,6 +21,12 @@ FILES = "meridianatc/atc/checklists/**/*.json"
 # Every variable this pass can write into a check. Re-running the sweep
 # recomputes only items whose check carries one of these -- hand-written
 # and first-pass checks are left alone.
+# Challenges only this pass reads -- the ones the generic rules
+# shadowed ("auto brake", "APU generators", the anti-skid). Their items
+# are recomputed wholesale on every run; anything else keeps its check
+# unless the recomputed one names different variables.
+REPAIR = r"auto.?brake|autobrake|anti.?skid|\bapu\b"
+
 EMITTED = frozenset({
     "magneto_pos", "eng2_magneto_pos", "ignition_on", "eng2_ignition_on",
     "starter_active", "fuel_pump_on", "eng2_fuel_pump_on",
@@ -99,10 +105,8 @@ RULES = (
     # The qualified switches first: the generic engine rules they shadow
     # would mis-read "auto brake" as a toe brake and an "APU generator"
     # as an engine's.
-    (r"apu.{0,12}(gen|bleed|air)",
-     lambda c, r: _switch(c, r, "apu_bleed_on"
-                          if re.search(r"bleed|air", _en(c))
-                          else "apu_gen_on", per_engine=False)),
+    (r"apu.{0,12}(gen|bleed|air)|gen.{0,12}apu",
+     lambda c, r: _apu_bus(c, r)),
     (r"apu",
      lambda c, r: _apu(c, r)),
     (r"fuel pump|boost pump|fuel.?pump",
@@ -267,10 +271,24 @@ def _autobrake(response):
     r = _en(response)
     if _onoff(response) is False or re.search(r"\boff\b", r):
         return {"var": "autobrake_pos", "op": "eq", "value": 0}
-    # Armed, set, RTO and the numbered settings are all a non-zero dial.
-    if re.search(r"arm|set|max|rto|[1-5]|as required|med", r):
+    # OFF is 0 and LO is 1 on both sims, so the named hard settings sit
+    # at 3 and up; a "max" check of min 1 passed with the dial on LO.
+    if re.search(r"max|rto|hi\b|high", r):
+        return {"var": "autobrake_pos", "op": "min", "value": 3}
+    if re.search(r"arm|set|[1-5]|as required|med", r):
         return {"var": "autobrake_pos", "op": "min", "value": 1}
     return None
+
+
+def _apu_bus(challenge, response):
+    """APU generator and/or bleed items -- both, for a challenge naming
+    both, as a conjunction of checks."""
+    c = _en(challenge)
+    gen = _switch(challenge, response, "apu_gen_on", per_engine=False)
+    bleed = _switch(challenge, response, "apu_bleed_on", per_engine=False)
+    if re.search(r"gen", c) and re.search(r"bleed|air", c):
+        return [gen, bleed] if gen and bleed else None
+    return bleed if re.search(r"bleed|air", c) else gen
 
 
 def _speedbrake(response):
@@ -366,17 +384,35 @@ def main(write=False):
                     continue
                 # An item already checked by this pass is recomputed so
                 # a rule-order fix repairs it; one another pass or a
-                # hand wrote keeps its check.
-                existing = item.get("check") or {}
-                if existing and existing.get("var") not in EMITTED:
+                # hand wrote keeps its check. Rewriting beyond that asks
+                # care: only the qualified challenges (the APU, the
+                # autobrake, the anti-skid -- items the generic rules
+                # once misread) are recomputed wholesale; elsewhere a
+                # same-variable check keeps its value, however this
+                # pass would have written it.
+                old_raw = item.get("check")
+                old = old_raw if isinstance(old_raw, list) \
+                    else ([old_raw] if isinstance(old_raw, dict) else [])
+                old_vars = {e.get("var") for e in old if isinstance(e, dict)}
+                if old_vars - EMITTED:
                     continue
                 ch, rs = item.get("challenge"), item.get("response")
                 text = _en(ch)
+                qualified = re.search(REPAIR, text)
                 for pat, maker in RULES:
                     if re.search(pat, text):
                         check = maker(ch, rs)
-                        if check != item.get("check"):
-                            if check:
+                        new = check if isinstance(check, list) \
+                            else ([check] if check else [])
+                        new_vars = {e.get("var") for e in new}
+                        if not old_raw:
+                            replace = bool(new)
+                        elif qualified:
+                            replace = check != old_raw
+                        else:
+                            replace = bool(new) and new_vars != old_vars
+                        if replace:
+                            if new:
                                 item["check"] = check
                             else:
                                 item.pop("check", None)

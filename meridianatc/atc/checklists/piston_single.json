@@ -1420,7 +1420,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           }
         },
         {

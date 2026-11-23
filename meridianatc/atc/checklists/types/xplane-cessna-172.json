@@ -199,7 +199,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "min",
-            "value": 90
+            "value": 95
           },
           "note": "Full forward."
         },
@@ -311,7 +311,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "min",
-            "value": 90
+            "value": 95
           }
         },
         {
@@ -498,7 +498,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "min",
-            "value": 90
+            "value": 95
           }
         },
         {
@@ -720,7 +720,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "min",
-            "value": 90
+            "value": 95
           }
         },
         {
@@ -762,7 +762,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "min",
-            "value": 90
+            "value": 95
           }
         },
         {
@@ -866,7 +866,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           }
         },
         {

@@ -261,7 +261,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           },
           "accept": [
             "set",
@@ -513,7 +513,7 @@
           "check": {
             "var": "throttle_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           },
           "accept": [
             "set",
@@ -596,7 +596,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "throttle_pct",
+            "op": "min",
+            "value": 85
+          }
         },
         {
           "challenge": "Mixture",
@@ -670,7 +675,12 @@
             "on",
             "off",
             "check"
-          ]
+          ],
+          "check": {
+            "var": "throttle_pct",
+            "op": "min",
+            "value": 85
+          }
         },
         {
           "challenge": "Mixture",
@@ -943,7 +953,7 @@
           "check": {
             "var": "throttle_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           },
           "accept": [
             "set",
@@ -988,7 +998,7 @@
           "check": {
             "var": "mixture_pct",
             "op": "max",
-            "value": 10
+            "value": 5
           },
           "accept": [
             "set",
