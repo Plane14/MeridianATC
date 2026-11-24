@@ -98,6 +98,9 @@ class AutonomousFlight(_Plumbing, _Entry, _The_loop, _Shared_helpers, _The_envel
         # leg it was given whatever falls out of the sky on it.
         self._weather_reactions = getattr(
             config.immersion, "autonomous_weather", True)
+        from ...weather.enroute import EnrouteWeatherProvider
+        self.enroute_weather = EnrouteWeatherProvider(
+            enabled=self._weather_reactions)
         # Whether a cell over the field holds the departure: read live
         # in x_weather so flipping it mid-wait releases the flight.
         # The biggest fuel_total_gal the model has ever shown: the

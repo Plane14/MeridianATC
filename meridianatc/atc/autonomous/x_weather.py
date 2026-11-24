@@ -32,6 +32,102 @@ class _Weather:
         self._watch_turbulence(state, now)
         self._watch_density_altitude(state)
         self._watch_ifr_pickup(state, now)
+        self._watch_enroute_convection(state, now)
+
+    def _enroute_weather_cells(self, state):
+        """Current enroute hazards: simulator-native where it exists, and
+        explicit external convective evidence as the MSFS strategic fallback."""
+        from ...weather.enroute import xplane_cells
+
+        cells = []
+        radar_points = getattr(getattr(self, "sim", None),
+                               "weather_radar_points", None)
+        if callable(radar_points):
+            try:
+                cells.extend(xplane_cells(
+                    radar_points(), getattr(state, "altitude_ft", 0.0)))
+            except Exception:
+                log.debug("X-Plane weather-radar scan failed", exc_info=True)
+        provider = getattr(self, "enroute_weather", None)
+        if provider is not None and getattr(state, "has_position", False):
+            provider.update(state.latitude, state.longitude,
+                            getattr(state, "altitude_ft", 0.0))
+            cells.extend(provider.cells())
+        return cells
+
+    def _enroute_weather_plan(self, state):
+        """The avoidance decision ahead of the aircraft, if there is one."""
+        from ...weather.enroute import avoidance_plan
+
+        if not getattr(state, "has_position", False):
+            return None
+        course = float(getattr(state, "track_true", 0.0)
+                       or getattr(state, "heading_true", 0.0) or 0.0)
+        return avoidance_plan(
+            self._enroute_weather_cells(state), state.latitude,
+            state.longitude, course, getattr(state, "altitude_ft", 0.0))
+
+    def _watch_enroute_convection(self, state, now: float) -> None:
+        """Scan ahead and ask ATC for a weather deviation before entering
+        a convective cell, as an IFR crew should. If penetration is imminent
+        and no answer has come, safety outranks the clearance and the crew
+        deviates while telling ATC."""
+        if self._is_helicopter or self._heli is not None \
+                or self.state.phase not in (AutonomousPhase.CLIMB,
+                                            AutonomousPhase.CRUISE,
+                                            AutonomousPhase.DESCENT) \
+                or getattr(state, "on_ground", True):
+            return
+        session = self.session
+        if session is None:
+            return
+        active = bool(getattr(session, "deviating", "")
+                      and getattr(session, "weather_deviation_at", 0.0))
+        if active:
+            self._weather_deviation_requested_at = 0.0
+            return
+        plan = self._enroute_weather_plan(state)
+        if plan is None or not plan.threatening:
+            self._weather_deviation_requested_at = 0.0
+            return
+        asked = float(getattr(self, "_weather_deviation_requested_at", 0.0) or 0.0)
+        callsign = getattr(getattr(session, "aircraft", None), "callsign", "")
+        callsign = getattr(callsign, "written", "") or str(callsign or "")
+        if not callsign:
+            callsign = "this aircraft"
+        if not asked:
+            self._weather_deviation_requested_at = now
+            text = (f"{callsign}, request deviation {plan.degrees} degrees "
+                    f"{plan.side} for weather")
+            if self.crew.transmit:
+                with contextlib.suppress(Exception):
+                    self.crew.transmit(text)
+            self._emit("info",
+                       f"Convective weather {plan.nearest_nm:.0f} miles ahead: "
+                       f"requesting {plan.degrees} degrees {plan.side}",
+                       "autonomous.weather.deviation_request")
+            return
+        # A quiet frequency is acceptable when the weather is still far away;
+        # it is not acceptable with the cell at the windshield. Maneuver and
+        # inform ATC, as the pilot-in-command ultimately must.
+        if now - asked < 18.0 or plan.nearest_nm > 12.0:
+            return
+        course = float(getattr(state, "track_true", 0.0)
+                       or getattr(state, "heading_true", 0.0) or 0.0)
+        session.deviating = "approved"
+        session.weather_deviation_side = plan.side
+        session.weather_deviation_degrees = plan.degrees
+        session.weather_deviation_miles_nm = plan.miles_nm
+        session.weather_deviation_course = course
+        session.weather_deviation_at = now
+        session.weather_deviation_urgent = True
+        if self.crew.transmit:
+            with contextlib.suppress(Exception):
+                self.crew.transmit(
+                    f"{callsign}, deviating {plan.side} for weather")
+        self._emit("warning",
+                   "No ATC answer with convection imminent: deviating and advising",
+                   "autonomous.weather.deviation_urgent")
 
     def _watch_ifr_pickup(self, state, now: float) -> None:
         """A VFR leg flown into cloud files IFR, the pop-up pickup.
@@ -270,6 +366,50 @@ class _Weather:
             self._emit("info",
                        "Windshear escape: max power, configuration held",
                        "autonomous.weather.windshear_departure")
+
+    def _fly_weather_deviation(self, state) -> None:
+        """Fly the lateral limits of an approved weather deviation.
+
+        The clearance controls only lateral manoeuvring: the phase machine and
+        altitude logic keep their normal vertical assignment. When the approved
+        lateral distance has been covered, the route is resumed direct the
+        clearance's rejoin fix where one was issued.
+        """
+        session = self.session
+        if session is None or not getattr(session, "weather_deviation_at", 0.0):
+            return
+        if getattr(state, "on_ground", True):
+            return
+        miles = float(getattr(session, "weather_deviation_miles_nm", 0.0) or 15.0)
+        gs = max(80.0, float(getattr(state, "ground_speed_kt", 0.0) or 80.0))
+        elapsed = time.monotonic() - float(session.weather_deviation_at)
+        needed = miles / gs * 3600.0 + 90.0
+        if elapsed >= needed:
+            rejoin = getattr(session, "weather_deviation_rejoin", "") or ""
+            if rejoin:
+                session.route_direct = rejoin
+            session.deviating = ""
+            session.weather_deviation_side = ""
+            session.weather_deviation_degrees = 0
+            session.weather_deviation_miles_nm = 0
+            session.weather_deviation_rejoin = ""
+            session.weather_deviation_at = 0.0
+            session.weather_deviation_course = -1.0
+            session.weather_deviation_urgent = False
+            self._emit("info",
+                       "Clear of the weather deviation: resuming the route",
+                       "autonomous.weather.deviation_complete")
+            return
+        degrees = int(getattr(session, "weather_deviation_degrees", 0) or 30)
+        side = (getattr(session, "weather_deviation_side", "") or "left").lower()
+        sign = -1.0 if side.startswith("l") else 1.0
+        course = float(getattr(session, "weather_deviation_course", -1.0) or -1.0)
+        if course < 0.0:
+            course = float(getattr(state, "track_true", 0.0)
+                           or getattr(state, "heading_true", 0.0) or 0.0)
+        target = (course + sign * degrees + 360.0) % 360.0
+        self.director.heading(self._magnetic(target, state))
+        self.state.ap_hdg_mode = True
 
     def _field_weather(self, airport):
         """The weather the controllers are quoting for a field, or None.

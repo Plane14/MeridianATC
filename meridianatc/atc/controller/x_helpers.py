@@ -452,6 +452,20 @@ class _Helpers:
         if state is not None and getattr(state, "has_position", False):
             fix = rejoin_fix(self.route, self.route_progress, state)
         session.deviating = "approved"
+        session.weather_deviation_side = side or ""
+        session.weather_deviation_degrees = int(degrees or 0)
+        # The miles figure is not reliably spoken in the existing phraseology,
+        # so the executable approval uses the angle as the control and a
+        # conservative default corridor. A pilot may manoeuvre inside it, not
+        # roam at will.
+        session.weather_deviation_miles_nm = max(
+            15, int(math.ceil(abs(float(degrees or 30)) * 0.75 / 5.0) * 5))
+        session.weather_deviation_rejoin = getattr(fix, "ident", "") or ""
+        session.weather_deviation_at = time.monotonic()
+        session.weather_deviation_course = float(
+            getattr(state, "track_true", 0.0) or getattr(state, "heading_true", 0.0) or 0.0)
+        session.weather_deviation_urgent = "immediately" in text_heard.lower() \
+            or "urgent" in text_heard.lower()
         session.establish(station)
         decision("route", event="deviation", station=station.callsign,
                  side=side or None, degrees=degrees or None,

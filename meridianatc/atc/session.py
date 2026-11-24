@@ -356,6 +356,17 @@ class FlightSession:
     hold: object = None
     hold_requested: bool = False
     deviating: str = ""
+    # The executable parts of a weather-deviation clearance: side, angle,
+    # permitted lateral distance, the fix the controller expects the flight
+    # back at, and when it was issued. A pilot may manoeuvre only inside
+    # these lateral limits, normally at the assigned altitude.
+    weather_deviation_side: str = ""
+    weather_deviation_degrees: int = 0
+    weather_deviation_miles_nm: int = 0
+    weather_deviation_rejoin: str = ""
+    weather_deviation_at: float = 0.0
+    weather_deviation_course: float = -1.0
+    weather_deviation_urgent: bool = False
     off_route_since: float = 0.0
     off_route_asked: bool = False
     shortcut_at: float = 0.0

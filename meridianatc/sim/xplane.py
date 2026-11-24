@@ -194,6 +194,7 @@ EXTRA = {
     "hsi_source": RADIOS + "HSI_source_select_pilot",
     "nav_type": "sim/cockpit2/radios/indicators/nav1_type",
     "rain": "sim/weather/aircraft/precipitation_on_aircraft_ratio",
+    "hail": "sim/weather/aircraft/hail_on_aircraft_ratio",
     # Snow's share of what is falling (XP12.1+ region weather); absent on
     # older builds, which simply keep reporting rain-or-nothing.
     "snow": "sim/weather/region/snow_percent",
@@ -237,6 +238,12 @@ for _layer in range(3):
         f"sim/weather/aircraft/cloud_tops_msl_m[{_layer}]")
     EXTRA[f"cloud_cov{_layer}"] = (
         f"sim/weather/aircraft/cloud_coverage_percent[{_layer}]")
+    # Blended type: 0 cirrus, 1 stratus, 2 cumulus, 3 cumulonimbus.
+    EXTRA[f"cloud_type{_layer}"] = (
+        f"sim/weather/aircraft/cloud_type[{_layer}]")
+for _layer in range(13):
+    EXTRA[f"turbulence{_layer}"] = (
+        f"sim/weather/aircraft/turbulence[{_layer}]")
 for _engine in range(8):
     EXTRA[f"cht{_engine}"] = f"sim/flightmodel/engine/ENGN_CHT_c[{_engine}]"
     EXTRA[f"oil{_engine}"] = f"sim/flightmodel/engine/ENGN_oil_temp_c[{_engine}]"
@@ -462,6 +469,10 @@ class XPlaneSource:
         self._answered = threading.Event()
         self._lock = threading.Lock()
         self._values = {}
+        # Timestamped weather-radar scan points, keyed by the simulator's
+        # one-minute scan vertex so new passes replace stale samples.
+        self._radar = {}
+        self._radar_requested = False
         # The endpoint that answers the subscriptions: the first packet
         # pins it, and only it is heard afterwards. The simulator's own
         # send port is not the one the requests went to, so it is learned
@@ -563,6 +574,10 @@ class XPlaneSource:
                 self._thread.start()
                 for index, (_key, path) in enumerate(self._subscriptions):
                     self._subscribe(index, path, self.frequency)
+                # Ten scan vertices is the documented tactical-weather
+                # cadence; X-Plane walks them around the aircraft itself.
+                self._request_radar(10)
+                self._radar_requested = True
                 if self._answered.wait(self.timeout_s) and self.connected:
                     return True
             except OSError:
@@ -597,6 +612,11 @@ class XPlaneSource:
         if self._peer is not None and self._socket is not None:
             self._socket.sendto(payload, self._peer)
 
+    def _request_radar(self, points: int) -> None:
+        if self._peer is not None and self._socket is not None:
+            self._socket.sendto(b"RADR\0" + str(points).encode("ascii") + b"\0",
+                                self._peer)
+
     def _subscribe(self, index, path, frequency):
         self._packet(b"RREF\0" + struct.pack("<ii400s", frequency, index, path.encode("ascii")))
 
@@ -609,6 +629,21 @@ class XPlaneSource:
             except OSError:
                 return
             if self._peer is None or sender[0] != self._peer[0]:
+                continue
+            if packet[:4] == b"RADR" and len(packet) == 29:
+                # X-Plane 12's tightly packed scan sample. The scan walks a
+                # one-minute-of-latitude/longitude mesh around the aircraft
+                # rather than answering arbitrary points.
+                try:
+                    _tag, lat, lon, base_m, top_m, clouds, precip = struct.unpack(
+                        "<4sxffffff", packet)
+                    key = (round(lat, 3), round(lon, 3))
+                    stamp = time.time()
+                    with self._lock:
+                        self._radar[key] = (lat, lon, base_m, top_m,
+                                            clouds, precip, stamp)
+                except struct.error:
+                    pass
                 continue
             if len(packet) < 13 or packet[:4] != b"RREF" or (len(packet) - 5) % 8:
                 continue
@@ -624,6 +659,16 @@ class XPlaneSource:
                     self._sender = self._sender or sender
                     self._last_packet = time.monotonic()
                     self._answered.set()
+
+    def weather_radar_points(self):
+        """The freshest X-Plane tactical-weather scan points."""
+        from ..weather.enroute import METERS_TO_FEET, RadarPoint
+
+        with self._lock:
+            rows = list(self._radar.values())
+        return [RadarPoint(lat, lon, base_m * METERS_TO_FEET,
+                           top_m * METERS_TO_FEET, clouds, precip, stamp)
+                for lat, lon, base_m, top_m, clouds, precip, stamp in rows]
 
     def read(self):
         with self._lock:
@@ -803,6 +848,11 @@ class XPlaneSource:
         state.ambient_precip_state = (4 if values.get("rain", 0) > 0
                                       else 2 if values.get("snow", 0) > 0
                                       else 0)
+        state.hail_ratio = values.get("hail", 0.0)
+        state.cloud_type_max = max((values.get(f"cloud_type{i}", 0.0)
+                                    for i in range(3)), default=0.0)
+        state.turbulence_factor = max((values.get(f"turbulence{i}", 0.0)
+                                       for i in range(13)), default=0.0)
         # The bank selector's active step. The mode dataref is an enum:
         # 0 is automatic and 1-6 pick bank_angles_values[0..5] -- the same
         # indexing AP_MAX_BANK writes use (xpcontrols.py sends index+1).
@@ -920,7 +970,9 @@ class XPlaneSource:
             state.aircraft_wind_z_kt = (wx * math.sin(psi)
                                         - wz * math.cos(psi)) * KT
         if "wind_y_ms" in values:
-            state.aircraft_wind_y_kt = values["wind_y_ms"] * KT
+            vertical = values["wind_y_ms"] * KT
+            state.ambient_wind_y_kt = vertical
+            state.aircraft_wind_y_kt = vertical
         # The FAA heavy line on the model's own maximum weight.
         if state.max_gross_weight_lb > 0:
             state.atc_heavy = state.max_gross_weight_lb >= 255000.0
@@ -1335,6 +1387,8 @@ class XPlaneSource:
             for index, (_key, path) in enumerate(self._subscriptions):
                 with contextlib.suppress(OSError):
                     self._subscribe(index, path, 0)
+            with contextlib.suppress(OSError):
+                self._request_radar(0)
             if self._thread is not None:
                 self._thread.join(timeout=.5)
             self._socket.close()
