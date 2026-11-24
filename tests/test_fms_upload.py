@@ -11,7 +11,8 @@ from __future__ import annotations
 import time
 from types import SimpleNamespace
 
-from meridianatc.atc.route import Route, RouteFix, parse_pln, to_fms, to_pln
+from meridianatc.atc.route import (Route, RouteFix, from_pln, parse_pln,
+                                   to_fms, to_pln)
 from meridianatc.sim.source import SimConnectSource
 from meridianatc.sim.xplane import XPlaneSource
 
@@ -326,3 +327,40 @@ def test_msfs_load_records_the_upload_path(tmp_path, monkeypatch):
     import tempfile
     assert source._pln_uploaded == os.path.abspath(
         os.path.join(tempfile.gettempdir(), "meridianatc_plan.pln"))
+
+
+# ------------------------------------------------------------------
+# the plan that files no level
+# ------------------------------------------------------------------
+
+
+def test_a_negative_cruising_alt_is_no_level():
+    """The 2026-11-24 case: an MSFS .pln whose ``CruisingAlt`` is -1 --
+    "not set" where the field is an altitude -- landed in the route as a
+    level of minus one foot. The clearance's minutes-to-cruise search
+    then found no climb rate beneath it and raised ``StopIteration``,
+    and ground never answered a clearance request."""
+    plan = parse_pln(to_pln(_route(cruise_ft=35000)).replace(
+        "<CruisingAlt>35000</CruisingAlt>", "<CruisingAlt>-1</CruisingAlt>"))
+    assert plan.cruise_ft == 0
+
+
+def test_minutes_to_cruise_has_a_rate_below_every_floor():
+    route = _route(cruise_ft=35000)
+    # No top of climb: the climb-rate table is the whole answer, and a
+    # cruise under its lowest floor must not leave it empty.
+    assert route.minutes_to_cruise(-1) >= 1
+    assert route.minutes_to_cruise(0) >= 1
+    assert route.minutes_to_cruise(15000) >= 1
+
+
+def test_the_cruise_comes_from_the_leg_altitudes_when_unfiled():
+    """A .pln that files no ``CruisingAlt`` still carries each
+    waypoint's altitude in its ``WorldPosition``; the highest enroute
+    one is the level, the way an FMS readback's is."""
+    text = to_pln(_route()).replace(
+        "<CruisingAlt>35000</CruisingAlt>", "<CruisingAlt>-1</CruisingAlt>")
+    route = from_pln(text)
+    # INBOM rides at +035000.00 on the route's own upload; the
+    # airports' field elevations do not count.
+    assert route.cruise_ft == 35000

@@ -971,11 +971,11 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
             # reply to it.
             self._speak_first_officer(text, spoken)
         except Exception:
-            log.debug("the first officer's voice failed", exc_info=True)
+            log.warning("the first officer's voice failed", exc_info=True)
         try:
             self.handle_text(text, spoken, speaker="first_officer")
         except Exception:
-            log.debug("the first officer's call failed", exc_info=True)
+            log.warning("the first officer's call failed", exc_info=True)
 
     def _where_in_the_circuit(self):
         """Where the circuit puts the aeroplane, for the first officer's

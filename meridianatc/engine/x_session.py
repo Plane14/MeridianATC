@@ -216,7 +216,8 @@ class _Session:
             departure=departure,
             destination=destination,
             destination_input=flight.destination,
-            cruise_altitude_ft=float(flight.cruise_altitude_ft or 0),
+            cruise_altitude_ft=max(
+                float(flight.cruise_altitude_ft or 0), 0.0),
             ifr=self._rules_for(flight),
             ifr_setting=flight.ifr,
             profile=profile,
@@ -411,7 +412,7 @@ class _Session:
             flight.departure = route.origin
         if route.destination:
             flight.destination = route.destination
-        if route.cruise_ft:
+        if route.cruise_ft and route.cruise_ft > 0:
             flight.cruise_altitude_ft = route.cruise_ft
         self.brain.plan_runways = {}
         if route.origin:

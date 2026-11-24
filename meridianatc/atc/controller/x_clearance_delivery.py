@@ -137,7 +137,9 @@ class _Clearance_delivery:
         )
 
         session.squawk = squawk_for(session, station.ident)
-        cruise = session.cruise_altitude_ft or self._default_cruise(session)
+        cruise = (session.cruise_altitude_ft
+                  if session.cruise_altitude_ft > 0
+                  else self._default_cruise(session))
 
         departure_station = (
             self.navdb.station_for(station.ident, "DEP")
