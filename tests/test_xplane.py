@@ -76,7 +76,7 @@ class FakeXPlane:
                         self.values[path] = value
                 elif packet[:5] == b"CMND\0":
                     self.commands.append(packet[5:].rstrip(b"\0").decode())
-            except TimeoutError:
+            except (TimeoutError, ConnectionResetError):
                 pass
             if self.respond and self.client and time.monotonic() - last > .02:
                 pairs = [(i, p) for i, p in self.subscriptions.items()
