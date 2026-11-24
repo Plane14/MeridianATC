@@ -122,19 +122,30 @@ class _Weather:
             self._weather_deviation_requested_at = 0.0
             return
         asked = float(getattr(self, "_weather_deviation_requested_at", 0.0) or 0.0)
+        transmission_failed = False
         if not asked:
             self._weather_deviation_plan = plan
-            if self._fo_say("weather_deviation"):
-                self._weather_deviation_requested_at = now
+            transmitted = self._fo_say("weather_deviation")
+            # Start the clock even when nobody can take the call. Otherwise a
+            # CTAF, a dead frequency, or a congested one would leave the crew
+            # flying into the cell while it waited for a timer that never ran.
+            self._weather_deviation_requested_at = now
+            asked = now
+            if transmitted:
                 self._emit("info",
                            f"Convective weather {plan.nearest_nm:.0f} miles ahead "
                            f"({self._weather_source_label(plan)}): requesting {plan.degrees} degrees {plan.side}",
                            "autonomous.weather.deviation_request")
-            return
+                return
+            transmission_failed = True
         # A quiet frequency is acceptable when the weather is still far away;
         # it is not acceptable with the cell at the windshield. Maneuver and
-        # inform ATC, as the pilot-in-command ultimately must.
-        if now - asked < 18.0 or plan.nearest_nm > 12.0:
+        # inform ATC, as the pilot-in-command ultimately must. When the call
+        # cannot be made at all and the cell is already close, there is no
+        # controller whose answer is worth waiting for.
+        close = plan.nearest_nm <= 12.0
+        if (not transmission_failed or not close) and (
+                now - asked < 18.0 or not close):
             return
         course = float(getattr(state, "track_true", 0.0)
                        or getattr(state, "heading_true", 0.0) or 0.0)
