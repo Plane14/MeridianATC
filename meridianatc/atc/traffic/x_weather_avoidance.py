@@ -18,15 +18,22 @@ class _Weather_avoidance:
     def _avoid_enroute_weather(self, flight: Flight, now: float) -> None:
         if flight.observed or flight.on_ground or not flight.positioned:
             return
-        if flight.phase not in ("departed", "inbound", "joining", "go_around"):
-            return
+        deviation_phases = ("departed", "inbound", "joining", "go_around")
         if flight.weather_deviation_until:
+            if flight.phase not in deviation_phases:
+                # A final or landing clearance owns the aeroplane now; a
+                # temporary weather vector must not keep overriding it.
+                flight.assigned_heading = None
+                flight.weather_deviation_until = 0.0
+                return
             if now < flight.weather_deviation_until:
                 return
             # The avoidance vector is a temporary lateral clearance, not a new
             # route. Resuming own navigation is the model clearing the vector.
             flight.assigned_heading = None
             flight.weather_deviation_until = 0.0
+            return
+        if flight.phase not in deviation_phases:
             return
         if now - flight.weather_scan_at < self.WEATHER_SCAN_S:
             return
