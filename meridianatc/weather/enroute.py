@@ -382,7 +382,7 @@ def avoidance_plan(cells, lat: float, lon: float, course_true: float,
 
     def course_cost(course: float) -> float:
         """Weighted penetration if the proposed deviation heading were flown."""
-        horizon = min(SCAN_AHEAD_NM, max(35.0, miles + 20.0))
+        horizon = SCAN_AHEAD_NM
         total = 0.0
         for cell in cells or ():
             references = [(cell.lat, cell.lon)]

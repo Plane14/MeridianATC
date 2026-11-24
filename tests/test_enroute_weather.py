@@ -140,3 +140,18 @@ def test_scan_route_uses_sigmet_polygon_vertices_not_only_centroid():
                       polygon=polygon)
     hits, _coverage = scan_route([cell], 50.0, 8.0, 0.0, ahead_nm=80.0)
     assert hits == [cell]
+
+
+def test_avoidance_heading_does_not_turn_into_the_next_scanned_cell():
+    # The nearest cell is slightly right of a northbound course, so the
+    # first side choice is left; the second cell sits on that leftward
+    # heading. The executable course must use the rightward escape instead.
+    cells = [
+        HazardCell(50.0 + 20.0 / 60.0, 8.0 + 3.0 / 38.0, 2.0, .5,
+                   "test", "nearest-right"),
+        HazardCell(50.0 + 35.0 / 60.0, 8.0 - 18.0 / 38.0, 2.0, .5,
+                   "test", "leftward-course"),
+    ]
+    plan = avoidance_plan(cells, 50.0, 8.0, 0.0, 30000.0)
+    assert plan.side == "right"
+    assert abs(plan.heading_true - 30.0) < 1e-6
