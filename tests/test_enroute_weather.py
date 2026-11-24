@@ -245,3 +245,14 @@ def test_concave_polygon_reentry_beyond_scan_horizon_is_not_costed():
     lat, lon = 10.0 / 60.0, -20.0 / 60.0
     cost = _course_geometry_cost(cell, lat, lon, 90.0, 80.0)
     assert cost < 5.0
+
+
+
+def test_polygon_edge_is_costed_even_when_all_vertices_are_far():
+    # A very long, narrow SIGMET edge crosses the eastbound course within two
+    # miles although every vertex is hundreds of miles north or south.
+    polygon = ((-5.0, 2.0 / 60.0), (-5.0, 8.0 / 60.0),
+               (5.0, 8.0 / 60.0), (5.0, 2.0 / 60.0))
+    cell = HazardCell(0.0, 5.0 / 60.0, 80.0, .8, "test", "long-edge",
+                      polygon=polygon)
+    assert _course_geometry_cost(cell, 0.0, 0.0, 90.0, 80.0) > 10.0
