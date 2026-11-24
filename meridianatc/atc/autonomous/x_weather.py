@@ -616,17 +616,40 @@ class _Weather:
         # flipping it off mid-hold releases the flight without a restart.
         if getattr(self.config.immersion, "autonomous_departure_hold",
                    True) and self._convective(weather):
-            if not self.state.convective_hold_said:
-                self.state.convective_hold_said = True
-                self.state.wind_hold_since = now
-                log.info("holding departure: thunderstorm at the field")
-                self._emit("info",
-                           "Holding departure: thunderstorm at the field",
-                           "autonomous.weather.hold")
-            elif now - self.state.wind_hold_since > 1200.0:
-                self._set_error("Thunderstorm over the field for twenty "
-                                "minutes; not departing into it")
-            return False
+            mode = str(getattr(self.config.immersion,
+                               "autonomous_departure_weather_mode", "hold")
+                       or "hold").lower()
+            if mode == "deviate":
+                # A cell over the airfield is not automatically a cell on the
+                # first climb-out miles. Only a demonstrably clear short
+                # corridor releases the departure; an incomplete or positive
+                # scan keeps the hold.
+                from ...weather.enroute import scan_route
+                course = float(getattr(self.state, "runway_heading", 0.0) or 0.0)
+                hits, _coverage = scan_route(
+                    self._enroute_weather_cells(state), state.latitude,
+                    state.longitude, course, ahead_nm=15.0, width_nm=7.0)
+                if not hits and getattr(state, "has_position", False):
+                    if not getattr(self, "_departure_deviation_said", False):
+                        self._departure_deviation_said = True
+                        self._emit("info",
+                                   "Thunderstorm at the field, but the departure corridor is clear: departing",
+                                   "autonomous.weather.departure_deviate")
+                    # Continue into the demonstrated wind checks below.
+                else:
+                    mode = "hold"
+            if mode != "bypass":
+                if not self.state.convective_hold_said:
+                    self.state.convective_hold_said = True
+                    self.state.wind_hold_since = now
+                    log.info("holding departure: thunderstorm at the field")
+                    self._emit("info",
+                               "Holding departure: thunderstorm at the field",
+                               "autonomous.weather.hold")
+                elif now - self.state.wind_hold_since > 1200.0:
+                    self._set_error("Thunderstorm over the field for twenty "
+                                    "minutes; not departing into it")
+                return False
         _head, cross, tail = self._runway_wind(
             weather, self.state.runway_heading)
         xlim, tlim = self._wind_limits()
