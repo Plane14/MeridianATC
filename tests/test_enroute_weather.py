@@ -5,6 +5,7 @@ from meridianatc.weather.enroute import (
     METERS_TO_FEET,
     HazardCell,
     RadarPoint,
+    _course_geometry_cost,
     avoidance_plan,
     scan_route,
     sigmet_cells,
@@ -170,3 +171,32 @@ def test_avoidance_never_scores_inside_a_cell_as_marginal_clip():
     plan = avoidance_plan(cells, 0.0, 0.0, 0.0, 30000.0)
     assert plan.side == "left"
     assert abs(plan.heading_true - 330.0) < 1e-6
+
+
+
+def test_course_geometry_ignores_circle_behind_the_ray():
+    # The disk is close enough behind the aircraft that pointwise forward/lateral
+    # approximations can mistake it for a future hit, but a northbound ray never
+    # intersects it.
+    cell = HazardCell(-1.0 / 60.0, 0.1, 5.0, .8, "test", "behind")
+    assert _course_geometry_cost(cell, 0.0, 0.0, 0.0, 80.0) == 0.0
+
+
+def test_course_geometry_uses_polygon_edges_not_inflated_vertices():
+    # Every vertex is east of the northbound track and outside the clearance
+    # margin. Treating each vertex as a circle with the whole cell radius would
+    # invent a penetration that the polygon itself never has.
+    polygon = ((20.0 / 60.0, 10.0 / 60.0),
+               (20.0 / 60.0, 25.0 / 60.0),
+               (30.0 / 60.0, 25.0 / 60.0))
+    cell = HazardCell(.35, .3, 12.0, .5, "test", "polygon", polygon=polygon)
+    assert _course_geometry_cost(cell, 0.0, 0.0, 0.0, 80.0) == 0.0
+
+
+def test_inside_a_cell_still_avoids_the_second_cell_while_escaping():
+    cells = [
+        HazardCell(0.0, 0.0, 5.0, .8, "test", "current-cell"),
+        HazardCell(.25, -26.0 / 60.0, 4.0, .8, "test", "leftward-cell"),
+    ]
+    plan = avoidance_plan(cells, 0.0, 0.0, 0.0, 30000.0)
+    assert plan.side == "right"
