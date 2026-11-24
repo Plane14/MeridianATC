@@ -57,12 +57,14 @@ class _Entry_point:
                 session.apply(session.pending.values)
             session.clear_pending()
 
-        # With Ground switched off nobody approves a pushback, and nobody
-        # redirects it either: "contact Tower" for a pushback is the tower
-        # doing Ground's job by another name. The request goes unanswered on
-        # every frequency.
+        # With Ground switched off there is no separate pushback
+        # approval to hold out for -- the staffed position that is
+        # listening approves it itself, the way a tower without a ground
+        # position does. Silence read as "not heard", and the first
+        # officer's own ask waited on an approval that was never coming.
         if not self.ground_control and parsed.intent is Intent.REQUEST_PUSHBACK:
-            return Reply("", station, silent=True)
+            session.establish(station)
+            return Reply(p.pushback_approved(session.aircraft), station)
 
         # A distress call is answered by whoever hears it, before anything
         # else is considered -- including an outstanding readback, and
@@ -136,7 +138,7 @@ class _Entry_point:
             if parsed.callsign_matched:
                 session.establish(station)
                 return Reply(p.say_again(aircraft), station)
-            return self._not_understood(session, station, p, state)
+            return self._not_understood(session, station, p, state, parsed=parsed)
 
         # "Final, runway two four" carries a runway and no request verb, so it
         # parses as a readback -- and with nothing waiting to be read back it
@@ -199,7 +201,7 @@ class _Entry_point:
             if last is not None and last.text and last.station_key == here:
                 return Reply(self._repeat(last, station, p, aircraft),
                              station)
-            return self._not_understood(session, station, p, state)
+            return self._not_understood(session, station, p, state, parsed=parsed)
 
         # A runway the pilot asked for, before any handler decides which one
         # they are getting. After the readback handling above, so reading back

@@ -283,7 +283,7 @@ class _Radar_positions_departure:
         if parsed.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE):
             return Reply("", station, silent=True)
 
-        return self._not_understood(session, station, p, state)
+        return self._not_understood(session, station, p, state, parsed=parsed)
 
     def _radar_check_in(self, parsed, session, station, p, state, first_contact) -> Reply:
         aircraft = session.aircraft

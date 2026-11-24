@@ -20,6 +20,7 @@ import contextlib
 import ctypes
 import logging
 import math
+import re
 import threading
 import time
 from collections.abc import Iterable
@@ -423,36 +424,62 @@ def type_from_title(title: str, model: str = "") -> str:
     return ""
 
 
-# Engines two through four's own gauges and levers: the variable names
-# are engine one's with the :1 index slid, and the answers land under
-# the state's eng2_/eng3_/eng4_ fields. NUMBER_OF_ENGINES is then the
-# roster read() believes, because an out-of-range index on SimConnect
-# answers -- a phantom zero or a phantom False that must never read as
-# a third engine on a twin.
-_PER_ENGINE_REQUESTS: tuple[tuple[str, str, str, str], ...] = tuple(
-    (name.format(i=i), f"eng{i}_{attr}", kind, "slow")
-    for i in (2, 3, 4)
-    for name, attr, kind in (
-        ("ENG_TORQUE:{i}", "torque_nm", "ftpds_nm"),
-        ("ENG_TORQUE_PERCENT:{i}", "torque_pct", "pct_wide"),
-        ("TURB_ENG_ITT:{i}", "itt_c", "rankine_c"),
-        ("TURB_ENG_N1:{i}", "n1_pct", "raw"),
-        ("TURB_ENG_N2:{i}", "n2_pct", "raw"),
-        ("GENERAL_ENG_RPM:{i}", "rpm", "raw"),
-        ("GENERAL_ENG_THROTTLE_LEVER_POSITION:{i}", "throttle_pct",
-         "throttle"),
-        ("GENERAL_ENG_MIXTURE_LEVER_POSITION:{i}", "mixture_pct", "raw"),
-        ("GENERAL_ENG_PROPELLER_LEVER_POSITION:{i}", "prop_pct", "raw"),
-        ("TURB_ENG_CONDITION_LEVER_POSITION:{i}", "condition_pct",
-         "condition"),
-    ))
+# Engines two through sixteen's own gauges, levers and switches: the
+# variable names are engine one's with the :1 index slid, and the
+# answers land under the state's engN_ fields. Both sims index their
+# engine variables to sixteen -- the MSFS SDK raised its maximum of
+# four to sixteen in 0.24.5, and X-Plane 12's engine arrays are [16].
+# NUMBER_OF_ENGINES is then the roster read() believes, because an
+# out-of-range index on SimConnect still answers -- a phantom zero or
+# a phantom False that must never read as a third engine on a twin --
+# and it is also the ceiling the slow rotation asks for, so a single
+# never pays for fifteen engines' worth of asks (see _slow_for).
+_PER_ENGINE_VARS: tuple[tuple[str, str, str], ...] = (
+    ("ENG_TORQUE:{i}", "eng{i}_torque_nm", "ftpds_nm"),
+    ("ENG_TORQUE_PERCENT:{i}", "eng{i}_torque_pct", "pct_wide"),
+    ("TURB_ENG_ITT:{i}", "eng{i}_itt_c", "rankine_c"),
+    ("TURB_ENG_N1:{i}", "eng{i}_n1_pct", "raw"),
+    ("TURB_ENG_N2:{i}", "eng{i}_n2_pct", "raw"),
+    ("GENERAL_ENG_RPM:{i}", "eng{i}_rpm", "raw"),
+    ("GENERAL_ENG_THROTTLE_LEVER_POSITION:{i}", "eng{i}_throttle_pct",
+     "throttle"),
+    ("GENERAL_ENG_MIXTURE_LEVER_POSITION:{i}", "eng{i}_mixture_pct",
+     "raw"),
+    ("GENERAL_ENG_PROPELLER_LEVER_POSITION:{i}", "eng{i}_prop_pct", "raw"),
+    ("TURB_ENG_CONDITION_LEVER_POSITION:{i}", "eng{i}_condition_pct",
+     "condition"),
+    ("GENERAL_ENG_COMBUSTION:{i}", "eng{i}_combustion", "bool"),
+    ("GENERAL_ENG_FUEL_PUMP_SWITCH:{i}", "eng{i}_fuel_pump_on", "bool"),
+    ("GENERAL_ENG_GENERATOR_SWITCH:{i}", "eng{i}_generator_on", "bool"),
+    ("GENERAL_ENG_MASTER_ALTERNATOR:{i}", "eng{i}_alternator_on", "bool"),
+    ("TURB_ENG_IGNITION_SWITCH:{i}", "eng{i}_ignition_on", "bool"),
+    ("GENERAL_ENG_OIL_PRESSURE:{i}", "eng{i}_oil_pressure_psi", "raw"),
+    ("BLEED_AIR_ENGINE:{i}", "eng{i}_bleed_air_on", "bool"),
+    # The magneto switches: the key position is derived from the
+    # pair, the way magneto_pos is for engines one and two.
+    ("RECIP_ENG_LEFT_MAGNETO:{i}", "magneto{i}_left", "bool"),
+    ("RECIP_ENG_RIGHT_MAGNETO:{i}", "magneto{i}_right", "bool"),
+)
 
-# The engN_ field suffixes the count gate Nones: combustion (registered
-# the literal way above, before the table was generated) plus every
-# gauge and lever _PER_ENGINE_REQUESTS lands.
-_PER_ENGINE_SUFFIXES = ("combustion",) + tuple(
-    dict.fromkeys(attr for _name, attr, _kind, _tier
-                  in _PER_ENGINE_REQUESTS))
+_PER_ENGINE_REQUESTS: tuple[tuple[str, str, str, str], ...] = tuple(
+    (name.format(i=i), attr.format(i=i), kind, "slow")
+    for i in range(2, 17)
+    for name, attr, kind in _PER_ENGINE_VARS)
+
+# The per-engine attribute names the count gate Nones for slots the
+# roster does not carry: every attribute the generated table lands,
+# still holding its {i}, plus the key position derived from the
+# magneto pair.
+_PER_ENGINE_ATTRS = tuple(
+    dict.fromkeys(
+        [attr for _name, attr, _kind in _PER_ENGINE_VARS]
+        + ["eng{i}_magneto_pos"]))
+
+# An attribute in the slow pool that belongs to a numbered engine
+# past the first (eng5_n1_pct, magneto7_left): how many engines it
+# wants the roster to have before it is worth asking.
+_ENGINE_ATTR = re.compile(
+    r"^(?:eng(\d+)_|magneto(\d+)_(?:left|right))")
 
 
 class SimConnectSource:
@@ -694,11 +721,9 @@ class SimConnectSource:
         ("ESTIMATED_FUEL_FLOW", "est_fuel_flow_pph", "raw", "slow"),  # lb/h
         ("AIRSPEED_MACH", "airspeed_mach", "raw", "slow"),
         # Combustion per engine past the first, for the engine-out
-        # detection a single engines_running flag cannot do on a twin.
-        # The wrapper's indexed lookup handles the :2/:3/:4 slide.
-        ("GENERAL_ENG_COMBUSTION:2", "eng2_combustion", "bool", "slow"),
-        ("GENERAL_ENG_COMBUSTION:3", "eng3_combustion", "bool", "slow"),
-        ("GENERAL_ENG_COMBUSTION:4", "eng4_combustion", "bool", "slow"),
+        # detection a single engines_running flag cannot do on a twin:
+        # engines two through sixteen ride the generated per-engine
+        # table below.
         # The helicopter's own instruments (MSFS 2024 Helicopter
         # Variables). Slow like the rest of the configuration: the
         # autonomous rotorcraft controller reads them on demand
@@ -756,31 +781,22 @@ class SimConnectSource:
         # passes -- and a check against None is agreement, so an
         # unmodelled system can never fail an item.
         ("GENERAL_ENG_FUEL_PUMP_SWITCH:1", "fuel_pump_on", "bool", "slow"),
-        ("GENERAL_ENG_FUEL_PUMP_SWITCH:2", "eng2_fuel_pump_on", "bool", "slow"),
-        ("GENERAL_ENG_FUEL_PUMP_SWITCH:3", "eng3_fuel_pump_on", "bool", "slow"),
-        ("GENERAL_ENG_FUEL_PUMP_SWITCH:4", "eng4_fuel_pump_on", "bool", "slow"),
         ("GENERAL_ENG_GENERATOR_SWITCH:1", "generator_on", "bool", "slow"),
-        ("GENERAL_ENG_GENERATOR_SWITCH:2", "eng2_generator_on", "bool", "slow"),
-        ("GENERAL_ENG_GENERATOR_SWITCH:3", "eng3_generator_on", "bool", "slow"),
-        ("GENERAL_ENG_GENERATOR_SWITCH:4", "eng4_generator_on", "bool", "slow"),
         # The piston alternators' own switch name -- the jets read it
         # as the generator's above.
         ("GENERAL_ENG_MASTER_ALTERNATOR:1", "alternator_on", "bool", "slow"),
-        ("GENERAL_ENG_MASTER_ALTERNATOR:2", "eng2_alternator_on", "bool", "slow"),
         # The magneto keys as their two switches; magneto_pos is
         # derived from them (off/left/right/both plus start while the
         # starter cranks), the enum X-Plane's ignition_key answers.
+        # Engine two's pair and every later engine's come from the
+        # generated per-engine table.
         ("RECIP_ENG_LEFT_MAGNETO:1", "magneto1_left", "bool", "slow"),
         ("RECIP_ENG_RIGHT_MAGNETO:1", "magneto1_right", "bool", "slow"),
-        ("RECIP_ENG_LEFT_MAGNETO:2", "magneto2_left", "bool", "slow"),
-        ("RECIP_ENG_RIGHT_MAGNETO:2", "magneto2_right", "bool", "slow"),
         ("GENERAL_ENG_STARTER_ACTIVE:1", "starter_active", "bool", "slow"),
         # The turbine start/ignition switches: on or off, not the
         # piston key's five stops.
         ("TURB_ENG_IGNITION_SWITCH:1", "ignition_on", "bool", "slow"),
-        ("TURB_ENG_IGNITION_SWITCH:2", "eng2_ignition_on", "bool", "slow"),
         ("GENERAL_ENG_OIL_PRESSURE:1", "oil_pressure_psi", "raw", "slow"),
-        ("GENERAL_ENG_OIL_PRESSURE:2", "eng2_oil_pressure_psi", "raw", "slow"),
         # Carb heat rides the piston engine's anti-ice position -- the
         # channel a 172's carb-heat knob writes. Percent over 100.
         ("GENERAL_ENG_ANTI_ICE_POSITION:1", "carb_heat_pct", "pct", "slow"),
@@ -803,9 +819,6 @@ class SimConnectSource:
         ("APU_GENERATOR_SWITCH", "apu_gen_on", "bool", "slow"),
         ("BLEED_AIR_APU", "apu_bleed_on", "bool", "slow"),
         ("BLEED_AIR_ENGINE:1", "bleed_air_on", "bool", "slow"),
-        ("BLEED_AIR_ENGINE:2", "eng2_bleed_air_on", "bool", "slow"),
-        ("BLEED_AIR_ENGINE:3", "eng3_bleed_air_on", "bool", "slow"),
-        ("BLEED_AIR_ENGINE:4", "eng4_bleed_air_on", "bool", "slow"),
         # The de-ice family's switches: engine inlets, wing boots, the
         # windshield, the props, and the panel/AoA probe.
         ("ENG_ANTI_ICE:1", "engine_anti_ice_on", "bool", "slow"),
@@ -858,11 +871,20 @@ class SimConnectSource:
         # so a second press while the first tug is still on its way sends
         # the tug home rather than hurry it up.
         self._push_sent_at = float("-inf")
-        # The two tiers, split once rather than on every read.
+        # The two tiers, split once rather than on every read. _slow_all
+        # is the slow tier whole; _slow is it trimmed to the engines the
+        # roster reports, rebuilt when the count moves -- an out-of-range
+        # index still answers on SimConnect, so asking a twin for fifteen
+        # engines is phantom reads paid for on every pass, not missing
+        # data.
         self._fast = tuple((n, a, k) for n, a, k, tier in self.REQUESTS
                            if tier == "fast")
-        self._slow = tuple((n, a, k) for n, a, k, tier in self.REQUESTS
-                           if tier != "fast")
+        self._slow_all = tuple((n, a, k) for n, a, k, tier in self.REQUESTS
+                               if tier != "fast")
+        self._slow = self._slow_all
+        # How many engines the current _slow was built for; -1 makes the
+        # first read rebuild it.
+        self._engines_polled = -1
         self._next_slow = 0
         # Whether the next read takes every variable rather than a slice.
         self._full_sweep = True
@@ -1225,6 +1247,7 @@ class SimConnectSource:
             self._values.clear()
             self._empty_reads = 0
             self._next_slow = 0
+            self._engines_polled = -1
             self._full_sweep = True
             self._seen_running = False
             self._push_sent_at = float("-inf")
@@ -1262,7 +1285,7 @@ class SimConnectSource:
         # running 2024.
         "NUM_OF_MAIN_ROTORS": [
             "How many main rotors the helicopter has",
-            b"NUM OF MAIN ROTORS", b"Number", "N"],
+            b"NUMBER OF MAIN ROTORS", b"Number", "N"],
         "TAIL_ROTOR_PEDAL_POSITION": [
             "The tail rotor pedals, per cent",
             b"TAIL ROTOR PEDAL POSITION", b"Percent", "N"],
@@ -1281,7 +1304,7 @@ class SimConnectSource:
         # tank is up to the model.
         "UNUSABLE_FUEL_QUANTITY": [
             "The fuel that can never be drawn",
-            b"UNUSABLE FUEL QUANTITY", b"Gallons", "N"],
+            b"UNUSABLE FUEL TOTAL QUANTITY", b"Gallons", "N"],
         "NEW_FUEL_SYSTEM": [
             "Whether the model uses the [FUEL_SYSTEM] section",
             b"NEW FUEL SYSTEM", b"Bool", "N"],
@@ -1428,6 +1451,19 @@ class SimConnectSource:
             if self._fetch(name, attribute, kind):
                 fresh += 1
 
+        # Trim the slow tier to the roster once the count is in. An
+        # unanswered count keeps the old table's reach -- two through
+        # four -- which is the reach it had when the table was written.
+        engines = int(self._values.get("engine_count") or 0) or 4
+        engines = max(1, min(16, engines))
+        if engines != self._engines_polled:
+            self._slow = tuple(
+                (n, a, k) for n, a, k in self._slow_all
+                if (m := _ENGINE_ATTR.match(a)) is None
+                or int(m.group(1) or m.group(2)) <= engines)
+            self._engines_polled = engines
+            self._next_slow %= max(1, len(self._slow))
+
         # And everything else. The first read after connecting takes the lot,
         # because the flight is built from it: the callsign, the aircraft
         # type and the transponder are all in the slow tier, and a session
@@ -1506,7 +1542,7 @@ class SimConnectSource:
         if state.engine_type == 5 and "condition_pct" not in self._values:
             state.condition_pct = state.mixture_pct
         if state.engine_type == 5:
-            for i in (2, 3, 4):
+            for i in range(2, 17):
                 if f"eng{i}_condition_pct" not in self._values:
                     setattr(state, f"eng{i}_condition_pct",
                             getattr(state, f"eng{i}_mixture_pct"))
@@ -1707,19 +1743,22 @@ class SimConnectSource:
         # count are engines; the rest are unpublished, and unpublished
         # is None. And where the count itself never answered, no index
         # past the first is trusted at all.
-        for i in range(2, 5):
+        for i in range(2, 17):
             if not state.engine_count or i > state.engine_count:
-                for suffix in _PER_ENGINE_SUFFIXES:
-                    setattr(state, f"eng{i}_{suffix}", None)
+                for attr in _PER_ENGINE_ATTRS:
+                    setattr(state, attr.format(i=i), None)
 
         # The piston key's five stops from its two magneto switches and
         # the starter: off, left, right, both, and start while it cranks
         # -- the enum X-Plane's ignition_key answers with one read.
-        for pos_attr, left, right, in (
-                ("magneto_pos", state.magneto1_left, state.magneto1_right),
-                ("eng2_magneto_pos", state.magneto2_left, state.magneto2_right)):
+        for i in range(1, 17):
+            left = getattr(state, f"magneto{i}_left", None)
+            right = getattr(state, f"magneto{i}_right", None)
             if left is not None or right is not None:
-                setattr(state, pos_attr, (1 if left else 0) + (2 if right else 0))
+                pos = (1 if left else 0) + (2 if right else 0)
+                setattr(state,
+                        "magneto_pos" if i == 1 else f"eng{i}_magneto_pos",
+                        pos)
         if state.starter_active and state.magneto_pos is not None:
             state.magneto_pos = 4
 
@@ -1957,6 +1996,24 @@ class SimConnectSource:
             return True
         return False
 
+    def pushback_stop(self) -> bool:
+        """Let the tug go. ``TOGGLE_PUSHBACK`` is a toggle, so a second
+        send ends the push the first began -- and would start one that is
+        not running, which is why it only goes while a push is actually
+        on: the tug attached or on its way, or the ask still inside its
+        window. A push the tug already let go of is left alone."""
+        if not self._connected:
+            return False
+        state = self._state
+        if not (getattr(state, "pushback_attached", False)
+                or getattr(state, "pushback_wait", False)
+                or time.monotonic() - self._push_sent_at < self.PUSH_ASK_S):
+            return False
+        if self._send(b"TOGGLE_PUSHBACK", 0):
+            self._push_sent_at = float("-inf")
+            return True
+        return False
+
     def swap_com(self, radio: int = 1) -> bool:
         """Swap active and standby, the way the button on the radio does."""
         if not self._connected:
@@ -2058,7 +2115,7 @@ class SimConnectSource:
             return False
         if not (190.0 <= value <= 1750.0) or int(radio) != 1:
             return False
-        return self._send("ADF_COMPLETE_SET",
+        return self._send(b"ADF_COMPLETE_SET",
                           encode_bcd32(value * 1000.0))
 
     def set_squawk(self, code: str) -> bool:

@@ -215,28 +215,15 @@ class _The_checklist_answered:
             # X-Plane's WRITABLE table maps each to its dataref.
             "fuel_pump_on": lambda: d.write(
                 "GENERAL ENG FUEL PUMP SWITCH:1", 1.0 if want_on else 0.0),
-            "eng2_fuel_pump_on": lambda: d.write(
-                "GENERAL ENG FUEL PUMP SWITCH:2", 1.0 if want_on else 0.0),
-            "eng3_fuel_pump_on": lambda: d.write(
-                "GENERAL ENG FUEL PUMP SWITCH:3", 1.0 if want_on else 0.0),
-            "eng4_fuel_pump_on": lambda: d.write(
-                "GENERAL ENG FUEL PUMP SWITCH:4", 1.0 if want_on else 0.0),
             "generator_on": lambda: (want_on or parked) and d.write(
                 "GENERAL ENG GENERATOR SWITCH:1", 1.0 if want_on else 0.0),
-            "eng2_generator_on": lambda: (want_on or parked) and d.write(
-                "GENERAL ENG GENERATOR SWITCH:2", 1.0 if want_on else 0.0),
             "alternator_on": lambda: (want_on or parked) and d.write(
                 "GENERAL ENG MASTER ALTERNATOR:1", 1.0 if want_on else 0.0),
-            "eng2_alternator_on": lambda: (want_on or parked) and d.write(
-                "GENERAL ENG MASTER ALTERNATOR:2", 1.0 if want_on else 0.0),
             "ignition_on": lambda: d.write(
                 "TURB ENG IGNITION SWITCH:1", 1.0 if want_on else 0.0),
-            "eng2_ignition_on": lambda: d.write(
-                "TURB ENG IGNITION SWITCH:2", 1.0 if want_on else 0.0),
             # The key's five stops: X-Plane's single enum answers the
             # one write; SimConnect's two switches are the sum's parts.
             "magneto_pos": lambda: self._magneto(d, 1, expected),
-            "eng2_magneto_pos": lambda: self._magneto(d, 2, expected),
             "carb_heat_pct": lambda: d.write(
                 "GENERAL ENG ANTI ICE POSITION:1",
                 float(expected) / 100.0),
@@ -264,8 +251,6 @@ class _The_checklist_answered:
                 "APU PACKS", 1.0 if want_on else 0.0),
             "bleed_air_on": lambda: d.write(
                 "BLEED AIR ENGINE:1", 1.0 if want_on else 0.0),
-            "eng2_bleed_air_on": lambda: d.write(
-                "BLEED AIR ENGINE:2", 1.0 if want_on else 0.0),
             "engine_anti_ice_on": lambda: d.write(
                 "ENG ANTI ICE:1", 1.0 if want_on else 0.0),
             "wing_deice_on": lambda: d.write(
@@ -277,7 +262,10 @@ class _The_checklist_answered:
             "aoa_heat_on": lambda: d.write(
                 "PANEL ANTI ICE SWITCH", 1.0 if want_on else 0.0),
             "hydraulic_pump_on": lambda: d.write(
-                "HYDRAULIC SWITCH:1", 1.0 if want_on else 0.0),
+                "HYDRAULIC SWITCH:1", 1.0 if want_on else 0.0) or d.write(
+                # MSFS files the var unindexed; X-Plane's map wants the
+                # :1 the first write already tried.
+                "HYDRAULIC SWITCH", 1.0 if want_on else 0.0),
             "cabin_altitude_goal_ft": lambda: d.write(
                 "PRESSURIZATION CABIN ALTITUDE GOAL", float(expected)),
             "minimums_ft": lambda: d.write(
@@ -289,15 +277,44 @@ class _The_checklist_answered:
             "wiper_pos": lambda: d.write(
                 "WIPER SWITCH", float(expected)),
         }
+        # The same systems on engines two through sixteen (the sims'
+        # highest index): each SimConnect name the scalars use, with
+        # the state's engN_ spelling swapped for the :N index.
+        for n in range(2, 17):
+            table.setdefault(
+                f"eng{n}_fuel_pump_on",
+                lambda n=n: d.write(f"GENERAL ENG FUEL PUMP SWITCH:{n}",
+                                    1.0 if want_on else 0.0))
+            table.setdefault(
+                f"eng{n}_generator_on",
+                lambda n=n: (want_on or parked) and d.write(
+                    f"GENERAL ENG GENERATOR SWITCH:{n}",
+                    1.0 if want_on else 0.0))
+            table.setdefault(
+                f"eng{n}_alternator_on",
+                lambda n=n: (want_on or parked) and d.write(
+                    f"GENERAL ENG MASTER ALTERNATOR:{n}",
+                    1.0 if want_on else 0.0))
+            table.setdefault(
+                f"eng{n}_ignition_on",
+                lambda n=n: d.write(f"TURB ENG IGNITION SWITCH:{n}",
+                                    1.0 if want_on else 0.0))
+            table.setdefault(f"eng{n}_magneto_pos",
+                             lambda n=n: self._magneto(d, n, expected))
+            table.setdefault(
+                f"eng{n}_bleed_air_on",
+                lambda n=n: d.write(f"BLEED AIR ENGINE:{n}",
+                                    1.0 if want_on else 0.0))
         action = table.get(var)
         if action is None:
             return False
         try:
-            action()
+            # The writes answer whether the sim took them -- a refused
+            # one is not the item done.
+            return bool(action())
         except Exception:
             log.debug("checklist switch %s failed", var, exc_info=True)
             return False
-        return True
 
     @staticmethod
     def _magneto(d, engine: int, expected) -> bool:

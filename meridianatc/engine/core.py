@@ -809,6 +809,7 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         is theirs to read back.
         """
         from ..atc.copilot import readback as build_readback
+        from ..atc.local_time import field_hour
         from ..atc.pilot import PilotSpeech
 
         session = self.session
@@ -818,6 +819,12 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         spoken = self._language_for(station.ident, self.last_language)
         p = self.brain.for_station(station, spoken)
         speech = PilotSpeech(spoken, p)
+        # The clock the check-in's greeting is picked by is the
+        # aeroplane's own longitude -- the field it is really at,
+        # not the computer's timezone.
+        speech.hour = field_hour(
+            float(getattr(getattr(self, "state", None), "longitude", None)
+                  or 0.0))
         aircraft = session.aircraft
         name = station.callsign_in(spoken)
         pending = session.pending
@@ -992,11 +999,11 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
             # reply to it.
             self._speak_first_officer(text, spoken)
         except Exception:
-            log.debug("the first officer's voice failed", exc_info=True)
+            log.warning("the first officer's voice failed", exc_info=True)
         try:
             self.handle_text(text, spoken, speaker="first_officer")
         except Exception:
-            log.debug("the first officer's call failed", exc_info=True)
+            log.warning("the first officer's call failed", exc_info=True)
 
     def _where_in_the_circuit(self):
         """Where the circuit puts the aeroplane, for the first officer's

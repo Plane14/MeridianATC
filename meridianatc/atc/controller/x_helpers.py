@@ -173,7 +173,7 @@ class _Helpers:
     @staticmethod
     def _default_cruise(session: FlightSession) -> float:
         """A plausible cruise level when the pilot never filed one."""
-        if session.cruise_altitude_ft:
+        if session.cruise_altitude_ft > 0:
             return session.cruise_altitude_ft
         wake = session.aircraft.wake
         if wake in ("heavy", "super"):

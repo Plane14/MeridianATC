@@ -220,6 +220,16 @@ class _Taxi:
                 self._taxi_reasks = getattr(self, "_taxi_reasks", 0) + 1
                 self._taxi_reask = True
                 self._off_path_since = now
+            elif now - self._off_path_since > self.REASK_AFTER_S \
+                    and outbound \
+                    and self._taxi_issuing_position() is None \
+                    and self._self_plan_taxi(state):
+                # Nobody to ask and no rejoin: the crew's own chart
+                # replaces the route that stranded it.
+                log.info("off the taxi route for %.0f s with nobody to "
+                         "ask: replanned on the airport diagram",
+                         now - self._off_path_since)
+                self._off_path_since = now
             warned_at = getattr(self, "_off_path_warned_at", 0.0)
             if now - warned_at > 15.0:
                 self._off_path_warned_at = now

@@ -90,11 +90,17 @@ class _Readback_checking:
         # "Cleared to land, Delta twelve thirty four": the clearance restated
         # with nothing contradicting it. A runway that is said has to be the
         # right one (that is a readback, checked above); one that is not said
-        # is accepted, as most pilots read a landing clearance back.
-        if (pending.kind == "landing_clearance"
+        # is accepted, as most pilots read a landing clearance back. The same
+        # goes for "cleared for takeoff two seven" and "line up and wait two
+        # seven" -- the number without the word "runway" is the standard
+        # readback, not a missing item.
+        if (pending.kind in ("landing_clearance", "takeoff_clearance",
+                             "line_up_and_wait")
                 and parsed.intent is Intent.ACKNOWLEDGE
-                and "cleared to land" in parsed.normalized
-                and "runway" not in heard):
+                and "runway" not in heard
+                and any(phrase in parsed.normalized for phrase in (
+                    "cleared to land", "cleared for takeoff",
+                    "line up and wait", "line up"))):
             pending.read_back = True
             session.apply(pending.values)
             session.clear_pending()

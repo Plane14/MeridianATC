@@ -134,8 +134,9 @@ class _The_plan_the:
             # is built from the flight setting, so a sim plan adopted
             # without this sync is announced as the last field filed.
             flight.destination = route.destination
-        if route.cruise_ft and (route.source != "sim"
-                                or not flight.cruise_altitude_ft):
+        if route.cruise_ft and route.cruise_ft > 0 \
+                and (route.source != "sim"
+                     or not flight.cruise_altitude_ft):
             # A route that files a level fills a blank cruise field. An
             # FMS read-back's figure is only inferred from leg heights,
             # though -- the level the pilot filed on the flight's own

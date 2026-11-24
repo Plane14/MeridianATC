@@ -144,7 +144,10 @@ class _The_circuit:
             try:
                 seen = self.sim_traffic() or []
             except Exception:
-                log.debug("could not read the simulator's traffic", exc_info=True)
+                if not getattr(self, "_sim_traffic_warned", False):
+                    self._sim_traffic_warned = True
+                    log.warning("could not read the simulator's traffic; "
+                                "the frequency looks empty", exc_info=True)
                 seen = []
             for one in seen:
                 if not getattr(one, "positioned", True):

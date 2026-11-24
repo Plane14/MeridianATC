@@ -267,14 +267,47 @@ _B2707_WRITE: dict[str, str] = {
     "GENERAL ENG FUEL PUMP SWITCH:4": "b2707/fuel/panel/boost_pump_4",
 }
 
+# ToLiss A319/A320/A321/A330/A340 -- names confirmed against the
+# published package's own smartcopilot.cfg and the cockpit-builders
+# threads on the official forum: the individually named switches are
+# safe; the OHP array indices are not, so fuel pumps, bleeds, packs and
+# generators stay on the stock names rather than a guessed index (the
+# generator pbs are not exposed at all, per the vendor). The engine
+# masters (AirbusFBW/ENG1MasterSwitch) deliberately map nothing: an
+# ENG MASTER on an Airbus is not the ignition switch a check asks
+# about, and a wrong alias fails items that were right.
+_TOLISS_READ: dict[str, tuple[str, float]] = {
+    # ElecOHPArray[5] is BAT1's switch -- the one battery_master checks.
+    "battery_master": ("AirbusFBW/ElecOHPArray[5]", 1),
+    "apu_on": ("AirbusFBW/APUMaster", 1),
+    "pitot_heat": ("AirbusFBW/ProbeHeatSwitch", 1),
+    "aoa_heat_on": ("AirbusFBW/ProbeHeatSwitch", 1),
+    "window_heat_on": ("AirbusFBW/ProbeHeatSwitch", 1),
+    "oxygen_on": ("AirbusFBW/CrewOxySwitch", 1),
+}
+
+_TOLISS_WRITE: dict[str, str] = {
+    "APU SWITCH": "AirbusFBW/APUMaster",
+}
+
 XP_READ_ALIASES: dict[str, dict[str, tuple[str, float]]] = {
     "mad_a320": _MAD_A320_READ,
     "zibo_738": _ZIBO_READ,
     "devinci_b2707": _B2707_READ,
+    "toliss": _TOLISS_READ,
 }
 
 XP_WRITE_ALIASES: dict[str, dict[str, str]] = {
     "mad_a320": _MAD_A320_WRITE,
     "zibo_738": _ZIBO_WRITE,
     "devinci_b2707": _B2707_WRITE,
+    "toliss": _TOLISS_WRITE,
 }
+
+# The model keys left to the stock fallback, on purpose: flightfactor,
+# hotstart_cl650, rotate_md80, ixeg_733 and the helicopter makers
+# (taog, nemeth, cowansim) publish their cockpit datarefs only in
+# their own SDKs or not at all, and pmdg_737/fenix/ifly on MSFS expose
+# no documented L: names for the switches the checks read. A guessed
+# name fails an item the stock value answered correctly, so they stay
+# unmapped until a published list confirms one.

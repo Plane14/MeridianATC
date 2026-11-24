@@ -126,7 +126,7 @@ class _Clearance_delivery:
         if parsed.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE):
             return Reply("", station, silent=True)
 
-        return self._not_understood(session, station, p, state)
+        return self._not_understood(session, station, p, state, parsed=parsed)
 
     def _issue_clearance(self, session, station, weather, p) -> Reply:
         airport = self.navdb.airport(station.ident)
@@ -137,7 +137,9 @@ class _Clearance_delivery:
         )
 
         session.squawk = squawk_for(session, station.ident)
-        cruise = session.cruise_altitude_ft or self._default_cruise(session)
+        cruise = (session.cruise_altitude_ft
+                  if session.cruise_altitude_ft > 0
+                  else self._default_cruise(session))
 
         departure_station = (
             self.navdb.station_for(station.ident, "DEP")

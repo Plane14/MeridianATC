@@ -203,8 +203,29 @@ class _What_the_controller:
         return Reply(text, station, instruction=instruction)
 
     def _not_understood(self, session: FlightSession, station: Station,
-                        p: Phraseology, state=None) -> Reply:
-        """The answer to a transmission the controller could not act on."""
+                        p: Phraseology, state=None, parsed=None) -> Reply:
+        """The answer to a transmission the controller could not act on.
+
+        Some calls need no position to answer: "negative" and "unable"
+        are rogered, "standby" is not answered at all, a frequency
+        change asked of a working position is approved, and an IFR
+        cancellation is acknowledged with the VFR code -- wherever they
+        were heard rather than with a list of the calls that were
+        expected instead."""
+        intent = getattr(parsed, "intent", None)
+        if intent is Intent.NEGATIVE or intent is Intent.UNABLE:
+            return Reply(p.roger(session.aircraft), station)
+        if intent is Intent.STANDBY:
+            return Reply("", station, silent=True)
+        if intent is Intent.REQUEST_FREQUENCY_CHANGE:
+            return Reply(p.frequency_change_approved(session.aircraft),
+                         station)
+        if intent is Intent.CANCEL_IFR:
+            session.ifr = False
+            session.squawk = p.vfr_squawk
+            decision("cancel_ifr", station=station.callsign,
+                     squawk=p.vfr_squawk)
+            return Reply(p.squawk_vfr(session.aircraft), station)
         return Reply(
             p.expecting(session.aircraft,
                         self.expected_calls(session, station, state,

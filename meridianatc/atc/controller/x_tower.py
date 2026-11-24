@@ -151,7 +151,7 @@ class _Tower:
         if parsed.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE):
             return Reply("", station, silent=True)
 
-        return self._not_understood(session, station, p, state)
+        return self._not_understood(session, station, p, state, parsed=parsed)
 
     def _hand_off_departure(self, session, station, p) -> Reply:
         """Send an airborne aircraft on to whoever works departures."""

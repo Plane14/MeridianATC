@@ -138,6 +138,13 @@ class _Session:
                           was=flight.aircraft_type)
             self.config.flight.aircraft_type = self.state.type_code
             flight = self.config.flight
+            try:
+                # The file is corrected too: an in-memory write-back left
+                # the saved type naming the last aeroplane, and every
+                # cold start announced it until the simulator answered.
+                self.config.save()
+            except Exception as exc:
+                log.warning("could not write config.yaml: %s", exc)
 
         departure = self.navdb.airport(flight.departure) if flight.departure else None
         if self.state.has_position:
@@ -216,7 +223,8 @@ class _Session:
             departure=departure,
             destination=destination,
             destination_input=flight.destination,
-            cruise_altitude_ft=float(flight.cruise_altitude_ft or 0),
+            cruise_altitude_ft=max(
+                float(flight.cruise_altitude_ft or 0), 0.0),
             ifr=self._rules_for(flight),
             ifr_setting=flight.ifr,
             profile=profile,
@@ -411,7 +419,7 @@ class _Session:
             flight.departure = route.origin
         if route.destination:
             flight.destination = route.destination
-        if route.cruise_ft:
+        if route.cruise_ft and route.cruise_ft > 0:
             flight.cruise_altitude_ft = route.cruise_ft
         self.brain.plan_runways = {}
         if route.origin:

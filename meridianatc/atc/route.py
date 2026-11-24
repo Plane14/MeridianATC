@@ -210,7 +210,8 @@ class Route:
             minutes = (self._along(0, self.fixes.index(toc))
                        / climb_groundspeed(cruise) * 60.0)
         else:
-            rate = next(fpm for floor, fpm in CLIMB_FPM if cruise >= floor)
+            rate = next((fpm for floor, fpm in CLIMB_FPM if cruise >= floor),
+                        CLIMB_FPM[-1][1])
             minutes = cruise / rate
         low, high = MINUTES_RANGE
         return int(min(max(round(minutes), low), high))
@@ -421,6 +422,9 @@ _PLN_MAX_BYTES = 4 * 1024 * 1024
 _PLN_KINDS = {"intersection": "wpt", "vor": "vor", "ndb": "ndb",
               "airport": "apt", "user": "wpt", "runway": "wpt"}
 
+# A runway leg's altitude is the threshold's elevation, never a level.
+_PLN_RUNWAY_IDENT = re.compile(r"^(?:RW|RWY)\d")
+
 
 @dataclass
 class PlnPlan:
@@ -437,8 +441,9 @@ class PlnPlan:
     star_transition: str = ""
     arrival_runway: str = ""
     approach: str = ""
-    # (ident, region, kind, (lat, lon) or None, airway)
-    waypoints: list[tuple[str, str, str, tuple[float, float] | None, str]] = \
+    # (ident, region, kind, (lat, lon, alt_ft) or None, airway)
+    waypoints: list[tuple[str, str, str,
+                          tuple[float, float, float] | None, str]] = \
         field(default_factory=list)
 
 
@@ -467,7 +472,7 @@ def parse_pln(text: str) -> PlnPlan:
     plan = PlnPlan(
         origin=_t(fp, "DepartureID").upper(),
         destination=_t(fp, "DestinationID").upper(),
-        cruise_ft=_int(_t(fp, "CruisingAlt")))
+        cruise_ft=max(_int(_t(fp, "CruisingAlt")), 0))
     rules = _t(fp, "FPType").upper()
     plan.ifr = None if not rules else rules.startswith("IFR")
 
@@ -521,15 +526,31 @@ def from_pln(text: str, resolve: Resolver | None = None) -> Route:
             notes.append(f"{ident} could not be placed")
             continue
         fixes.append(RouteFix(ident=ident, lat=where[0], lon=where[1],
-                              via=_via(airway), kind=kind, region=region))
+                              alt_ft=int(where[2]), via=_via(airway),
+                              kind=kind, region=region))
     fixes = _with_ends(fixes, plan.origin, plan.destination, resolve)
+    cruise_ft = plan.cruise_ft
+    if cruise_ft <= 0:
+        # No filed level -- the waypoints' own altitudes are the best
+        # word for it, the highest enroute one standing for the cruise
+        # (the same inference _route_from_fms makes of an FMS readback).
+        # Airport fixes carry the field's elevation, never a level, and
+        # that elevation is the bar: a plan whose legs all sit at or
+        # under it simply files nothing.
+        origin_ft = next((f.alt_ft for f in fixes
+                          if f.kind == "apt" and f.alt_ft > 0), 0.0)
+        cruise_ft = max(
+            (f.alt_ft for f in fixes
+             if f.kind != "apt" and not _PLN_RUNWAY_IDENT.match(f.ident)
+             and f.alt_ft > origin_ft),
+            default=0)
     return Route(fixes=tuple(fixes), origin=plan.origin,
                  destination=plan.destination, sid=plan.sid,
                  sid_runway=plan.departure_runway,
                  sid_transition=plan.sid_transition, star=plan.star,
                  star_transition=plan.star_transition,
                  star_runway=plan.arrival_runway, approach=plan.approach,
-                 cruise_ft=plan.cruise_ft, source="pln", notes=tuple(notes))
+                 cruise_ft=cruise_ft, source="pln", notes=tuple(notes))
 
 
 def _with_ends(fixes: list[RouteFix], origin: str, destination: str,
@@ -574,15 +595,17 @@ def _runway(node, default: str = "") -> str:
         else number + designator
 
 
-def _world_position(raw: str) -> tuple[float, float] | None:
-    """``N50° 54' 4.91",E4° 29' 3.89",+000175.00`` as (lat, lon)."""
+def _world_position(raw: str) -> tuple[float, float, float] | None:
+    """``N50° 54' 4.91",E4° 29' 3.89",+000175.00`` as (lat, lon, ft)."""
     if not raw:
         return None
     parts = raw.split(",")
     if len(parts) < 2:
         return None
     try:
-        return _dms(parts[0]), _dms(parts[1])
+        alt = float(parts[2]) if len(parts) > 2 and parts[2].strip() \
+            else 0.0
+        return _dms(parts[0]), _dms(parts[1]), alt
     except ValueError:
         return None
 

@@ -4,11 +4,60 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, make_dataclass
+
+
+# The slots every engine past the first carries: engine one's figures
+# live under the scalar names (engines_running, throttle_pct,
+# fuel_pump_on and the rest), engines two through four are declared in
+# the class body below, and five through sixteen ride on a generated
+# base -- the same names and the same None-means-unpublished contract,
+# written once rather than twelve times over. Both sims number their
+# engine variables to sixteen now: the MSFS SDK's 0.24.5 notes raised
+# the index maximum from four, and X-Plane 12's engine dataref arrays
+# are [16].
+_PER_ENGINE_SLOTS: tuple[tuple[str, object], ...] = (
+    ("combustion", bool),
+    ("itt_c", float),
+    ("n1_pct", float),
+    ("n2_pct", float),
+    ("rpm", float),
+    ("torque_nm", float),
+    ("torque_pct", float),
+    ("throttle_pct", float),
+    ("mixture_pct", float),
+    ("prop_pct", float),
+    ("condition_pct", float),
+    ("fuel_pump_on", bool),
+    ("generator_on", bool),
+    ("alternator_on", bool),
+    ("bleed_air_on", bool),
+    ("magneto_pos", int),
+    ("ignition_on", bool),
+    ("oil_pressure_psi", float),
+)
+
+# The four the hand-written block gave engine two alone. They are in
+# the generated table for engines three and four as well, so every
+# engine past the first carries the identical set.
+_ENG2_ONLY_SLOTS = frozenset(
+    ("alternator_on", "ignition_on", "magneto_pos", "oil_pressure_psi"))
+
+_ExtraEngines = make_dataclass(
+    "ExtraEngines",
+    [(f"eng{n}_{suffix}", kind | None, field(default=None))
+     for n in range(3, 17)
+     for suffix, kind in _PER_ENGINE_SLOTS
+     if n >= 5 or suffix in _ENG2_ONLY_SLOTS]
+    # The left/right magneto switches the position enum is the sum of:
+    # engines one and two name them below; three on carry the same
+    # pair under the magneto{n}_ name.
+    + [(f"magneto{n}_{side}", bool | None, field(default=None))
+       for n in range(3, 17) for side in ("left", "right")])
 
 
 @dataclass
-class AircraftState:
+class AircraftState(_ExtraEngines):
     """One snapshot of the aircraft, in the units ATC thinks in.
 
     Angles are degrees, altitudes feet, speeds knots. Whatever the source
@@ -260,15 +309,17 @@ class AircraftState:
     # which knots alone cannot give.
     airspeed_mach: float = 0.0
     # Combustion per engine, for engines two through four (engine one's is
-    # engines_running). None where the model does not publish them, so a
-    # multi that reports nothing is not treated as having failed.
+    # engines_running; five through sixteen live on the generated base).
+    # None where the model does not publish them, so a multi that
+    # reports nothing is not treated as having failed.
     eng2_combustion: bool | None = None
     eng3_combustion: bool | None = None
     eng4_combustion: bool | None = None
     # The same for every gauge and lever the engine watch and the
     # checklists read: engine one's figure keeps the scalar's name and
-    # engines two through four carry it under the eng2_/eng3_/eng4_
-    # prefix. A lever item like "throttles ... idle" or "mixture ...
+    # engines two through sixteen carry it under the engN_ prefix
+    # (two through four below, the rest on the base). A lever item like
+    # "throttles ... idle" or "mixture ...
     # rich" then answers for every engine the sim reports, not only the
     # first -- a twin whose second lever never moved cannot pass the
     # check on the first's say-so. None where the engine is not there
@@ -546,7 +597,7 @@ def engine_vars(var: str):
     """A state variable's per-engine names, engine one first.
 
     Engine one's figure keeps the scalar's name and engines two through
-    four carry it under the eng2_/eng3_/eng4_ prefix -- ``eng_itt_c``
+    sixteen carry it under the eng2_.../eng16_ prefix -- ``eng_itt_c``
     to ``eng2_itt_c`` like ``engines_running`` to ``eng2_combustion``,
     and ``throttle_pct`` to ``eng2_throttle_pct`` like ``fuel_pump_on``
     to ``eng2_fuel_pump_on``. A variable with no per-engine fields
@@ -554,9 +605,21 @@ def engine_vars(var: str):
     agreement: a single answers on engine one alone.
     """
     yield var
-    for n in (2, 3, 4):
+    for n in range(2, 17):
         stem = var[4:] if var.startswith("eng_") else var
         yield f"eng{n}_{stem}"
+
+
+def combustion(state) -> tuple:
+    """Every engine's combustion flag, engines one through sixteen.
+
+    ``engines_running`` is engine one's; the rest carry theirs under
+    ``eng2_combustion`` through ``eng16_combustion``. A slot the model
+    does not publish reads back None, which is no engine -- the callers
+    that treat "any lit" or "all out" judge on the not-None flags.
+    """
+    return (getattr(state, "engines_running", None),) + tuple(
+        getattr(state, f"eng{n}_combustion", None) for n in range(2, 17))
 
 
 def normalize_angle(value: float, source_is_radians: bool | None = None) -> float:

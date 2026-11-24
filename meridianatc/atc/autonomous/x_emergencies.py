@@ -3,6 +3,7 @@ from __future__ import annotations
 from ._shared import (
     AutonomousPhase,
 )
+from ...sim.state import combustion
 
 
 class _Emergencies:
@@ -189,10 +190,7 @@ class _Emergencies:
         is an engine once the sim has shown it combusting; a flag
         that has never once been up is no evidence of a failure.
         """
-        flags = (getattr(state, "engines_running", None),
-                 getattr(state, "eng2_combustion", None),
-                 getattr(state, "eng3_combustion", None),
-                 getattr(state, "eng4_combustion", None))
+        flags = combustion(state)
         live = getattr(self, "_engines_live", None)
         if live is None:
             live = self._engines_live = set()
@@ -210,4 +208,18 @@ class _Emergencies:
             if not flag:
                 out += 1
         return out, seen
+
+    def _any_engine_running(self, state) -> bool:
+        """At least one reported engine is combusting -- the 'still
+        turning' gate a shutdown, a refuel or a push must not ignore on
+        a twin whose number two is the one lit."""
+        out, seen = self._engines_out(state)
+        return seen > out
+
+    def _all_engines_out(self, state) -> bool:
+        """Nothing reported is combusting -- also true where the model
+        publishes no combustion flags at all, matching the way a lone
+        ``engines_running`` read answered before."""
+        out, seen = self._engines_out(state)
+        return out >= seen
 

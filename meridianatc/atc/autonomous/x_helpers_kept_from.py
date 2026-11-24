@@ -115,14 +115,20 @@ class _Helpers_kept_from:
 
     def _start_engines(self, state) -> None:
         """Start engines using starter events."""
-        if not state.engines_running:
-            # Props forward and mixture rich before the crank -- the
-            # levers a prop start is primed with, and the ones a low
-            # quadrant position would leave the start without.
-            self._prop_levers()
+        out, seen = self._engines_out(state)
+        if seen and not out:
+            return
+        # Props forward and mixture rich before the crank -- the
+        # levers a prop start is primed with, and the ones a low
+        # quadrant position would leave the start without.
+        self._prop_levers()
+        if out >= seen:
+            # The all-engines autostart runs the model's own sequence
+            # where it honours it -- but sent again with one engine
+            # already lit it can cut the sequence short, so a retry
+            # that owes only the rest is starter events alone.
             self._send_event(b"ENGINE_AUTO_START", 1)
-            self.director.starter(True)
-            self.director.all_starters(True)
+        self.director.all_starters(True)
 
     def _release_parking_brake(self) -> None:
         self._send_event(b"PARKING_BRAKE_SET", 0)
@@ -249,7 +255,13 @@ class _Helpers_kept_from:
         try:
             return self.sim._send(event_name, value)
         except Exception as e:
-            log.debug("Failed to send event %s: %s", event_name, e)
+            warned = getattr(self, "_event_warned", None)
+            if warned is None:
+                warned = self._event_warned = set()
+            if event_name not in warned:
+                warned.add(event_name)
+                log.warning("Failed to send event %s: %s", event_name, e,
+                            exc_info=True)
             return False
 
 

@@ -97,8 +97,18 @@ class FlightDirector:
         try:
             return bool(self.sim._send(name, value))
         except Exception as exc:
-            log.debug("sim event %s failed: %s", name, exc)
+            self._warn_send(name, exc)
             return False
+
+    def _warn_send(self, name, exc) -> None:
+        """A failed send is worth one warning a name, not one a tick."""
+        warned = getattr(self, "_send_warned", None)
+        if warned is None:
+            warned = self._send_warned = set()
+        if name not in warned:
+            warned.add(name)
+            log.warning("sim event %s failed: %s", name, exc,
+                        exc_info=True)
 
     def once(self, key: str, name: bytes, value: int = 0) -> bool:
         """An event sent at most once until ``reset`` or ``forget``."""
@@ -131,10 +141,10 @@ class FlightDirector:
             try:
                 return bool(self.sim.set_variable(variable, value))
             except Exception as exc:
-                log.debug("simvar %s failed: %s", variable, exc)
+                self._warn_send(variable, exc)
                 return False
         except Exception as exc:
-            log.debug("simvar %s failed: %s", variable, exc)
+            self._warn_send(variable, exc)
             return False
 
     # -- the master --------------------------------------------------------
@@ -630,9 +640,18 @@ class FlightDirector:
         return self.send(b"TOGGLE_PUSHBACK", 0)
 
     def pushback_stop(self) -> bool:
-        """Let the tug go. Only a source whose push is open-ended (the
-        X-Plane ground-ops commands) maps the event; a push that lets go
-        on its own answers False and needs no telling."""
+        """Let the tug go. A source with a push that lets go on its own
+        has no stop to send and answers False; where the push is
+        open-ended the source's own method ends it -- SimConnect's
+        ``TOGGLE_PUSHBACK`` sent again, X-Plane's command below."""
+        stop = getattr(self.sim, "pushback_stop", None)
+        if callable(stop):
+            try:
+                return bool(stop())
+            except Exception:
+                log.debug("the simulator refused the pushback stop",
+                          exc_info=True)
+                return False
         return self.send(b"PUSHBACK_STOP", 0)
 
     # -- electrics and switches ------------------------------------------------
@@ -688,13 +707,17 @@ class FlightDirector:
         return self.send(f"STARTER{engine}_SET".encode(), 1 if on else 0)
 
     def all_starters(self, on: bool = True) -> bool:
-        """``TOGGLE_ALL_STARTERS`` would flip running starters off as
-        readily as it turns stopped ones on, so the explicit ``SET``
-        forms go first and the toggle is only the last resort."""
-        ok = self.send(b"STARTER_SET", 1 if on else 0)
-        if not ok:
-            ok = self.send(b"TOGGLE_ALL_STARTERS", 0)
-        return ok
+        """Every engine's starter, the explicit ``SET`` forms only:
+        ``TOGGLE_ALL_STARTERS`` would flip a starter already cranking
+        back off as readily as it turns stopped ones on -- never a
+        fallback for a start that has to hold. The per-engine names
+        carry the ask because ``STARTER_SET``, the old all-engines
+        name, is not on every simulator; it stays as the last resort
+        for a sim that has only the generic."""
+        ok = False
+        for engine in range(1, 5):
+            ok = self.starter(on, engine) or ok
+        return ok or self.send(b"STARTER_SET", 1 if on else 0)
 
 
 __all__ = ["FlightDirector", "AXIS_MAX", "AXIS_MIN"]

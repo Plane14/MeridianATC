@@ -618,21 +618,27 @@ class XPlaneControls:
         if name in ("STARTER_SET", "TOGGLE_ALL_STARTERS"):
             if name == "TOGGLE_ALL_STARTERS" or value:
                 # ignition_key sits spring-loaded at 4=starting: the write
-                # buys a tick of crank, the command covers the rest.
+                # buys a tick of crank, the command covers the rest. The
+                # array numbers sixteen engines; the all-starters command
+                # asks the sim which of them are really there.
                 ok = source._command("sim/engines/engage_starters")
                 return all(source._dref(f"{ACT}ignition_key[{i}]", 4)
-                           for i in range(8)) and ok
+                           for i in range(16)) and ok
             return all(source._dref(f"{ACT}ignition_key[{i}]", 3)
-                       for i in range(8))
+                       for i in range(16))
         if name.startswith("STARTER") and name.endswith("_SET"):
             try:
                 index = int(name[7:-4]) - 1
             except ValueError:
                 return False
-            if not 0 <= index < 8:
+            if not 0 <= index < 16:
                 return False
             if value:
-                ok = source._command(f"sim/starters/engage_starter_{index + 1}")
+                # Commands.txt numbers starters one through eight only;
+                # engines nine up start on the spring-loaded key write.
+                ok = (index >= 8
+                      or source._command(
+                          f"sim/starters/engage_starter_{index + 1}"))
                 return source._dref(f"{ACT}ignition_key[{index}]", 4) and ok
             return source._dref(f"{ACT}ignition_key[{index}]", 3)
         # -- the rest ----------------------------------------------------------

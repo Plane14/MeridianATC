@@ -1234,7 +1234,11 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
             return {"ok": False}
         language = payload.get("language") or None
         engine.emit("pilot", text, radio=f"com{engine._radio_talk}")
-        await asyncio.to_thread(engine.handle_text, text, language)
+        try:
+            await asyncio.to_thread(engine.handle_text, text, language)
+        except Exception as exc:
+            log.warning("typed transmission failed: %s", exc, exc_info=True)
+            return {"ok": False, "error": str(exc)}
         return {"ok": True}
 
     @app.post("/api/tune")
@@ -1250,7 +1254,10 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
         except (TypeError, ValueError):
             return {"ok": False, "error": "bad frequency"}
         standby = bool(payload.get("standby"))
-        radio = int(payload.get("radio") or 1)
+        try:
+            radio = int(payload.get("radio") or 1)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "radio must be 1 or 2"}
 
         ok, why = await asyncio.to_thread(
             engine.set_radio, mhz, radio=radio, standby=standby)
@@ -1284,7 +1291,10 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
     @app.post("/api/swap")
     async def swap(payload: dict) -> dict:
         """Swap active and standby, in the aeroplane as well as here."""
-        radio = int((payload or {}).get("radio") or 1)
+        try:
+            radio = int((payload or {}).get("radio") or 1)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "radio must be 1 or 2"}
         ok, why = engine.swap_radio(radio)
         if not ok:
             return {"ok": False, "error": why}
@@ -1302,7 +1312,10 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
     @app.post("/api/talk_radio")
     async def talk_radio(payload: dict) -> dict:
         """The radio the next transmission goes out on: COM1 or COM2."""
-        radio = int((payload or {}).get("radio") or 1)
+        try:
+            radio = int((payload or {}).get("radio") or 1)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "radio must be 1 or 2"}
         if radio not in (1, 2):
             return {"ok": False, "error": "radio must be 1 or 2"}
         engine._radio_talk = radio
