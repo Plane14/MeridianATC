@@ -252,7 +252,13 @@ class _Situation_loop:
             with timed("tick.crew", warn_over_ms=500):
                 self.crew.follow(previous, state, session)
         except Exception:
-            log.debug("the crew raised", exc_info=True)
+            if not getattr(self, "_crew_raised", False):
+                log.warning("the crew raised", exc_info=True)
+            self._crew_raised = True
+        else:
+            if getattr(self, "_crew_raised", False):
+                log.info("the crew recovered")
+            self._crew_raised = False
 
         # Autonomous flight tick (First Officer flying the aircraft)
         if self.autonomous_flight:
@@ -260,7 +266,13 @@ class _Situation_loop:
                 with timed("tick.autonomous", warn_over_ms=500):
                     self.autonomous_flight.tick()
             except Exception:
-                log.debug("autonomous flight raised", exc_info=True)
+                if not getattr(self, "_autonomous_raised", False):
+                    log.warning("autonomous flight raised", exc_info=True)
+                self._autonomous_raised = True
+            else:
+                if getattr(self, "_autonomous_raised", False):
+                    log.info("autonomous flight recovered")
+                self._autonomous_raised = False
 
         if self.config.traffic.enabled:
             # The invented aeroplanes' own switch, read live so the

@@ -445,6 +445,8 @@ class _Transmission:
         congested = self._congested(station, parsed)
         if congested and not session.established_with(station) \
                 and self._first_call_missed(session, station):
+            decision("congestion", station=station.callsign, said="nothing",
+                     held="first call missed")
             return Reply("", station, silent=True)
 
         weather = self.weather_for(station.ident)

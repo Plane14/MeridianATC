@@ -2000,6 +2000,20 @@ class _The_other_aeroplanes:
                     state.altitude_ft < 25000:
                 session.phase = Phase.DESCENT
 
+        if state.on_ground and session.phase in (Phase.LANDED,
+                                                 Phase.TAXI_IN) \
+                and state.parking_brake \
+                and float(state.ground_speed_kt or 0.0) < 1.0 \
+                and not any(bool(f) for f in (
+                    getattr(state, "engines_running", None),
+                    getattr(state, "eng2_combustion", None),
+                    getattr(state, "eng3_combustion", None),
+                    getattr(state, "eng4_combustion", None))):
+            # Parked is a state, not an instruction: wheels stopped, brake
+            # set, engines out -- reached whether or not a taxi clearance
+            # ever named the stand. The shutdown checklist keys off it.
+            session.phase = Phase.PARKED
+
     #: Above this, a departure is en route whatever else it is doing. Below
     #: it, the aeroplane has to have stopped climbing and left the circuit.
     ENROUTE_FT = 10000.0
@@ -2965,14 +2979,16 @@ class _The_other_aeroplanes:
 
     def _reoffer_handoff(self, session: FlightSession, station: Station,
                          now: float) -> bool:
-        """Say a centre handoff again when the flight has not switched.
+        """Say a handoff again when the flight has not switched.
 
         Ninety seconds after it was given, with the flight still on this
         frequency: "did you get the frequency?", and the handoff once more.
-        Once; after that it is the pilot's frequency to find.
+        Once; after that it is the pilot's frequency to find. Any position,
+        not only the centre's -- a "contact tower" a pilot never tuned
+        would otherwise be announced exactly once and then forgotten.
         """
         handed = session.handoff_pending
-        if handed is None or handed.position != "CTR" or not handed.mhz:
+        if handed is None or not handed.mhz:
             return False
         if now - session.handoff_offered_at < self.REOFFER_AFTER_S:
             return False
@@ -3314,8 +3330,13 @@ class _The_other_aeroplanes:
             # the field its frequency is filed at says nothing about where
             # its airspace ends.
             return
-        if session.pending is not None or self.stand_down \
-                or not self.quiet_enough():
+        pending = session.pending
+        if pending is not None and pending.station_key == station_key(station):
+            # A readback owed to this station is collected before it
+            # hands the flight on; one owed to the last frequency does
+            # not pin the flight inside this coverage forever.
+            return
+        if self.stand_down or not self.quiet_enough():
             return
         if time.monotonic() - session.handoff_offered_at < self.config.atc.handoff_grace_s:
             return

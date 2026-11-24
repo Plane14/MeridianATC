@@ -97,8 +97,18 @@ class FlightDirector:
         try:
             return bool(self.sim._send(name, value))
         except Exception as exc:
-            log.debug("sim event %s failed: %s", name, exc)
+            self._warn_send(name, exc)
             return False
+
+    def _warn_send(self, name, exc) -> None:
+        """A failed send is worth one warning a name, not one a tick."""
+        warned = getattr(self, "_send_warned", None)
+        if warned is None:
+            warned = self._send_warned = set()
+        if name not in warned:
+            warned.add(name)
+            log.warning("sim event %s failed: %s", name, exc,
+                        exc_info=True)
 
     def once(self, key: str, name: bytes, value: int = 0) -> bool:
         """An event sent at most once until ``reset`` or ``forget``."""
@@ -131,10 +141,10 @@ class FlightDirector:
             try:
                 return bool(self.sim.set_variable(variable, value))
             except Exception as exc:
-                log.debug("simvar %s failed: %s", variable, exc)
+                self._warn_send(variable, exc)
                 return False
         except Exception as exc:
-            log.debug("simvar %s failed: %s", variable, exc)
+            self._warn_send(variable, exc)
             return False
 
     # -- the master --------------------------------------------------------

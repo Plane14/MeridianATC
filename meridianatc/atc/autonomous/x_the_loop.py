@@ -248,12 +248,10 @@ class _The_loop:
 
         X-Plane: ``sim/operation/prefs/ai_flies_aircraft`` -- the sim's
         internal pilot flies the user's aircraft while it stands, and a
-        zero hands the flying model back cleanly. MSFS: ``DELEGATE
-        CONTROLS TO AI`` -- a toggle sent only on the transitions, and
-        unverified on the models that ignore it (the FO's own control
-        law picks the leg back up regardless, which a dead write leaves
-        the sim's AI still nominally flying: a bug the FO's own writes
-        fight -- so a failed or unverifiable send does not delegate).
+        zero hands the flying model back cleanly. MSFS exposes no
+        delegation event at all (the AI-assist feature is not reachable
+        through SimConnect), so this side always declines -- a blind
+        toggle would latch ``_delegated`` while nobody flies the leg.
         """
         try:
             if state.source == "xplane":
@@ -261,7 +259,7 @@ class _The_loop:
                     "sim/operation/prefs/ai_flies_aircraft",
                     1.0 if on else 0.0))
             if state.source == "simconnect":
-                return self._send_event(b"DELEGATE CONTROLS TO AI", 1)
+                return False
         except Exception:
             log.debug("sim AI delegation write failed", exc_info=True)
         return False

@@ -4455,3 +4455,254 @@ def test_an_open_ended_push_is_let_go_while_it_rolls():
     flight._phase_pushback(state, now)
     flight.director.pushback_stop.assert_not_called()
     flight._transition.assert_called_once()
+
+
+# ---------------------------------------------------------------------
+# the audit sweep: twins, wedges, and the calls nobody answered
+# ---------------------------------------------------------------------
+
+
+def _engine_state(**kw):
+    base = dict(engines_running=False, eng2_combustion=False,
+                eng3_combustion=None, eng4_combustion=None,
+                engine_count=2, on_ground=True)
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def test_engines_gates_read_every_combustion_flag():
+    """Engine one's flag is not 'the engines' on a twin."""
+    flight = _taxi_flight()
+    both = _engine_state(engines_running=True, eng2_combustion=True)
+    one_out = _engine_state(engines_running=False, eng2_combustion=True)
+    assert flight._any_engine_running(both)
+    assert flight._any_engine_running(one_out)
+    assert not flight._all_engines_out(one_out)
+    # Both out: the shutdown side of the same gate.
+    dead = _engine_state()
+    assert flight._all_engines_out(dead)
+    assert not flight._any_engine_running(dead)
+    # A model that reports nothing counts as out, like the old None read.
+    mute = _engine_state(engines_running=None, eng2_combustion=None,
+                         engine_count=0)
+    assert flight._all_engines_out(mute)
+
+
+def test_shutdown_waits_for_the_twin_not_engine_one():
+    """A shutdown with number two still lit is not 'engines off'."""
+    import time as _time
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _taxi_flight()
+    flight.state.phase = AutonomousPhase.SHUTDOWN
+    flight.state.sub = "engines_off"
+    flight._ask_the_ramp = Mock()
+    flight._shutdown_engines = Mock()
+    flight._sub_age = lambda: 1.0
+    state = _engine_state(engines_running=False, eng2_combustion=True)
+    flight._phase_shutdown(state, _time.monotonic())
+    flight._shutdown_engines.assert_called_once()
+    flight._goto_sub.assert_not_called()
+    # Engine two out as well: electrics follow.
+    flight._shutdown_engines.reset_mock()
+    state.eng2_combustion = False
+    flight._phase_shutdown(state, _time.monotonic())
+    flight._shutdown_engines.assert_not_called()
+    flight._goto_sub.assert_called_once_with("electrics_off")
+
+
+def test_throttle_servo_survives_an_engine_out():
+    """The lever for the live engine is still the FO's to move."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _taxi_flight()
+    flight.state.phase = AutonomousPhase.CRUISE
+    flight.state.sub = ""
+    flight._lever_position = Mock(return_value=0.5)
+    state = _engine_state(engines_running=False, eng2_combustion=True,
+                          on_ground=False, indicated_airspeed_kt=160.0,
+                          altitude_ft=15000.0)
+    flight._manage_throttle(state, 130.0)
+    flight._lever_position.assert_called_once()
+    # Both dead: the servo's gate, not the flag's, is what stops it.
+    flight._lever_position.reset_mock()
+    state.eng2_combustion = False
+    flight._manage_throttle(state, 130.0)
+    flight._lever_position.assert_not_called()
+
+
+def test_a_stale_push_dispatch_is_the_tug_that_never_came():
+    """PUSHBACK WAIT stuck on a dead spawn is not waited out forever."""
+    import time as _time
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _taxi_flight()
+    flight.state.phase = AutonomousPhase.PUSHBACK
+    flight.state.sub = "wait"
+    now = _time.monotonic()
+    flight.state.moved_since_push = False
+    flight.state.push_stop_sent = False
+    flight.state.push_radio = False
+    flight.state.push_retries = 3
+    flight.state.sub_entered_at = now - 200.0   # two-plus minutes of WAIT
+    flight._stand_clear = lambda: (True, "")
+    flight._pushback_skippable = lambda: True
+    flight.brain = SimpleNamespace(ground=None)
+    state = SimpleNamespace(
+        source="simconnect", pushback_wait=True, pushback_attached=False,
+        ground_speed_kt=0.0, on_ground=True)
+    flight._phase_pushback(state, now)
+    flight._transition.assert_called_once_with(AutonomousPhase.TAXI_OUT)
+
+
+def test_a_creeping_push_is_not_toggled_off_by_the_retry():
+    """A retry that lands while the tug creeps cancels the push."""
+    import time as _time
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _taxi_flight()
+    flight.state.phase = AutonomousPhase.PUSHBACK
+    flight.state.sub = "wait"
+    now = _time.monotonic()
+    flight.state.moved_since_push = False     # under the 0.8 kt flag
+    flight.state.push_stop_sent = False
+    flight.state.push_radio = False
+    flight.state.push_retries = 1
+    flight.state.sub_entered_at = now - 130.0
+    flight._stand_clear = lambda: (True, "")
+    flight._request_pushback = Mock()
+    flight.brain = SimpleNamespace(ground=None)
+    state = SimpleNamespace(
+        source="simconnect", pushback_wait=False, pushback_attached=False,
+        ground_speed_kt=0.6, on_ground=True)   # creeping, unflagged
+    flight._phase_pushback(state, now)
+    flight._request_pushback.assert_not_called()
+    # Standing still, the retry is allowed again.
+    state.ground_speed_kt = 0.0
+    flight._phase_pushback(state, now)
+    flight._request_pushback.assert_called_once()
+
+
+def test_an_unconfirmed_dial_still_lets_the_call_go():
+    """The settled flag bounds the dial, not the flight's voice."""
+    import time as _time
+    flight, state, dialled, kinds = _radio_flight()
+    now = _time.monotonic()
+    flight._comms_settled = False
+    flight._dialled_at = now - 45.0           # dialled, never confirmed
+    flight._work_the_frequency = Mock(return_value=False)
+    flight._answer_the_queries = Mock()
+    flight._manage_comms(state, now)
+    assert flight._comms_settled is True
+    flight._answer_the_queries.assert_called_once()
+
+
+def test_reset_scratch_clears_last_legs_memory():
+    """The rejoin path and the lever cap are the old field's, not this one's."""
+    from collections import deque
+    flight = _taxi_flight()
+    flight._pids = {}
+    flight._wind_z_hist = deque()
+    flight._rejoin_path = [(1.0, 2.0)]
+    flight._crab_deg = 9.0
+    flight._over_since = {"itt": 1.0}
+    flight._limit_cap = 0.30
+    flight._limit_clean = 5.0
+    flight._limit_step = 7.0
+    flight._engines_live = {1, 2}
+    flight._backtrack_blocked = True
+    flight._seed_control_learning = lambda: None
+    flight._reset_scratch()
+    assert flight._rejoin_path is None
+    assert flight._crab_deg == 0.0
+    assert flight._over_since == {}
+    assert flight._limit_cap == 1.0
+    assert flight._limit_clean == 0.0
+    assert flight._limit_step == 0.0
+    assert flight._engines_live == set()
+    assert flight._backtrack_blocked is False
+
+
+def _talk_brain():
+    from meridianatc.atc.controller import ControllerBrain
+    from meridianatc.atc.phraseology import Phraseology
+    navdb = Mock()
+    navdb.airport.return_value = None
+    navdb.runways.return_value = []
+    brain = ControllerBrain(navdb, Phraseology())
+    brain.traffic = None
+    return brain
+
+
+def _talk_session():
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    return FlightSession(Aircraft(parse_callsign("N123")))
+
+
+def test_unanswered_intents_get_conversational_answers_not_a_call_list():
+    """"Unable", "standby", "cancel IFR" and "frequency change" are
+    answered everywhere, not just on the positions that own them."""
+    from meridianatc.atc.intents import Intent
+    brain = _talk_brain()
+    station = _ground_station()
+    p = brain.for_station(station)
+    session = _talk_session()
+    parsed = SimpleNamespace(intent=Intent.UNABLE)
+    reply = brain._not_understood(session, station, p, parsed=parsed)
+    assert "roger" in reply.text.lower() or "expecting" not in reply.text.lower()
+    parsed.intent = Intent.STANDBY
+    reply = brain._not_understood(session, station, p, parsed=parsed)
+    assert not reply.speak
+    parsed.intent = Intent.REQUEST_FREQUENCY_CHANGE
+    reply = brain._not_understood(session, station, p, parsed=parsed)
+    assert "frequency change approved" in reply.text.lower()
+    parsed.intent = Intent.CANCEL_IFR
+    reply = brain._not_understood(session, station, p, parsed=parsed)
+    assert session.ifr is False
+    assert "squawk" in reply.text.lower()
+
+
+def test_a_takeoff_readback_without_the_word_runway_is_accepted():
+    """"Cleared for takeoff two seven" is the standard readback."""
+    from meridianatc.atc.intents import Intent
+    from meridianatc.atc.session import Instruction
+    brain = _talk_brain()
+    station = _ground_station()
+    p = brain.for_station(station)
+    session = _talk_session()
+    from meridianatc.atc.session import station_key
+    key = station_key(station)
+    session.remember(Instruction(
+        "takeoff_clearance", key, "cleared for takeoff runway 27",
+        {"runway": "27"}, readback_required=True))
+    parsed = SimpleNamespace(intent=Intent.ACKNOWLEDGE,
+                             normalized="cleared for takeoff two seven",
+                             readback_items={})
+    reply = brain._settle_pending(parsed, session, station, p)
+    assert reply is None
+    assert session.pending is None
+    # The wrong runway said aloud still fails the readback.
+    session.remember(Instruction(
+        "takeoff_clearance", key, "cleared for takeoff runway 27",
+        {"runway": "27"}, readback_required=True))
+    parsed.readback_items = {"runway": "09"}
+    reply = brain._settle_pending(parsed, session, station, p)
+    assert reply is not None and reply.speak
+
+
+def test_no_ground_control_still_answers_a_pushback_ask():
+    """Dead air to a keyed call read as 'not heard'; a staffed position
+    approves the push itself when Ground is switched off."""
+    from meridianatc.atc.intents import Intent
+    from meridianatc.navdata.db import Station
+    brain = _ground_brain()
+    brain.navdb.service_hours.return_value = ""
+    brain.ground_control = False
+    station = Station("LPPR", "TWR", 118.0, "Porto Tower")
+    session = _talk_session()
+    weather = SimpleNamespace(qnh_hpa=1013, altimeter_inhg=29.92,
+                              wind_kt=5.0)
+    parsed = SimpleNamespace(intent=Intent.REQUEST_PUSHBACK,
+                             normalized="request pushback",
+                             callsign_matched=True, items={})
+    reply = brain.respond(parsed, session, station, weather)
+    assert reply.speak
+    assert "push" in reply.text.lower()

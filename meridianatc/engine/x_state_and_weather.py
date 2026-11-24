@@ -33,7 +33,14 @@ class _State_and_weather:
         try:
             self.state = self.source.read()
         except Exception as exc:
-            log.debug("state read failed: %s", exc)
+            if not getattr(self, "_state_read_failed", False):
+                log.warning("state read failed; flying on the last "
+                            "numbers: %s", exc, exc_info=True)
+            self._state_read_failed = True
+        else:
+            if getattr(self, "_state_read_failed", False):
+                log.info("state reads recovered")
+            self._state_read_failed = False
         return self.state
 
     def weather_for(self, airport_ident: str) -> Weather:

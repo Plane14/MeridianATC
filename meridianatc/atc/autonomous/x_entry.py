@@ -276,6 +276,19 @@ class _Entry:
         # gets the pedal squeeze its taxi deserves.
         self._brake_checked = False
         self._brake_check_until = 0.0
+        # The approach circuit and engine-limit memory belong to the
+        # last leg's field and powerplant: a rejoin path pointed at the
+        # previous airport, a crab angle learned on its wind, a lever
+        # cap walked down by its hot engine, and the engine roster it
+        # reported all start clean here.
+        self._rejoin_path = None
+        self._crab_deg = 0.0
+        self._over_since = {}
+        self._limit_cap = 1.0
+        self._limit_clean = 0.0
+        self._limit_step = 0.0
+        self._engines_live = set()
+        self._backtrack_blocked = False
         self._seed_control_learning()
 
     def _seed_control_learning(self) -> None:

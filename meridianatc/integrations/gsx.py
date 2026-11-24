@@ -403,7 +403,11 @@ def from_aircraft(state) -> GsxState:
         return GsxState()
 
     speed = abs(float(getattr(state, "ground_speed_kt", 0.0) or 0.0))
-    running = bool(getattr(state, "engines_running", False))
+    running = any(bool(f) for f in (
+        getattr(state, "engines_running", None),
+        getattr(state, "eng2_combustion", None),
+        getattr(state, "eng3_combustion", None),
+        getattr(state, "eng4_combustion", None)))
     parked = bool(getattr(state, "parking_brake", False))
 
     pushing = 0.4 < speed < 12.0 and not running and not parked

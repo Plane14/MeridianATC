@@ -390,6 +390,10 @@ class TransponderWatch:
             return None
         expected = (session.squawk or "").strip()
         observed = (getattr(state, "transponder_code", "") or "").strip()
+        # An assigned code kept unpadded ("215" for "0215") is still the
+        # code the transponder shows; compare them padded alike.
+        if expected.isdigit() and len(expected) < 4:
+            expected = expected.zfill(4)
         now = time.monotonic()
         if expected != self._expected:
             self._expected, self._since = expected, now

@@ -1257,7 +1257,7 @@ class SimConnectSource:
         # running 2024.
         "NUM_OF_MAIN_ROTORS": [
             "How many main rotors the helicopter has",
-            b"NUM OF MAIN ROTORS", b"Number", "N"],
+            b"NUMBER OF MAIN ROTORS", b"Number", "N"],
         "TAIL_ROTOR_PEDAL_POSITION": [
             "The tail rotor pedals, per cent",
             b"TAIL ROTOR PEDAL POSITION", b"Percent", "N"],
@@ -1276,7 +1276,7 @@ class SimConnectSource:
         # tank is up to the model.
         "UNUSABLE_FUEL_QUANTITY": [
             "The fuel that can never be drawn",
-            b"UNUSABLE FUEL QUANTITY", b"Gallons", "N"],
+            b"UNUSABLE FUEL TOTAL QUANTITY", b"Gallons", "N"],
         "NEW_FUEL_SYSTEM": [
             "Whether the model uses the [FUEL_SYSTEM] section",
             b"NEW FUEL SYSTEM", b"Bool", "N"],
@@ -2069,7 +2069,7 @@ class SimConnectSource:
             return False
         if not (190.0 <= value <= 1750.0) or int(radio) != 1:
             return False
-        return self._send("ADF_COMPLETE_SET",
+        return self._send(b"ADF_COMPLETE_SET",
                           encode_bcd32(value * 1000.0))
 
     def set_squawk(self, code: str) -> bool:

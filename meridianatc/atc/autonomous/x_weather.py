@@ -183,7 +183,7 @@ class _Weather:
         # run-up. Tracked on ``carb_set`` so the FO's own application
         # comes back off when the sky dries; a lever the pilot set
         # himself is never touched.
-        if kit.carb_heat and getattr(state, "engines_running", False):
+        if kit.carb_heat and self._any_engine_running(state):
             want = self._carb_heat_wanted(state)
             if want != self.state.carb_set:
                 self.state.carb_set = want
@@ -421,6 +421,11 @@ class _Weather:
         self.state.orbit_turned = 0.0
         self._end_direct()
         self.state.direct_cleared = ""
+        # The rejoin circuit and wind crab were learned on the old
+        # field's geometry: left standing, the approach would fly the
+        # old airport's downwind point.
+        self._rejoin_path = None
+        self._crab_deg = 0.0
         if self.state.phase in (AutonomousPhase.CLIMB,
                                 AutonomousPhase.CRUISE,
                                 AutonomousPhase.DESCENT,

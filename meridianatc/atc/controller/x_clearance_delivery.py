@@ -126,7 +126,7 @@ class _Clearance_delivery:
         if parsed.intent in (Intent.ACKNOWLEDGE, Intent.AFFIRMATIVE):
             return Reply("", station, silent=True)
 
-        return self._not_understood(session, station, p, state)
+        return self._not_understood(session, station, p, state, parsed=parsed)
 
     def _issue_clearance(self, session, station, weather, p) -> Reply:
         airport = self.navdb.airport(station.ident)

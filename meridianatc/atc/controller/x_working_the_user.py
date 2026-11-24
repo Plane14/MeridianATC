@@ -7,6 +7,7 @@ from ._shared import (
     decision,
     final_for,
     language_of,
+    logging,
     normalize_runway,
     runway_length_nm,
     say_words,
@@ -14,6 +15,8 @@ from ._shared import (
     station_key,
     time,
 )
+
+log = logging.getLogger(__name__)
 
 
 class _Working_the_user:
@@ -34,6 +37,8 @@ class _Working_the_user:
             state = self.ground.state
             return "" if state.can_taxi else state.why_not()
         except Exception:
+            log.warning("could not read the ground state; treating the "
+                        "stand as clear", exc_info=True)
             return ""
 
     # Set by the engine when the traffic injector is running. Without it every
@@ -48,6 +53,8 @@ class _Working_the_user:
         try:
             return self.traffic.traffic_ahead(arriving)
         except Exception:
+            log.warning("could not read the traffic picture; treating "
+                        "the approach lane as empty", exc_info=True)
             return []
 
     # How close an arrival has to be before nobody else may be cleared to
@@ -94,7 +101,9 @@ class _Working_the_user:
                 if self.traffic.runway_is_busy(time.monotonic()):
                     return True
             except Exception:
-                pass
+                log.warning("could not read the runway reservation; "
+                            "falling back to the occupancy picture",
+                            exc_info=True)
         return bool(self.runway_occupants(airport, runway))
 
     def arrivals_ahead(self, airport, runway: str, state) -> list:

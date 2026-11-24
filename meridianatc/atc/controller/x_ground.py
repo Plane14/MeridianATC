@@ -155,7 +155,7 @@ class _Ground:
             session.answer_assistance()
             return Reply(p.roger(aircraft), station)
 
-        return self._not_understood(session, station, p, state)
+        return self._not_understood(session, station, p, state, parsed=parsed)
 
     # Set by the engine: ``ident -> GroundLayout | None``, the simulator's
     # stands and taxiways for a field. It never blocks -- a layout still being

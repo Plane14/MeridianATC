@@ -101,7 +101,14 @@ class _The_radios:
         if not text:
             log.debug("first officer %s call not made: %s", kind, why)
             return False
-        self.crew.transmit(text)
+        try:
+            self.crew.transmit(text)
+        except Exception:
+            if not getattr(self, "_transmit_warned", False):
+                self._transmit_warned = True
+                log.warning("the first officer's radio call failed",
+                            exc_info=True)
+            return False
         self.state.last_radio_at = time.monotonic()
         # Which station this call went to: the re-ask clocks the asks
         # are held on belong to it, not to whichever frequency was in
@@ -187,6 +194,12 @@ class _The_radios:
         handed = getattr(session, "handoff_pending", None)
         self._comms_settled = self._work_the_frequency(
             state, session, handed, now)
+        if not self._comms_settled \
+                and now - getattr(self, "_dialled_at", 0.0) > 30.0:
+            # A radio that never confirms the dial still carried the
+            # write -- keyed anyway after half a minute, or a model
+            # that ignores COM writes wedges every call it owns.
+            self._comms_settled = True
         if not self._comms_settled:
             return
 

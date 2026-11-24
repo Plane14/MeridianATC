@@ -211,3 +211,17 @@ class _Emergencies:
                 out += 1
         return out, seen
 
+    def _any_engine_running(self, state) -> bool:
+        """At least one reported engine is combusting -- the 'still
+        turning' gate a shutdown, a refuel or a push must not ignore on
+        a twin whose number two is the one lit."""
+        out, seen = self._engines_out(state)
+        return seen > out
+
+    def _all_engines_out(self, state) -> bool:
+        """Nothing reported is combusting -- also true where the model
+        publishes no combustion flags at all, matching the way a lone
+        ``engines_running`` read answered before."""
+        out, seen = self._engines_out(state)
+        return out >= seen
+

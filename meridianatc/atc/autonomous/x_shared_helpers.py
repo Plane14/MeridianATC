@@ -772,7 +772,7 @@ class _Shared_helpers:
         is genuinely off target, so a working autothrottle, which keeps
         the speed inside the deadband on its own, is never fought.
         """
-        if not target_kt or state.on_ground or not state.engines_running:
+        if not target_kt or state.on_ground or self._all_engines_out(state):
             return
         if self.state.phase == AutonomousPhase.APPROACH:
             # The go-around owns the levers, and the pattern right after
@@ -1112,7 +1112,10 @@ class _Shared_helpers:
         try:
             return list(contacts() or [])
         except Exception:
-            log.debug("could not read the traffic picture", exc_info=True)
+            if not getattr(self, "_traffic_read_warned", False):
+                self._traffic_read_warned = True
+                log.warning("could not read the traffic picture",
+                            exc_info=True)
             return []
 
     def _runway_blocked(self, runway: str = "", airport=None) -> bool:
@@ -1137,7 +1140,10 @@ class _Shared_helpers:
             return bool(occupancy.on_the_runway(
                 self.navdb, airport, name, self._surface_contacts()))
         except Exception:
-            log.debug("the runway occupancy check failed", exc_info=True)
+            if not getattr(self, "_runway_check_warned", False):
+                self._runway_check_warned = True
+                log.warning("the runway occupancy check failed",
+                            exc_info=True)
             return False
 
     # How far out an arrival still closes the runway for a "line up and
@@ -1169,7 +1175,10 @@ class _Shared_helpers:
                 self.navdb, airport, name, self._surface_contacts(),
                 within_nm=self.LINEUP_FINAL_NM))
         except Exception:
-            log.debug("the final-approach check failed", exc_info=True)
+            if not getattr(self, "_final_check_warned", False):
+                self._final_check_warned = True
+                log.warning("the final-approach check failed",
+                            exc_info=True)
             return False
 
     # How far ahead the FO looks for somebody in the way, how close a
@@ -1292,6 +1301,10 @@ class _Shared_helpers:
                 vs_fpm=float(contact.vertical_rate_fpm or 0.0),
                 horizon_s=self.TRAFFIC_LOOKAHEAD_S)
         except Exception:
+            if not getattr(self, "_avoid_check_warned", False):
+                self._avoid_check_warned = True
+                log.warning("the see-and-avoid check failed",
+                            exc_info=True)
             return False
         return (t > 0.0 and miss < self.TRAFFIC_CONFLICT_NM
                 and vgap < self.TRAFFIC_CONFLICT_FT)

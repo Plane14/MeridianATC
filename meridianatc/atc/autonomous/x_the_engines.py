@@ -246,7 +246,7 @@ class _The_engines:
         them -- a needle past the red line is still called, once, so the
         pilot hears it.
         """
-        if not getattr(state, "engines_running", False):
+        if self._all_engines_out(state):
             self.state.eng_warned = False
             self._over_since = {}
             return
@@ -284,7 +284,17 @@ class _The_engines:
             return
         if self.state.phase not in (AutonomousPhase.CLIMB,
                                     AutonomousPhase.CRUISE):
-            self._mixture_leaned = False
+            if getattr(self, "_mixture_leaned", False) \
+                    and self._any_engine_running(state):
+                # Rich again for the descent and the approach -- a knob
+                # left lean to the flare is the go-around that answers
+                # with a cough instead of power.
+                self._mixture_leaned = False
+                self.director.mixture(1.0)
+                self._emit("info", "Mixture rich",
+                           "autonomous.engines.rich")
+            else:
+                self._mixture_leaned = False
             return
         if getattr(self, "_mixture_leaned", False):
             return
@@ -310,7 +320,7 @@ class _The_engines:
         run-up gets its pre-heat while the takeoff roll gets the heat
         OFF the way the POH wants it.
         """
-        if not getattr(state, "engines_running", False):
+        if self._all_engines_out(state):
             return False
         oat_raw = getattr(state, "ambient_temperature_c", None)
         rh_raw = getattr(state, "ambient_humidity_pct", None)
@@ -382,7 +392,7 @@ class _The_engines:
         172's nonexistent flaps untouched. ``cowl_set`` tracks only what
         the FO itself wrote, so a lever the pilot moved stays his.
         """
-        if not getattr(state, "engines_running", False):
+        if self._all_engines_out(state):
             return
         if not self._cooling().cowl_flaps:
             return
@@ -496,7 +506,7 @@ class _The_engines:
         not qualified to diagnose; and ALL/BOTH themselves, which are
         already feeding from everything aboard.
         """
-        if not getattr(state, "engines_running", False):
+        if self._all_engines_out(state):
             return
         missing = set(getattr(state, "unavailable", ()) or ())
         if "fuel_selector" in missing:
@@ -594,7 +604,7 @@ class _The_engines:
         if getattr(self, "_aircraft_class", "") not in (
                 ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN):
             return
-        if not getattr(state, "engines_running", False):
+        if self._all_engines_out(state):
             return
         if "condition_pct" in set(getattr(state, "unavailable", ()) or ()):
             return

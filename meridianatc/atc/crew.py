@@ -2584,7 +2584,11 @@ class CrewDirector:
         try:
             self.transmit(due[1])
         except Exception:
-            log.debug("the first officer's call failed", exc_info=True)
+            log.warning("the first officer's call failed", exc_info=True)
+            CREW.write("radio_call", made=False, call=due[1],
+                       why="the transmit failed")
+        else:
+            CREW.write("radio_call", made=True, call=due[1], text=due[1])
         self._say_now(words["your_radio"], "your_radio", language)
 
     # ------------------------------------------------------------------

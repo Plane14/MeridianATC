@@ -28,7 +28,7 @@ class _The_turnaround_between:
 
         # Engines off first: nobody refuels a running aeroplane, and a
         # rotor that is still turning is worse than a jet that is.
-        if getattr(state, "engines_running", False):
+        if self._any_engine_running(state):
             self._shutdown_engines()
             if now - self.state.service_started_at < 60.0:
                 return False

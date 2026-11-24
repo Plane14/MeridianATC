@@ -230,11 +230,11 @@ class _The_phase_machine:
                 self._goto_sub("wait")
 
         elif sub == "wait":
-            # An open-ended tug (X-Plane's ground-ops commands push until
-            # told to let go, where SimConnect's completes itself) is let
-            # go on a clock: half a minute at walking pace is clear of any
-            # stand, and the aeroplane coming to rest is what the normal
-            # completion below then reads.
+            # An open-ended tug (both sims' push events are toggles that
+            # push until told to let go) is let go on a clock: half a
+            # minute at walking pace is clear of any stand, and the
+            # aeroplane coming to rest is what the normal completion
+            # below then reads.
             if self.state.moved_since_push and not self.state.push_stop_sent \
                     and capabilities(state.source).pushback_open_ended \
                     and now - self.state.still_since < 2.0 \
@@ -270,6 +270,12 @@ class _The_phase_machine:
                                  "state", None)
                 if getattr(gstate, "being_pushed", False):
                     attached = coming = True
+                # A dispatch that never becomes an attachment -- the
+                # tug's WAIT flag stuck on a spawn that failed -- is the
+                # tug that never came; ``being_pushed`` and ``attached``
+                # both say it is physically there, so they wait as long
+                # as they say so.
+                stale = coming and not attached and self._sub_age() > 150.0
                 if attached:
                     # The tug is on the nosewheel -- including the one a
                     # controller's approval sent: the brake that held the
@@ -279,12 +285,23 @@ class _The_phase_machine:
                     d.parking_brake(False)
                     if self._sub_age() > 15.0:
                         self._ground_confirm_push()
-                elif coming:
+                elif coming and not stale:
                     # Dispatched but not on the nosewheel yet: the brake
                     # stays on. The request event is a toggle, so asking
                     # again while a tug is coming would cancel it -- the
                     # wait is simply kept, brakes held.
                     d.parking_brake(True)
+                elif stale:
+                    if self._pushback_skippable():
+                        self._emit(
+                            "info",
+                            "The pushback tug never arrived; taxiing out",
+                            "autonomous.pushback.skipped")
+                        self._goto_sub("taxi")
+                        self._transition(AutonomousPhase.TAXI_OUT)
+                        return
+                    self._set_error("Pushback tug never arrived")
+                    return
                 else:
                     # A call on the frequency is repeated with patience,
                     # not streamed -- and one never answered falls back
@@ -299,8 +316,15 @@ class _The_phase_machine:
                         self.state.push_radio = False
                         self.state.push_retries = 0
                     retry_after = 40.0 if self.state.push_radio else 120.0
+                    # The request event is a toggle: a slow push under
+                    # ``moved_since_push``'s threshold that its model
+                    # never flags as attached would be toggled OFF by a
+                    # retry -- only ask again while genuinely standing.
                     if self._sub_age() > retry_after \
-                            and self.state.push_retries < 3:
+                            and self.state.push_retries < 3 \
+                            and abs(float(getattr(
+                                state, "ground_speed_kt", 0.0) or 0.0)) \
+                            < 0.3:
                         if self.state.push_radio:
                             self._fo_say("pushback")
                         else:
@@ -1262,12 +1286,16 @@ class _The_phase_machine:
                 if (self.performance.cruise_kt >= 180.0
                         and capabilities(
                             getattr(state, "source", "")).flight_axes):
+                    # The event is a toggle: the flag only moves when the
+                    # send is accepted, or a refused one leaves the flag
+                    # and the buckets a stroke apart for the rest of the
+                    # roll.
                     if gs > 60.0 and not self.state.reversers_out:
-                        d.send(b"THROTTLE_REVERSE_THRUST_TOGGLE", 0)
-                        self.state.reversers_out = True
+                        self.state.reversers_out = bool(
+                            d.send(b"THROTTLE_REVERSE_THRUST_TOGGLE", 0))
                     elif gs <= 60.0 and self.state.reversers_out:
-                        d.send(b"THROTTLE_REVERSE_THRUST_TOGGLE", 0)
-                        self.state.reversers_out = False
+                        self.state.reversers_out = not bool(
+                            d.send(b"THROTTLE_REVERSE_THRUST_TOGGLE", 0))
                 # Maximum braking until the aeroplane is stopped on the
                 # runway; above sixty the reverse does the work, so the
                 # wheels are eased while it is in.
@@ -1291,8 +1319,8 @@ class _The_phase_machine:
             d.spoilers(0.0)
             d.spoilers_arm(False)
             if self.state.reversers_out:
-                d.send(b"THROTTLE_REVERSE_THRUST_TOGGLE", 0)
-                self.state.reversers_out = False
+                self.state.reversers_out = not bool(
+                    d.send(b"THROTTLE_REVERSE_THRUST_TOGGLE", 0))
             self._stop(state)
             if not self.state.abort_announced:
                 self.state.abort_announced = True
@@ -1910,7 +1938,7 @@ class _The_phase_machine:
         # the flare. In the circle or still manoeuvring for the final is
         # neither: the flare is handed the aeroplane that is on it.
         agl = state.altitude_agl_ft or 0.0
-        if self.session.cleared_landing and agl < 500.0 \
+        if self.session.cleared_landing and 0.0 < agl < 500.0 \
                 and not self.state.circling \
                 and (self.state.stabilized or agl < 60.0):
             self._transition(AutonomousPhase.LANDING)
@@ -1969,8 +1997,10 @@ class _The_phase_machine:
                 return
             agl = state.altitude_agl_ft or 0.0
             # Below the flare window: the autopilot's job is done -- the
-            # FO flies the flare by hand, like a pilot does.
-            if agl < 60.0:
+            # FO flies the flare by hand, like a pilot does. A model that
+            # publishes no AGL reads 0 at every height and must not be
+            # flared at altitude.
+            if 0.0 < agl < 60.0:
                 if not self.state.flare_at:
                     self.state.flare_at = now
                     self._flare_lever = None
@@ -2150,11 +2180,11 @@ class _The_phase_machine:
                 if (self.performance.cruise_kt >= 180.0
                         and capabilities(state.source).flight_axes):
                     if gs > 60.0 and not self.state.reversers_out:
-                        d.send(b"THROTTLE_REVERSE_THRUST_TOGGLE", 0)
-                        self.state.reversers_out = True
+                        self.state.reversers_out = bool(
+                            d.send(b"THROTTLE_REVERSE_THRUST_TOGGLE", 0))
                     elif gs <= 60.0 and self.state.reversers_out:
-                        d.send(b"THROTTLE_REVERSE_THRUST_TOGGLE", 0)
-                        self.state.reversers_out = False
+                        self.state.reversers_out = not bool(
+                            d.send(b"THROTTLE_REVERSE_THRUST_TOGGLE", 0))
                 # Reverse does the work above sixty; the wheel brakes
                 # are eased while it is in and do the stopping as it
                 # comes out -- graduated with speed the way the
@@ -2235,16 +2265,23 @@ class _The_phase_machine:
         if self.session.phase == Phase.PARKED:
             self._transition(AutonomousPhase.PARKED)
         elif sub == "taxi" \
-                and not getattr(self.session, "taxi_path", None) \
-                and (state.ground_speed_kt or 0.0) <= 1.0 \
-                and self._sub_age() > 90.0:
+                and (state.ground_speed_kt or 0.0) <= 1.0:
             # Stopped on the movement area with nowhere left to go:
             # the flight is done where it stands rather than held on
-            # the taxi phase for ever.
-            self.director.parking_brake(True)
-            self._emit("info", "Parked where it stands: no stand "
-                       "route came", "autonomous.taxi_in.parked")
-            self._transition(AutonomousPhase.PARKED)
+            # the taxi phase for ever. A stand route that exists but
+            # never finishes -- a blocked last fifty feet, a stand the
+            # path never quite reaches -- gets a longer say before the
+            # same answer.
+            still = now - getattr(self, "_ground_still_since", 0.0) \
+                if getattr(self, "_ground_still_since", 0.0) else 0.0
+            has_path = bool(getattr(self.session, "taxi_path", None))
+            if self._sub_age() > 90.0 and (not has_path or still > 240.0):
+                self.director.parking_brake(True)
+                self._emit("info", "Parked where it stands: the stand "
+                           "route never finished" if has_path else
+                           "Parked where it stands: no stand route came",
+                           "autonomous.taxi_in.parked")
+                self._transition(AutonomousPhase.PARKED)
 
     def _phase_parked(self, state, now: float) -> None:
         """At parking position: the shutdown checklist, then the sequence."""
@@ -2296,7 +2333,7 @@ class _The_phase_machine:
 
         elif sub == "engines_off":
             self._ask_the_ramp(state)
-            if state.engines_running:
+            if self._any_engine_running(state):
                 self._shutdown_engines()
                 if self._sub_age() > 60.0:
                     self._set_error("Engines would not shut down")
@@ -2342,7 +2379,7 @@ class _The_phase_machine:
             # The stand's delay is run with the engines off -- they are
             # shut at blocks in the real job, not idled through the
             # turnaround, and the fuelling below wants them cold anyway.
-            if getattr(state, "engines_running", False):
+            if self._any_engine_running(state):
                 self._shutdown_engines()
             if now - self.state.phase_entered_at < self._chain_delay:
                 return

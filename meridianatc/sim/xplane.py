@@ -157,7 +157,7 @@ DATAREFS = {
     "aoa_heat_on": ("sim/cockpit2/ice/ice_AOA_heat_on", 1),
     "cabin_altitude_ft": ("sim/cockpit2/pressurization/indicators/cabin_altitude_ft", 1),
     "cabin_altitude_goal_ft": ("sim/cockpit2/pressurization/actuators/cabin_altitude_ft", 1),
-    "pressurization_diff_psi": ("sim/cockpit2/pressurization/indicators/pressure_diffential_psi", 1),
+    "pressurization_diff_psi": ("sim/cockpit2/pressurization/indicators/cabin_pressure_differential_psi", 1),
     "minimums_ft": ("sim/cockpit2/gauges/actuators/radio_altimeter_bug_ft_pilot", 1),
     "no_smoking_sign": ("sim/cockpit2/switches/no_smoking", 1),
     "wiper_pos": ("sim/cockpit2/switches/wiper_speed", 1),

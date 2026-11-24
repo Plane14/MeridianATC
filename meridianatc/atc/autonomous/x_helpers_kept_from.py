@@ -122,7 +122,7 @@ class _Helpers_kept_from:
         # levers a prop start is primed with, and the ones a low
         # quadrant position would leave the start without.
         self._prop_levers()
-        if not state.engines_running:
+        if out >= seen:
             # The all-engines autostart runs the model's own sequence
             # where it honours it -- but sent again with one engine
             # already lit it can cut the sequence short, so a retry
@@ -255,7 +255,13 @@ class _Helpers_kept_from:
         try:
             return self.sim._send(event_name, value)
         except Exception as e:
-            log.debug("Failed to send event %s: %s", event_name, e)
+            warned = getattr(self, "_event_warned", None)
+            if warned is None:
+                warned = self._event_warned = set()
+            if event_name not in warned:
+                warned.add(event_name)
+                log.warning("Failed to send event %s: %s", event_name, e,
+                            exc_info=True)
             return False
 
 

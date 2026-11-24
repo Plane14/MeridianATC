@@ -277,7 +277,10 @@ class _The_checklist_answered:
             "aoa_heat_on": lambda: d.write(
                 "PANEL ANTI ICE SWITCH", 1.0 if want_on else 0.0),
             "hydraulic_pump_on": lambda: d.write(
-                "HYDRAULIC SWITCH:1", 1.0 if want_on else 0.0),
+                "HYDRAULIC SWITCH:1", 1.0 if want_on else 0.0) or d.write(
+                # MSFS files the var unindexed; X-Plane's map wants the
+                # :1 the first write already tried.
+                "HYDRAULIC SWITCH", 1.0 if want_on else 0.0),
             "cabin_altitude_goal_ft": lambda: d.write(
                 "PRESSURIZATION CABIN ALTITUDE GOAL", float(expected)),
             "minimums_ft": lambda: d.write(
@@ -293,11 +296,12 @@ class _The_checklist_answered:
         if action is None:
             return False
         try:
-            action()
+            # The writes answer whether the sim took them -- a refused
+            # one is not the item done.
+            return bool(action())
         except Exception:
             log.debug("checklist switch %s failed", var, exc_info=True)
             return False
-        return True
 
     @staticmethod
     def _magneto(d, engine: int, expected) -> bool:

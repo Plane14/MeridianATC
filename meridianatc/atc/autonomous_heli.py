@@ -97,6 +97,29 @@ ROTOR_MIN_PCT = 80.0           # "flight RPM" for takeoff, lower than the 85 cal
 SHUTDOWN_COOLDOWN_S = 120.0    # best-effort idle cool-down before the brake
 ROTOR_BRAKE_BELOW_PCT = 40.0   # apply the rotor brake under this, where fitted
 
+
+def _engines_lit(state) -> bool:
+    """Every reported engine combusting -- a twin (B412, S76, A139,
+    A109) is only 'started' with both lit; a model that reports no
+    count is judged on the engine-one flag alone, as before."""
+    count = int(getattr(state, "engine_count", 0) or 0)
+    flags = [getattr(state, "engines_running", None)] + [
+        getattr(state, f"eng{i}_combustion", None)
+        for i in range(2, count + 1)]
+    seen = [f for f in flags if f is not None]
+    return bool(seen) and all(seen)
+
+
+def _engines_turning(state) -> bool:
+    """Any combustion flag still up -- 'still turning' for the rotor
+    brake and the cool-down, where a single flag misses the twin's
+    number two."""
+    return any(bool(f) for f in (
+        getattr(state, "engines_running", None),
+        getattr(state, "eng2_combustion", None),
+        getattr(state, "eng3_combustion", None),
+        getattr(state, "eng4_combustion", None)))
+
 # --- the controllers ------------------------------------------------------
 # Collective: feet of altitude error per per-cent of collective, and the
 # vertical-speed damping. UNVERIFIED gains; the clamps are the protection.
@@ -512,6 +535,7 @@ class HeliState:
     # One-shots.
     systems_sent: bool = False
     start_sent: bool = False
+    start_asked_at: float = 0.0
     gov_sent: bool = False
     rotor_brake_sent: bool = False
     shutdown_sent: bool = False
@@ -819,15 +843,25 @@ class RotorcraftFlight:
                 self._send(b"AVIONICS_MASTER_SET", 1)
         if not self.state.start_sent:
             self.state.start_sent = True
+            self.state.start_asked_at = 0.0
             # The governor up for the start where the model has one; the
             # clutch is the model's own decision on most turbines, so it is
             # only touched if nothing is running after a while.
             self._send(ROTOR_GOV_SET, 1)
             self.state.gov_sent = True
             self._send(ENGINE_START, 1)
+            self.state.start_asked_at = time.monotonic()
             self._emit("info", "Engine start requested (best effort)",
                        "autonomous.rotorcraft.start")
-        running = bool(getattr(state, "engines_running", False))
+        elif not _engines_turning(state) \
+                and time.monotonic() - getattr(
+                    self.state, "start_asked_at", 0.0) > 30.0:
+            # An autostart the model ignored the first time is asked
+            # again on a clock -- the same patience the fixed-wing start
+            # shows the cranks.
+            self.state.start_asked_at = time.monotonic()
+            self._send(ENGINE_START, 1)
+        running = _engines_lit(state)
         rpm = float(getattr(state, "rotor_rpm_pct", 0.0) or 0.0)
         # Rotor RPM is published by some models and not others: where it is
         # 0 all flight, engines_running and the timeout carry the phase.
@@ -1207,7 +1241,7 @@ class RotorcraftFlight:
     def _shutdown(self, state) -> None:
         """Cool-down, rotor brake where fitted, then the engine events."""
         rpm = float(getattr(state, "rotor_rpm_pct", 0.0) or 0.0)
-        running = bool(getattr(state, "engines_running", False))
+        running = _engines_turning(state)
         if not self.state.shutdown_at:
             self.state.shutdown_at = time.monotonic()
             # The cool-down only means anything at idle: the last _fly
