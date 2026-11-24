@@ -545,7 +545,16 @@ def test_malformed_and_unknown_values_do_not_refresh_connection(xp):
     server, link = xp
     assert link.connect()
     server.respond = False
-    eventually(lambda: not link.connected)
+    # UDP packets already in flight can arrive after the first silence
+    # deadline and legitimately refresh the connection once. Wait until it
+    # remains silent for another disconnect interval before sending junk.
+    for _attempt in range(20):
+        eventually(lambda: not link.connected)
+        time.sleep(link.disconnect_s + .05)
+        if not link.connected:
+            break
+    else:
+        raise AssertionError("valid queued packets kept refreshing the link")
     for packet in (b"RREF\0", b"RREF\0x", b"WRONG" + struct.pack("<if", 0, 1),
                    b"RREF\0" + struct.pack("<if", 999999, 1),
                    b"RREF\0" + struct.pack("<if", 0, float("nan"))):
