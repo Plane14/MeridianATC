@@ -1522,6 +1522,8 @@ function paintImmersion(immersion) {
   toggle("set-autonomous-sim-ai", immersion.autonomous_use_sim_ai);
   chips("verbosity-chips", "verbosity", immersion.verbosity);
   chips("autonomous-ap-chips", "ap-mode", immersion.autonomous_ap_mode);
+  chips("autonomous-departure-weather-chips", "departureWeather",
+        immersion.autonomous_departure_weather_mode);
   const delay = $("set-autonomous-delay");
   if (delay) {
     delay.value = immersion.autonomous_chain_delay_s;
@@ -2169,6 +2171,14 @@ function wireImmersion() {
     on(chip, "click", () =>
       save({ "immersion.autonomous_ap_mode": chip.dataset.apMode },
            "saved-autonomous"));
+  }
+
+  for (const chip of ($("autonomous-departure-weather-chips") ||
+                      { querySelectorAll: () => [] }).querySelectorAll(".chip")) {
+    on(chip, "click", () =>
+      save({
+        "immersion.autonomous_departure_weather_mode": chip.dataset.departureWeather,
+      }, "saved-autonomous"));
   }
 
   const delay = $("set-autonomous-delay");

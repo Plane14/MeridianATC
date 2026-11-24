@@ -836,5 +836,8 @@
   "set.traffic_follow_me": "Follow-me car",
   "set.traffic_follow_me_why": "In X-Plane, a follow-me car leads your aircraft along its cleared taxi route to the clearance limit.",
   "set.autonomous_departure_weather_mode": "Départ avec orage",
-  "set.autonomous_departure_weather_mode_why": "Que faire lorsqu’une cellule convective est sur le terrain avant le départ: hold l’attend; deviate part seulement lorsque les quinze premières milles sur l’axe de piste sont démontrablement dégagées; bypass ignore la cellule mais respecte toujours les limites démontrées de vent traversier et arrière."
+  "set.autonomous_departure_weather_mode_why": "Que faire lorsqu’une cellule convective est sur le terrain avant le départ: hold l’attend; deviate part seulement lorsque les quinze premières milles sur l’axe de piste sont démontrablement dégagées; bypass ignore la cellule mais respecte toujours les limites démontrées de vent traversier et arrière.",
+  "set.departure_weather_hold": "Attendre",
+  "set.departure_weather_deviate": "Dévier",
+  "set.departure_weather_bypass": "Ignorer"
 }
