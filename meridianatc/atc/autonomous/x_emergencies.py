@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from ...sim.state import combustion
 from ._shared import (
     AutonomousPhase,
 )
-from ...sim.state import combustion
 
 
 class _Emergencies:

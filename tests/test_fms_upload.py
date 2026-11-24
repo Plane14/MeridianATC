@@ -11,8 +11,7 @@ from __future__ import annotations
 import time
 from types import SimpleNamespace
 
-from meridianatc.atc.route import (Route, RouteFix, from_pln, parse_pln,
-                                   to_fms, to_pln)
+from meridianatc.atc.route import Route, RouteFix, from_pln, parse_pln, to_fms, to_pln
 from meridianatc.sim.source import SimConnectSource
 from meridianatc.sim.xplane import XPlaneSource
 

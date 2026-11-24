@@ -635,8 +635,10 @@ class XPlaneSource:
 
     def _request_radar(self, points: int) -> None:
         if self._peer is not None and self._socket is not None:
-            self._socket.sendto(b"RADR\0" + str(points).encode("ascii") + b"\0",
-                                self._peer)
+            # Exactly fifteen bytes: command, one pad byte, ten ASCII digits.
+            payload = struct.pack("<4sx10s", b"RADR",
+                                  str(points).encode("ascii"))
+            self._socket.sendto(payload, self._peer)
 
     def _subscribe(self, index, path, frequency):
         self._packet(b"RREF\0" + struct.pack("<ii400s", frequency, index, path.encode("ascii")))

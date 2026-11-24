@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ..sim.state import combustion
 from ._shared import (
     RADIO,
     STATION_RANGE_NM,
@@ -37,7 +38,6 @@ from ._shared import (
     time,
     timed,
 )
-from ..sim.state import combustion
 from .x_speaking import _render_count
 
 
