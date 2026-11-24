@@ -148,8 +148,9 @@ def test_an_unanswered_ask_is_repeated_not_waited_on():
     assert flight.state.has_ifr_clearance
 
 
-def test_clearance_timeout_errors_never_refiles_vfr():
-    """A clearance that never comes is a failure, not a VFR departure."""
+def test_clearance_overdue_keeps_asking_never_refiles_vfr():
+    """A clearance that never comes is asked for again, warned about
+    once -- never a silent re-file to VFR, never a dead flight."""
     flight = _autonomous(stations=[_gnd()])
     now = 100.0
     flight.state.phase_entered_at = now
@@ -158,8 +159,14 @@ def test_clearance_timeout_errors_never_refiles_vfr():
     flight.state.last_radio_at = now
     flight._phase_request_clearance(None, now + 61.0)
     assert flight.session.ifr is True          # never downgraded
-    flight._set_error.assert_called_once()
+    flight._set_error.assert_not_called()
     flight._transition.assert_not_called()
+    # Said once, asked again -- and a second tick says nothing more.
+    flight._emit.assert_called_once()
+    assert flight._emit.call_args[0][0] == "warning"
+    flight._emit.reset_mock()
+    flight._phase_request_clearance(None, now + 62.0)
+    flight._emit.assert_not_called()
 
 
 def test_a_ask_that_never_went_out_is_not_timed_out():
@@ -191,10 +198,13 @@ def test_the_clearance_clock_starts_at_the_ask():
     flight.state.last_radio_at = now + 50.5
     flight._phase_request_clearance(None, now + 109.5)
     flight._set_error.assert_not_called()
-    # Past the timeout it is the failure it always was.
+    assert "clearance" not in flight.state.overdue
+    # Past the patience mark the wait is warned about -- once -- and
+    # the asks keep going out rather than the flight being failed.
     flight.state.last_radio_at = now + 60.0
     flight._phase_request_clearance(None, now + 112.0)
-    flight._set_error.assert_called_once()
+    flight._set_error.assert_not_called()
+    assert "clearance" in flight.state.overdue
 
 
 def test_an_uncontrolled_field_departs_after_its_announcement():

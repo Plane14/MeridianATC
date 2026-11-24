@@ -151,8 +151,11 @@ class _The_phase_machine:
             # quietly re-filed VFR to leave on time. The clock is the
             # first ask's and not the phase's -- a radio that took a
             # minute to come alive has not been refused anything yet.
+            # The asks keep going out; the wait is said about, once.
             rules = "IFR clearance" if self.session.ifr else "VFR release"
-            self._set_error(f"No {rules} was issued")
+            self._phase_overdue(
+                "clearance", now - self.state.clearance_asked_at, 0.0,
+                f"Still waiting for the {rules}; asking again")
 
     def _phase_pushback(self, state, now: float) -> None:
         """Engine start, pushback, brakes back on."""
@@ -169,15 +172,20 @@ class _The_phase_machine:
                     self._start_engines(state)
                     self.state.engines_started_at = now
                     self.state.start_asked_at = now
-                elif now - self.state.engines_started_at > self.ENGINE_START_TIMEOUT:
-                    self._set_error("Engine start timed out")
-                    return
-                elif now - self.state.start_asked_at > 30.0:
-                    # The re-ask owes only the engines still out: a twin
-                    # whose second engine never lit is cranked again,
-                    # not errored into a one-engine taxi.
-                    self._start_engines(state)
-                    self.state.start_asked_at = now
+                else:
+                    # No clock gives up on a start: a model that needs
+                    # its own event or a cold-soaked engine is cranked
+                    # until it lights -- said once, retried below.
+                    self._phase_overdue(
+                        "start", now - self.state.engines_started_at,
+                        self.ENGINE_START_TIMEOUT,
+                        "Engine start is taking a while; still trying")
+                    if now - self.state.start_asked_at > 30.0:
+                        # The re-ask owes only the engines still out: a
+                        # twin whose second engine never lit is cranked
+                        # again, not errored into a one-engine taxi.
+                        self._start_engines(state)
+                        self.state.start_asked_at = now
             else:
                 self._goto_sub("after_start")
 
@@ -1143,8 +1151,13 @@ class _The_phase_machine:
             if flying_speed >= rotate_at:
                 self._goto_sub("rotate")
                 self.state.rotate_at = now
-            elif self._sub_age() > self.TAKEOFF_TIMEOUT:
-                self._set_error("Takeoff roll timed out")
+            else:
+                # A roll that will not accelerate is said about once and
+                # rolled on -- the aborts above, not a clock, are what
+                # end it.
+                self._phase_overdue(
+                    "roll", self._sub_age(), self.TAKEOFF_TIMEOUT,
+                    "The takeoff roll is slow to accelerate; rolling on")
             return
 
         if sub == "rotate":
@@ -1534,8 +1547,9 @@ class _The_phase_machine:
             self._transition(AutonomousPhase.CRUISE)
             return
 
-        if now - self.state.phase_entered_at > self.CLIMB_TIMEOUT:
-            self._set_error("Climb timed out")
+        self._phase_overdue(
+            "climb", now - self.state.phase_entered_at, self.CLIMB_TIMEOUT,
+            "The climb is taking a while; still climbing")
 
     def _phase_cruise(self, state, now: float) -> None:
         """Cruise: NAV on the route, fuel watched, clearances followed."""
@@ -1854,8 +1868,9 @@ class _The_phase_machine:
                 distance is not None and distance < 12.0 and agl < 4000):
             self._transition(AutonomousPhase.APPROACH)
             return
-        if now - self.state.phase_entered_at > self.DESAT_TIMEOUT:
-            self._set_error("Descent timed out")
+        self._phase_overdue(
+            "descent", now - self.state.phase_entered_at, self.DESAT_TIMEOUT,
+            "The descent is taking a while; still descending")
 
     def _phase_approach(self, state, now: float) -> None:
         """The approach: intercept, stabilize, land or go around."""
@@ -1896,8 +1911,10 @@ class _The_phase_machine:
         # level, before anything descends toward the runway.
         if not self.state.circling and self._join_final(state, recipe):
             self.state.stabilized = False
-            if now - self.state.phase_entered_at > self.APPROACH_TIMEOUT:
-                self._set_error("Approach timed out")
+            self._phase_overdue(
+                "approach", now - self.state.phase_entered_at,
+                self.APPROACH_TIMEOUT,
+                "The approach is taking a while; still positioning")
             return
 
         flown = False
@@ -1950,8 +1967,10 @@ class _The_phase_machine:
             self._goto_sub("flare")
             return
 
-        if now - self.state.phase_entered_at > self.APPROACH_TIMEOUT:
-            self._set_error("Approach timed out")
+        self._phase_overdue(
+            "approach", now - self.state.phase_entered_at,
+            self.APPROACH_TIMEOUT,
+            "The approach is taking a while; still flying it")
 
     def _phase_landing(self, state, now: float) -> None:
         """Flare, touchdown, rollout, vacate."""
@@ -2335,9 +2354,11 @@ class _The_phase_machine:
             self._ask_the_ramp(state)
             if self._any_engine_running(state):
                 self._shutdown_engines()
-                if self._sub_age() > 60.0:
-                    self._set_error("Engines would not shut down")
-                    return
+                # A lever that stays live is asked again, not errored on:
+                # the shutdown keeps cutting until the engine is out.
+                self._phase_overdue(
+                    "shutdown", self._sub_age(), 60.0,
+                    "An engine is still running; still shutting down")
             else:
                 self._goto_sub("electrics_off")
 

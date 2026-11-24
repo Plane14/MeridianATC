@@ -870,10 +870,17 @@ class RotorcraftFlight:
             self._checklist("after_start")
             self._goto("hover")
             return
-        if self._elapsed() > START_TIMEOUT_S:
-            self.owner._set_error(
-                "rotorcraft engine start timed out; the model may need its "
-                "own start event")
+        if self._elapsed() > START_TIMEOUT_S \
+                and getattr(self, "_start_overdue_said", "") != "start":
+            # No clock gives up on the light-off either: the cranks above
+            # keep re-firing, and the slow start is said about once --
+            # the model may need its own start event.
+            self._start_overdue_said = "start"
+            self._emit(
+                "warning",
+                "Rotorcraft engine start is taking a while; still trying "
+                "(the model may need its own start event)",
+                "autonomous.rotorcraft.overdue")
 
     # -- the flight --------------------------------------------------------
 
@@ -1097,15 +1104,12 @@ class RotorcraftFlight:
     def _overdue(self, state, what: str, onward: str) -> None:
         """A stage that ran out of clock.
 
-        On the ground that is an error and the flight stops. In the air
-        it cannot be: the error state takes the FO's hands off the
-        controls, and a helicopter nobody is flying does not stay
-        upright. Airborne, the clock is said once and the flight goes on
-        to the stage that follows -- or keeps flying the one it is in.
+        A stage is done when the helicopter gets there, not when a clock
+        says so -- and an error takes the FO's hands off the controls
+        besides, which nobody's flying survives in the air. The clock is
+        said once and the flight goes on to the stage that follows, or
+        keeps working the one it is in.
         """
-        if getattr(state, "on_ground", True):
-            self.owner._set_error(f"rotorcraft {what} timed out")
-            return
         if getattr(self, "_overdue_said", "") != what:
             self._overdue_said = what
             self._emit("warning",

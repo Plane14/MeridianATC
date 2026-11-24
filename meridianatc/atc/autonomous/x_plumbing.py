@@ -215,3 +215,19 @@ class _Plumbing:
     def _sub_age(self) -> float:
         return time.monotonic() - self.state.sub_entered_at
 
+    def _phase_overdue(self, key: str, age_s: float,
+                       limit_s: float, text: str) -> None:
+        """Say once that a phase is running long, and carry on with it.
+
+        A phase is done when the aeroplane gets there, not when a clock
+        says so: a descent held high by ATC, a climb the weight makes
+        slow, an approach sequenced behind the field's traffic all run
+        past any honest number, and an error there lands the FO's hands
+        off a flight that was fine. The warning is logged once; the
+        work goes on.
+        """
+        if key in self.state.overdue or age_s <= limit_s:
+            return
+        self.state.overdue.add(key)
+        self._emit("warning", text, f"autonomous.{key}.overdue")
+

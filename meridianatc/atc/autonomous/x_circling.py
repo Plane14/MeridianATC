@@ -508,7 +508,12 @@ class _Circling:
             self._emit("info", "Missed approach complete; setting up again",
                        "autonomous.go_around_done")
         elif elapsed > 300.0:
-            self._set_error("Go-around did not climb")
+            # A go-around that will not climb is said about and flown
+            # on -- erroring takes the FO's hands off in the air, which
+            # is the worse of the two ways it can end.
+            self._phase_overdue(
+                "go_around", elapsed, 300.0,
+                "The go-around is not climbing; still flying it")
 
     def _divert_after_go_arounds(self, state) -> None:
         """The fourth missed approach is not flown: the alternate is.

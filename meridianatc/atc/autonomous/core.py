@@ -183,9 +183,11 @@ class AutonomousFlight(_Plumbing, _Entry, _The_loop, _Shared_helpers, _The_envel
 
         # Timing constants
         self.ACTION_INTERVAL = 1.0  # seconds between autonomous actions
-        # Four minutes for the clearance or the release: a busy delivery
-        # frequency answers within it, and a flight that still has no
-        # paper after it is a failure -- never a quiet re-file to VFR.
+        # How long a phase may run before its length is said about once.
+        # None of these give the flight up: a phase ends when the
+        # aeroplane gets there, and an overdue one is warned and carried
+        # on with -- an error here would take the FO's hands off a
+        # flight that was simply taking a while.
         self.CLEARANCE_TIMEOUT = 240.0
         self.ENGINE_START_TIMEOUT = 240.0
         self.TAKEOFF_TIMEOUT = 240.0
