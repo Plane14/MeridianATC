@@ -467,6 +467,17 @@ class XPlaneSource:
         self._answered = threading.Event()
         self._lock = threading.Lock()
         self._values = {}
+        # RREF asks are one UDP packet each, sent in a burst at connect;
+        # what the loopback or the simulator's buffer drops is whichever
+        # packet it drops, which is how acf_ICAO or acf_ui_name -- the
+        # string cells, subscribed last -- answer once and never again:
+        # a Baron the link keeps calling the last-saved King Air. An
+        # index that never answered is re-asked until it does, up to
+        # RESEND_LIMIT -- after that the name is one X-Plane refused,
+        # and leaving it alone is what "unavailable" reports honestly.
+        self._unanswered: set[int] = set()
+        self._resend_at = 0.0
+        self._resends: dict[int, int] = {}
         # The endpoint that answers the subscriptions: the first packet
         # pins it, and only it is heard afterwards. The simulator's own
         # send port is not the one the requests went to, so it is learned
@@ -563,6 +574,9 @@ class XPlaneSource:
                 self._socket.settimeout(.1)
                 self._stop.clear()
                 self._answered.clear()
+                self._unanswered = set(range(len(self._subscriptions)))
+                self._resends.clear()
+                self._resend_at = 0.0
                 self._thread = threading.Thread(target=self._receive,
                                                 name="XPlane-RREF", daemon=True)
                 self._thread.start()
@@ -596,6 +610,8 @@ class XPlaneSource:
                 self._subscriptions.append((key, path))
                 self._alias_index[attr] = index
             self._alias_factors[attr] = factor
+            self._unanswered.add(index)
+            self._resends.pop(index, None)
             self._subscribe(index, path, self.frequency)
 
     def _packet(self, payload):
@@ -605,11 +621,45 @@ class XPlaneSource:
     def _subscribe(self, index, path, frequency):
         self._packet(b"RREF\0" + struct.pack("<ii400s", frequency, index, path.encode("ascii")))
 
+    #: Passes a dropped subscription is re-asked before it is called
+    #: refused: ten seconds of unanswered streaming is a name the
+    #: simulator does not have, not a packet still in flight.
+    RESEND_LIMIT = 10
+    #: Re-asks per pass: a second or so of asks rather than the whole
+    #: table again, so the resend cannot flood the way the burst did
+    #: nor hold the receiver away from the stream.
+    RESEND_CHUNK = 96
+
+    def _resend_unanswered(self) -> None:
+        """Re-ask the subscriptions whose connect-burst packet was lost,
+        paced so the resend does not flood the way the burst did."""
+        if not self._unanswered:
+            return
+        now = time.monotonic()
+        if now < self._resend_at:
+            return
+        self._resend_at = now + 1.0
+        asked = 0
+        for index in sorted(self._unanswered):
+            if asked >= self.RESEND_CHUNK:
+                break
+            if self._resends.get(index, 0) >= self.RESEND_LIMIT:
+                continue
+            self._resends[index] = self._resends.get(index, 0) + 1
+            try:
+                self._subscribe(index, self._subscriptions[index][1],
+                                self.frequency)
+            except OSError:
+                return          # the socket is the dead side of a close
+            asked += 1
+            time.sleep(0.001)
+
     def _receive(self):
         while not self._stop.is_set():
             try:
                 packet, sender = self._socket.recvfrom(65535)
             except TimeoutError:
+                self._resend_unanswered()
                 continue
             except OSError:
                 return
@@ -624,11 +674,13 @@ class XPlaneSource:
                 for index, value in struct.iter_unpack("<if", packet[5:]):
                     if 0 <= index < len(self._subscriptions) and math.isfinite(value):
                         self._values[self._subscriptions[index][0]] = value
+                        self._unanswered.discard(index)
                         valid = True
                 if valid:
                     self._sender = self._sender or sender
                     self._last_packet = time.monotonic()
                     self._answered.set()
+            self._resend_unanswered()
 
     def read(self):
         with self._lock:
