@@ -1566,6 +1566,7 @@ def _console_loop(engine) -> None:
                 engine.source.update(com1_active=mhz)
                 engine.refresh_state()
                 engine.tune(mhz)
+                _who_is_on(engine, mhz)
             else:
                 # The simulator owns COM1 and the situation loop follows it, so
                 # setting it here would be undone within a quarter second.

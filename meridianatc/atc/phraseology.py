@@ -324,11 +324,13 @@ class Phraseology:
     def alt(self, feet: float, transition: int = 0, level_from: int = 0) -> str:
         words = sp.altitude(feet, self.digit_dialect,
                             transition or self.transition, level_from)
-        if self.dialect == "icao" and float(feet) > 0 \
+        if self.dialect == "icao" and words != "sea level" \
                 and not sp.is_flight_level(
                     feet, transition or self.transition, level_from):
             # CAP 413 gives the unit so an altitude cannot be taken for a
-            # level: "climb to three thousand feet".
+            # level: "climb to three thousand feet". The rounded rendering
+            # is the gate, not the raw feet: fifty feet above the ground
+            # rounds to "sea level", and "sea level feet" is not a level.
             words += " feet"
         return words
 

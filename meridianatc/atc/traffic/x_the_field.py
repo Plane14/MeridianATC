@@ -126,6 +126,19 @@ class _The_field:
             self.field.stations[tuned.position] = tuned
         if weather is not None:
             self.field.weather = weather
+        known = getattr(self.field, "thresholds", None)
+        if known:
+            # A runway that does not exist here is not this field's to
+            # give: the departure runway the user left on at the last
+            # field ("06" at ELLX) followed them to Rome and had the
+            # tower clearing Fiumicino's traffic onto a strip the field
+            # does not have.
+            if departure_runway \
+                    and normalize_runway(departure_runway) not in known:
+                departure_runway = ""
+            if arrival_runway \
+                    and normalize_runway(arrival_runway) not in known:
+                arrival_runway = ""
         self.field.departure_runway = departure_runway or self.field.departure_runway
         self.field.arrival_runway = (arrival_runway or departure_runway
                                      or self.field.arrival_runway)
