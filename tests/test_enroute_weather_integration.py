@@ -74,3 +74,68 @@ def test_traffic_weather_scan_queues_deviation_for_owned_traffic():
     assert flight.weather_deviation_until > now
     traffic._exchange.assert_called_once()
     assert traffic._exchange.call_args.kwargs["command"][0] == "heading"
+
+
+def test_localized_weather_deviation_requests_are_understood():
+    from meridianatc.atc import intents
+    from meridianatc.atc.controller._shared import _degrees_said, _side_said
+    from meridianatc.atc.language import phraseology_for
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.pilot import PilotSpeech
+    from meridianatc.atc.speech import parse_callsign
+
+    parser = intents.IntentParser(["N123", "November one two three"])
+    for language in ("en", "fr", "es", "de", "it", "pt"):
+        aircraft = Aircraft(parse_callsign("N123"))
+        aircraft.language = language
+        pilot = PilotSpeech(language, phraseology_for(language))
+        text = pilot.request_deviation(aircraft, "Center", 30, "left")
+        parsed = parser.parse(text, language)
+        assert parsed.intent is intents.Intent.REQUEST_DEVIATION, (language, text)
+        assert _side_said(parsed.normalized) == "left", (language, text)
+        assert _degrees_said(parsed.normalized, language) == 30, (language, text)
+        readback = pilot.deviation(aircraft, 30, "left")
+        assert readback.endswith("."), (language, readback)
+
+
+def _fo_weather_fixture():
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo._is_helicopter = False
+    fo._heli = None
+    fo.state = AutonomousState()
+    fo.state.phase = __import__("meridianatc.atc.autonomous._shared", fromlist=["AutonomousPhase"]).AutonomousPhase.CRUISE
+    fo.session = FlightSession(aircraft=Mock())
+    fo._emit = Mock()
+    fo._fo_say = Mock(return_value=True)
+    return fo
+
+
+def test_fo_requests_enroute_weather_deviation_through_normal_radio_path():
+    from meridianatc.weather.enroute import AvoidancePlan
+
+    fo = _fo_weather_fixture()
+    plan = AvoidancePlan(True, "left", 30, 25, 330.0, "cell", "awc-sigmet", 30.0)
+    fo._enroute_weather_plan = lambda state: plan
+    state = AircraftState(on_ground=False)
+    now = time.monotonic()
+    fo._watch_enroute_convection(state, now)
+    fo._fo_say.assert_called_once_with("weather_deviation")
+    assert fo._weather_deviation_requested_at == now
+    assert fo.session.weather_deviation_at == 0.0
+
+
+def test_fo_deviates_and_advises_when_cell_is_imminent_and_atc_is_silent():
+    from meridianatc.weather.enroute import AvoidancePlan
+
+    fo = _fo_weather_fixture()
+    plan = AvoidancePlan(True, "right", 40, 30, 40.0, "cell", "xplane-radar", 5.0)
+    fo._enroute_weather_plan = lambda state: plan
+    state = AircraftState(on_ground=False, track_true=0.0, ground_speed_kt=300.0)
+    now = time.monotonic()
+    fo._weather_deviation_requested_at = now - 20.0
+    fo._watch_enroute_convection(state, now)
+    assert fo.session.deviating == "approved"
+    assert fo.session.weather_deviation_side == "right"
+    assert fo.session.weather_deviation_degrees == 40
+    assert fo.session.weather_deviation_urgent
+    fo._fo_say.assert_called_once_with("deviating_weather")

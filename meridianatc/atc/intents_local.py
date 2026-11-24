@@ -561,7 +561,7 @@ SPANISH = Grammar(
         ("request_return", r"\b(solicito (el )?regreso|solicito regresar)\b"),
         ("request_hold", r"\b(solicito (una )?espera|solicito esperar)\b"),
         ("request_speed", r"\b(solicito velocidad|solicito \w+ nudos)\b"),
-        ("request_deviation", r"\b(solicito (un )?desvio|solicito desviar)\b"),
+        ("request_deviation", r"\b(solicito (un )?(desvio|desviacion)|solicito desviar)\b"),
         ("request_direct", r"\b(solicito directo|directo a)\b"),
         ("request_descent", r"\b(solicito (el )?descenso|solicito descender|"
                             r"(?:nivel|flightlevel) inferior)\b"),

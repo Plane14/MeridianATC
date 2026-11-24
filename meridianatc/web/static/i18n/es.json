@@ -836,5 +836,7 @@
   "set.traffic_humor": "The occasional dry answer",
   "set.traffic_humor_why": "A crew answering a call to them may add a line beyond the operational minimum. Never a safety word.",
   "set.traffic_follow_me": "Follow-me car",
-  "set.traffic_follow_me_why": "In X-Plane, a follow-me car leads your aircraft along its cleared taxi route to the clearance limit."
+  "set.traffic_follow_me_why": "In X-Plane, a follow-me car leads your aircraft along its cleared taxi route to the clearance limit.",
+  "set.autonomous_departure_weather_mode": "Salida con tormenta",
+  "set.autonomous_departure_weather_mode_why": "Qué hacer cuando una celda convectiva está sobre el campo antes de la salida: hold la espera; deviate sale solo cuando los primeros quince millas de la senda de la pista están demostradamente despejados; bypass ignora la celda pero sigue obedeciendo los límites demostrados de viento cruzado y de cola."
 }

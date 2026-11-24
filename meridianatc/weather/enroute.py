@@ -147,10 +147,12 @@ def xplane_cells(points, altitude_ft: float = 0.0,
         top = float(getattr(point, "top_ft", 0.0) or 0.0)
         if precip < RADR_PRECIP_THREAT:
             continue
-        # Tall precipitation is convective evidence. Very strong precipitation
+        # Precipitation well below the aeroplane is not its weather. Tall
+        # precipitation is convective evidence; very strong precipitation
         # counts even when the vertical report is coarse or truncated.
-        if top < max(RADR_TALL_TOP_FT, altitude_ft + 3000.0) \
-                and precip < RADR_STRONG_PRECIP:
+        if altitude_ft and top and top < altitude_ft - 3000.0:
+            continue
+        if top < RADR_TALL_TOP_FT and precip < RADR_STRONG_PRECIP:
             continue
         fresh.append(point)
     buckets: dict[tuple[int, int], list] = {}
@@ -190,7 +192,7 @@ def metar_convective_cells(raw_reports, now: float | None = None) -> list[Hazard
         weather = parse_metar(raw)
         text = ((weather.present or "") + " " + raw.split(" RMK", 1)[0]).upper()
         explicit = weather.cb or bool(re.search(
-            r"(?:^|\s)[-+]?(?:VCTS|TS\w*|GR|SQ|FC)(?:\s|$)|\bCB\d{3}\b", text))
+            r"(?:^|\s)[-+]?(?:VCTS|TS\w*|GR|SQ|FC)(?:\s|$)|\b(?:FEW|SCT|BKN|OVC|VV)\d{3}CB\b", text))
         if not explicit:
             continue
         severe = any(token in text for token in ("+TS", "GR", "SQ", "FC"))
@@ -211,7 +213,7 @@ def _rings_from_geometry(value) -> tuple[tuple[float, float], ...]:
         # parser accepts the coordinate pairs without pretending to be a full
         # WKT implementation.
         nums = [float(x) for x in
-                __import__("re").findall(r"[-+]?\d+(?:\.\d+)?", text)]
+                re.findall(r"[-+]?\d+(?:\.\d+)?", text)]
         if len(nums) >= 6:
             # AWC WKT is lon lat pairs.
             return tuple((nums[i + 1], nums[i])
@@ -252,10 +254,17 @@ def sigmet_cells(rows, altitude_ft: float = 0.0,
         now_wall = time.time()
         valid_from = row.get("validTimeFrom")
         valid_to = row.get("validTimeTo")
-        if valid_from is not None and now_wall < float(valid_from) - 300.0:
-            continue
-        if valid_to is not None and now_wall > float(valid_to) + 300.0:
-            continue
+        try:
+            if valid_from is not None \
+                    and now_wall < float(valid_from) - 300.0:
+                continue
+            if valid_to is not None \
+                    and now_wall > float(valid_to) + 300.0:
+                continue
+        except (TypeError, ValueError):
+            # A service timestamp shape Meridian does not know is not a reason
+            # to discard explicit convective geometry.
+            pass
         base = row.get("altitudeLow1", row.get("base"))
         top = row.get("altitudeHi1", row.get("top"))
         if altitude_ft and base is not None and top is not None \
@@ -284,8 +293,7 @@ def pirep_cells(rows, now: float | None = None) -> list[HazardCell]:
     for row in rows or ():
         text = " ".join(str(row.get(k, "")) for k in
                         ("rawOb", "raw", "turbulence", "icing", "wxString")).upper()
-        if not any(word in text for word in
-                   ("SEV", "EXTREME", "TS", "CB", "TSTM", "HAIL")):
+        if not re.search(r"\b(?:SEV|SEVERE|EXTREME|TS|CB|TSTM|HAIL)\b", text):
             continue
         lat, lon = row.get("lat"), row.get("lon")
         if lat is None or lon is None:
@@ -312,16 +320,28 @@ def scan_route(cells, lat: float, lon: float, course_true: float,
     area = 0.0
     corridor = max(1.0, ahead_nm * width_nm * 2.0)
     for cell in cells or ():
-        dist = haversine_nm(lat, lon, cell.lat, cell.lon)
-        if dist > ahead_nm + cell.radius_nm + cell.clearance_nm:
-            continue
-        bearing = bearing_deg(lat, lon, cell.lat, cell.lon)
-        rel = abs(_angle_delta(bearing, course_true))
-        forward = math.cos(math.radians(rel)) * dist
-        lateral = abs(math.sin(math.radians(rel)) * dist)
-        limit = width_nm + cell.radius_nm + cell.clearance_nm
-        if forward < -cell.radius_nm or forward > ahead_nm + cell.radius_nm \
-                or lateral > limit:
+        references = [(cell.lat, cell.lon)]
+        if cell.polygon:
+            # A broad SIGMET's centroid can sit outside the corridor while one
+            # side of the polygon crosses it. The vertices are sparse, but they
+            # are honest geometry; the centre alone is not.
+            references.extend(cell.polygon)
+        in_corridor = False
+        for ref_lat, ref_lon in references:
+            dist = haversine_nm(lat, lon, ref_lat, ref_lon)
+            if dist > ahead_nm + cell.radius_nm + cell.clearance_nm:
+                continue
+            bearing = bearing_deg(lat, lon, ref_lat, ref_lon)
+            rel = abs(_angle_delta(bearing, course_true))
+            forward = math.cos(math.radians(rel)) * dist
+            lateral = abs(math.sin(math.radians(rel)) * dist)
+            limit = width_nm + cell.radius_nm + cell.clearance_nm
+            if forward >= -cell.radius_nm \
+                    and forward <= ahead_nm + cell.radius_nm \
+                    and lateral <= limit:
+                in_corridor = True
+                break
+        if not in_corridor:
             continue
         hits.append(cell)
         area += math.pi * min(40.0, cell.radius_nm + cell.clearance_nm) ** 2
@@ -428,29 +448,37 @@ class EnrouteWeatherProvider:
         bbox = (f"{lat - half_lat:.3f},{lon - half_lon:.3f},"
                 f"{lat + half_lat:.3f},{lon + half_lon:.3f}")
         cells = []
+        answered = False
         try:
             metars = self._get("metar", {"bbox": bbox, "format": "json", "hours": 2})
             cells.extend(metar_convective_cells(metars))
+            answered = True
         except Exception:
             log.debug("enroute METAR fetch failed", exc_info=True)
         try:
             domestic = self._get("airsigmet", {"format": "json", "hazard": "conv"})
             cells.extend(sigmet_cells(domestic, altitude_ft))
+            answered = True
         except Exception:
             log.debug("domestic SIGMET fetch failed", exc_info=True)
         try:
             international = self._get("isigmet", {"format": "json"})
             cells.extend(sigmet_cells(international, altitude_ft))
+            answered = True
         except Exception:
             log.debug("international SIGMET fetch failed", exc_info=True)
         try:
             pireps = self._get("pirep", {"bbox": bbox, "format": "json", "age": 3})
             cells.extend(pirep_cells(pireps))
+            answered = True
         except Exception:
             log.debug("PIREP fetch failed", exc_info=True)
         with self._lock:
-            self._cells = cells
-            self._at = time.time()
+            # A dead service must not erase the last good evidence early;
+            # the normal timestamped expiry does that honestly.
+            if answered:
+                self._cells = cells
+                self._at = time.time()
             self._busy = False
 
     def cells(self) -> list[HazardCell]:

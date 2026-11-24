@@ -635,7 +635,7 @@ class XPlaneSource:
                 # one-minute-of-latitude/longitude mesh around the aircraft
                 # rather than answering arbitrary points.
                 try:
-                    _tag, lat, lon, base_m, top_m, clouds, precip = struct.unpack(
+                    _tag, lon, lat, base_m, top_m, clouds, precip = struct.unpack(
                         "<4sxffffff", packet)
                     key = (round(lat, 3), round(lon, 3))
                     stamp = time.time()

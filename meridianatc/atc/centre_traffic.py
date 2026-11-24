@@ -323,21 +323,19 @@ class CentreTraffic:
             one._weather_plan = None
             one.weather_done = True
             self._exchange(one, now, station, [
-                (True, lambda p, a, s: (
-                    f"{a.spoken_short}, clear of weather, resuming course")),
+                (True, lambda p, a, s: p.clear_of_weather(a)),
                 (False, lambda c, a, s: f"{a.spoken_short}, roger"),
             ], "weather deviation complete")
             return
         if plan is None:
             return
         self._exchange(one, now, station, [
-            (True, lambda p, a, s, plan=plan: (
-                f"{a.spoken_short}, request deviation {plan.degrees} degrees "
-                f"{plan.side} for weather")),
+            (True, lambda p, a, s, plan=plan:
+                p.request_deviation(a, s, plan.degrees, plan.side)),
             (False, lambda c, a, s, plan=plan:
                 c.deviation_approved(a, plan.degrees, plan.side)),
-            (True, lambda p, a, s, plan=plan: (
-                f"deviation {plan.degrees} degrees {plan.side}, {a.spoken_short}")),
+            (True, lambda p, a, s, plan=plan:
+                p.deviation(a, plan.degrees, plan.side)),
         ], "weather deviation")
 
     # -- the real ones ----------------------------------------------------

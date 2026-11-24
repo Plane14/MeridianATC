@@ -275,7 +275,7 @@ class _Situation_loop:
                     self.emit(
                         "info",
                         f"Convective weather about {plan.nearest_nm:.0f} miles ahead "
-                        f"({plan.source}); a deviation {plan.degrees} degrees "
+                        f"({self.autonomous_flight._weather_source_label(plan)}); a deviation {plan.degrees} degrees "
                         f"{plan.side} looks best",
                         "weather.enroute.advisory")
             except Exception:

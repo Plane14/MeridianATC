@@ -75,6 +75,17 @@ class _Weather:
                 reason, top_ft=float(getattr(state, "altitude_ft", 0.0) or 0.0)))
         return cells
 
+    @staticmethod
+    def _weather_source_label(plan) -> str:
+        """Human provenance for a hazard source.
+
+        AWC evidence is useful strategy, not the simulator's own precipitation
+        field, so it is never allowed to masquerade as a cockpit radar scan.
+        """
+        if str(getattr(plan, "source", "")).startswith("awc-"):
+            return "external approximate weather"
+        return str(getattr(plan, "source", "weather"))
+
     def _enroute_weather_plan(self, state):
         """The avoidance decision ahead of the aircraft, if there is one."""
         from ...weather.enroute import avoidance_plan
@@ -111,21 +122,14 @@ class _Weather:
             self._weather_deviation_requested_at = 0.0
             return
         asked = float(getattr(self, "_weather_deviation_requested_at", 0.0) or 0.0)
-        callsign = getattr(getattr(session, "aircraft", None), "callsign", "")
-        callsign = getattr(callsign, "written", "") or str(callsign or "")
-        if not callsign:
-            callsign = "this aircraft"
         if not asked:
-            self._weather_deviation_requested_at = now
-            text = (f"{callsign}, request deviation {plan.degrees} degrees "
-                    f"{plan.side} for weather")
-            if self.crew.transmit:
-                with contextlib.suppress(Exception):
-                    self.crew.transmit(text)
-            self._emit("info",
-                       f"Convective weather {plan.nearest_nm:.0f} miles ahead "
-                       f"({plan.source}): requesting {plan.degrees} degrees {plan.side}",
-                       "autonomous.weather.deviation_request")
+            self._weather_deviation_plan = plan
+            if self._fo_say("weather_deviation"):
+                self._weather_deviation_requested_at = now
+                self._emit("info",
+                           f"Convective weather {plan.nearest_nm:.0f} miles ahead "
+                           f"({self._weather_source_label(plan)}): requesting {plan.degrees} degrees {plan.side}",
+                           "autonomous.weather.deviation_request")
             return
         # A quiet frequency is acceptable when the weather is still far away;
         # it is not acceptable with the cell at the windshield. Maneuver and
@@ -141,10 +145,8 @@ class _Weather:
         session.weather_deviation_course = course
         session.weather_deviation_at = now
         session.weather_deviation_urgent = True
-        if self.crew.transmit:
-            with contextlib.suppress(Exception):
-                self.crew.transmit(
-                    f"{callsign}, deviating {plan.side} for weather")
+        self._urgent_deviation_side = plan.side
+        self._fo_say("deviating_weather")
         self._emit("warning",
                    "No ATC answer with convection imminent: deviating and advising",
                    "autonomous.weather.deviation_urgent")
@@ -666,7 +668,27 @@ class _Weather:
                 hits, _coverage = scan_route(
                     self._enroute_weather_cells(state), state.latitude,
                     state.longitude, course, ahead_nm=15.0, width_nm=7.0)
-                if not hits and getattr(state, "has_position", False):
+                # Empty is not the same as clear. A fresh X-Plane radar scan is
+                # direct evidence; a freshly completed external query is only
+                # strategic evidence, but it is the most MSFS can truthfully
+                # offer. Before either has answered, the corridor is unknown.
+                wall_now = time.time()
+                evidence = False
+                radar_points = getattr(getattr(self, "sim", None),
+                                       "weather_radar_points", None)
+                if callable(radar_points):
+                    try:
+                        evidence = any(wall_now - point.at < 120.0
+                                       for point in radar_points())
+                    except Exception:
+                        evidence = False
+                provider = getattr(self, "enroute_weather", None)
+                if provider is not None and not evidence:
+                    key = provider._key_for(state.latitude, state.longitude)                         if getattr(state, "has_position", False) else None
+                    evidence = bool(getattr(provider, "_at", 0.0)
+                                    and wall_now - provider._at < provider.EXPIRE_S
+                                    and getattr(provider, "_key", None) == key)
+                if not hits and getattr(state, "has_position", False) and evidence:
                     if not getattr(self, "_departure_deviation_said", False):
                         self._departure_deviation_said = True
                         self._emit("info",

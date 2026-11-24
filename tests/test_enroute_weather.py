@@ -25,10 +25,13 @@ def test_xplane_radar_cells_require_tall_or_strong_precipitation():
 
 
 def test_xplane_radar_packet_layout_is_tightly_packed_xp12():
-    packet = struct.pack("<4sxffffff", b"RADR", 50.0, 8.0,
+    # The packet is longitude first, despite the usual aviation habit of
+    # writing positions latitude/longitude.
+    packet = struct.pack("<4sxffffff", b"RADR", 8.0, 50.0,
                          1000.0, 9000.0, .7, .8)
     assert len(packet) == 29
-    _tag, lat, lon, base_m, top_m, clouds, precip = struct.unpack(
+    assert len(struct.pack("<4sx10s", b"RADR", b"10")) == 15
+    _tag, lon, lat, base_m, top_m, clouds, precip = struct.unpack(
         "<4sxffffff", packet)
     assert (round(lat, 1), round(lon, 1)) == (50.0, 8.0)
     assert base_m * METERS_TO_FEET > 3200.0
@@ -105,3 +108,35 @@ def test_awc_dict_coordinates_and_expired_sigmet():
     assert len(sigmet_cells([row], altitude_ft=30000)) == 1
     expired = dict(row, validTimeTo=now - 1000)
     assert not sigmet_cells([expired], altitude_ft=30000, now=now)
+
+
+def test_xplane_high_altitude_overlap_not_demanding_tops_above_aircraft():
+    now = time.time()
+    points = [RadarPoint(50.0, 8.0, 1000.0, 34000.0, .8, .5, now)]
+    assert xplane_cells(points, altitude_ft=35000.0, now=now)
+    below = [RadarPoint(50.0, 8.0, 1000.0, 25000.0, .8, .5, now)]
+    assert not xplane_cells(below, altitude_ft=35000.0, now=now)
+
+
+def test_metar_embedded_cb_cloud_group_is_explicit_convection():
+    from meridianatc.weather.enroute import metar_convective_cells
+    rows = [{"lat": 50.0, "lon": 8.0, "icaoId": "EDDF",
+             "rawOb": "EDDF 242050Z 12008KT 9999 SCT020CB 10/05 Q1015"}]
+    assert len(metar_convective_cells(rows)) == 1
+
+
+def test_pirep_requires_whole_weather_words():
+    from meridianatc.weather.enroute import pirep_cells
+    negative = [{"lat": 50.0, "lon": 8.0, "rawOb": "UA /OV X/TM 1/FL300/TP B738/TB NEG/RM KNOTS"}]
+    positive = [{"lat": 50.0, "lon": 8.0, "rawOb": "UUA /OV X/TM 1/FL300/TP B738/TB SEV/RM HAIL TS"}]
+    assert not pirep_cells(negative)
+    assert len(pirep_cells(positive)) == 1
+
+
+def test_scan_route_uses_sigmet_polygon_vertices_not_only_centroid():
+    polygon = (
+        (50.0, 8.3), (50.2, 8.3), (52.0, 10.0), (52.0, 10.2), (50.0, 8.3))
+    cell = HazardCell(51.0, 9.2, 5.0, .8, "test", "broad polygon",
+                      polygon=polygon)
+    hits, _coverage = scan_route([cell], 50.0, 8.0, 0.0, ahead_nm=80.0)
+    assert hits == [cell]

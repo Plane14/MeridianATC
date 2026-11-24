@@ -53,16 +53,13 @@ class _Weather_avoidance:
         flight.weather_deviation_until = now + duration
 
         def pilot_first(p, a, s, plan=plan):
-            own = a.spoken_short
-            return (f"{own}, request deviation {plan.degrees} degrees "
-                    f"{plan.side} for weather")
+            return p.request_deviation(a, s, plan.degrees, plan.side)
 
         def controller(c, a, s, plan=plan):
             return c.deviation_approved(a, plan.degrees, plan.side)
 
         def pilot_back(p, a, s, plan=plan):
-            return (f"deviation {plan.degrees} degrees {plan.side}, "
-                    f"{a.spoken_short}")
+            return p.deviation(a, plan.degrees, plan.side)
 
         self._exchange(
             flight, now, "TWR", pilot_first=pilot_first,

@@ -901,6 +901,17 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
             if not parts:
                 return "", "no intentions"
             return speech.report(aircraft, ", ".join(parts)), ""
+        if kind == "weather_deviation":
+            plan = getattr(self.autonomous_flight, "_weather_deviation_plan", None)
+            if plan is None:
+                return "", "no weather deviation"
+            return speech.request_deviation(
+                aircraft, name, plan.degrees, plan.side), ""
+        if kind == "deviating_weather":
+            side = getattr(self.autonomous_flight, "_urgent_deviation_side", "")
+            if not side:
+                return "", "no urgent weather deviation"
+            return speech.deviating_weather(aircraft, side), ""
         if kind == "stopping":
             return speech.stopping(aircraft), ""
         if kind == "any":
