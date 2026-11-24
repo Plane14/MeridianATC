@@ -223,3 +223,25 @@ def test_concave_polygon_reentry_is_penetration_not_escape():
     west = _course_geometry_cost(cell, lat, lon, 270.0, 80.0)
     assert east > 10.0
     assert west < 5.0
+
+
+
+def test_far_antimeridian_polygon_does_not_create_a_local_obstacle():
+    # The polygon really is compact around the antimeridian, but the aircraft
+    # is half a world away. Its vertices must not be unwrapped into two false
+    # local extremes with an edge across the aircraft.
+    polygon = ((0.0, 179.9), (0.1, -179.9), (-0.1, -179.9))
+    cell = HazardCell(0.0, 180.0, 15.0, .8, "test", "far-dateline",
+                      polygon=polygon)
+    assert _course_geometry_cost(cell, 0.0, 0.0, 0.0, 80.0) == 0.0
+
+
+def test_concave_polygon_reentry_beyond_scan_horizon_is_not_costed():
+    xy = [(-30, -20), (120, -20), (120, 20), (100, 20), (100, 0),
+          (-10, 0), (-10, 20), (-30, 20)]
+    polygon = tuple((y / 60.0, x / 60.0) for x, y in xy)
+    cell = HazardCell(0.0, 0.0, 120.0, .8, "test", "far-reentry",
+                      polygon=polygon)
+    lat, lon = 10.0 / 60.0, -20.0 / 60.0
+    cost = _course_geometry_cost(cell, lat, lon, 90.0, 80.0)
+    assert cost < 5.0

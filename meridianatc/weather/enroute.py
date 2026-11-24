@@ -425,6 +425,12 @@ def _circle_course_metrics(center, direction, radius: float, horizon: float):
 def _course_geometry_cost(cell: HazardCell, lat: float, lon: float,
                           course: float, horizon: float) -> float:
     """Cost of one hazard on one course, with body and clearance separated."""
+    references = [(cell.lat, cell.lon)]
+    if cell.polygon:
+        references.extend(cell.polygon)
+    if min(haversine_nm(lat, lon, ref_lat, ref_lon)
+           for ref_lat, ref_lon in references) > horizon + cell.radius_nm + cell.clearance_nm:
+        return 0.0
     direction = (math.sin(math.radians(course)), math.cos(math.radians(course)))
     ray_end = (direction[0] * horizon, direction[1] * horizon)
     if len(cell.polygon) >= 3:
@@ -448,7 +454,7 @@ def _course_geometry_cost(cell: HazardCell, lat: float, lon: float,
             # Starting inside, the first crossing is an exit and a second
             # positive crossing is a re-entry into another part of a concave
             # polygon. Treat that re-entry as penetration, not as escape time.
-            if len(unique) > 1:
+            if len(unique) > 1 and unique[1] <= horizon:
                 return 1000.0 * cell.severity / max(5.0, unique[1] + 5.0)
             exit_nm = unique[0] if unique else 0.0
             return cell.severity * (2.0 + min(20.0, exit_nm) / 10.0)
