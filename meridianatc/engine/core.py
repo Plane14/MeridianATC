@@ -841,10 +841,18 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
             # altitude that was never claimed.
             alt = getattr(self.state, "indicated_altitude_ft", 0.0) \
                 or getattr(self.state, "altitude_ft", 0.0) or 0.0
+            deviating_side = ""
+            if getattr(session, "weather_deviation_at", 0.0):
+                # FAA deviation guidance puts the fact on the first call to a
+                # new sector: the approval survives the handoff, but the next
+                # controller still has to know the aeroplane is off course.
+                deviating_side = getattr(session, "weather_deviation_side", "")
             if abs(vs) < 300.0:
-                return speech.maintaining(aircraft, name, alt), ""
-            return speech.checking_in(aircraft, name, alt,
-                                      climbing=vs > 0), ""
+                return speech.maintaining(
+                    aircraft, name, alt, deviating_side=deviating_side), ""
+            return speech.checking_in(
+                aircraft, name, alt, climbing=vs > 0,
+                deviating_side=deviating_side), ""
         if kind == "going_around":
             return speech.going_around(
                 aircraft, session.assigned_altitude_ft or 0.0), ""
@@ -912,6 +920,8 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
             if not side:
                 return "", "no urgent weather deviation"
             return speech.deviating_weather(aircraft, side), ""
+        if kind == "clear_of_weather":
+            return speech.clear_of_weather(aircraft), ""
         if kind == "stopping":
             return speech.stopping(aircraft), ""
         if kind == "any":

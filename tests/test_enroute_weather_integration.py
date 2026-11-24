@@ -1,10 +1,11 @@
 import time
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
 from meridianatc.atc.session import FlightSession
 from meridianatc.sim.state import AircraftState
-from meridianatc.weather.enroute import HazardCell
+from meridianatc.weather.enroute import HazardCell, RadarPoint
 
 
 def test_fo_flies_approved_weather_deviation_heading():
@@ -139,3 +140,86 @@ def test_fo_deviates_and_advises_when_cell_is_imminent_and_atc_is_silent():
     assert fo.session.weather_deviation_degrees == 40
     assert fo.session.weather_deviation_urgent
     fo._fo_say.assert_called_once_with("deviating_weather")
+
+
+def test_deviation_is_mentioned_on_localized_checkins():
+    from meridianatc.atc import intents
+    from meridianatc.atc.language import phraseology_for
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.pilot import PilotSpeech
+    from meridianatc.atc.speech import parse_callsign
+
+    parser = intents.IntentParser(["N123", "November one two three"])
+    for language in ("en", "fr", "es", "de", "it", "pt"):
+        aircraft = Aircraft(parse_callsign("N123"))
+        aircraft.language = language
+        pilot = PilotSpeech(language, phraseology_for(language))
+        text = pilot.checking_in(aircraft, "Center", 12000.0,
+                                 climbing=False, deviating_side="left")
+        parsed = parser.parse(text, language)
+        assert parsed.intent is intents.Intent.CHECK_IN, (language, text)
+
+
+def _fo_departure_fixture(mode):
+    from meridianatc.weather.metar import parse_metar
+
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.session = FlightSession(aircraft=Mock())
+    fo.state = AutonomousState()
+    fo.state.runway_heading = 0.0
+    fo.config = SimpleNamespace(immersion=SimpleNamespace(
+        autonomous_departure_hold=True,
+        autonomous_departure_weather_mode=mode))
+    weather = parse_metar(
+        "KJFK 242051Z 00000KT 10SM TSRA SCT020CB 25/20 Q1000")
+    fo._field_weather = lambda airport: weather
+    fo._get_current_airport = lambda: None
+    fo._wind_limits = lambda: (99.0, 99.0)
+    fo._enroute_weather_cells = lambda state: []
+    fo._emit = Mock()
+    fo._set_error = Mock()
+    fo.sim = None
+    fo.enroute_weather = None
+    return fo
+
+
+def test_departure_deviate_mode_holds_until_scan_evidence_exists():
+    fo = _fo_departure_fixture("deviate")
+    state = AircraftState(latitude=50.0, longitude=8.0,
+                          on_ground=True)
+    assert not fo._departure_wind_ok(state)
+    assert fo.state.convective_hold_said
+
+
+def test_departure_deviate_mode_departs_when_fresh_scan_is_clear():
+    fo = _fo_departure_fixture("deviate")
+    fo.sim = SimpleNamespace(weather_radar_points=lambda: [
+        RadarPoint(50.0, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time())])
+    state = AircraftState(latitude=50.0, longitude=8.0,
+                          on_ground=True)
+    assert fo._departure_wind_ok(state)
+    assert not fo.state.convective_hold_said
+
+
+def test_departure_deviate_mode_holds_when_corridor_has_a_cell():
+    fo = _fo_departure_fixture("deviate")
+    fo.enroute_weather = SimpleNamespace(
+        _at=time.time(), _key=(50, 8), EXPIRE_S=900.0,
+        _key_for=lambda lat, lon: (round(lat), round(lon)))
+    fo.sim = SimpleNamespace(weather_radar_points=lambda: [
+        RadarPoint(50.0, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time())])
+    cell = HazardCell(50.15, 8.0, 5.0, .8, "test", "cell")
+    fo._enroute_weather_cells = lambda state: [cell]
+    state = AircraftState(latitude=50.0, longitude=8.0,
+                          on_ground=True)
+    assert not fo._departure_wind_ok(state)
+
+
+def test_departure_bypass_ignores_cell_but_not_wind_limits():
+    fo = _fo_departure_fixture("bypass")
+    state = AircraftState(latitude=50.0, longitude=8.0,
+                          on_ground=True)
+    assert fo._departure_wind_ok(state)
+    fo._wind_limits = lambda: (0.0, 0.0)
+    fo._runway_wind = lambda weather, heading: (0.0, 5.0, 0.0)
+    assert not fo._departure_wind_ok(state)

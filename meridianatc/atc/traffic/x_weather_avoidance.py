@@ -61,7 +61,9 @@ class _Weather_avoidance:
         def pilot_back(p, a, s, plan=plan):
             return p.deviation(a, plan.degrees, plan.side)
 
+        position = getattr(flight, "position", "") \
+            or ("DEP" if flight.phase == "departed" else "APP")
         self._exchange(
-            flight, now, "TWR", pilot_first=pilot_first,
+            flight, now, position, pilot_first=pilot_first,
             controller=controller, pilot_back=pilot_back,
             command=("heading", {"heading": plan.heading_true}))

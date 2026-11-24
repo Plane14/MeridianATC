@@ -435,6 +435,7 @@ class _Weather:
             session.weather_deviation_at = 0.0
             session.weather_deviation_course = -1.0
             session.weather_deviation_urgent = False
+            self._fo_say("clear_of_weather")
             self._emit("info",
                        "Clear of the weather deviation: resuming the route",
                        "autonomous.weather.deviation_complete")
@@ -665,13 +666,10 @@ class _Weather:
                 # scan keeps the hold.
                 from ...weather.enroute import scan_route
                 course = float(getattr(self.state, "runway_heading", 0.0) or 0.0)
-                hits, _coverage = scan_route(
-                    self._enroute_weather_cells(state), state.latitude,
-                    state.longitude, course, ahead_nm=15.0, width_nm=7.0)
-                # Empty is not the same as clear. A fresh X-Plane radar scan is
-                # direct evidence; a freshly completed external query is only
-                # strategic evidence, but it is the most MSFS can truthfully
-                # offer. Before either has answered, the corridor is unknown.
+                # Only a fresh simulator radar scan can demonstrate that the
+                # first climb-out miles are clear. External METAR/SIGMET
+                # evidence is strategic: it can add a hazard, but its absence
+                # cannot prove a thunderstorm-scale hole in the corridor.
                 wall_now = time.time()
                 evidence = False
                 radar_points = getattr(getattr(self, "sim", None),
@@ -682,19 +680,25 @@ class _Weather:
                                        for point in radar_points())
                     except Exception:
                         evidence = False
-                provider = getattr(self, "enroute_weather", None)
-                if provider is not None and not evidence:
-                    key = provider._key_for(state.latitude, state.longitude)                         if getattr(state, "has_position", False) else None
-                    evidence = bool(getattr(provider, "_at", 0.0)
-                                    and wall_now - provider._at < provider.EXPIRE_S
-                                    and getattr(provider, "_key", None) == key)
+                cells = self._enroute_weather_cells(state)
+                if evidence:
+                    # Where the simulator's own scan is fresh, a coarse METAR
+                    # point at the field is superseded as local geometry; the
+                    # tactical cells and explicit larger-scale polygons count.
+                    cells = [cell for cell in cells
+                             if cell.source != "awc-metar"]
+                hits, _coverage = scan_route(
+                    cells, state.latitude, state.longitude, course,
+                    ahead_nm=15.0, width_nm=7.0)
                 if not hits and getattr(state, "has_position", False) and evidence:
                     if not getattr(self, "_departure_deviation_said", False):
                         self._departure_deviation_said = True
                         self._emit("info",
                                    "Thunderstorm at the field, but the departure corridor is clear: departing",
                                    "autonomous.weather.departure_deviate")
-                    # Continue into the demonstrated wind checks below.
+                    # The convective hold is answered; only the demonstrated
+                    # wind checks below still apply.
+                    mode = "bypass"
                 else:
                     mode = "hold"
             if mode != "bypass":

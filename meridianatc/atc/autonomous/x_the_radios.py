@@ -43,7 +43,7 @@ _BROADCAST_POSITIONS = ("CTAF", "INFO")
 # go-around or a "runway vacated" cannot wait for a dial to settle.
 _VOLUNTEERED = frozenset({
     "clearance", "vfr", "taxi", "ready", "pushback", "check_in",
-    "downwind", "base", "final",
+    "weather_deviation", "clear_of_weather", "downwind", "base", "final",
 })
 
 # Seconds of quiet on the frequency before the first officer keys in. A
@@ -63,7 +63,7 @@ READY_REASK_S = 90.0
 # is what the tower is already listening for, and a call that urgent is
 # late exactly the length of the pause a slower one would leave. The
 # rejected takeoff's "stopping" is the same kind of word.
-_CANNOT_WAIT = frozenset({"going_around", "stopping"})
+_CANNOT_WAIT = frozenset({"going_around", "stopping", "deviating_weather"})
 
 
 class _The_radios:

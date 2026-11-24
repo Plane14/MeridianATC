@@ -126,10 +126,12 @@ class PilotBook:
     deviating_weather: str = "deviating {side} for weather"
     deviation_readback: str = "deviation {degrees} degrees {side}"
     clear_of_weather: str = "clear of weather, resuming course"
+    deviating_course: str = "deviating {side} of course for weather"
 
 
 ENGLISH = PilotBook(
     language="en",
+    deviating_course="deviating {side} of course for weather",
     request_deviation="request deviation {degrees} degrees {side} for weather",
     deviating_weather="deviating {side} for weather",
     deviation_readback="deviation {degrees} degrees {side}",
@@ -174,6 +176,7 @@ ENGLISH = PilotBook(
 
 FRENCH = PilotBook(
     language="fr",
+    deviating_course="déviation à {side} de la route pour météo",
     request_deviation="demande déviation de {degrees} degrés à {side} pour météo",
     deviating_weather="dévions à {side} pour météo",
     deviation_readback="déviation de {degrees} degrés à {side}",
@@ -233,6 +236,7 @@ FRENCH = PilotBook(
 
 SPANISH = PilotBook(
     language="es",
+    deviating_course="desviando a la {side} de la ruta por meteorología",
     request_deviation="solicito desviación de {degrees} grados a la {side} por meteorología",
     deviating_weather="desviando a la {side} por meteorología",
     deviation_readback="desviación de {degrees} grados a la {side}",
@@ -291,6 +295,7 @@ SPANISH = PilotBook(
 
 GERMAN = PilotBook(
     language="de",
+    deviating_course="weichen {side} der Strecke wegen Wetter aus",
     request_deviation="erbitte Ausweichen {degrees} Grad {side} wegen Wetter",
     deviating_weather="weichen {side} wegen Wetter aus",
     deviation_readback="Ausweichen {degrees} Grad {side}",
@@ -349,6 +354,7 @@ GERMAN = PilotBook(
 
 ITALIAN = PilotBook(
     language="it",
+    deviating_course="deviando a {side} della rotta per maltempo",
     request_deviation="chiedo deviazione di {degrees} gradi a {side} per maltempo",
     deviating_weather="deviamo a {side} per maltempo",
     deviation_readback="deviazione di {degrees} gradi a {side}",
@@ -407,6 +413,7 @@ ITALIAN = PilotBook(
 
 PORTUGUESE = PilotBook(
     language="pt",
+    deviating_course="desviando à {side} da rota devido a meteorologia",
     request_deviation="peço desvio de {degrees} graus à {side} devido a meteorologia",
     deviating_weather="desviando à {side} devido a meteorologia",
     deviation_readback="desvio de {degrees} graus à {side}",
@@ -618,21 +625,27 @@ class PilotSpeech:
 
     def checking_in(self, aircraft: Aircraft, station: str, altitude_ft: float,
                     climbing: bool, atis_letter: str = "",
-                    type_name: str = "") -> str:
+                    type_name: str = "", deviating_side: str = "") -> str:
         frame = (self.book.checking_in_climbing if climbing
                  else self.book.checking_in_descending)
         body = frame.format(altitude=self.p.alt(altitude_ft))
+        if deviating_side:
+            body += ", " + self.book.deviating_course.format(
+                side=self.p.side(deviating_side))
         return self.call(aircraft, station,
                          self._first_call(body, type_name, atis_letter),
                          greeting=True)
 
     def maintaining(self, aircraft: Aircraft, station: str,
-                    altitude_ft: float) -> str:
+                    altitude_ft: float, deviating_side: str = "") -> str:
         """Checking in level: "Maastricht Radar, Speedbird four two one,
         flight level three five zero" -- the level alone, as a check-in
         at cruise is said in every language here."""
-        return self.call(aircraft, station, self.p.alt(altitude_ft),
-                         greeting=True)
+        body = self.p.alt(altitude_ft)
+        if deviating_side:
+            body += ", " + self.book.deviating_course.format(
+                side=self.p.side(deviating_side))
+        return self.call(aircraft, station, body, greeting=True)
 
     def established(self, aircraft: Aircraft, runway: str) -> str:
         return self.report(
