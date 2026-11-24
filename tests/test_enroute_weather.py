@@ -200,3 +200,26 @@ def test_inside_a_cell_still_avoids_the_second_cell_while_escaping():
     ]
     plan = avoidance_plan(cells, 0.0, 0.0, 0.0, 30000.0)
     assert plan.side == "right"
+
+
+
+def test_course_geometry_wraps_longitude_across_the_antimeridian():
+    cell = HazardCell(0.0, -179.93, 2.0, .8, "test", "dateline")
+    cost = _course_geometry_cost(cell, 0.0, 179.9, 90.0, 80.0)
+    assert cost > 10.0
+
+
+def test_concave_polygon_reentry_is_penetration_not_escape():
+    # A U-shaped polygon open northward. From the western arm an eastbound
+    # course leaves into the notch but then enters the eastern arm; westbound
+    # is the clean escape.
+    xy = [(-30, -20), (30, -20), (30, 20), (10, 20), (10, 0),
+          (-10, 0), (-10, 20), (-30, 20)]
+    polygon = tuple((y / 60.0, x / 60.0) for x, y in xy)
+    cell = HazardCell(0.0, 0.0, 30.0, .8, "test", "concave",
+                      polygon=polygon)
+    lat, lon = 10.0 / 60.0, -20.0 / 60.0
+    east = _course_geometry_cost(cell, lat, lon, 90.0, 80.0)
+    west = _course_geometry_cost(cell, lat, lon, 270.0, 80.0)
+    assert east > 10.0
+    assert west < 5.0

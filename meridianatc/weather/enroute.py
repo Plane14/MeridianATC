@@ -351,7 +351,8 @@ def scan_route(cells, lat: float, lon: float, course_true: float,
 
 def _local_xy(lat: float, lon: float, lat0: float, lon0: float) -> tuple[float, float]:
     """Small-area east/north nautical-mile coordinates around the aircraft."""
-    return ((lon - lon0) * 60.0 * math.cos(math.radians(lat0)),
+    lon_delta = (lon - lon0 + 180.0) % 360.0 - 180.0
+    return (lon_delta * 60.0 * math.cos(math.radians(lat0)),
             (lat - lat0) * 60.0)
 
 
@@ -439,7 +440,17 @@ def _course_geometry_cost(cell: HazardCell, lat: float, lon: float,
                                      _segments_distance((0.0, 0.0), ray_end, a, b))
         inside = cell.contains(lat, lon)
         if inside:
-            exit_nm = max(crossings, default=0.0)
+            ordered = sorted(hit for hit in crossings if hit >= 0.0)
+            unique = []
+            for hit in ordered:
+                if not unique or hit - unique[-1] > 1e-6:
+                    unique.append(hit)
+            # Starting inside, the first crossing is an exit and a second
+            # positive crossing is a re-entry into another part of a concave
+            # polygon. Treat that re-entry as penetration, not as escape time.
+            if len(unique) > 1:
+                return 1000.0 * cell.severity / max(5.0, unique[1] + 5.0)
+            exit_nm = unique[0] if unique else 0.0
             return cell.severity * (2.0 + min(20.0, exit_nm) / 10.0)
         body_hits = [hit for hit in crossings if hit <= horizon]
         if body_hits:
