@@ -403,6 +403,17 @@ class _Weather:
                        "Windshear escape: max power, configuration held",
                        "autonomous.weather.windshear_departure")
 
+    @staticmethod
+    def _clear_weather_deviation(session) -> None:
+        session.deviating = ""
+        session.weather_deviation_side = ""
+        session.weather_deviation_degrees = 0
+        session.weather_deviation_miles_nm = 0
+        session.weather_deviation_rejoin = ""
+        session.weather_deviation_at = 0.0
+        session.weather_deviation_course = -1.0
+        session.weather_deviation_urgent = False
+
     def _fly_weather_deviation(self, state) -> None:
         """Fly the lateral limits of an approved weather deviation.
 
@@ -415,6 +426,17 @@ class _Weather:
         if session is None or not getattr(session, "weather_deviation_at", 0.0):
             return
         if getattr(state, "on_ground", True):
+            return
+        if self.state.phase not in (AutonomousPhase.CLIMB,
+                                    AutonomousPhase.CRUISE,
+                                    AutonomousPhase.DESCENT):
+            # Once the phase machine is flying the approach, its intercept and
+            # final courses own the aeroplane. A lateral enroute clearance may
+            # not keep replacing them merely because its timer is still running.
+            self._clear_weather_deviation(session)
+            self._emit("info",
+                       "Weather deviation ended: approach guidance has priority",
+                       "autonomous.weather.deviation_ended_for_approach")
             return
         miles = float(getattr(session, "weather_deviation_miles_nm", 0.0) or 15.0)
         gs = max(80.0, float(getattr(state, "ground_speed_kt", 0.0) or 80.0))
@@ -438,14 +460,7 @@ class _Weather:
             rejoin = getattr(session, "weather_deviation_rejoin", "") or ""
             if rejoin:
                 session.route_direct = rejoin
-            session.deviating = ""
-            session.weather_deviation_side = ""
-            session.weather_deviation_degrees = 0
-            session.weather_deviation_miles_nm = 0
-            session.weather_deviation_rejoin = ""
-            session.weather_deviation_at = 0.0
-            session.weather_deviation_course = -1.0
-            session.weather_deviation_urgent = False
+            self._clear_weather_deviation(session)
             self._fo_say("clear_of_weather")
             self._emit("info",
                        "Clear of the weather deviation: resuming the route",

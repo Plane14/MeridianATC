@@ -2,7 +2,7 @@ import time
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+from meridianatc.atc.autonomous import AutonomousFlight, AutonomousPhase, AutonomousState
 from meridianatc.atc.session import FlightSession
 from meridianatc.sim.state import AircraftState
 from meridianatc.weather.enroute import HazardCell, RadarPoint
@@ -20,6 +20,7 @@ def test_fo_flies_approved_weather_deviation_heading():
     fo._dir = Mock()
     fo._dir.sim = fo.sim
     fo.state = AutonomousState()
+    fo.state.phase = AutonomousPhase.CRUISE
     state = AircraftState(
         latitude=50.0, longitude=8.0, on_ground=False,
         ground_speed_kt=300.0, track_true=90.0, heading_true=90.0)
