@@ -414,6 +414,35 @@ class _Weather:
         session.weather_deviation_course = -1.0
         session.weather_deviation_urgent = False
 
+    def _weather_rejoin_clear(self, state, session) -> bool:
+        """Whether the leg back to the clearance's rejoin fix is clear."""
+        from ...weather.enroute import bearing_deg, scan_route
+
+        course = float(getattr(session, "weather_deviation_course", -1.0) or -1.0)
+        if course < 0.0:
+            course = float(getattr(state, "track_true", 0.0)
+                           or getattr(state, "heading_true", 0.0) or 0.0)
+        ahead_nm = 80.0
+        rejoin = getattr(session, "weather_deviation_rejoin", "") or ""
+        route = getattr(getattr(self, "brain", None), "route", None)
+        if rejoin and route is not None:
+            try:
+                index = self._direct_index(route, rejoin, session, state)
+                if 0 <= index < len(route.fixes):
+                    fix = route.fixes[index]
+                    course = bearing_deg(state.latitude, state.longitude,
+                                         fix.lat, fix.lon)
+                    ahead_nm = min(80.0, state.distance_to(fix.lat, fix.lon) + 10.0)
+            except Exception:
+                log.debug("weather-deviation rejoin fix resolution failed",
+                          exc_info=True)
+                return False
+        hits, _coverage = scan_route(
+            self._enroute_weather_cells(state), state.latitude,
+            state.longitude, course, getattr(state, "altitude_ft", 0.0),
+            ahead_nm=ahead_nm, width_nm=10.0)
+        return not hits
+
     def _fly_weather_deviation(self, state) -> None:
         """Fly the lateral limits of an approved weather deviation.
 
@@ -445,8 +474,7 @@ class _Weather:
         clear = True
         if elapsed >= needed:
             try:
-                ahead = self._enroute_weather_plan(state)
-                clear = ahead is None or not ahead.threatening
+                clear = self._weather_rejoin_clear(state, session)
             except Exception:
                 log.debug("weather-deviation completion scan failed",
                           exc_info=True)
