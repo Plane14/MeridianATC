@@ -428,11 +428,12 @@ class _Weather:
         if rejoin and route is not None:
             try:
                 index = self._direct_index(route, rejoin, session, state)
-                if 0 <= index < len(route.fixes):
-                    fix = route.fixes[index]
-                    course = bearing_deg(state.latitude, state.longitude,
-                                         fix.lat, fix.lon)
-                    ahead_nm = min(80.0, state.distance_to(fix.lat, fix.lon) + 10.0)
+                if not 0 <= index < len(route.fixes):
+                    return False
+                fix = route.fixes[index]
+                course = bearing_deg(state.latitude, state.longitude,
+                                     fix.lat, fix.lon)
+                ahead_nm = min(80.0, state.distance_to(fix.lat, fix.lon) + 10.0)
             except Exception:
                 log.debug("weather-deviation rejoin fix resolution failed",
                           exc_info=True)
@@ -479,12 +480,10 @@ class _Weather:
                 log.debug("weather-deviation completion scan failed",
                           exc_info=True)
                 clear = False
-        # "When able" means when the route ahead is clear, not merely when a
-        # timer ran out. A hard upper bound keeps a stale external strategic
-        # polygon from owning the rest of the flight; that fallback is said in
-        # the event rather than silently treated as a precision radar track.
-        timed_out = elapsed >= needed + 600.0
-        if elapsed >= needed and (clear or timed_out):
+        # "When able" means when the rejoin leg ahead is clear, not merely
+        # when a timer ran out. External evidence expires by itself; a clock
+        # is not permission to turn back through a cell still in evidence.
+        if elapsed >= needed and clear:
             rejoin = getattr(session, "weather_deviation_rejoin", "") or ""
             if rejoin:
                 session.route_direct = rejoin
