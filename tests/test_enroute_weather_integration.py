@@ -2,7 +2,11 @@ import time
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+from meridianatc.atc.autonomous import (
+    AutonomousFlight,
+    AutonomousPhase,
+    AutonomousState,
+)
 from meridianatc.atc.session import FlightSession
 from meridianatc.sim.state import AircraftState
 from meridianatc.weather.enroute import HazardCell, RadarPoint
@@ -20,6 +24,7 @@ def test_fo_flies_approved_weather_deviation_heading():
     fo._dir = Mock()
     fo._dir.sim = fo.sim
     fo.state = AutonomousState()
+    fo.state.phase = AutonomousPhase.CRUISE
     state = AircraftState(
         latitude=50.0, longitude=8.0, on_ground=False,
         ground_speed_kt=300.0, track_true=90.0, heading_true=90.0)
@@ -194,7 +199,9 @@ def test_departure_deviate_mode_holds_until_scan_evidence_exists():
 def test_departure_deviate_mode_departs_when_fresh_scan_is_clear():
     fo = _fo_departure_fixture("deviate")
     fo.sim = SimpleNamespace(weather_radar_points=lambda: [
-        RadarPoint(50.0, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time())])
+        RadarPoint(50.03, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time()),
+        RadarPoint(50.11, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time()),
+        RadarPoint(50.21, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time())])
     state = AircraftState(latitude=50.0, longitude=8.0,
                           on_ground=True)
     assert fo._departure_wind_ok(state)
@@ -207,7 +214,9 @@ def test_departure_deviate_mode_holds_when_corridor_has_a_cell():
         _at=time.time(), _key=(50, 8), EXPIRE_S=900.0,
         _key_for=lambda lat, lon: (round(lat), round(lon)))
     fo.sim = SimpleNamespace(weather_radar_points=lambda: [
-        RadarPoint(50.0, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time())])
+        RadarPoint(50.03, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time()),
+        RadarPoint(50.11, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time()),
+        RadarPoint(50.21, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time())])
     cell = HazardCell(50.15, 8.0, 5.0, .8, "test", "cell")
     fo._enroute_weather_cells = lambda state: [cell]
     state = AircraftState(latitude=50.0, longitude=8.0,
@@ -223,3 +232,111 @@ def test_departure_bypass_ignores_cell_but_not_wind_limits():
     fo._wind_limits = lambda: (0.0, 0.0)
     fo._runway_wind = lambda weather, heading: (0.0, 5.0, 0.0)
     assert not fo._departure_wind_ok(state)
+
+
+def test_fo_deviates_immediately_when_close_weather_call_cannot_be_made():
+    from types import SimpleNamespace
+
+    fo = _fo_weather_fixture()
+    plan = SimpleNamespace(threatening=True, nearest_nm=5.0, side="left",
+                           degrees=30, miles_nm=20, source="point-evidence")
+    fo._enroute_weather_plan = lambda state: plan
+    fo._fo_say = Mock(return_value=False)
+    state = AircraftState(latitude=50.0, longitude=8.0, on_ground=False,
+                          track_true=90.0, heading_true=90.0)
+    fo._watch_enroute_convection(state, time.monotonic())
+    assert fo.session.deviating == "approved"
+    assert fo.session.weather_deviation_urgent
+
+
+def test_weather_deviation_clears_when_approach_phase_begins():
+    fo = _fo_weather_fixture()
+    fo.state.phase = AutonomousPhase.APPROACH
+    fo.session.weather_deviation_at = time.monotonic()
+    fo.session.weather_deviation_side = "left"
+    fo.session.weather_deviation_degrees = 30
+    fo.session.weather_deviation_miles_nm = 30
+    fo.session.deviating = "approved"
+    state = AircraftState(latitude=50.0, longitude=8.0, on_ground=False)
+    fo._fly_weather_deviation(state)
+    assert not fo.session.deviating
+    assert not fo.session.weather_deviation_at
+
+
+def test_rejoin_scan_uses_the_leg_to_the_rejoin_fix():
+    from types import SimpleNamespace
+
+    from meridianatc.atc.route import Route, RouteFix
+
+    fo = _fo_weather_fixture()
+    fo.brain = SimpleNamespace(route=Route(
+        fixes=(RouteFix("REJOIN", 51.0, 8.0),), destination="X"))
+    fo.session.weather_deviation_rejoin = "REJOIN"
+    fo.session.weather_deviation_course = 270.0
+    state = AircraftState(latitude=50.0, longitude=8.0, on_ground=False,
+                          track_true=270.0, heading_true=270.0)
+    blocking = HazardCell(50.5, 8.0, 5.0, .8, "test", "cell")
+    fo._enroute_weather_cells = lambda state: [blocking]
+    assert not fo._weather_rejoin_clear(state, fo.session)[0]
+    fo._enroute_weather_cells = lambda state: []
+    assert fo._weather_rejoin_clear(state, fo.session)[0]
+
+
+def test_departure_deviate_sparse_radar_point_is_not_corridor_coverage():
+    fo = _fo_departure_fixture("deviate")
+    fo.sim = SimpleNamespace(weather_radar_points=lambda: [
+        RadarPoint(50.0, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time())])
+    state = AircraftState(latitude=50.0, longitude=8.0, on_ground=True)
+    assert not fo._departure_wind_ok(state)
+
+
+def test_traffic_weather_vector_is_released_on_final():
+    from meridianatc.atc.traffic.x_weather_avoidance import _Weather_avoidance
+
+    traffic = SimpleNamespace(enroute_cells=lambda: [])
+    now = time.monotonic()
+    flight = Mock(
+        observed=False, on_ground=False, positioned=True, phase="final",
+        weather_deviation_until=now + 300.0, weather_scan_at=0.0,
+        assigned_heading=120.0)
+    _Weather_avoidance._avoid_enroute_weather(traffic, flight, now)
+    assert flight.assigned_heading is None
+    assert flight.weather_deviation_until == 0.0
+
+
+def test_rejoin_scan_without_assigned_fix_follows_normal_navigation():
+    from types import SimpleNamespace
+
+    from meridianatc.atc.route import Route, RouteFix
+
+    fo = _fo_weather_fixture()
+    fo.brain = SimpleNamespace(route=Route(
+        fixes=(RouteFix("NEXT", 51.0, 8.0),), destination="X"))
+    fo.session.weather_deviation_rejoin = ""
+    # The pre-deviation course is west and clear; normal navigation resumes
+    # north toward NEXT, where the cell actually lies.
+    fo.session.weather_deviation_course = 270.0
+    state = AircraftState(latitude=50.0, longitude=8.0, on_ground=False,
+                          track_true=270.0, heading_true=270.0)
+    fo._enroute_weather_cells = lambda state: [
+        HazardCell(50.5, 8.0, 5.0, .8, "test", "cell")]
+    assert not fo._weather_rejoin_clear(state, fo.session)[0]
+
+
+def test_stale_rejoin_after_diversion_scans_new_route_and_is_not_directed():
+    from types import SimpleNamespace
+
+    from meridianatc.atc.route import Route, RouteFix
+
+    fo = _fo_weather_fixture()
+    fo.brain = SimpleNamespace(route=Route(
+        fixes=(RouteFix("DIVERT", 51.0, 8.0),), destination="X"))
+    fo.session.weather_deviation_rejoin = "OLDFIX"
+    fo.session.weather_deviation_course = 270.0
+    state = AircraftState(latitude=50.0, longitude=8.0, on_ground=False,
+                          track_true=270.0, heading_true=270.0)
+    fo._enroute_weather_cells = lambda state: [
+        HazardCell(50.5, 8.0, 5.0, .8, "test", "cell")]
+    clear, rejoin_valid = fo._weather_rejoin_clear(state, fo.session)
+    assert not clear
+    assert not rejoin_valid

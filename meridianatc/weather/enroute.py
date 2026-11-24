@@ -348,6 +348,171 @@ def scan_route(cells, lat: float, lon: float, course_true: float,
     return hits, min(1.0, area / corridor)
 
 
+
+def _local_xy(lat: float, lon: float, lat0: float, lon0: float) -> tuple[float, float]:
+    """Small-area east/north nautical-mile coordinates around the aircraft."""
+    lon_delta = (lon - lon0 + 180.0) % 360.0 - 180.0
+    return (lon_delta * 60.0 * math.cos(math.radians(lat0)),
+            (lat - lat0) * 60.0)
+
+
+def _polygon_local_xy(polygon, lat0: float, lon0: float) -> list[tuple[float, float]]:
+    """Project a polygon as one compact shape, unwrapping dateline crossings."""
+    if not polygon:
+        return []
+    unwrapped = [float(polygon[0][1])]
+    for index in range(1, len(polygon)):
+        previous = float(polygon[index - 1][1])
+        current = float(polygon[index][1])
+        delta = (current - previous + 180.0) % 360.0 - 180.0
+        unwrapped.append(unwrapped[-1] + delta)
+    centre = sum(unwrapped) / len(unwrapped)
+    shift = round((lon0 - centre) / 360.0) * 360.0
+    scale = 60.0 * math.cos(math.radians(lat0))
+    return [((u + shift - lon0) * scale, (plat - lat0) * 60.0)
+            for (plat, _plon), u in zip(polygon, unwrapped, strict=True)]
+
+
+def _point_in_polygon_xy(point, vertices) -> bool:
+    x, y = point
+    inside = False
+    j = len(vertices) - 1
+    for i, (xi, yi) in enumerate(vertices):
+        xj, yj = vertices[j]
+        if (yi > y) != (yj > y):
+            crossing = (xj - xi) * (y - yi) / ((yj - yi) or 1e-12) + xi
+            if x < crossing:
+                inside = not inside
+        j = i
+    return inside
+
+
+def _dot(a, b) -> float:
+    return a[0] * b[0] + a[1] * b[1]
+
+
+def _cross(a, b) -> float:
+    return a[0] * b[1] - a[1] * b[0]
+
+
+def _sub(a, b):
+    return (a[0] - b[0], a[1] - b[1])
+
+
+def _point_segment_distance(p, a, b) -> float:
+    ab = _sub(b, a)
+    length2 = _dot(ab, ab)
+    if length2 < 1e-12:
+        return math.hypot(p[0] - a[0], p[1] - a[1])
+    t = max(0.0, min(1.0, _dot(_sub(p, a), ab) / length2))
+    closest = (a[0] + ab[0] * t, a[1] + ab[1] * t)
+    return math.hypot(p[0] - closest[0], p[1] - closest[1])
+
+
+def _ray_edge_intersection(direction, a, b):
+    """Positive ray parameter where an infinite ray crosses segment a-b."""
+    edge = _sub(b, a)
+    denominator = _cross(direction, edge)
+    if abs(denominator) < 1e-12:
+        return None
+    along_ray = _cross(a, edge) / denominator
+    along_edge = _cross(a, direction) / denominator
+    if along_ray >= 0.0 and -1e-9 <= along_edge <= 1.0 + 1e-9:
+        return along_ray
+    return None
+
+
+def _segments_intersect(a, b, c, d) -> bool:
+    def orient(p, q, r):
+        return _cross(_sub(q, p), _sub(r, p))
+
+    o1, o2, o3, o4 = orient(a, b, c), orient(a, b, d), orient(c, d, a), orient(c, d, b)
+    return (o1 * o2 < -1e-12 and o3 * o4 < -1e-12) or \
+        min(_point_segment_distance(c, a, b), _point_segment_distance(d, a, b),
+            _point_segment_distance(a, c, d), _point_segment_distance(b, c, d)) < 1e-9
+
+
+def _segments_distance(a, b, c, d) -> float:
+    if _segments_intersect(a, b, c, d):
+        return 0.0
+    return min(_point_segment_distance(a, c, d), _point_segment_distance(b, c, d),
+               _point_segment_distance(c, a, b), _point_segment_distance(d, a, b))
+
+
+def _circle_course_metrics(center, direction, radius: float, horizon: float):
+    """(inside-now, entry-distance, exit-distance) for a ray and circle."""
+    along = _dot(center, direction)
+    closest2 = max(0.0, _dot(center, center) - along * along)
+    if closest2 > radius * radius:
+        return False, None, None
+    half = math.sqrt(max(0.0, radius * radius - closest2))
+    entry, exit_at = along - half, along + half
+    inside = entry <= 0.0 <= exit_at and math.hypot(*center) <= radius
+    if exit_at < 0.0 or entry > horizon:
+        return inside, None, exit_at if inside else None
+    return inside, max(0.0, entry), max(0.0, exit_at)
+
+
+def _course_geometry_cost(cell: HazardCell, lat: float, lon: float,
+                          course: float, horizon: float) -> float:
+    """Cost of one hazard on one course, with body and clearance separated."""
+    if not cell.polygon and haversine_nm(lat, lon, cell.lat, cell.lon)             > horizon + cell.radius_nm + cell.clearance_nm:
+        return 0.0
+    direction = (math.sin(math.radians(course)), math.cos(math.radians(course)))
+    ray_end = (direction[0] * horizon, direction[1] * horizon)
+    if len(cell.polygon) >= 3:
+        vertices = _polygon_local_xy(cell.polygon, lat, lon)
+        crossings = []
+        clearance_distance = horizon
+        for index, a in enumerate(vertices):
+            b = vertices[(index + 1) % len(vertices)]
+            hit = _ray_edge_intersection(direction, a, b)
+            if hit is not None:
+                crossings.append(hit)
+            clearance_distance = min(clearance_distance,
+                                     _segments_distance((0.0, 0.0), ray_end, a, b))
+        inside = _point_in_polygon_xy((0.0, 0.0), vertices)
+        if inside:
+            ordered = sorted(hit for hit in crossings if hit >= 0.0)
+            unique = []
+            for hit in ordered:
+                if not unique or hit - unique[-1] > 1e-6:
+                    unique.append(hit)
+            # Starting inside, the first crossing is an exit and a second
+            # positive crossing is a re-entry into another part of a concave
+            # polygon. Treat that re-entry as penetration, not as escape time.
+            if len(unique) > 1 and unique[1] <= horizon:
+                return 1000.0 * cell.severity / max(5.0, unique[1] + 5.0)
+            exit_nm = unique[0] if unique else 0.0
+            return cell.severity * (2.0 + min(20.0, exit_nm) / 10.0)
+        body_hits = [hit for hit in crossings if hit <= horizon]
+        if body_hits:
+            entry = max(5.0, min(body_hits) + 5.0)
+            return 1000.0 * cell.severity / entry
+        shortfall = cell.clearance_nm - clearance_distance
+        if shortfall > 0.0:
+            return cell.severity * (shortfall + 1.0) / 10.0
+        return 0.0
+
+    center = _local_xy(cell.lat, cell.lon, lat, lon)
+    body_inside, body_entry, body_exit = _circle_course_metrics(
+        center, direction, cell.radius_nm, horizon)
+    if body_inside:
+        return cell.severity * (2.0 + min(20.0, body_exit or 0.0) / 10.0)
+    if body_entry is not None:
+        return 1000.0 * cell.severity / max(5.0, body_entry + 5.0)
+    expanded = cell.radius_nm + cell.clearance_nm
+    margin_inside, margin_entry, _margin_exit = _circle_course_metrics(
+        center, direction, expanded, horizon)
+    if margin_entry is not None and not margin_inside:
+        closest = math.sqrt(max(0.0, _dot(center, center) - _dot(center, direction) ** 2))
+        edge_distance = max(0.0, closest - cell.radius_nm)
+        shortfall = cell.clearance_nm - edge_distance
+        if shortfall > 0.0:
+            return cell.severity * (shortfall + 1.0) / max(5.0, margin_entry + 5.0)
+    return 0.0
+
+
 def avoidance_plan(cells, lat: float, lon: float, course_true: float,
                    altitude_ft: float = 0.0) -> AvoidancePlan:
     """Choose the safer side and magnitude of a lateral weather deviation."""
@@ -376,13 +541,29 @@ def avoidance_plan(cells, lat: float, lon: float, course_true: float,
     miles = max(15 if severe else 10, min(60, miles))
     degrees = max(20, min(90, int(math.ceil(math.degrees(
         math.atan2(miles, max(25.0, nearest + 20.0))) / 10.0) * 10)))
-    turn = -degrees if side == "left" else degrees
     circumnavigate = coverage >= CIRCUMNAVIGATE_COVERAGE
     if circumnavigate:
         degrees = max(degrees, 60)
-        turn = -degrees if side == "left" else degrees
+
+    def course_cost(course: float) -> float:
+        """Weighted penetration if the proposed deviation heading were flown."""
+        return sum(_course_geometry_cost(cell, lat, lon, course, SCAN_AHEAD_NM)
+                   for cell in cells or ())
+
+    courses = {
+        "left": (course_true - degrees + 360.0) % 360.0,
+        "right": (course_true + degrees + 360.0) % 360.0,
+    }
+    costs = {which: course_cost(course) for which, course in courses.items()}
+    opposite = "right" if side == "left" else "left"
+    # The first side only answers where the nearest cells sit. Check the
+    # heading itself as well: a second cell already inside the scan must not
+    # become the steering course merely because it was farther away.
+    if costs[opposite] < costs[side] * 0.8:
+        side = opposite
+    heading = courses[side]
     return AvoidancePlan(
-        True, side, degrees, miles, (course_true + turn + 360.0) % 360.0,
+        True, side, degrees, miles, heading,
         strongest.reason, strongest.source, nearest, coverage,
         circumnavigate)
 

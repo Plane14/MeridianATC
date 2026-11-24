@@ -5,6 +5,7 @@ from meridianatc.weather.enroute import (
     METERS_TO_FEET,
     HazardCell,
     RadarPoint,
+    _course_geometry_cost,
     avoidance_plan,
     scan_route,
     sigmet_cells,
@@ -140,3 +141,118 @@ def test_scan_route_uses_sigmet_polygon_vertices_not_only_centroid():
                       polygon=polygon)
     hits, _coverage = scan_route([cell], 50.0, 8.0, 0.0, ahead_nm=80.0)
     assert hits == [cell]
+
+
+def test_avoidance_heading_does_not_turn_into_the_next_scanned_cell():
+    # The nearest cell is slightly right of a northbound course, so the
+    # first side choice is left; the second cell sits on that leftward
+    # heading. The executable course must use the rightward escape instead.
+    cells = [
+        HazardCell(50.0 + 20.0 / 60.0, 8.0 + 3.0 / 38.0, 2.0, .5,
+                   "test", "nearest-right"),
+        HazardCell(50.0 + 35.0 / 60.0, 8.0 - 18.0 / 38.0, 2.0, .5,
+                   "test", "leftward-course"),
+    ]
+    plan = avoidance_plan(cells, 50.0, 8.0, 0.0, 30000.0)
+    assert plan.side == "right"
+    assert abs(plan.heading_true - 30.0) < 1e-6
+
+
+def test_avoidance_never_scores_inside_a_cell_as_marginal_clip():
+    # The rightward course is mathematically just inside the far cell's body,
+    # while the leftward course only clips the nearer cell's safety clearance.
+    # Those are not two degrees of the same penalty: the body is forbidden.
+    cells = [
+        HazardCell(0.33206489936391514, -0.029051914249219386,
+                   4.0, .5, "test", "left-clearance-clip"),
+        HazardCell(1.0103629710818451, 0.5833333333333333,
+                   4.0, .5, "test", "right-body penetration"),
+    ]
+    plan = avoidance_plan(cells, 0.0, 0.0, 0.0, 30000.0)
+    assert plan.side == "left"
+    assert abs(plan.heading_true - 330.0) < 1e-6
+
+
+
+def test_course_geometry_ignores_circle_behind_the_ray():
+    # The disk is close enough behind the aircraft that pointwise forward/lateral
+    # approximations can mistake it for a future hit, but a northbound ray never
+    # intersects it.
+    cell = HazardCell(-1.0 / 60.0, 0.1, 5.0, .8, "test", "behind")
+    assert _course_geometry_cost(cell, 0.0, 0.0, 0.0, 80.0) == 0.0
+
+
+def test_course_geometry_uses_polygon_edges_not_inflated_vertices():
+    # Every vertex is east of the northbound track and outside the clearance
+    # margin. Treating each vertex as a circle with the whole cell radius would
+    # invent a penetration that the polygon itself never has.
+    polygon = ((20.0 / 60.0, 10.0 / 60.0),
+               (20.0 / 60.0, 25.0 / 60.0),
+               (30.0 / 60.0, 25.0 / 60.0))
+    cell = HazardCell(.35, .3, 12.0, .5, "test", "polygon", polygon=polygon)
+    assert _course_geometry_cost(cell, 0.0, 0.0, 0.0, 80.0) == 0.0
+
+
+def test_inside_a_cell_still_avoids_the_second_cell_while_escaping():
+    cells = [
+        HazardCell(0.0, 0.0, 5.0, .8, "test", "current-cell"),
+        HazardCell(.25, -26.0 / 60.0, 4.0, .8, "test", "leftward-cell"),
+    ]
+    plan = avoidance_plan(cells, 0.0, 0.0, 0.0, 30000.0)
+    assert plan.side == "right"
+
+
+
+def test_course_geometry_wraps_longitude_across_the_antimeridian():
+    cell = HazardCell(0.0, -179.93, 2.0, .8, "test", "dateline")
+    cost = _course_geometry_cost(cell, 0.0, 179.9, 90.0, 80.0)
+    assert cost > 10.0
+
+
+def test_concave_polygon_reentry_is_penetration_not_escape():
+    # A U-shaped polygon open northward. From the western arm an eastbound
+    # course leaves into the notch but then enters the eastern arm; westbound
+    # is the clean escape.
+    xy = [(-30, -20), (30, -20), (30, 20), (10, 20), (10, 0),
+          (-10, 0), (-10, 20), (-30, 20)]
+    polygon = tuple((y / 60.0, x / 60.0) for x, y in xy)
+    cell = HazardCell(0.0, 0.0, 30.0, .8, "test", "concave",
+                      polygon=polygon)
+    lat, lon = 10.0 / 60.0, -20.0 / 60.0
+    east = _course_geometry_cost(cell, lat, lon, 90.0, 80.0)
+    west = _course_geometry_cost(cell, lat, lon, 270.0, 80.0)
+    assert east > 10.0
+    assert west < 5.0
+
+
+
+def test_far_antimeridian_polygon_does_not_create_a_local_obstacle():
+    # The polygon really is compact around the antimeridian, but the aircraft
+    # is half a world away. Its vertices must not be unwrapped into two false
+    # local extremes with an edge across the aircraft.
+    polygon = ((0.0, 179.9), (0.1, -179.9), (-0.1, -179.9))
+    cell = HazardCell(0.0, 180.0, 15.0, .8, "test", "far-dateline",
+                      polygon=polygon)
+    assert _course_geometry_cost(cell, 0.0, 0.0, 0.0, 80.0) == 0.0
+
+
+def test_concave_polygon_reentry_beyond_scan_horizon_is_not_costed():
+    xy = [(-30, -20), (120, -20), (120, 20), (100, 20), (100, 0),
+          (-10, 0), (-10, 20), (-30, 20)]
+    polygon = tuple((y / 60.0, x / 60.0) for x, y in xy)
+    cell = HazardCell(0.0, 0.0, 120.0, .8, "test", "far-reentry",
+                      polygon=polygon)
+    lat, lon = 10.0 / 60.0, -20.0 / 60.0
+    cost = _course_geometry_cost(cell, lat, lon, 90.0, 80.0)
+    assert cost < 5.0
+
+
+
+def test_polygon_edge_is_costed_even_when_all_vertices_are_far():
+    # A very long, narrow SIGMET edge crosses the eastbound course within two
+    # miles although every vertex is hundreds of miles north or south.
+    polygon = ((-5.0, 2.0 / 60.0), (-5.0, 8.0 / 60.0),
+               (5.0, 8.0 / 60.0), (5.0, 2.0 / 60.0))
+    cell = HazardCell(0.0, 5.0 / 60.0, 80.0, .8, "test", "long-edge",
+                      polygon=polygon)
+    assert _course_geometry_cost(cell, 0.0, 0.0, 90.0, 80.0) > 10.0

@@ -122,19 +122,30 @@ class _Weather:
             self._weather_deviation_requested_at = 0.0
             return
         asked = float(getattr(self, "_weather_deviation_requested_at", 0.0) or 0.0)
+        transmission_failed = False
         if not asked:
             self._weather_deviation_plan = plan
-            if self._fo_say("weather_deviation"):
-                self._weather_deviation_requested_at = now
+            transmitted = self._fo_say("weather_deviation")
+            # Start the clock even when nobody can take the call. Otherwise a
+            # CTAF, a dead frequency, or a congested one would leave the crew
+            # flying into the cell while it waited for a timer that never ran.
+            self._weather_deviation_requested_at = now
+            asked = now
+            if transmitted:
                 self._emit("info",
                            f"Convective weather {plan.nearest_nm:.0f} miles ahead "
                            f"({self._weather_source_label(plan)}): requesting {plan.degrees} degrees {plan.side}",
                            "autonomous.weather.deviation_request")
-            return
+                return
+            transmission_failed = True
         # A quiet frequency is acceptable when the weather is still far away;
         # it is not acceptable with the cell at the windshield. Maneuver and
-        # inform ATC, as the pilot-in-command ultimately must.
-        if now - asked < 18.0 or plan.nearest_nm > 12.0:
+        # inform ATC, as the pilot-in-command ultimately must. When the call
+        # cannot be made at all and the cell is already close, there is no
+        # controller whose answer is worth waiting for.
+        close = plan.nearest_nm <= 12.0
+        if (not transmission_failed or not close) and (
+                now - asked < 18.0 or not close):
             return
         course = float(getattr(state, "track_true", 0.0)
                        or getattr(state, "heading_true", 0.0) or 0.0)
@@ -392,6 +403,84 @@ class _Weather:
                        "Windshear escape: max power, configuration held",
                        "autonomous.weather.windshear_departure")
 
+    @staticmethod
+    def _clear_weather_deviation(session) -> None:
+        session.deviating = ""
+        session.weather_deviation_side = ""
+        session.weather_deviation_degrees = 0
+        session.weather_deviation_miles_nm = 0
+        session.weather_deviation_rejoin = ""
+        session.weather_deviation_at = 0.0
+        session.weather_deviation_course = -1.0
+        session.weather_deviation_urgent = False
+
+    def _weather_route_scan_course(self, state, session) -> tuple[float, float]:
+        """The course and distance normal navigation is about to fly."""
+        course = float(getattr(state, "track_true", 0.0)
+                       or getattr(state, "heading_true", 0.0) or 0.0)
+        ahead_nm = 80.0
+        route = getattr(getattr(self, "brain", None), "route", None)
+        if route is None or not getattr(state, "has_position", False):
+            return course, ahead_nm
+        try:
+            progress = getattr(getattr(self, "brain", None),
+                               "route_progress", None)
+            if progress is None:
+                progress = route.progress(
+                    state.latitude, state.longitude,
+                    float(getattr(state, "ground_speed_kt", 0.0) or 0.0),
+                    hint=getattr(session, "route_direct_index", -1))
+            fix = getattr(progress, "to_fix", None) if progress is not None else None
+            if fix is None:
+                fix = self._direct_destination(route, session)
+            if fix is not None:
+                from ...weather.enroute import bearing_deg
+
+                course = bearing_deg(state.latitude, state.longitude,
+                                     fix.lat, fix.lon)
+                ahead_nm = min(80.0, state.distance_to(fix.lat, fix.lon) + 10.0)
+        except Exception:
+            log.debug("weather route scan course resolution failed",
+                      exc_info=True)
+        return course, ahead_nm
+
+    def _weather_rejoin_clear(self, state, session) -> tuple[bool, bool]:
+        """(clear, rejoin-still-valid) for the navigation leg to resume."""
+        from ...weather.enroute import bearing_deg, scan_route
+
+        ahead_nm = 80.0
+        rejoin = getattr(session, "weather_deviation_rejoin", "") or ""
+        route = getattr(getattr(self, "brain", None), "route", None)
+        rejoin_valid = False
+        course = None
+        if rejoin and route is not None:
+            try:
+                index = self._direct_index(route, rejoin, session, state)
+                if 0 <= index < len(route.fixes):
+                    fix = route.fixes[index]
+                    course = bearing_deg(state.latitude, state.longitude,
+                                         fix.lat, fix.lon)
+                    ahead_nm = min(80.0, state.distance_to(fix.lat, fix.lon) + 10.0)
+                    rejoin_valid = True
+            except Exception:
+                log.debug("weather-deviation rejoin fix resolution failed",
+                          exc_info=True)
+        if course is None:
+            # No assigned fix -- or a diversion that replaced the route the
+            # fix belonged to -- means the scan belongs to the leg normal
+            # navigation will actually fly next, never to the pre-deviation
+            # course frozen at the old position.
+            course, ahead_nm = self._weather_route_scan_course(state, session)
+        try:
+            hits, _coverage = scan_route(
+                self._enroute_weather_cells(state), state.latitude,
+                state.longitude, course, getattr(state, "altitude_ft", 0.0),
+                ahead_nm=ahead_nm, width_nm=10.0)
+            return not hits, rejoin_valid
+        except Exception:
+            log.debug("weather-deviation rejoin scan failed", exc_info=True)
+            return False, rejoin_valid
+
     def _fly_weather_deviation(self, state) -> None:
         """Fly the lateral limits of an approved weather deviation.
 
@@ -405,36 +494,38 @@ class _Weather:
             return
         if getattr(state, "on_ground", True):
             return
+        if self.state.phase not in (AutonomousPhase.CLIMB,
+                                    AutonomousPhase.CRUISE,
+                                    AutonomousPhase.DESCENT):
+            # Once the phase machine is flying the approach, its intercept and
+            # final courses own the aeroplane. A lateral enroute clearance may
+            # not keep replacing them merely because its timer is still running.
+            self._clear_weather_deviation(session)
+            self._emit("info",
+                       "Weather deviation ended: approach guidance has priority",
+                       "autonomous.weather.deviation_ended_for_approach")
+            return
         miles = float(getattr(session, "weather_deviation_miles_nm", 0.0) or 15.0)
         gs = max(80.0, float(getattr(state, "ground_speed_kt", 0.0) or 80.0))
         elapsed = time.monotonic() - float(session.weather_deviation_at)
         needed = miles / gs * 3600.0 + 60.0
         clear = True
+        rejoin_valid = False
         if elapsed >= needed:
             try:
-                ahead = self._enroute_weather_plan(state)
-                clear = ahead is None or not ahead.threatening
+                clear, rejoin_valid = self._weather_rejoin_clear(state, session)
             except Exception:
                 log.debug("weather-deviation completion scan failed",
                           exc_info=True)
                 clear = False
-        # "When able" means when the route ahead is clear, not merely when a
-        # timer ran out. A hard upper bound keeps a stale external strategic
-        # polygon from owning the rest of the flight; that fallback is said in
-        # the event rather than silently treated as a precision radar track.
-        timed_out = elapsed >= needed + 600.0
-        if elapsed >= needed and (clear or timed_out):
+        # "When able" means when the rejoin leg ahead is clear, not merely
+        # when a timer ran out. External evidence expires by itself; a clock
+        # is not permission to turn back through a cell still in evidence.
+        if elapsed >= needed and clear:
             rejoin = getattr(session, "weather_deviation_rejoin", "") or ""
-            if rejoin:
+            if rejoin and rejoin_valid:
                 session.route_direct = rejoin
-            session.deviating = ""
-            session.weather_deviation_side = ""
-            session.weather_deviation_degrees = 0
-            session.weather_deviation_miles_nm = 0
-            session.weather_deviation_rejoin = ""
-            session.weather_deviation_at = 0.0
-            session.weather_deviation_course = -1.0
-            session.weather_deviation_urgent = False
+            self._clear_weather_deviation(session)
             self._fo_say("clear_of_weather")
             self._emit("info",
                        "Clear of the weather deviation: resuming the route",
@@ -681,8 +772,26 @@ class _Weather:
                                        "weather_radar_points", None)
                 if callable(radar_points):
                     try:
-                        evidence = any(wall_now - point.at < 120.0
-                                       for point in radar_points())
+                        from ...weather.enroute import bearing_deg, haversine_nm
+
+                        bins = [False, False, False]
+                        for point in radar_points():
+                            if wall_now - point.at >= 120.0:
+                                continue
+                            dist = haversine_nm(state.latitude, state.longitude,
+                                                point.lat, point.lon)
+                            bearing = bearing_deg(state.latitude, state.longitude,
+                                                  point.lat, point.lon)
+                            rel = math.radians((bearing - course + 180.0) % 360.0 - 180.0)
+                            forward = math.cos(rel) * dist
+                            lateral = math.sin(rel) * dist
+                            if 0.0 <= forward <= 15.0 and abs(lateral) <= 7.0:
+                                bins[min(2, int(forward // 5.0))] = True
+                        # A fresh point somewhere around the aeroplane is not
+                        # corridor coverage. Each five-mile slice of the first
+                        # climb-out corridor needs a fresh sample before empty
+                        # cells may be read as clear air.
+                        evidence = all(bins)
                     except Exception:
                         evidence = False
                 cells = self._enroute_weather_cells(state)
