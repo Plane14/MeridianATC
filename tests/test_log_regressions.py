@@ -4322,3 +4322,136 @@ def test_the_pushback_toggle_is_not_sent_twice_for_one_tug():
     # And a dead link still answers dead.
     source._connected = False
     assert not source.pushback()
+
+
+def test_the_start_crank_is_asked_of_every_engine():
+    """The B350 on MSFS 2024: ``STARTER_SET`` is not an event the sim
+    knows -- it was refused -- so only engine one's ``STARTER1_SET``
+    ever engaged, and the toggle fallback would have killed it again.
+    The ask goes out per engine; the toggle never does."""
+    from meridianatc.atc.ap import FlightDirector
+    sent = []
+
+    class Sim:
+        connected = True
+
+        def _send(self, name, value):
+            sent.append(name)
+            return True
+
+    director = FlightDirector(Sim())
+    assert director.all_starters(True)
+    assert b"TOGGLE_ALL_STARTERS" not in sent
+    for n in (1, 2, 3, 4):
+        assert f"STARTER{n}_SET".encode() in sent
+
+
+def test_the_start_retry_leaves_the_lit_engine_alone():
+    """A re-crank while engine one runs owes only the rest: the
+    autostart sequence is not re-fired over a lit engine."""
+    flight = _flier()
+    flight._prop_levers = Mock()
+    flight._send_event = Mock()
+    state = SimpleNamespace(
+        engine_count=2, engines_running=True,
+        eng2_combustion=False, eng3_combustion=None, eng4_combustion=None)
+    flight._start_engines(state)
+    flight._send_event.assert_not_called()
+    flight.director.all_starters.assert_called_once_with(True)
+    # Nothing lit at all: the autostart is the first move.
+    state.engines_running = False
+    flight._start_engines(state)
+    assert flight._send_event.call_args[0][0] == b"ENGINE_AUTO_START"
+
+
+def test_a_half_started_twin_is_not_done_starting():
+    """Engine one's combustion flag alone used to pass "engines
+    running" -- the B350's number two never lit and the stand moved
+    on regardless. The start is done when every engine the sim
+    reports is combusting."""
+    import time as _time
+
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _taxi_flight(stations=[_gnd()])
+    flight.state.phase = AutonomousPhase.PUSHBACK
+    flight.state.sub = "engines"
+    flight.ENGINE_START_TIMEOUT = 240.0
+    now = _time.monotonic()
+    flight.state.engines_started_at = now - 10.0
+    flight.state.start_asked_at = now - 40.0
+    flight._start_engines = Mock()
+    state = SimpleNamespace(
+        engine_count=2, engines_running=True,
+        eng2_combustion=False, eng3_combustion=None, eng4_combustion=None)
+    flight._phase_pushback(state, now)
+    flight._goto_sub.assert_not_called()
+    flight._start_engines.assert_called_once_with(state)
+    # Both lit: the start is done.
+    state.eng2_combustion = True
+    flight._phase_pushback(state, now + 1.0)
+    flight._goto_sub.assert_called_once_with("after_start")
+
+
+def test_a_running_push_is_toggled_off_not_asked_again():
+    """The release is the same toggle that sent the tug -- so it goes
+    only while a push is actually on, where an idle toggle would
+    start one."""
+    import time as _time
+
+    from meridianatc.sim.source import SimConnectSource
+    source = SimConnectSource.__new__(SimConnectSource)
+    source._connected = True
+    source._push_sent_at = float("-inf")
+    source._state = SimpleNamespace(
+        pushback_wait=False, pushback_attached=True)
+    sent = []
+    source._send = lambda event, data=0: sent.append(event) or True
+    assert source.pushback_stop()
+    assert sent == [b"TOGGLE_PUSHBACK"]
+    # Let go: no tug attached, no ask inside the window -- a toggle
+    # here would start a push, so nothing is sent.
+    source._state.pushback_attached = False
+    assert not source.pushback_stop()
+    assert sent == [b"TOGGLE_PUSHBACK"]
+    # An ask inside its window is a push in hand the stop can end.
+    source._push_sent_at = _time.monotonic()
+    assert source.pushback_stop()
+    assert sent == [b"TOGGLE_PUSHBACK", b"TOGGLE_PUSHBACK"]
+    # And a dead link answers dead.
+    source._connected = False
+    assert not source.pushback_stop()
+
+
+def test_an_open_ended_push_is_let_go_while_it_rolls():
+    """MSFS's tug pushed the King Air tail-first for minutes because
+    nothing ever sent the release: half a minute of rolling is a
+    push long done. But the toggle only goes while the aeroplane is
+    still moving -- sent onto a stand the tug already left, it
+    starts a push."""
+    import time as _time
+
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _taxi_flight(stations=[_gnd()])
+    flight.state.phase = AutonomousPhase.PUSHBACK
+    flight.state.sub = "wait"
+    now = _time.monotonic()
+    flight.state.moved_since_push = True
+    flight.state.push_moved_at = now - 35.0
+    flight.state.still_since = now          # still rolling
+    state = SimpleNamespace(
+        source="simconnect", pushback_wait=False, pushback_attached=True,
+        ground_speed_kt=2.0, on_ground=True)
+    flight._phase_pushback(state, now)
+    flight.director.pushback_stop.assert_called_once()
+    # Stopped ten seconds ago: the completion branch takes it, the
+    # release is not sent.
+    flight = _taxi_flight(stations=[_gnd()])
+    flight.state.phase = AutonomousPhase.PUSHBACK
+    flight.state.sub = "wait"
+    flight.state.moved_since_push = True
+    flight.state.push_moved_at = now - 35.0
+    flight.state.still_since = now - 10.0
+    flight._stand_clear = lambda: (True, "")
+    flight._phase_pushback(state, now)
+    flight.director.pushback_stop.assert_not_called()
+    flight._transition.assert_called_once()

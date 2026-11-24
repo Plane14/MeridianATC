@@ -140,7 +140,9 @@ class _Entry:
             # The levers' latches release last: a lever write re-latches
             # its override, so the handback has to come after them or
             # the quadrant stays the machine's after the FO has let go.
-            d.send(b"RELEASE_OVERRIDES", 0)
+            # Overrides are X-Plane's -- SimConnect has no such event.
+            if getattr(state, "source", "") == "xplane":
+                d.send(b"RELEASE_OVERRIDES", 0)
             d.reset()
         except Exception:
             log.debug("autonomous handoff raised", exc_info=True)

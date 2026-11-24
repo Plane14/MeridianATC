@@ -15,15 +15,16 @@ class SimulatorCapabilities:
     xplane_traffic: bool = False
     flight_axes: bool = False
     # The tug pushes until it is told to stop (X-Plane's ground-ops
-    # commands), rather than a push of fixed length that lets go itself
-    # (SimConnect's PUSHBACK service).
+    # commands, SimConnect's TOGGLE_PUSHBACK -- a toggle the push runs
+    # under until it is sent again), rather than a push of fixed length
+    # that lets go itself.
     pushback_open_ended: bool = False
 
 
 _MANUAL = SimulatorCapabilities("Manual / replay")
 _PROVIDERS = {
     "simconnect": SimulatorCapabilities("Microsoft Flight Simulator", True, True, True, True,
-                                       flight_axes=True),
+                                       flight_axes=True, pushback_open_ended=True),
     "xplane": SimulatorCapabilities("X-Plane 12", live=True, autofly=True, xplane_traffic=True,
                                    flight_axes=True, pushback_open_ended=True),
 }

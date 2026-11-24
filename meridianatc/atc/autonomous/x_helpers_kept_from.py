@@ -115,14 +115,20 @@ class _Helpers_kept_from:
 
     def _start_engines(self, state) -> None:
         """Start engines using starter events."""
+        out, seen = self._engines_out(state)
+        if seen and not out:
+            return
+        # Props forward and mixture rich before the crank -- the
+        # levers a prop start is primed with, and the ones a low
+        # quadrant position would leave the start without.
+        self._prop_levers()
         if not state.engines_running:
-            # Props forward and mixture rich before the crank -- the
-            # levers a prop start is primed with, and the ones a low
-            # quadrant position would leave the start without.
-            self._prop_levers()
+            # The all-engines autostart runs the model's own sequence
+            # where it honours it -- but sent again with one engine
+            # already lit it can cut the sequence short, so a retry
+            # that owes only the rest is starter events alone.
             self._send_event(b"ENGINE_AUTO_START", 1)
-            self.director.starter(True)
-            self.director.all_starters(True)
+        self.director.all_starters(True)
 
     def _release_parking_brake(self) -> None:
         self._send_event(b"PARKING_BRAKE_SET", 0)

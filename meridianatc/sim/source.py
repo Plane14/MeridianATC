@@ -1950,6 +1950,24 @@ class SimConnectSource:
             return True
         return False
 
+    def pushback_stop(self) -> bool:
+        """Let the tug go. ``TOGGLE_PUSHBACK`` is a toggle, so a second
+        send ends the push the first began -- and would start one that is
+        not running, which is why it only goes while a push is actually
+        on: the tug attached or on its way, or the ask still inside its
+        window. A push the tug already let go of is left alone."""
+        if not self._connected:
+            return False
+        state = self._state
+        if not (getattr(state, "pushback_attached", False)
+                or getattr(state, "pushback_wait", False)
+                or time.monotonic() - self._push_sent_at < self.PUSH_ASK_S):
+            return False
+        if self._send(b"TOGGLE_PUSHBACK", 0):
+            self._push_sent_at = float("-inf")
+            return True
+        return False
+
     def swap_com(self, radio: int = 1) -> bool:
         """Swap active and standby, the way the button on the radio does."""
         if not self._connected:

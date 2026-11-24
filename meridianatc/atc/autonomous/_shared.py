@@ -128,8 +128,10 @@ class AutonomousState:
     push_moved_at: float = 0.0
     push_stop_sent: bool = False
     # Engines: when the start was asked for, so a model that never runs
-    # them is an error rather than an endless wait.
+    # them is an error rather than an endless wait -- and when the
+    # cranking was last re-asked, an engine at a time still missing.
     engines_started_at: float = 0.0
+    start_asked_at: float = 0.0
     start_retried: bool = False
     push_retries: int = 0
     # Whether the push is being asked for on the frequency -- an approval

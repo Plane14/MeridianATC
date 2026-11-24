@@ -163,17 +163,21 @@ class _The_phase_machine:
             # The start happens on the brake: an idling twin creeps on
             # its own thrust, and it stays on until the tug is attached.
             d.parking_brake(True)
-            if not state.engines_running:
+            out, seen = self._engines_out(state)
+            if out or not seen:
                 if self.state.engines_started_at == 0.0:
                     self._start_engines(state)
                     self.state.engines_started_at = now
-                elif now - self.state.engines_started_at > 30.0 \
-                        and not self.state.start_retried:
-                    self._start_engines(state)
-                    self.state.start_retried = True
+                    self.state.start_asked_at = now
                 elif now - self.state.engines_started_at > self.ENGINE_START_TIMEOUT:
                     self._set_error("Engine start timed out")
                     return
+                elif now - self.state.start_asked_at > 30.0:
+                    # The re-ask owes only the engines still out: a twin
+                    # whose second engine never lit is cranked again,
+                    # not errored into a one-engine taxi.
+                    self._start_engines(state)
+                    self.state.start_asked_at = now
             else:
                 self._goto_sub("after_start")
 
@@ -233,7 +237,11 @@ class _The_phase_machine:
             # completion below then reads.
             if self.state.moved_since_push and not self.state.push_stop_sent \
                     and capabilities(state.source).pushback_open_ended \
+                    and now - self.state.still_since < 2.0 \
                     and now - self.state.push_moved_at > 30.0:
+                # The release is a toggle on both sims: sent only while
+                # the aeroplane still moves, so a tug already let go is
+                # not toggled back on.
                 self.state.push_stop_sent = True
                 self.director.pushback_stop()
             # The aeroplane moved under the tug, then stopped: the push is
