@@ -514,24 +514,23 @@ class _Ground:
             # it: a controller who cannot see the strip does not clear
             # anybody across it.
             return "runway traffic unknown"
-        # The runway this field is using: the arrival's strip on the way
-        # in, the departure's on the way out. departure_runway stays
-        # populated after touchdown, so the order matters.
-        active = normalize_runway(
-            (session.arrival_runway or session.departure_runway or "")
-            if session.phase in (Phase.LANDED, Phase.TAXI_IN)
-            else (session.departure_runway or session.arrival_runway or ""))
-        if normalize_runway(runway) == active:
-            try:
-                if traffic.runway_occupied(now, runway=runway):
-                    return "runway occupied"
-                if traffic._nearest_arrival_s(None, runway=runway) \
-                        < self.CROSSING_TAKES_S + self.CROSS_CLEAR_S:
-                    return "arrival inside the window"
-            except Exception:
-                log.debug("the runway picture raised", exc_info=True)
-            return ""
-        # Any other runway: nobody lands on it, but somebody can be on it.
+        # Every runway is somebody's runway: the strip is asked directly,
+        # whichever runway this session itself is using. The booking
+        # windows catch a departure cleared but not yet rolling, the
+        # occupancy check catches anything already on it, and the arrival
+        # window is the same margin the AI traffic leaves for its own
+        # crossings.
+        try:
+            if traffic.runway_occupied(now, runway=runway):
+                return "runway occupied"
+            if traffic._nearest_arrival_s(None, runway=runway) \
+                    < self.CROSSING_TAKES_S + self.CROSS_CLEAR_S:
+                return "arrival inside the window"
+        except Exception:
+            log.debug("the runway picture raised", exc_info=True)
+        # And aeroplanes moving on it that the strip answers miss: a
+        # taxiing aircraft partway across is not "on the runway" until it
+        # is, so the layout gets asked too.
         try:
             occupied, _ = traffic.ground_occupancy(layout)
         except Exception:
