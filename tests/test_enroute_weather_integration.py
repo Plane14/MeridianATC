@@ -2,7 +2,11 @@ import time
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from meridianatc.atc.autonomous import AutonomousFlight, AutonomousPhase, AutonomousState
+from meridianatc.atc.autonomous import (
+    AutonomousFlight,
+    AutonomousPhase,
+    AutonomousState,
+)
 from meridianatc.atc.session import FlightSession
 from meridianatc.sim.state import AircraftState
 from meridianatc.weather.enroute import HazardCell, RadarPoint
@@ -195,7 +199,9 @@ def test_departure_deviate_mode_holds_until_scan_evidence_exists():
 def test_departure_deviate_mode_departs_when_fresh_scan_is_clear():
     fo = _fo_departure_fixture("deviate")
     fo.sim = SimpleNamespace(weather_radar_points=lambda: [
-        RadarPoint(50.0, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time())])
+        RadarPoint(50.03, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time()),
+        RadarPoint(50.11, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time()),
+        RadarPoint(50.21, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time())])
     state = AircraftState(latitude=50.0, longitude=8.0,
                           on_ground=True)
     assert fo._departure_wind_ok(state)
@@ -208,7 +214,9 @@ def test_departure_deviate_mode_holds_when_corridor_has_a_cell():
         _at=time.time(), _key=(50, 8), EXPIRE_S=900.0,
         _key_for=lambda lat, lon: (round(lat), round(lon)))
     fo.sim = SimpleNamespace(weather_radar_points=lambda: [
-        RadarPoint(50.0, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time())])
+        RadarPoint(50.03, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time()),
+        RadarPoint(50.11, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time()),
+        RadarPoint(50.21, 8.0, 0.0, 3000.0, 0.1, 0.0, time.time())])
     cell = HazardCell(50.15, 8.0, 5.0, .8, "test", "cell")
     fo._enroute_weather_cells = lambda state: [cell]
     state = AircraftState(latitude=50.0, longitude=8.0,

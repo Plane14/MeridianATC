@@ -735,8 +735,26 @@ class _Weather:
                                        "weather_radar_points", None)
                 if callable(radar_points):
                     try:
-                        evidence = any(wall_now - point.at < 120.0
-                                       for point in radar_points())
+                        from ...weather.enroute import bearing_deg, haversine_nm
+
+                        bins = [False, False, False]
+                        for point in radar_points():
+                            if wall_now - point.at >= 120.0:
+                                continue
+                            dist = haversine_nm(state.latitude, state.longitude,
+                                                point.lat, point.lon)
+                            bearing = bearing_deg(state.latitude, state.longitude,
+                                                  point.lat, point.lon)
+                            rel = math.radians((bearing - course + 180.0) % 360.0 - 180.0)
+                            forward = math.cos(rel) * dist
+                            lateral = math.sin(rel) * dist
+                            if 0.0 <= forward <= 15.0 and abs(lateral) <= 7.0:
+                                bins[min(2, int(forward // 5.0))] = True
+                        # A fresh point somewhere around the aeroplane is not
+                        # corridor coverage. Each five-mile slice of the first
+                        # climb-out corridor needs a fresh sample before empty
+                        # cells may be read as clear air.
+                        evidence = all(bins)
                     except Exception:
                         evidence = False
                 cells = self._enroute_weather_cells(state)
