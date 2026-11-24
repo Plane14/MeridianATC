@@ -376,13 +376,47 @@ def avoidance_plan(cells, lat: float, lon: float, course_true: float,
     miles = max(15 if severe else 10, min(60, miles))
     degrees = max(20, min(90, int(math.ceil(math.degrees(
         math.atan2(miles, max(25.0, nearest + 20.0))) / 10.0) * 10)))
-    turn = -degrees if side == "left" else degrees
     circumnavigate = coverage >= CIRCUMNAVIGATE_COVERAGE
     if circumnavigate:
         degrees = max(degrees, 60)
-        turn = -degrees if side == "left" else degrees
+
+    def course_cost(course: float) -> float:
+        """Weighted penetration if the proposed deviation heading were flown."""
+        horizon = min(SCAN_AHEAD_NM, max(35.0, miles + 20.0))
+        total = 0.0
+        for cell in cells or ():
+            references = [(cell.lat, cell.lon)]
+            if cell.polygon:
+                references.extend(cell.polygon)
+            for ref_lat, ref_lon in references:
+                dist = haversine_nm(lat, lon, ref_lat, ref_lon)
+                bearing = bearing_deg(lat, lon, ref_lat, ref_lon)
+                rel = math.radians(_angle_delta(bearing, course))
+                forward = math.cos(rel) * dist
+                lateral = math.sin(rel) * dist
+                if forward < -cell.radius_nm or forward > horizon:
+                    continue
+                penetration = (cell.radius_nm + cell.clearance_nm) - abs(lateral)
+                if penetration > 0.0:
+                    total += (cell.severity * (penetration + 1.0)
+                              / max(5.0, forward + 5.0))
+                    break
+        return total
+
+    courses = {
+        "left": (course_true - degrees + 360.0) % 360.0,
+        "right": (course_true + degrees + 360.0) % 360.0,
+    }
+    costs = {which: course_cost(course) for which, course in courses.items()}
+    opposite = "right" if side == "left" else "left"
+    # The first side only answers where the nearest cells sit. Check the
+    # heading itself as well: a second cell already inside the scan must not
+    # become the steering course merely because it was farther away.
+    if costs[opposite] < costs[side] * 0.8:
+        side = opposite
+    heading = courses[side]
     return AvoidancePlan(
-        True, side, degrees, miles, (course_true + turn + 360.0) % 360.0,
+        True, side, degrees, miles, heading,
         strongest.reason, strongest.source, nearest, coverage,
         circumnavigate)
 
