@@ -155,3 +155,18 @@ def test_avoidance_heading_does_not_turn_into_the_next_scanned_cell():
     plan = avoidance_plan(cells, 50.0, 8.0, 0.0, 30000.0)
     assert plan.side == "right"
     assert abs(plan.heading_true - 30.0) < 1e-6
+
+
+def test_avoidance_never_scores_inside_a_cell_as_marginal_clip():
+    # The rightward course is mathematically just inside the far cell's body,
+    # while the leftward course only clips the nearer cell's safety clearance.
+    # Those are not two degrees of the same penalty: the body is forbidden.
+    cells = [
+        HazardCell(0.33206489936391514, -0.029051914249219386,
+                   4.0, .5, "test", "left-clearance-clip"),
+        HazardCell(1.0103629710818451, 0.5833333333333333,
+                   4.0, .5, "test", "right-body penetration"),
+    ]
+    plan = avoidance_plan(cells, 0.0, 0.0, 0.0, 30000.0)
+    assert plan.side == "left"
+    assert abs(plan.heading_true - 330.0) < 1e-6

@@ -396,9 +396,17 @@ def avoidance_plan(cells, lat: float, lon: float, course_true: float,
                 lateral = math.sin(rel) * dist
                 if forward < -cell.radius_nm or forward > horizon:
                     continue
-                penetration = (cell.radius_nm + cell.clearance_nm) - abs(lateral)
-                if penetration > 0.0:
-                    total += (cell.severity * (penetration + 1.0)
+                lateral = abs(lateral)
+                if lateral <= cell.radius_nm:
+                    # Entering the cell body is categorically different from
+                    # shaving its safety clearance: no marginal scoring may
+                    # make the inside of a thunderstorm the preferred course.
+                    total += (1000.0 * cell.severity
+                              / max(5.0, forward + 5.0))
+                    break
+                clearance_shortfall = cell.clearance_nm - (lateral - cell.radius_nm)
+                if clearance_shortfall > 0.0:
+                    total += (cell.severity * (clearance_shortfall + 1.0)
                               / max(5.0, forward + 5.0))
                     break
         return total
