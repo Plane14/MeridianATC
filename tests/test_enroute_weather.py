@@ -68,3 +68,40 @@ def test_sigmet_polygon_is_explicit_convection_and_altitude_filtered():
     assert len(cells) == 1
     assert cells[0].contains(50.25, 8.25)
     assert not sigmet_cells(rows, altitude_ft=45000.0)
+
+
+def test_metar_cells_require_explicit_convection_not_plain_rain():
+    from meridianatc.weather.enroute import metar_convective_cells
+
+    rows = [
+        {"lat": 50.0, "lon": 8.0, "icaoId": "EDDF",
+         "rawOb": "EDDF 242050Z 12008KT 9999 FEW040 10/05 Q1015"},
+        {"lat": 50.1, "lon": 8.1, "icaoId": "EDDF",
+         "rawOb": "EDDF 242050Z 12008KT 9999 -RA SCT020 10/05 Q1015"},
+        {"lat": 50.2, "lon": 8.2, "icaoId": "EDDF",
+         "rawOb": "EDDF 242050Z 12008KT 9999 TSRA SCT020CB 10/05 Q1015"},
+        {"lat": 50.3, "lon": 8.3, "icaoId": "EDDF",
+         "rawOb": "EDDF 242050Z 12008KT 9999 VCTS 10/05 Q1015"},
+    ]
+    cells = metar_convective_cells(rows)
+    assert len(cells) == 2
+    assert all(c.source == "awc-metar" for c in cells)
+
+
+def test_awc_dict_coordinates_and_expired_sigmet():
+    now = time.time()
+    row = {
+        "hazard": "TS",
+        "validTimeFrom": now - 100,
+        "validTimeTo": now + 100,
+        "base": 0,
+        "top": 40000,
+        "coords": [
+            {"lon": 8.0, "lat": 50.0}, {"lon": 8.5, "lat": 50.0},
+            {"lon": 8.5, "lat": 50.5}, {"lon": 8.0, "lat": 50.0},
+        ],
+        "rawSigmet": "EMBD TS FCST",
+    }
+    assert len(sigmet_cells([row], altitude_ft=30000)) == 1
+    expired = dict(row, validTimeTo=now - 1000)
+    assert not sigmet_cells([expired], altitude_ft=30000, now=now)

@@ -262,6 +262,25 @@ class _Situation_loop:
             except Exception:
                 log.debug("autonomous flight raised", exc_info=True)
 
+        # A hand-flown pilot still gets the scan as an advisory. The FO's own
+        # scan asks for and flies the deviation when it is flying, so this is
+        # deliberately silent then rather than two crews doing one job.
+        if self.autonomous_flight and not getattr(self.autonomous_flight, "_enabled", False) \
+                and not state.on_ground and state.has_position:
+            try:
+                plan = self.autonomous_flight._enroute_weather_plan(state)
+                if plan is not None and plan.threatening \
+                        and time.monotonic() - getattr(self, "_weather_advice_at", 0.0) > 90.0:
+                    self._weather_advice_at = time.monotonic()
+                    self.emit(
+                        "info",
+                        f"Convective weather about {plan.nearest_nm:.0f} miles ahead "
+                        f"({plan.source}); a deviation {plan.degrees} degrees "
+                        f"{plan.side} looks best",
+                        "weather.enroute.advisory")
+            except Exception:
+                log.debug("manual enroute weather advisory failed", exc_info=True)
+
         if self.config.traffic.enabled:
             # The invented aeroplanes' own switch, read live so the
             # panel's toggle takes effect mid-flight: off drops the ones

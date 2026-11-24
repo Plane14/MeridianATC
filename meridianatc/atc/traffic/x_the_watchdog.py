@@ -229,6 +229,7 @@ class _The_watchdog:
                     continue
             if now > getattr(flight, "expedite_until", 0.0):
                 flight.expedite_until = 0.0
+            self._avoid_enroute_weather(flight, now)
             self._aim(flight)
             fly_step(flight, flight.target, flight.performance, elapsed,
                      self._surface_ft(flight), energy=self.energy_model)

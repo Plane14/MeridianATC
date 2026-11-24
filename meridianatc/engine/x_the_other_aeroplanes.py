@@ -135,6 +135,10 @@ class _The_other_aeroplanes:
             self._follow_ground(station.ident)
 
         now = time.monotonic()
+        if self.autonomous_flight is not None:
+            self.traffic.enroute_cells = (
+                lambda af=self.autonomous_flight, st=state:
+                af._enroute_weather_cells(st))
         # Whatever has fallen due joins the back of the queue. It is not spoken
         # here: the frequency may be busy, and a transmission that cannot be
         # heard has to wait rather than disappear.
@@ -176,12 +180,19 @@ class _The_other_aeroplanes:
             self.centre_traffic = CentreTraffic(self.navdb,
                                                 profile=self.traffic.profile)
         live = self._live_seen() if self.live_feed is not None else []
+        weather_cells = ()
+        if self.autonomous_flight is not None:
+            try:
+                weather_cells = self.autonomous_flight._enroute_weather_cells(state)
+            except Exception:
+                log.debug("centre weather scan failed", exc_info=True)
         try:
             calls = self.centre_traffic.poll(
                 now, station, latitude=state.latitude,
                 longitude=state.longitude, altitude_ft=state.altitude_ft,
                 own_callsign=session.aircraft.callsign.written, live=live,
-                density=self.config.traffic.density)
+                density=self.config.traffic.density,
+                weather_cells=weather_cells)
         except Exception:
             log.debug("the centre's traffic raised", exc_info=True)
             return

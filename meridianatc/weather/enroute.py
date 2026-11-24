@@ -10,8 +10,10 @@ NEXRAD display, and ordinary cloud or rain is never by itself a thunderstorm.
 from __future__ import annotations
 
 import gzip
+import json
 import logging
 import math
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -187,9 +189,8 @@ def metar_convective_cells(raw_reports, now: float | None = None) -> list[Hazard
             continue
         weather = parse_metar(raw)
         text = ((weather.present or "") + " " + raw.split(" RMK", 1)[0]).upper()
-        explicit = weather.cb or any(
-            token in text.split() for token in
-            ("TS", "+TS", "-TS", "VCTS", "TSRA", "+TSRA", "-TSRA", "GR", "+GR", "SQ", "FC"))
+        explicit = weather.cb or bool(re.search(
+            r"(?:^|\s)[-+]?(?:VCTS|TS\w*|GR|SQ|FC)(?:\s|$)|\bCB\d{3}\b", text))
         if not explicit:
             continue
         severe = any(token in text for token in ("+TS", "GR", "SQ", "FC"))
@@ -224,6 +225,9 @@ def _rings_from_geometry(value) -> tuple[tuple[float, float], ...]:
         if kind == "MultiPolygon" and coords and coords[0]:
             return tuple((float(p[1]), float(p[0])) for p in coords[0][0])
     if isinstance(value, (list, tuple)):
+        if value and isinstance(value[0], dict):
+            return tuple((float(p["lat"]), float(p["lon"])) for p in value
+                         if "lat" in p and "lon" in p)
         if value and isinstance(value[0], (int, float)) and len(value) >= 2:
             return ((float(value[1]), float(value[0])),)
         if value and isinstance(value[0], (list, tuple)):
@@ -242,7 +246,15 @@ def sigmet_cells(rows, altitude_ft: float = 0.0,
     for row in rows or ():
         hazard = str(row.get("hazard", "")).upper()
         raw = str(row.get("rawAirSigmet") or row.get("rawSigmet") or "").upper()
-        if hazard != "CONV" and "CONVECTIVE" not in raw and " TS" not in raw:
+        if hazard not in ("CONV", "CONVECTIVE") and "CONVECTIVE" not in raw \
+                and " TS" not in raw:
+            continue
+        now_wall = time.time()
+        valid_from = row.get("validTimeFrom")
+        valid_to = row.get("validTimeTo")
+        if valid_from is not None and now_wall < float(valid_from) - 300.0:
+            continue
+        if valid_to is not None and now_wall > float(valid_to) + 300.0:
             continue
         base = row.get("altitudeLow1", row.get("base"))
         top = row.get("altitudeHi1", row.get("top"))
@@ -250,8 +262,8 @@ def sigmet_cells(rows, altitude_ft: float = 0.0,
                 and (altitude_ft < float(base) - 3000.0
                      or altitude_ft > float(top) + 3000.0):
             continue
-        polygon = _rings_from_geometry(row.get("geometry") or row.get("geom")
-                                       or row.get("coords"))
+        polygon = _rings_from_geometry(row.get("coords") or row.get("geometry")
+                                       or row.get("geom"))
         if len(polygon) < 3:
             continue
         lat = sum(p[0] for p in polygon) / len(polygon)
@@ -403,9 +415,11 @@ class EnrouteWeatherProvider:
                                     timeout=12.0)
         response.raise_for_status()
         data = response.content
+        if not data or response.status_code == 204:
+            return []
         if data[:2] == b"\x1f\x8b":
             data = gzip.decompress(data)
-        return response.json() if data else []
+        return json.loads(data.decode("utf-8")) if data else []
 
     def _fetch(self, lat: float, lon: float, altitude_ft: float) -> None:
         # One degree is approximately sixty miles.  The box covers the scan

@@ -53,6 +53,26 @@ class _Weather:
             provider.update(state.latitude, state.longitude,
                             getattr(state, "altitude_ft", 0.0))
             cells.extend(provider.cells())
+        # Current-point evidence is an immediate corroborating override, not
+        # a scan: hail or a published CB type is convective evidence, while
+        # MSFS rain alone is not. On MSFS the heavy-rain rate has to agree
+        # with a strong world-vertical draft before it is treated as a cell.
+        from ...weather.enroute import HazardCell
+
+        point_hail = float(getattr(state, "hail_ratio", 0.0) or 0.0) > 0.05
+        point_cb = float(getattr(state, "cloud_type_max", 0.0) or 0.0) >= 2.6 \
+            and (float(getattr(state, "turbulence_factor", 0.0) or 0.0) >= 4.0
+                 or int(getattr(state, "ambient_precip_state", 0) or 0) > 0)
+        msfs_convection = getattr(state, "source", "") == "simconnect" \
+            and float(getattr(state, "ambient_precip_rate_mmh", 0.0) or 0.0) >= 4.0 \
+            and abs(float(getattr(state, "ambient_wind_y_kt", 0.0) or 0.0)) >= 8.0
+        if (point_hail or point_cb or msfs_convection) \
+                and getattr(state, "has_position", False):
+            reason = "hail/CB evidence at the aircraft" \
+                if point_hail or point_cb else "heavy rain with a strong vertical draft"
+            cells.append(HazardCell(
+                state.latitude, state.longitude, 5.0, 0.8, "point-evidence",
+                reason, top_ft=float(getattr(state, "altitude_ft", 0.0) or 0.0)))
         return cells
 
     def _enroute_weather_plan(self, state):
@@ -103,8 +123,8 @@ class _Weather:
                 with contextlib.suppress(Exception):
                     self.crew.transmit(text)
             self._emit("info",
-                       f"Convective weather {plan.nearest_nm:.0f} miles ahead: "
-                       f"requesting {plan.degrees} degrees {plan.side}",
+                       f"Convective weather {plan.nearest_nm:.0f} miles ahead "
+                       f"({plan.source}): requesting {plan.degrees} degrees {plan.side}",
                        "autonomous.weather.deviation_request")
             return
         # A quiet frequency is acceptable when the weather is still far away;
@@ -316,7 +336,10 @@ class _Weather:
         """
         if state.on_ground:
             return
-        updraft = abs(getattr(state, "aircraft_wind_y_kt", 0.0) or 0.0)
+        vertical = float(getattr(state, "ambient_wind_y_kt", 0.0) or 0.0) \
+            if "ambient_wind_y_kt" not in getattr(state, "unavailable", ()) \
+            else float(getattr(state, "aircraft_wind_y_kt", 0.0) or 0.0)
+        updraft = abs(vertical)
         if updraft >= 12.0:
             self.state.turbulence_until = now + 30.0
             if not self.state.turbulence_said:
@@ -375,7 +398,7 @@ class _Weather:
         lateral distance has been covered, the route is resumed direct the
         clearance's rejoin fix where one was issued.
         """
-        session = self.session
+        session = getattr(self, "session", None)
         if session is None or not getattr(session, "weather_deviation_at", 0.0):
             return
         if getattr(state, "on_ground", True):
@@ -383,8 +406,22 @@ class _Weather:
         miles = float(getattr(session, "weather_deviation_miles_nm", 0.0) or 15.0)
         gs = max(80.0, float(getattr(state, "ground_speed_kt", 0.0) or 80.0))
         elapsed = time.monotonic() - float(session.weather_deviation_at)
-        needed = miles / gs * 3600.0 + 90.0
+        needed = miles / gs * 3600.0 + 60.0
+        clear = True
         if elapsed >= needed:
+            try:
+                ahead = self._enroute_weather_plan(state)
+                clear = ahead is None or not ahead.threatening
+            except Exception:
+                log.debug("weather-deviation completion scan failed",
+                          exc_info=True)
+                clear = False
+        # "When able" means when the route ahead is clear, not merely when a
+        # timer ran out. A hard upper bound keeps a stale external strategic
+        # polygon from owning the rest of the flight; that fallback is said in
+        # the event rather than silently treated as a precision radar track.
+        timed_out = elapsed >= needed + 600.0
+        if elapsed >= needed and (clear or timed_out):
             rejoin = getattr(session, "weather_deviation_rejoin", "") or ""
             if rejoin:
                 session.route_direct = rejoin
