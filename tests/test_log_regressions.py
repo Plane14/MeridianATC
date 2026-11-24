@@ -1238,8 +1238,12 @@ def test_the_far_ends_hold_is_not_at_the_runway_for_the_takeoff_clearance():
     assert not session.cleared_takeoff
 
 
-def test_the_rules_are_decided_by_the_aircraft_and_the_weather():
+def test_the_rules_are_decided_by_the_aircraft_and_the_weather(monkeypatch):
     """A transport is always IFR; a light aeroplane files by the sky."""
+    # The filing clock is the real one; pin daylight so a run after
+    # sunset does not file the VFR assertions IFR (SERA night rule).
+    monkeypatch.setattr("meridianatc.atc.svfr.is_night",
+                        lambda *a: False)
     flight = _flier()
     flight._aircraft_class = "airliner"
     flight._is_helicopter = False
@@ -1293,10 +1297,12 @@ def test_a_flight_filed_ifr_asks_for_ifr_whatever_the_sky():
     assert flight._ifr_required(SimpleNamespace()) is False
 
 
-def test_a_sim_sourced_sky_still_files_ifr_on_an_imc_metar():
+def test_a_sim_sourced_sky_still_files_ifr_on_an_imc_metar(monkeypatch):
     """A VFR light aeroplane under a real-world overcast files IFR --
     the METAR's ceiling is the paperwork even when the merged weather
     is sim-sourced and its ceiling field is blanked."""
+    monkeypatch.setattr("meridianatc.atc.svfr.is_night",
+                        lambda *a: False)
     flight = _flier()
     flight._aircraft_class = "piston_single"
     flight._is_helicopter = False
@@ -4716,3 +4722,67 @@ def test_no_ground_control_still_answers_a_pushback_ask():
     reply = brain.respond(parsed, session, station, weather)
     assert reply.speak
     assert "push" in reply.text.lower()
+
+
+def test_the_late_acf_icao_rebuilds_the_session():
+    """acf_ICAO answers a read after the session is built: a Baron
+    announced as the saved King Air is rebuilt as soon as the string
+    lands, not whenever a plan adoption next rebuilds it."""
+    from meridianatc.engine.core import Engine
+    engine = Engine.__new__(Engine)
+    engine.session = SimpleNamespace(
+        aircraft=SimpleNamespace(type_code="BE9L"))
+    engine.state = SimpleNamespace(type_code="BE58")
+    engine.begin_session = Mock()
+    engine._reconcile_aircraft()
+    engine.begin_session.assert_called_once()
+
+
+def test_reconcile_leaves_the_matching_and_the_silent_alone():
+    """No rebuild when the sim agrees with the session, or when it has
+    not answered the type string yet."""
+    from meridianatc.engine.core import Engine
+    engine = Engine.__new__(Engine)
+    engine.begin_session = Mock()
+    engine.session = SimpleNamespace(
+        aircraft=SimpleNamespace(type_code="BE58"))
+    engine.state = SimpleNamespace(type_code="BE58")
+    engine._reconcile_aircraft()
+    engine.state = SimpleNamespace(type_code="")
+    engine._reconcile_aircraft()
+    engine.session = None
+    engine.state = SimpleNamespace(type_code="BE58")
+    engine._reconcile_aircraft()
+    engine.begin_session.assert_not_called()
+
+
+def test_night_files_the_light_aeroplane_ifr_outside_the_faa():
+    """The same VMC daylight flight is filed IFR after dark where night
+    VFR is its own rating -- and left VFR where the FAA's rules make
+    night ordinary."""
+    from meridianatc.atc import svfr
+    flight = _flier()
+    flight._aircraft_class = "piston_single"
+    flight._is_helicopter = False
+    flight._request_ifr = True
+    flight.session.ifr = False
+    flight.session.departure = SimpleNamespace(
+        ident="LPPT", lat=38.7, lon=-9.1)
+    flight.session.destination = SimpleNamespace(
+        ident="LPPT", lat=38.7, lon=-9.1)
+    wx = SimpleNamespace(raw="METAR", clouds=[("BKN", 3000)],
+                         visibility_sm=10.0, source="metar")
+    regions = {"region": "icao"}
+    flight.brain = SimpleNamespace(
+        weather_for=lambda ident: wx,
+        region_for=lambda ident: regions["region"],
+        realism=SimpleNamespace(special_vfr=True))
+    flight._get_current_airport = lambda: flight.session.departure
+    old = svfr.is_night
+    svfr.is_night = lambda *a: True
+    try:
+        assert flight._ifr_required(SimpleNamespace()) is True
+        regions["region"] = "faa"
+        assert flight._ifr_required(SimpleNamespace()) is False
+    finally:
+        svfr.is_night = old

@@ -41,7 +41,31 @@ class _State_and_weather:
             if getattr(self, "_state_read_failed", False):
                 log.info("state reads recovered")
             self._state_read_failed = False
+            self._reconcile_aircraft()
         return self.state
+
+    def _reconcile_aircraft(self) -> None:
+        """Rebuild the session when the simulator's type lands on it.
+
+        The identification (``acf_ICAO`` on X-Plane, ``ATC TYPE`` on MSFS)
+        settles a read or two after the connect: a session built before it
+        answers believes the config's saved type -- the stale BE9L the
+        panel announced under a Baron was the fallback never revisited --
+        and it used to stay believed until a plan adoption or a retune
+        happened to begin the session again. Rebuilt the first read the
+        simulator names a type the session is not already believing,
+        which is also how an aircraft swapped mid-flight is picked up.
+        An empty answer is the string not having answered yet, not a
+        type change, and asks for nothing.
+        """
+        session = getattr(self, "session", None)
+        if session is None:
+            return
+        reported = (getattr(self.state, "type_code", "") or "").upper()
+        believed = getattr(getattr(session, "aircraft", None),
+                           "type_code", "") or ""
+        if reported and reported != believed:
+            self.begin_session()
 
     def weather_for(self, airport_ident: str) -> Weather:
         """Current weather at a field.

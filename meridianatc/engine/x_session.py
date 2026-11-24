@@ -138,6 +138,13 @@ class _Session:
                           was=flight.aircraft_type)
             self.config.flight.aircraft_type = self.state.type_code
             flight = self.config.flight
+            try:
+                # The file is corrected too: an in-memory write-back left
+                # the saved type naming the last aeroplane, and every
+                # cold start announced it until the simulator answered.
+                self.config.save()
+            except Exception as exc:
+                log.warning("could not write config.yaml: %s", exc)
 
         departure = self.navdb.airport(flight.departure) if flight.departure else None
         if self.state.has_position:
