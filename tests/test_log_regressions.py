@@ -4507,6 +4507,7 @@ def test_engines_gates_read_every_combustion_flag():
 def test_shutdown_waits_for_the_twin_not_engine_one():
     """A shutdown with number two still lit is not 'engines off'."""
     import time as _time
+
     from meridianatc.atc.autonomous import AutonomousPhase
     flight = _taxi_flight()
     flight.state.phase = AutonomousPhase.SHUTDOWN
@@ -4548,6 +4549,7 @@ def test_throttle_servo_survives_an_engine_out():
 def test_a_stale_push_dispatch_is_the_tug_that_never_came():
     """PUSHBACK WAIT stuck on a dead spawn is not waited out forever."""
     import time as _time
+
     from meridianatc.atc.autonomous import AutonomousPhase
     flight = _taxi_flight()
     flight.state.phase = AutonomousPhase.PUSHBACK
@@ -4571,6 +4573,7 @@ def test_a_stale_push_dispatch_is_the_tug_that_never_came():
 def test_a_creeping_push_is_not_toggled_off_by_the_retry():
     """A retry that lands while the tug creeps cancels the push."""
     import time as _time
+
     from meridianatc.atc.autonomous import AutonomousPhase
     flight = _taxi_flight()
     flight.state.phase = AutonomousPhase.PUSHBACK

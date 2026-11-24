@@ -235,7 +235,7 @@ def test_loss_and_disable_release_integrations_and_keep_position():
 
 def test_xplane_timeout_and_reconnect_on_same_source(link):
     peer, source = link
-    source.disconnect_s = .05
+    source.disconnect_s = .1
     assert source.connect()
     peer.respond = False
     eventually(lambda: not source.connected)

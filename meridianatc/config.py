@@ -1894,6 +1894,12 @@ class ImmersionConfig:
     # the FO departs through the weather and only the demonstrated wind
     # limits still hold it.
     autonomous_departure_hold: bool = True
+    # How a convective departure hold is answered: "hold" waits the cell out,
+    # "deviate" departs only when the first fifteen miles on the runway track
+    # are demonstrably clear, and "bypass" disregards the cell but not the
+    # demonstrated wind limits. The legacy boolean remains for compatibility:
+    # false is read as bypass.
+    autonomous_departure_weather_mode: str = "hold"
     # Whether to use the simulator's AI pilot (AI Control) for parts of the
     # flight the First Officer doesn't explicitly manage. Off by default
     # because it conflicts with explicit autopilot control.
@@ -1987,7 +1993,11 @@ describe(
                                help="set.autonomous_weather_why", **_AUTONOMOUS),
     autonomous_departure_hold=Setting(
         label="set.autonomous_departure_hold",
-        help="set.autonomous_departure_hold_why", **_AUTONOMOUS),
+        help="set.autonomous_departure_hold_why", hidden=True, **_AUTONOMOUS),
+    autonomous_departure_weather_mode=Setting(
+        choices=("hold", "deviate", "bypass"),
+        label="set.autonomous_departure_weather_mode",
+        help="set.autonomous_departure_weather_mode_why", **_AUTONOMOUS),
     autonomous_use_sim_ai=Setting(label="set.autonomous_use_sim_ai",
                                   help="set.autonomous_use_sim_ai_why", **_AUTONOMOUS),
 )

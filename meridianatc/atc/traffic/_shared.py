@@ -237,6 +237,11 @@ class Flight:
     # the phase would otherwise fly, which is what makes an instruction an
     # instruction rather than a suggestion.
     assigned_heading: float | None = None
+    # A weather deviation being flown on that assigned heading: when the
+    # lateral manoeuvre ends. The aeroplane then resumes its own navigation
+    # rather than keeping the avoidance vector for ever.
+    weather_deviation_until: float = 0.0
+    weather_scan_at: float = 0.0
     assigned_altitude_ft: float | None = None
     assigned_speed_kt: float | None = None
     # A downwind being extended: the crew flies past the point they would

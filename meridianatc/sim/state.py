@@ -6,7 +6,6 @@ import math
 import time
 from dataclasses import dataclass, field, make_dataclass
 
-
 # The slots every engine past the first carries: engine one's figures
 # live under the scalar names (engines_running, throttle_pct,
 # fuel_pump_on and the rest), engines two through four are declared in
@@ -503,12 +502,22 @@ class AircraftState(_ExtraEngines):
     # figure an icing call wants.
     ambient_in_cloud: bool = False
     ambient_precip_state: int = 0      # AMBIENT PRECIP STATE bitmask
+    ambient_precip_rate_mmh: float = 0.0
     structural_ice_pct: float = 0.0    # STRUCTURAL ICE PCT
     total_air_temperature_c: float = 15.0
+    # Point evidence where the simulator publishes it: hail on the airframe,
+    # the strongest cloud type blended toward cumulonimbus (0 cirrus, 1
+    # stratus, 2 cumulus, 3 CB), and a 0-10 turbulence figure at the level.
+    hail_ratio: float = 0.0
+    cloud_type_max: float = 0.0
+    turbulence_factor: float = 0.0
+    # World-vertical wind, knots, where the simulator publishes it.  This is
+    # distinct from aircraft_wind_y, which is in the aircraft's own axes and
+    # is contaminated by pitch attitude.
+    ambient_wind_y_kt: float = 0.0
     # The wind in the aeroplane's own axes, knots: X lateral (the
-    # crosswind component on the nose), Y vertical (an up or downdraft is
-    # the only convective evidence the sim publishes), Z longitudinal
-    # (headwind +, tailwind -).
+    # crosswind component on the nose), Y vertical in that axes system,
+    # Z longitudinal (headwind +, tailwind -).
     aircraft_wind_x_kt: float = 0.0
     aircraft_wind_y_kt: float = 0.0
     aircraft_wind_z_kt: float = 0.0

@@ -97,6 +97,12 @@ class OnCentre:
     sector_at: float = 0.0           # when its sector was last looked up
     in_sector: bool = True
     vertical_fpm: float = 0.0
+    # Voice-only weather-deviation state: the lateral manoeuvre is not drawn,
+    # but it is kept so later calls remain consistent.
+    weather_offset_nm: float = 0.0
+    weather_deviation_until: float = 0.0
+    weather_scan_at: float = 0.0
+    weather_done: bool = False
 
 
 def level_for(track: float, near_ft: float, floor_ft: float,
@@ -141,7 +147,7 @@ class CentreTraffic:
 
     def poll(self, now: float, station: Station, *, latitude: float,
              longitude: float, altitude_ft: float, own_callsign: str = "",
-             live=(), density: float = 1.0) -> list[Call]:
+             live=(), density: float = 1.0, weather_cells=()) -> list[Call]:
         """Move the frequency on to ``now`` and return what is due on it."""
         key = f"{station.ident}:{station.mhz:.3f}"
         if key != self._station_key:
@@ -152,6 +158,7 @@ class CentreTraffic:
             self.pending.clear()
             self._sector = self._sector_at(latitude, longitude, altitude_ft)
             self.next_at = now + self.random.uniform(*FIRST_S)
+        self._weather_cells = tuple(weather_cells or ())
         self._own = (own_callsign or "").upper()
         self._used.add(self._own)
         if density > 0:
@@ -200,6 +207,11 @@ class CentreTraffic:
             if one is not None:
                 self.on.append(one)
                 self._check_in(one, now, station)
+                return
+        deviation = [o for o in invented if o.checked_in]
+        for one in deviation:
+            if self._weather_deviation_due(one, now):
+                self._weather_deviation(one, now, station)
                 return
         level = [o for o in invented if o.checked_in]
         if level and self.random.random() < 0.5:
@@ -273,6 +285,59 @@ class CentreTraffic:
         return Flight(written=written, type_code=type_code, aircraft=aircraft,
                       language=language, operator=operator, arriving=False,
                       phase="cruise", on_ground=False)
+
+
+    # -- voice-only weather deviations -------------------------------------
+
+    def _weather_deviation_due(self, one: OnCentre, now: float) -> bool:
+        """Whether this invented centre flight needs a weather-deviation call.
+
+        The flight is not drawn, so nothing is steered; its lateral-offset state
+        is still real state, and the radio exchange must agree with it.
+        """
+        if one.weather_done:
+            return False
+        if one.weather_deviation_until:
+            return now >= one.weather_deviation_until
+        if now - one.weather_scan_at < 25.0 or not self._weather_cells:
+            return False
+        one.weather_scan_at = now
+        from ..weather.enroute import avoidance_plan
+
+        plan = avoidance_plan(self._weather_cells, one.latitude, one.longitude,
+                              one.track, one.level_ft)
+        if not plan.threatening:
+            return False
+        one.weather_offset_nm = float(plan.miles_nm) * (
+            -1.0 if plan.side == "left" else 1.0)
+        one.weather_deviation_until = now + 420.0
+        one._weather_plan = plan
+        return True
+
+    def _weather_deviation(self, one: OnCentre, now: float,
+                           station: Station) -> None:
+        """Say the deviation, or its completion, on the centre frequency."""
+        plan = getattr(one, "_weather_plan", None)
+        if one.weather_deviation_until and now >= one.weather_deviation_until:
+            one.weather_deviation_until = 0.0
+            one.weather_offset_nm = 0.0
+            one._weather_plan = None
+            one.weather_done = True
+            self._exchange(one, now, station, [
+                (True, lambda p, a, s: p.clear_of_weather(a)),
+                (False, lambda c, a, s: f"{a.spoken_short}, roger"),
+            ], "weather deviation complete")
+            return
+        if plan is None:
+            return
+        self._exchange(one, now, station, [
+            (True, lambda p, a, s, plan=plan:
+                p.request_deviation(a, s, plan.degrees, plan.side)),
+            (False, lambda c, a, s, plan=plan:
+                c.deviation_approved(a, plan.degrees, plan.side)),
+            (True, lambda p, a, s, plan=plan:
+                p.deviation(a, plan.degrees, plan.side)),
+        ], "weather deviation")
 
     # -- the real ones ----------------------------------------------------
 

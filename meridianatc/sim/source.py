@@ -750,10 +750,15 @@ class SimConnectSource:
         # on, since it is warmer than ambient at speed.
         ("AMBIENT_IN_CLOUD", "ambient_in_cloud", "bool", "slow"),
         ("AMBIENT_PRECIP_STATE", "ambient_precip_state", "int", "slow"),
+        ("AMBIENT_PRECIP_RATE", "ambient_precip_rate_mmh", "raw", "slow"),
         ("STRUCTURAL_ICE_PCT", "structural_ice_pct", "pct", "slow"),
         ("TOTAL_AIR_TEMPERATURE", "total_air_temperature_c", "raw", "slow"),
-        # The wind in the aeroplane's axes, knots: the only per-second
-        # gust, crosswind and downdraft evidence there is to read.
+        # World-frame vertical wind in m/s, requested as knots by the batch
+        # definition's conversion below: honest updraft evidence, unlike the
+        # aircraft-axes component that pitch attitude contaminates.
+        ("AMBIENT_WIND_Y", "ambient_wind_y_kt", "ms_kt", "slow"),
+        # The wind in the aeroplane's axes, knots: gust, crosswind and
+        # airflow evidence, but not a clean world-vertical downdraft.
         ("AIRCRAFT_WIND_X", "aircraft_wind_x_kt", "raw", "slow"),
         ("AIRCRAFT_WIND_Y", "aircraft_wind_y_kt", "raw", "slow"),
         ("AIRCRAFT_WIND_Z", "aircraft_wind_z_kt", "raw", "slow"),
@@ -1686,6 +1691,8 @@ class SimConnectSource:
             # wrapper's native feet per second; one foot per second is
             # 0.592484 knots (1.94384449 is the metre-per-second factor).
             return float(raw) * 0.592484
+        if kind == "ms_kt":
+            return float(raw) * 1.94384449
         if kind == "m_ft":
             return float(raw) * 3.28084
         if kind == "rankine_c":

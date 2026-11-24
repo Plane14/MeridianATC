@@ -134,10 +134,22 @@ class PilotBook:
     # The answer "say your intentions" gets when the plan is the approach
     # it was cleared for: "continuing approach runway 21".
     continuing_approach: str = "continuing approach runway {runway}"
+    # Convective-weather avoidance: the request, the safety report where no
+    # clearance arrived in time, the readback, and the resume report.
+    request_deviation: str = "request deviation {degrees} degrees {side} for weather"
+    deviating_weather: str = "deviating {side} for weather"
+    deviation_readback: str = "deviation {degrees} degrees {side}"
+    clear_of_weather: str = "clear of weather, resuming course"
+    deviating_course: str = "deviating {side} of course for weather"
 
 
 ENGLISH = PilotBook(
     language="en",
+    deviating_course="deviating {side} of course for weather",
+    request_deviation="request deviation {degrees} degrees {side} for weather",
+    deviating_weather="deviating {side} for weather",
+    deviation_readback="deviation {degrees} degrees {side}",
+    clear_of_weather="clear of weather, resuming course",
     request_clearance="request IFR clearance to {dest}",
     request_clearance_plain="request IFR clearance",
     request_taxi="request taxi",
@@ -183,6 +195,11 @@ ENGLISH = PilotBook(
 
 FRENCH = PilotBook(
     language="fr",
+    deviating_course="déviation à {side} de la route pour météo",
+    request_deviation="demande déviation de {degrees} degrés à {side} pour météo",
+    deviating_weather="dévions à {side} pour météo",
+    deviation_readback="déviation de {degrees} degrés à {side}",
+    clear_of_weather="clair de la météo, reprise de route",
     cleared_approach="autorisés approche {approach} piste {runway}",
     request_clearance="demande la clairance IFR pour {dest}",
     request_clearance_plain="demande la clairance IFR",
@@ -243,6 +260,11 @@ FRENCH = PilotBook(
 
 SPANISH = PilotBook(
     language="es",
+    deviating_course="desviando a la {side} de la ruta por meteorología",
+    request_deviation="solicito desviación de {degrees} grados a la {side} por meteorología",
+    deviating_weather="desviando a la {side} por meteorología",
+    deviation_readback="desviación de {degrees} grados a la {side}",
+    clear_of_weather="fuera de la meteorología, reanudando ruta",
     cleared_approach="autorizados aproximación {approach} pista {runway}",
     request_clearance="solicito autorización IFR para {dest}",
     request_clearance_plain="solicito autorización IFR",
@@ -302,6 +324,11 @@ SPANISH = PilotBook(
 
 GERMAN = PilotBook(
     language="de",
+    deviating_course="weichen {side} der Strecke wegen Wetter aus",
+    request_deviation="erbitte Ausweichen {degrees} Grad {side} wegen Wetter",
+    deviating_weather="weichen {side} wegen Wetter aus",
+    deviation_readback="Ausweichen {degrees} Grad {side}",
+    clear_of_weather="frei vom Wetter, setzen Kurs fort",
     cleared_approach="freigegeben {approach} Anflug Piste {runway}",
     request_clearance="erbitte IFR Freigabe nach {dest}",
     request_clearance_plain="erbitte IFR Freigabe",
@@ -361,6 +388,11 @@ GERMAN = PilotBook(
 
 ITALIAN = PilotBook(
     language="it",
+    deviating_course="deviando a {side} della rotta per maltempo",
+    request_deviation="chiedo deviazione di {degrees} gradi a {side} per maltempo",
+    deviating_weather="deviamo a {side} per maltempo",
+    deviation_readback="deviazione di {degrees} gradi a {side}",
+    clear_of_weather="fuori dal maltempo, riprendiamo la rotta",
     cleared_approach="autorizzati avvicinamento {approach} pista {runway}",
     request_clearance="chiedo autorizzazione IFR per {dest}",
     request_clearance_plain="chiedo autorizzazione IFR",
@@ -419,6 +451,11 @@ ITALIAN = PilotBook(
 
 PORTUGUESE = PilotBook(
     language="pt",
+    deviating_course="desviando à {side} da rota devido a meteorologia",
+    request_deviation="peço desvio de {degrees} graus à {side} devido a meteorologia",
+    deviating_weather="desviando à {side} devido a meteorologia",
+    deviation_readback="desvio de {degrees} graus à {side}",
+    clear_of_weather="livre da meteorologia, retomando a rota",
     cleared_approach="autorizados aproximação {approach} pista {runway}",
     request_clearance="peço autorização IFR para {dest}",
     request_clearance_plain="peço autorização IFR",
@@ -657,21 +694,27 @@ class PilotSpeech:
 
     def checking_in(self, aircraft: Aircraft, station: str, altitude_ft: float,
                     climbing: bool, atis_letter: str = "",
-                    type_name: str = "") -> str:
+                    type_name: str = "", deviating_side: str = "") -> str:
         frame = (self.book.checking_in_climbing if climbing
                  else self.book.checking_in_descending)
         body = frame.format(altitude=self.p.alt(altitude_ft))
+        if deviating_side:
+            body += ", " + self.book.deviating_course.format(
+                side=self.p.side(deviating_side))
         return self.call(aircraft, station,
                          self._first_call(body, type_name, atis_letter),
                          greeting=True)
 
     def maintaining(self, aircraft: Aircraft, station: str,
-                    altitude_ft: float) -> str:
+                    altitude_ft: float, deviating_side: str = "") -> str:
         """Checking in level: "Maastricht Radar, Speedbird four two one,
         flight level three five zero" -- the level alone, as a check-in
         at cruise is said in every language here."""
-        return self.call(aircraft, station, self.p.alt(altitude_ft),
-                         greeting=True)
+        body = self.p.alt(altitude_ft)
+        if deviating_side:
+            body += ", " + self.book.deviating_course.format(
+                side=self.p.side(deviating_side))
+        return self.call(aircraft, station, body, greeting=True)
 
     def established(self, aircraft: Aircraft, runway: str) -> str:
         return self.report(
@@ -743,6 +786,28 @@ class PilotSpeech:
     def option(self, aircraft: Aircraft, runway: str) -> str:
         return self.report(
             aircraft, self.book.option.format(runway=self.p.rwy(runway)))
+
+    def request_deviation(self, aircraft: Aircraft, station: str,
+                          degrees: int, side: str) -> str:
+        """The IFR weather-avoidance request: direction and magnitude before
+        manoeuvring, because the cleared route is not the crew's to leave."""
+        body = self.book.request_deviation.format(
+            degrees=str(int(degrees)), side=self.p.side(side))
+        return self.call(aircraft, station, body)
+
+    def deviating_weather(self, aircraft: Aircraft, side: str) -> str:
+        """The emergency report made while manoeuvring when the weather is at
+        the windshield and no ATC answer has arrived."""
+        return self.report(aircraft, self.book.deviating_weather.format(
+            side=self.p.side(side)))
+
+    def deviation(self, aircraft: Aircraft, degrees: int, side: str) -> str:
+        """The approved lateral deviation, read back with its limits."""
+        return self.report(aircraft, self.book.deviation_readback.format(
+            degrees=str(int(degrees)), side=self.p.side(side)))
+
+    def clear_of_weather(self, aircraft: Aircraft) -> str:
+        return self.report(aircraft, self.book.clear_of_weather)
 
     # ------------------------------------------------------------------
     # readbacks

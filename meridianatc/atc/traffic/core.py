@@ -40,11 +40,12 @@ from .x_the_ones_standing import _The_ones_standing
 from .x_the_passing_ones import _The_passing_ones
 from .x_the_tower_watching import _The_tower_watching
 from .x_the_watchdog import _The_watchdog
+from .x_weather_avoidance import _Weather_avoidance
 from .x_what_the_pilot import _What_the_pilot
 from .x_where_it_is import _Where_it_is
 
 
-class TrafficInjector(_The_field, _Flying_them, _What_the_pilot, _Making_aeroplanes, _The_ones_standing, _The_passing_ones, _An_aeroplane_asked, _Test_tools_traffic, _The_ground_driven, _Running_them, _The_watchdog, _Instructions_and_being, _The_aeroplane_the, _Aeroplanes_somebody_else, _The_live_ones, _The_tower_watching, _Departures, _Where_it_is, _Arrivals, PilotsTalking, _Putting_words_together, _Small_facts_about):
+class TrafficInjector(_The_field, _Flying_them, _What_the_pilot, _Making_aeroplanes, _The_ones_standing, _The_passing_ones, _An_aeroplane_asked, _Test_tools_traffic, _The_ground_driven, _Running_them, _The_watchdog, _Weather_avoidance, _Instructions_and_being, _The_aeroplane_the, _Aeroplanes_somebody_else, _The_live_ones, _The_tower_watching, _Departures, _Where_it_is, _Arrivals, PilotsTalking, _Putting_words_together, _Small_facts_about):
     """Runs the other aeroplanes on the frequency.
 
     The engine calls :meth:`poll` on the situation loop and speaks whatever
