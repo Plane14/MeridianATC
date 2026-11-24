@@ -277,9 +277,9 @@ def test_rejoin_scan_uses_the_leg_to_the_rejoin_fix():
                           track_true=270.0, heading_true=270.0)
     blocking = HazardCell(50.5, 8.0, 5.0, .8, "test", "cell")
     fo._enroute_weather_cells = lambda state: [blocking]
-    assert not fo._weather_rejoin_clear(state, fo.session)
+    assert not fo._weather_rejoin_clear(state, fo.session)[0]
     fo._enroute_weather_cells = lambda state: []
-    assert fo._weather_rejoin_clear(state, fo.session)
+    assert fo._weather_rejoin_clear(state, fo.session)[0]
 
 
 def test_departure_deviate_sparse_radar_point_is_not_corridor_coverage():
@@ -302,3 +302,41 @@ def test_traffic_weather_vector_is_released_on_final():
     _Weather_avoidance._avoid_enroute_weather(traffic, flight, now)
     assert flight.assigned_heading is None
     assert flight.weather_deviation_until == 0.0
+
+
+def test_rejoin_scan_without_assigned_fix_follows_normal_navigation():
+    from types import SimpleNamespace
+
+    from meridianatc.atc.route import Route, RouteFix
+
+    fo = _fo_weather_fixture()
+    fo.brain = SimpleNamespace(route=Route(
+        fixes=(RouteFix("NEXT", 51.0, 8.0),), destination="X"))
+    fo.session.weather_deviation_rejoin = ""
+    # The pre-deviation course is west and clear; normal navigation resumes
+    # north toward NEXT, where the cell actually lies.
+    fo.session.weather_deviation_course = 270.0
+    state = AircraftState(latitude=50.0, longitude=8.0, on_ground=False,
+                          track_true=270.0, heading_true=270.0)
+    fo._enroute_weather_cells = lambda state: [
+        HazardCell(50.5, 8.0, 5.0, .8, "test", "cell")]
+    assert not fo._weather_rejoin_clear(state, fo.session)[0]
+
+
+def test_stale_rejoin_after_diversion_scans_new_route_and_is_not_directed():
+    from types import SimpleNamespace
+
+    from meridianatc.atc.route import Route, RouteFix
+
+    fo = _fo_weather_fixture()
+    fo.brain = SimpleNamespace(route=Route(
+        fixes=(RouteFix("DIVERT", 51.0, 8.0),), destination="X"))
+    fo.session.weather_deviation_rejoin = "OLDFIX"
+    fo.session.weather_deviation_course = 270.0
+    state = AircraftState(latitude=50.0, longitude=8.0, on_ground=False,
+                          track_true=270.0, heading_true=270.0)
+    fo._enroute_weather_cells = lambda state: [
+        HazardCell(50.5, 8.0, 5.0, .8, "test", "cell")]
+    clear, rejoin_valid = fo._weather_rejoin_clear(state, fo.session)
+    assert not clear
+    assert not rejoin_valid

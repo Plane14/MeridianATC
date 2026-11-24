@@ -414,35 +414,72 @@ class _Weather:
         session.weather_deviation_course = -1.0
         session.weather_deviation_urgent = False
 
-    def _weather_rejoin_clear(self, state, session) -> bool:
-        """Whether the leg back to the clearance's rejoin fix is clear."""
-        from ...weather.enroute import bearing_deg, scan_route
-
-        course = float(getattr(session, "weather_deviation_course", -1.0) or -1.0)
-        if course < 0.0:
-            course = float(getattr(state, "track_true", 0.0)
-                           or getattr(state, "heading_true", 0.0) or 0.0)
+    def _weather_route_scan_course(self, state, session) -> tuple[float, float]:
+        """The course and distance normal navigation is about to fly."""
+        course = float(getattr(state, "track_true", 0.0)
+                       or getattr(state, "heading_true", 0.0) or 0.0)
         ahead_nm = 80.0
-        rejoin = getattr(session, "weather_deviation_rejoin", "") or ""
         route = getattr(getattr(self, "brain", None), "route", None)
-        if rejoin and route is not None:
-            try:
-                index = self._direct_index(route, rejoin, session, state)
-                if not 0 <= index < len(route.fixes):
-                    return False
-                fix = route.fixes[index]
+        if route is None or not getattr(state, "has_position", False):
+            return course, ahead_nm
+        try:
+            progress = getattr(getattr(self, "brain", None),
+                               "route_progress", None)
+            if progress is None:
+                progress = route.progress(
+                    state.latitude, state.longitude,
+                    float(getattr(state, "ground_speed_kt", 0.0) or 0.0),
+                    hint=getattr(session, "route_direct_index", -1))
+            fix = getattr(progress, "to_fix", None) if progress is not None else None
+            if fix is None:
+                fix = self._direct_destination(route, session)
+            if fix is not None:
+                from ...weather.enroute import bearing_deg
+
                 course = bearing_deg(state.latitude, state.longitude,
                                      fix.lat, fix.lon)
                 ahead_nm = min(80.0, state.distance_to(fix.lat, fix.lon) + 10.0)
+        except Exception:
+            log.debug("weather route scan course resolution failed",
+                      exc_info=True)
+        return course, ahead_nm
+
+    def _weather_rejoin_clear(self, state, session) -> tuple[bool, bool]:
+        """(clear, rejoin-still-valid) for the navigation leg to resume."""
+        from ...weather.enroute import bearing_deg, scan_route
+
+        ahead_nm = 80.0
+        rejoin = getattr(session, "weather_deviation_rejoin", "") or ""
+        route = getattr(getattr(self, "brain", None), "route", None)
+        rejoin_valid = False
+        course = None
+        if rejoin and route is not None:
+            try:
+                index = self._direct_index(route, rejoin, session, state)
+                if 0 <= index < len(route.fixes):
+                    fix = route.fixes[index]
+                    course = bearing_deg(state.latitude, state.longitude,
+                                         fix.lat, fix.lon)
+                    ahead_nm = min(80.0, state.distance_to(fix.lat, fix.lon) + 10.0)
+                    rejoin_valid = True
             except Exception:
                 log.debug("weather-deviation rejoin fix resolution failed",
                           exc_info=True)
-                return False
-        hits, _coverage = scan_route(
-            self._enroute_weather_cells(state), state.latitude,
-            state.longitude, course, getattr(state, "altitude_ft", 0.0),
-            ahead_nm=ahead_nm, width_nm=10.0)
-        return not hits
+        if course is None:
+            # No assigned fix -- or a diversion that replaced the route the
+            # fix belonged to -- means the scan belongs to the leg normal
+            # navigation will actually fly next, never to the pre-deviation
+            # course frozen at the old position.
+            course, ahead_nm = self._weather_route_scan_course(state, session)
+        try:
+            hits, _coverage = scan_route(
+                self._enroute_weather_cells(state), state.latitude,
+                state.longitude, course, getattr(state, "altitude_ft", 0.0),
+                ahead_nm=ahead_nm, width_nm=10.0)
+            return not hits, rejoin_valid
+        except Exception:
+            log.debug("weather-deviation rejoin scan failed", exc_info=True)
+            return False, rejoin_valid
 
     def _fly_weather_deviation(self, state) -> None:
         """Fly the lateral limits of an approved weather deviation.
@@ -473,9 +510,10 @@ class _Weather:
         elapsed = time.monotonic() - float(session.weather_deviation_at)
         needed = miles / gs * 3600.0 + 60.0
         clear = True
+        rejoin_valid = False
         if elapsed >= needed:
             try:
-                clear = self._weather_rejoin_clear(state, session)
+                clear, rejoin_valid = self._weather_rejoin_clear(state, session)
             except Exception:
                 log.debug("weather-deviation completion scan failed",
                           exc_info=True)
@@ -485,7 +523,7 @@ class _Weather:
         # is not permission to turn back through a cell still in evidence.
         if elapsed >= needed and clear:
             rejoin = getattr(session, "weather_deviation_rejoin", "") or ""
-            if rejoin:
+            if rejoin and rejoin_valid:
                 session.route_direct = rejoin
             self._clear_weather_deviation(session)
             self._fo_say("clear_of_weather")
