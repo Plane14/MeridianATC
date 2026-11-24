@@ -1072,7 +1072,13 @@ class Phraseology:
 
     def special_vfr_unable(self, aircraft: Aircraft, reason: str,
                            station: str = "") -> str:
-        """Special VFR refused, and why. UNVERIFIED: the words."""
+        """Special VFR refused, and why.
+
+        The night refusal is the rule's: FAA 91.157(b) wants an
+        instrument-rated pilot and an IFR-equipped aeroplane for SVFR
+        after dark, and SERA.5010 keeps night VFR to a rating of its
+        own -- the words the refusal is said in are not a printed form.
+        """
         why = {"visibility": "visibility below minimums" if self.region == "faa"
                else "visibility below minima",
                "ceiling": "ceiling below minima",
@@ -1118,9 +1124,9 @@ class Phraseology:
                       altitude_ft: float, pressure: float,
                       direction: str = "left") -> str:
         """The overhead join, where it is the standard way in (the UK's
-        Standard Overhead Join; CAP 413). UNVERIFIED: the order of the
-        items; the altitude is two thousand feet above the field, given on
-        the QNH."""
+        Standard Overhead Join; CAP 413, whose figure it is -- two
+        thousand feet above the field on the QNH). UNVERIFIED: the order
+        of the items."""
         return _join(self.addressed(aircraft, station),
                      f"join overhead runway {self.rwy(runway)}",
                      self.vfr_alt(altitude_ft), self.pressure(pressure),
@@ -1353,7 +1359,12 @@ class Phraseology:
 
     def hold_sequence(self, aircraft: Aircraft, number: int, efc_hhmm: str) -> str:
         """The place in the sequence and the new time, when they change.
-        UNVERIFIED: the sentence."""
+
+        "Expect further clearance (at) (time)" is the documented onward-
+        clearance clause (JO 7110.65 4-6-7; Doc 4444 the same words).
+        UNVERIFIED: "number (one)" for the place in line, which is what
+        centres say and not what either manual prints.
+        """
         at = "" if self.dialect == "faa" else "at "
         return _join(aircraft.spoken(True), f"number {sp.cardinal(number)}",
                      f"expect further clearance {at}{self.d(efc_hhmm)}") + "."
@@ -1585,7 +1596,10 @@ class Phraseology:
         return ", ".join(parts)
 
     def runway_wet(self) -> str:
-        # UNVERIFIED: the words, and that rain at the field means it.
+        # FAA JO 7110.65 3-3-4 carries braking-action and surface-condition
+        # advisories on the takeoff and landing clearances; "runway (number)
+        # wet" is the plain form. UNVERIFIED: that rain at the field means
+        # it -- the wet is inferred, not read off a report.
         return "runway wet"
 
     def traffic_no_factor(self, aircraft: Aircraft) -> str:
@@ -2639,7 +2653,9 @@ class Phraseology:
         nearly caught: the same clauses after "confirm" (Doc 4444 12.3.1.1,
         "CONFIRM (clearance, instruction ...)") or the FAA's "verify",
         rather than "negative" to a pilot who may well have said it right.
-        UNVERIFIED: either side's wording for a readback in doubt.
+        The refusal itself is documented: Doc 4444's readback procedure
+        answers a wrong readback NEGATIVE and repeats the item, and
+        "read back" is the re-ask both sides end it with.
         """
         if confirm and list(wrong) == ["sid"]:
             return self.confirm_departure(aircraft, values["sid"])

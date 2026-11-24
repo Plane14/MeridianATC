@@ -47,6 +47,7 @@ from ..navdata.build import project
 from ..navdata.db import Station
 from .callsigns import every_language
 from .language import phraseology_for
+from .local_time import field_hour
 from .operators import by_icao, roster_for
 from .phraseology import Aircraft, wake_suffix
 from .pilot import PilotSpeech
@@ -416,6 +417,7 @@ class CentreTraffic:
         language = flight.language
         phrase = self._phrase(language, station.ident)
         pilot = PilotSpeech(language, phrase)
+        pilot.hour = field_hour(one.longitude)
         name = station.callsign_in(language)
         self._exchanges += 1
         calls: list[Call] = []

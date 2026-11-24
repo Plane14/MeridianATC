@@ -3,6 +3,7 @@ from __future__ import annotations
 from ._shared import (
     AutonomousPhase,
 )
+from ...sim.state import combustion
 
 
 class _Emergencies:
@@ -189,10 +190,7 @@ class _Emergencies:
         is an engine once the sim has shown it combusting; a flag
         that has never once been up is no evidence of a failure.
         """
-        flags = (getattr(state, "engines_running", None),
-                 getattr(state, "eng2_combustion", None),
-                 getattr(state, "eng3_combustion", None),
-                 getattr(state, "eng4_combustion", None))
+        flags = combustion(state)
         live = getattr(self, "_engines_live", None)
         if live is None:
             live = self._engines_live = set()

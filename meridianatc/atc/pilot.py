@@ -67,6 +67,20 @@ class PilotBook:
     # in them, because a controller telling a pilot what to say cannot know the
     # runway or the level the pilot is about to give it.
     hello: str = ""
+    # The same greeting under the clock's names, where the language has
+    # them: buenos días the morning, buenas tardes the afternoon, buenas
+    # noches the night -- and bonjour the day long in French, which has
+    # only bonsoir for the dark. An empty slot falls back to ``hello``.
+    hello_morning: str = ""
+    hello_afternoon: str = ""
+    hello_evening: str = ""
+    # The hours the greeting changes on: before ``morning_until`` is the
+    # morning's word, from ``evening_from`` the evening's, between them
+    # the afternoon's. They are the day's real borders in each language,
+    # not a tidy twelve and six -- buenas tardes runs on to nine at
+    # night, and buonasera starts with the afternoon.
+    morning_until: float = 12.0
+    evening_from: float = 18.0
     check_in: str = ""
     request_vfr_departure: str = ""
     request_pushback: str = ""
@@ -150,6 +164,11 @@ ENGLISH = PilotBook(
     wilco="wilco",
     good_day="good day",
     hello="good day",
+    hello_morning="good morning",
+    hello_afternoon="good afternoon",
+    hello_evening="good evening",
+    morning_until=12.0,
+    evening_from=17.0,
     check_in="with you",
     request_vfr_departure="request VFR departure",
     request_pushback="request pushback",
@@ -197,6 +216,11 @@ FRENCH = PilotBook(
     wilco="wilco",
     good_day="bonne journée",
     hello="bonjour",
+    hello_morning="bonjour",
+    hello_afternoon="bonjour",
+    hello_evening="bonsoir",
+    morning_until=12.0,
+    evening_from=18.0,
     check_in="pour vous",
     request_vfr_departure="demande un départ VFR",
     request_pushback="demande le repoussage",
@@ -252,6 +276,11 @@ SPANISH = PilotBook(
     wilco="wilco",
     good_day="buen día",
     hello="buenos días",
+    hello_morning="buenos días",
+    hello_afternoon="buenas tardes",
+    hello_evening="buenas noches",
+    morning_until=13.0,
+    evening_from=21.0,
     check_in="le escuchamos",
     request_vfr_departure="solicito salida VFR",
     request_pushback="solicito retroceso",
@@ -306,6 +335,11 @@ GERMAN = PilotBook(
     wilco="wilco",
     good_day="schönen Tag",
     hello="guten Tag",
+    hello_morning="guten Morgen",
+    hello_afternoon="guten Tag",
+    hello_evening="guten Abend",
+    morning_until=11.0,
+    evening_from=18.0,
     check_in="bei Ihnen",
     request_vfr_departure="erbitte VFR Abflug",
     request_pushback="erbitte Pushback",
@@ -360,6 +394,10 @@ ITALIAN = PilotBook(
     wilco="wilco",
     good_day="buona giornata",
     hello="buongiorno",
+    hello_morning="buongiorno",
+    hello_evening="buonasera",
+    morning_until=14.0,
+    evening_from=14.0,
     check_in="con voi",
     request_vfr_departure="chiedo partenza VFR",
     request_pushback="chiedo push back",
@@ -414,6 +452,11 @@ PORTUGUESE = PilotBook(
     wilco="wilco",
     good_day="bom dia",
     hello="bom dia",
+    hello_morning="bom dia",
+    hello_afternoon="boa tarde",
+    hello_evening="boa noite",
+    morning_until=12.0,
+    evening_from=19.0,
     check_in="convosco",
     request_vfr_departure="peço partida VFR",
     request_pushback="peço push back",
@@ -455,6 +498,12 @@ class PilotSpeech:
         # and at an uncontrolled field, where every call goes to the same
         # traffic frequency, greeting each one sounds like a stuck record.
         self.greet = True
+        # The field's own hour (``atc.local_time.field_hour``), set by
+        # whoever owns the traffic: the greeting it picks is the
+        # language's own -- buenas tardes is the afternoon's, bonsoir
+        # the evening's. None where no clock was plumbed in, which is
+        # the book's plain hello, unchanged.
+        self.hour: float | None = None
 
     @property
     def language(self) -> str:
@@ -477,10 +526,30 @@ class PilotSpeech:
         aeroplanes that never says good morning sounds like a machine.
         """
         parts = [station, self._sign(aircraft)]
-        if greeting and self.greet and self.book.hello:
-            parts.append(self.book.hello)
+        if greeting and self.greet:
+            hello = self._hello()
+            if hello:
+                parts.append(hello)
         parts.append(body)
         return _join(*parts) + "."
+
+    def _hello(self) -> str:
+        """The greeting the field's hour names, in the book's own words.
+
+        The hours are the language's, not a universal noon and six:
+        buenas tardes holds through a Spanish evening, guten Morgen is
+        over by a German lunch, and buonasera covers the Italian
+        afternoon outright -- a language with two greetings leaves the
+        afternoon's slot empty and the evening's border does the work.
+        """
+        hour = self.hour
+        if hour is None:
+            return self.book.hello
+        if hour < self.book.morning_until:
+            return self.book.hello_morning or self.book.hello
+        if hour >= self.book.evening_from:
+            return self.book.hello_evening or self.book.hello
+        return self.book.hello_afternoon or self.book.hello
 
     def report(self, aircraft: Aircraft, body: str,
                farewell: bool = False) -> str:

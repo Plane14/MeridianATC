@@ -7,6 +7,7 @@ from ._shared import (
     PilotSpeech,
     Station,
     Weather,
+    field_hour,
     log,
     phraseology_for,
 )
@@ -236,5 +237,9 @@ class _Putting_words_together:
         if found is None:
             found = PilotSpeech(language, self._phrase(language))
             self._pilots[language] = found
+        # The field's own clock, refreshed per call: the greeting it
+        # picks is the hour's -- bonsoir on the evening frequency,
+        # not good morning.
+        found.hour = field_hour(self.field.longitude)
         return found
 

@@ -130,38 +130,38 @@ class _The_engines:
                     else lim.tq_max_nm or lim.tq_takeoff_nm))
         over = []
         # Every engine the sim reports: engine one's figures are the
-        # scalars, engines two through four carry the eng2_/eng3_/eng4_
-        # names, and a slot that never answered is no engine. The tag
+        # scalars, the rest carry the eng2_.../eng16_ names, and a slot
+        # that never answered is no engine. The tag
         # names the engine for the call, and its own persistence clock
         # -- a twin's second PT6 running hot is "itt #2", not "itt".
         for name in engine_vars("eng_n1_pct"):
             ng = getattr(state, name, None)
-            tag = "" if name == "eng_n1_pct" else " #" + name[3]
+            tag = "" if name == "eng_n1_pct" else " #" + name[3:].split("_", 1)[0]
             if ng is not None and lim.ng_max_pct \
                     and float(ng) > lim.ng_max_pct + self._MARGIN_NG:
                 over.append(f"ng{tag}")
         for name in engine_vars("eng_itt_c"):
             itt = getattr(state, name, None)
-            tag = "" if name == "eng_itt_c" else " #" + name[3]
+            tag = "" if name == "eng_itt_c" else " #" + name[3:].split("_", 1)[0]
             if itt is not None and itt_ceiling \
                     and float(itt) > itt_ceiling + self._MARGIN_ITT:
                 over.append(f"itt{tag}")
         for name in engine_vars("eng_rpm"):
             rpm = getattr(state, name, None)
-            tag = "" if name == "eng_rpm" else " #" + name[3]
+            tag = "" if name == "eng_rpm" else " #" + name[3:].split("_", 1)[0]
             if rpm is not None and lim.rpm_max \
                     and float(rpm) > lim.rpm_max + self._MARGIN_RPM:
                 over.append(f"rpm{tag}")
         for name in engine_vars("eng_torque_pct"):
             tq = getattr(state, name, None)
-            tag = "" if name == "eng_torque_pct" else " #" + name[3]
+            tag = "" if name == "eng_torque_pct" else " #" + name[3:].split("_", 1)[0]
             if tq is not None and tq_ceiling \
                     and float(tq) > tq_ceiling + self._MARGIN_TQ:
                 over.append(f"tq{tag}")
         if not tq_ceiling:
             for name in engine_vars("eng_torque_nm"):
                 trq_nm = getattr(state, name, None)
-                tag = "" if name == "eng_torque_nm" else " #" + name[3]
+                tag = "" if name == "eng_torque_nm" else " #" + name[3:].split("_", 1)[0]
                 if trq_nm is not None and nm_ceiling \
                         and float(trq_nm) > nm_ceiling + self._MARGIN_TQ_NM:
                     over.append(f"tq{tag}")
@@ -618,9 +618,9 @@ class _The_engines:
             or self.state.phase in (AutonomousPhase.LINE_UP,
                                     AutonomousPhase.TAKEOFF)
         # Every lever the sim reports has to reach the detent: engine
-        # one's scalar, and on a twin the others under the eng2_/eng3_/
-        # eng4_ names -- the lowest of them is the lever the phase still
-        # owes, and the write below moves them all.
+        # one's scalar, and the rest under the eng2_.../eng16_ names --
+        # the lowest of them is the lever the phase still owes, and the
+        # write below moves them all.
         levers = [v for v in (getattr(state, name, None)
                               for name in engine_vars("condition_pct"))
                   if v is not None]

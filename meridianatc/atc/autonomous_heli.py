@@ -38,6 +38,7 @@ import time
 from dataclasses import dataclass
 
 from ..sim.source import SimConnectSource
+from ..sim.state import combustion
 from .aircraft_class import HELICOPTER
 from .autonomous import AutonomousPhase
 from .autonomous._shared import _gs_band, _nws_fade
@@ -114,11 +115,7 @@ def _engines_turning(state) -> bool:
     """Any combustion flag still up -- 'still turning' for the rotor
     brake and the cool-down, where a single flag misses the twin's
     number two."""
-    return any(bool(f) for f in (
-        getattr(state, "engines_running", None),
-        getattr(state, "eng2_combustion", None),
-        getattr(state, "eng3_combustion", None),
-        getattr(state, "eng4_combustion", None)))
+    return any(bool(f) for f in combustion(state))
 
 # --- the controllers ------------------------------------------------------
 # Collective: feet of altitude error per per-cent of collective, and the

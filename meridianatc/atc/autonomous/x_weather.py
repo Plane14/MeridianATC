@@ -608,21 +608,42 @@ class _Weather:
         comes first of all: off, only VFR is ever flown, and where the
         weather refuses a release the flight does not go at all.
         """
-        if self._is_helicopter:
-            return False
         if not self._request_ifr:
             return False
         # The filing outranks the weather and the airframe: a flight
         # plan (SimBrief, the chain's own, or the rules the pilot set
         # on the flight) that says IFR is flown IFR -- a C172 on an IFR
         # plan asks for the clearance it was filed under, not a VFR
-        # release the sky happens to allow.
+        # release the sky happens to allow, and a helicopter's plan is
+        # as much a plan as a wing's is.
         if getattr(self.session, "ifr", False):
             return True
+        if self._is_helicopter:
+            return False
         from .. import aircraft_class as ac
         cls = getattr(self, "_aircraft_class", "") or ac.AIRLINER
         if cls in (ac.AIRLINER, ac.BUSINESS_JET, ac.TURBOPROP_TWIN):
             return True
+        # Night is the other thing a light pilot files around: outside
+        # the US the rating to fly VFR in the dark is its own paper
+        # (SERA.5010 -- the FAA's 91.155 keeps night VFR ordinary), so
+        # the Skyhawk over Calais after sunset goes on a plan like the
+        # one it would file for cloud.
+        if cls in (ac.PISTON_SINGLE, ac.PISTON_TWIN, ac.TURBOPROP_SINGLE):
+            airport = (getattr(self.session, "departure", None)
+                       or self._get_current_airport())
+            region_for = getattr(getattr(self, "brain", None),
+                                 "region_for", None)
+            region = (region_for(getattr(airport, "ident", "") or "")
+                      if region_for is not None else "icao")
+            if region != "faa":
+                from ..svfr import is_night
+                lat = (float(getattr(state, "latitude", 0.0) or 0.0)
+                       or float(getattr(airport, "lat", 0.0) or 0.0))
+                lon = (float(getattr(state, "longitude", 0.0) or 0.0)
+                       or float(getattr(airport, "lon", 0.0) or 0.0))
+                if is_night(lat, lon, region):
+                    return True
         return not self._vmc_for_vfr(state)
 
     def _divert_for_weather(self, state) -> None:

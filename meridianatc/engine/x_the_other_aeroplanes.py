@@ -37,6 +37,7 @@ from ._shared import (
     time,
     timed,
 )
+from ..sim.state import combustion
 from .x_speaking import _render_count
 
 
@@ -2004,11 +2005,7 @@ class _The_other_aeroplanes:
                                                  Phase.TAXI_IN) \
                 and state.parking_brake \
                 and float(state.ground_speed_kt or 0.0) < 1.0 \
-                and not any(bool(f) for f in (
-                    getattr(state, "engines_running", None),
-                    getattr(state, "eng2_combustion", None),
-                    getattr(state, "eng3_combustion", None),
-                    getattr(state, "eng4_combustion", None))):
+                and not any(bool(f) for f in combustion(state)):
             # Parked is a state, not an instruction: wheels stopped, brake
             # set, engines out -- reached whether or not a taxi clearance
             # ever named the stand. The shutdown checklist keys off it.

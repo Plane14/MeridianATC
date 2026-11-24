@@ -176,7 +176,7 @@ def _engine_check(state, check: Check, expected):
     """(all reported engines hold, the value that disagreed first).
 
     Every slot the simulator reports is checked: engine one's scalar
-    first, then the eng2_/eng3_/eng4_ fields where the aircraft has
+    first, then the eng2_.../eng16_ fields where the aircraft has
     them. An unpublished slot holds by the unknown-is-agreement rule,
     so a single answers on engine one alone, the way it always did.
     """

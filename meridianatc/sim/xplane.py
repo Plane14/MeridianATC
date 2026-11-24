@@ -30,6 +30,16 @@ RADIOS = "sim/cockpit2/radios/actuators/"
 
 log = logging.getLogger(__name__)
 
+
+def _slot(key):
+    """A per-engine state name's engine index ("eng3_..." -> 3), else 0."""
+    for prefix in ("eng", "magneto"):
+        if key.startswith(prefix):
+            digits = key[len(prefix):].split("_", 1)[0]
+            if digits.isdigit():
+                return int(digits)
+    return 0
+
 # attribute: (dataref, multiplier); booleans retain their dataclass type.
 DATAREFS = {
     "latitude": ("sim/flightmodel/position/latitude", 1),
@@ -263,12 +273,13 @@ for _engine in range(16):
         f"sim/cockpit2/engine/indicators/prop_speed_rpm[{_engine}]"
     EXTRA[f"acf_des_rpm{_engine}"] = \
         f"sim/aircraft/prop/acf_des_rpm_prp[{_engine}]"
-for _engine in range(1, 4):
-    # Engines two through four's own gauges and levers: engine one's
+for _engine in range(1, 16):
+    # Engines two through sixteen's own gauges and levers: engine one's
     # figures keep the scalar names in DATAREFS, these land under the
-    # state's eng2_/eng3_/eng4_ fields. acf_num_engines is the roster
-    # read() believes -- the arrays answer zeros past it, and a zero
-    # is not an engine.
+    # state's engN_ fields -- X-Plane 12 numbers its engine arrays to
+    # sixteen, for the eVTOLs its flight model was rebuilt for.
+    # acf_num_engines is the roster read() believes -- the arrays
+    # answer zeros past it, and a zero is not an engine.
     EXTRA[f"trq_nm{_engine}"] = \
         f"sim/flightmodel/engine/ENGN_TRQ[{_engine}]"
     EXTRA[f"itt{_engine}"] = \
@@ -289,19 +300,22 @@ for _tank in range(9):
     EXTRA[f"tank{_tank}"] = f"sim/flightmodel/weight/m_fuel[{_tank}]"
     EXTRA[f"tank_ratio{_tank}"] = f"sim/aircraft/overflow/acf_tank_rat[{_tank}]"
 # The checklist systems' per-engine switches: fuel pumps, generators,
-# magneto keys, turbine ignition and bleed valves.
-for _engine in range(4):
+# magneto keys, turbine ignition and bleed valves -- and the oil
+# pressure gauge, engines three up (two's rides DATAREFS).
+for _engine in range(16):
     EXTRA[f"fuelpump{_engine}"] = \
         f"sim/cockpit2/engine/actuators/fuel_pump_on[{_engine}]"
     EXTRA[f"gen{_engine}"] = \
         f"sim/cockpit2/electrical/generator_on[{_engine}]"
     EXTRA[f"bleed{_engine}"] = \
         f"sim/cockpit2/bleedair/actuators/engine_bleed_sov[{_engine}]"
-for _engine in range(2):
     EXTRA[f"ign_key{_engine}"] = \
         f"sim/cockpit2/engine/actuators/ignition_key[{_engine}]"
     EXTRA[f"ignition_on{_engine}"] = \
         f"sim/cockpit2/engine/actuators/ignition_on[{_engine}]"
+for _engine in range(2, 16):
+    EXTRA[f"oilpress{_engine}"] = \
+        f"sim/cockpit2/engine/indicators/oil_pressure_psi[{_engine}]"
 # The doors' open ratios, the rotor's free-turbine percent and
 # governor switch (a helicopter's Nr and its governor's presence),
 # the yaw pedals (its anti-torque channel), and the wing de-ice's
@@ -341,28 +355,6 @@ DERIVED = {
     "spoilers_armed": ("speedbrake",),
     "engines_running": tuple(f"running{i}" for i in range(16)),
     "speedbrake_pct": ("speedbrake",),
-    "fuel_pump_on": ("fuelpump0",),
-    "eng2_fuel_pump_on": ("fuelpump1",),
-    "eng3_fuel_pump_on": ("fuelpump2",),
-    "eng4_fuel_pump_on": ("fuelpump3",),
-    "generator_on": ("gen0",),
-    "eng2_generator_on": ("gen1",),
-    "eng3_generator_on": ("gen2",),
-    "eng4_generator_on": ("gen3",),
-    "alternator_on": ("gen0",),
-    "eng2_alternator_on": ("gen1",),
-    "bleed_air_on": ("bleed0",),
-    "eng2_bleed_air_on": ("bleed1",),
-    "eng3_bleed_air_on": ("bleed2",),
-    "eng4_bleed_air_on": ("bleed3",),
-    "magneto_pos": ("ign_key0",),
-    "eng2_magneto_pos": ("ign_key1",),
-    "magneto1_left": ("ign_key0",),
-    "magneto1_right": ("ign_key0",),
-    "magneto2_left": ("ign_key1",),
-    "magneto2_right": ("ign_key1",),
-    "ignition_on": ("ignition_on0",),
-    "eng2_ignition_on": ("ignition_on1",),
     "exits_open_pct": ("door0",),
     "exit1_open_pct": ("door0",),
     "exit2_open_pct": ("door1",),
@@ -370,6 +362,20 @@ DERIVED = {
     "exit4_open_pct": ("door3",),
     "eng_fuel_flow_pph": ("flow0",),
 }
+# The per-engine systems, slots 0-15 for engines 1-16: fuel pump,
+# generator (the one electrical switch the alternator's name shares),
+# bleed valve, the magneto key and its two switches, and the turbine
+# ignition switch.
+for _engine in range(16):
+    _eng = "" if _engine == 0 else f"eng{_engine + 1}_"
+    DERIVED[f"{_eng}fuel_pump_on"] = (f"fuelpump{_engine}",)
+    DERIVED[f"{_eng}generator_on"] = (f"gen{_engine}",)
+    DERIVED[f"{_eng}alternator_on"] = (f"gen{_engine}",)
+    DERIVED[f"{_eng}bleed_air_on"] = (f"bleed{_engine}",)
+    DERIVED[f"{_eng}magneto_pos"] = (f"ign_key{_engine}",)
+    DERIVED[f"{_eng}ignition_on"] = (f"ignition_on{_engine}",)
+    DERIVED[f"magneto{_engine + 1}_left"] = (f"ign_key{_engine}",)
+    DERIVED[f"magneto{_engine + 1}_right"] = (f"ign_key{_engine}",)
 
 WRITABLE = {
     "BRAKE PARKING POSITION": ("parking_brake", 1),
@@ -413,15 +419,14 @@ WRITABLE = {
     "TURB ENG IGNITION SWITCH:1": ("ignition_on0", 1),
     "TURB ENG IGNITION SWITCH:2": ("ignition_on1", 1),
 }
-for _slot in range(4):
-    WRITABLE[f"GENERAL ENG FUEL PUMP SWITCH:{_slot + 1}"] = (
-        f"fuelpump{_slot}", 1)
-    WRITABLE[f"GENERAL ENG GENERATOR SWITCH:{_slot + 1}"] = (
-        f"gen{_slot}", 1)
-    WRITABLE[f"BLEED AIR ENGINE:{_slot + 1}"] = (f"bleed{_slot}", 1)
-for _slot in range(2):
-    WRITABLE[f"GENERAL ENG MASTER ALTERNATOR:{_slot + 1}"] = (
-        f"gen{_slot}", 1)
+for _w in range(16):
+    WRITABLE[f"GENERAL ENG FUEL PUMP SWITCH:{_w + 1}"] = (f"fuelpump{_w}", 1)
+    WRITABLE[f"GENERAL ENG GENERATOR SWITCH:{_w + 1}"] = (f"gen{_w}", 1)
+    WRITABLE[f"GENERAL ENG MASTER ALTERNATOR:{_w + 1}"] = (f"gen{_w}", 1)
+    WRITABLE[f"BLEED AIR ENGINE:{_w + 1}"] = (f"bleed{_w}", 1)
+    WRITABLE[f"IGNITION_KEY:{_w + 1}"] = (f"ign_key{_w}", 1)
+    WRITABLE[f"TURB ENG IGNITION SWITCH:{_w + 1}"] = (
+        f"ignition_on{_w}", 1)
 
 
 class XPlaneSource:
@@ -640,6 +645,11 @@ class XPlaneSource:
                 raw = values[key] * factor
             else:
                 continue
+            if _slot(key) > state.engine_count:
+                # An array slot past the roster answers a zero that is
+                # not an engine (two's oil gauge on a single). engine_
+                # count is read above every per-engine key in the table.
+                continue
             default = getattr(state, key)
             setattr(state, key, bool(raw) if isinstance(default, bool)
                     else int(raw) if isinstance(default, int) else raw)
@@ -660,7 +670,7 @@ class XPlaneSource:
             return None
         state.callsign = state.tail_number
         state.engines_running = any(values.get(f"running{i}", 0) for i in range(16))
-        for i in range(1, 4):
+        for i in range(1, 16):
             if f"running{i}" in values and state.engine_count > i:
                 setattr(state, f"eng{i + 1}_combustion", bool(values[f"running{i}"]))
         state.engine_type = {0: 0, 1: 0, 2: 5, 3: 4, 4: 1, 5: 1, 6: 4,
@@ -699,16 +709,22 @@ class XPlaneSource:
         # The checklists' remaining cockpit, per engine first: fuel
         # pumps, generators (the one electrical switch answers the
         # piston alternator's name too), bleeds, the magneto keys'
-        # five stops, and the turbine ignition switches.
-        for i, attr in enumerate(("fuel_pump_on", "eng2_fuel_pump_on",
-                                  "eng3_fuel_pump_on", "eng4_fuel_pump_on")):
+        # five stops, and the turbine ignition switches. Slots past
+        # acf_num_engines stay unset -- the arrays answer them zeros,
+        # and a phantom engine's "off" is not a check to fail.
+        for i in range(16):
+            if i and state.engine_count <= i:
+                break
+            attr = "fuel_pump_on" if i == 0 else f"eng{i + 1}_fuel_pump_on"
             alias = alias_read(attr)
             if alias is not None:
                 setattr(state, attr, bool(alias))
             elif f"fuelpump{i}" in values:
                 setattr(state, attr, bool(values[f"fuelpump{i}"]))
-        for i, attr in enumerate(("generator_on", "eng2_generator_on",
-                                  "eng3_generator_on", "eng4_generator_on")):
+        for i in range(16):
+            if i and state.engine_count <= i:
+                break
+            attr = "generator_on" if i == 0 else f"eng{i + 1}_generator_on"
             alias = alias_read(attr)
             if alias is not None:
                 on = bool(alias)
@@ -717,28 +733,32 @@ class XPlaneSource:
             else:
                 continue
             setattr(state, attr, on)
-            if i == 0:
-                state.alternator_on = on
-            elif i == 1:
-                state.eng2_alternator_on = on
-        for i, attr in enumerate(("bleed_air_on", "eng2_bleed_air_on",
-                                  "eng3_bleed_air_on", "eng4_bleed_air_on")):
+            setattr(state, ("alternator_on" if i == 0
+                            else f"eng{i + 1}_alternator_on"), on)
+        for i in range(16):
+            if i and state.engine_count <= i:
+                break
+            attr = "bleed_air_on" if i == 0 else f"eng{i + 1}_bleed_air_on"
             alias = alias_read(attr)
             if alias is not None:
                 setattr(state, attr, bool(alias))
             elif f"bleed{i}" in values:
                 setattr(state, attr, bool(values[f"bleed{i}"]))
-        for i, attr in enumerate(("magneto_pos", "eng2_magneto_pos")):
+        for i in range(16):
+            if i and state.engine_count <= i:
+                break
             if f"ign_key{i}" in values:
                 pos = int(values[f"ign_key{i}"])
-                setattr(state, attr, pos)
+                setattr(state, ("magneto_pos" if i == 0
+                                else f"eng{i + 1}_magneto_pos"), pos)
                 # The two switches the position is the sum of, for the
                 # files that check a magneto on its own.
-                setattr(state, "magneto1_left" if i == 0 else "magneto2_left",
-                        pos in (1, 3, 4))
-                setattr(state, "magneto1_right" if i == 0 else "magneto2_right",
-                        pos in (2, 3, 4))
-        for i, attr in enumerate(("ignition_on", "eng2_ignition_on")):
+                setattr(state, f"magneto{i + 1}_left", pos in (1, 3, 4))
+                setattr(state, f"magneto{i + 1}_right", pos in (2, 3, 4))
+        for i in range(16):
+            if i and state.engine_count <= i:
+                break
+            attr = "ignition_on" if i == 0 else f"eng{i + 1}_ignition_on"
             if f"ignition_on{i}" in values:
                 setattr(state, attr, bool(values[f"ignition_on{i}"]))
         # The doors: per-exit reads plus the most-open figure a
@@ -871,16 +891,19 @@ class XPlaneSource:
                                      else itt_red)
         elif 300.0 <= itt_grn <= 1400.0:
             state.eng_itt_takeoff_c = state.eng_itt_limit_c = itt_grn
-        # Engines two through four, where the airframe has them: the
+        # Engines two through sixteen, where the airframe has them: the
         # same gauges and levers engine one's scalars report, under the
-        # eng2_/eng3_/eng4_ names. acf_num_engines is the roster -- the
-        # dataref arrays answer zeros past it, and a zero is not an
-        # engine -- so an absent count stands the whole row down rather
-        # than inventing three more engines' readings.
-        for i in range(1, 4):
+        # engN_ names. acf_num_engines is the roster -- the dataref
+        # arrays answer zeros past it, and a zero is not an engine --
+        # so an absent count stands the whole row down rather than
+        # inventing more engines' readings.
+        for i in range(1, 16):
             if state.engine_count <= i:
                 break
             eng = f"eng{i + 1}"
+            if i >= 2 and f"oilpress{i}" in values:
+                setattr(state, f"{eng}_oil_pressure_psi",
+                        values[f"oilpress{i}"])
             if f"thr{i}" in values:
                 setattr(state, f"{eng}_throttle_pct",
                         values[f"thr{i}"] * 100.0)
@@ -938,7 +961,7 @@ class XPlaneSource:
         # the model's own CHT red line, and where the cowl-flap levers
         # sit. Missing engines contribute nothing to the max, so a
         # single reads engine one's gauges and a twin the hotter of two.
-        count = max(1, min(8, int(state.engine_count or 0)))
+        count = max(1, min(16, int(state.engine_count or 0)))
         if not bool(values.get("cht_is_c", 1)):
             def _to_c(t):
                 return (t - 32.0) * 5.0 / 9.0
@@ -963,9 +986,14 @@ class XPlaneSource:
         if "cowl0" in values:
             state.eng_cowl_pct = max(values.get(f"cowl{i}", 0.0)
                                      for i in range(count)) * 100.0
-        known = set(DATAREFS).intersection(values)
+        known = {key for key in set(DATAREFS).intersection(values)
+                 if _slot(key) <= state.engine_count}
+        # The derived names the dependencies answered for -- minus the
+        # slots past the engine roster, whose zero answers are not an
+        # engine's state (a twin's third pump is "unavailable", not off).
         known.update(key for key, dependencies in DERIVED.items()
-                     if all(dependency in values for dependency in dependencies))
+                     if all(dependency in values for dependency in dependencies)
+                     and _slot(key) <= state.engine_count)
         for derived, source_key in (("eng_cht_c", "cht0"),
                                     ("eng_oil_temp_c", "oil0"),
                                     ("eng_cowl_pct", "cowl0"),
@@ -995,10 +1023,12 @@ class XPlaneSource:
             known.add("condition_pct")
         if state.engine_type in (1, 5) and "collective_position" in values:
             known.add("prop_pct")
-        for i in range(1, 4):
+        for i in range(1, 16):
             if state.engine_count <= i:
                 break
             eng = f"eng{i + 1}"
+            if i >= 2 and f"oilpress{i}" in values:
+                known.add(f"{eng}_oil_pressure_psi")
             for suffix, src in (("throttle_pct", f"thr{i}"),
                                 ("mixture_pct", f"mix{i}"),
                                 ("torque_nm", f"trq_nm{i}"),
