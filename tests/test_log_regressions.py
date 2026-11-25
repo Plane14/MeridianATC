@@ -4983,3 +4983,30 @@ def test_a_brake_release_seen_late_in_the_taxi_does_not_fire_a_pushback_cue():
     fired = [call.args[0] for call in crew._fire.call_args_list]
     assert "doors_closed" in fired
     assert "pushback" not in fired
+
+
+def test_clearance_readback_on_ground_does_not_hand_you_back_to_ground():
+    """LECO live after restart: Ground answered its own correct clearance
+    readback with "contact Coruna Ground ... when ready to taxi"."""
+    from meridianatc.atc.intents import Intent
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession, Instruction
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.db import Station
+
+    brain = _ground_brain()
+    station = Station("LECO", "GND", 121.705, "Coruna", "Coruna Ground")
+    brain.controller_at = lambda ident, position: station
+    session = FlightSession(Aircraft(parse_callsign("N45XS")))
+    values = {"altitude_ft": 5000, "squawk": "1077", "sid": "FORNO1R"}
+    session.remember(Instruction(
+        "ifr_clearance", "LECO:gnd", "cleared", values,
+        required_items={"altitude_ft", "squawk", "sid"}))
+    parsed = SimpleNamespace(
+        intent=Intent.READBACK, readback_items=dict(values), nearly=set(),
+        heard_confidence=1.0, text="Forno one Romeo, climb five thousand, squawk one zero seven seven")
+    reply = brain._check_readback(parsed, session, station,
+                                  brain.for_station(station), None)
+    assert "readback correct" in reply.text.lower()
+    assert "contact coruna ground" not in reply.text.lower()
+    assert reply.handoff_to is None

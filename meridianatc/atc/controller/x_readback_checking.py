@@ -208,7 +208,7 @@ class _Readback_checking:
                 session.clearance_read_back = True
                 session.phase = Phase.CLEARED
                 ground = self.controller_at(station.ident, "GND")
-                if ground:
+                if ground and station.position != "GND":
                     return Reply(
                         p.readback_correct(
                             session.aircraft,
