@@ -1700,7 +1700,10 @@ def _set_fields(source, rest: str, engine) -> None:
     except (AttributeError, ValueError) as exc:
         console.print(f"[red]{exc}[/red]")
         return
-    engine.refresh_state()
+    # Do not refresh the engine here. The situation loop compares its last
+    # reading with the next one to see movement; refreshing now would make
+    # this manual position both readings, and no arrival/vector watcher
+    # would ever observe the aircraft closing in no-sim testing.
     console.print(f"[dim]set {', '.join(f'{k}={v}' for k, v in fields.items())}[/dim]")
 
 

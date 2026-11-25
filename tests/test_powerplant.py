@@ -1030,3 +1030,23 @@ def test_shutdown_cools_down_on_itt_where_published():
                                   rotor_rpm_pct=60.0, eng_itt_c=700.0))
     sent2 = _sent(heli2)
     assert not any(c.args[0] == ENGINE_STOP for c in sent2)
+
+
+def test_pressurisation_is_inferred_from_type_when_no_sim_engine_data():
+    """A manual B739 is still a pressurised jet even though the no-sim
+    source cannot publish ENGINE TYPE; otherwise the oxygen physiology cap
+    wrongly reduces a filed FL350 to 10,000 ft."""
+    from meridianatc.atc.autonomous.core import AutonomousFlight
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    assert fo._pressurized_airframe(SimpleNamespace(
+        type_code="B739", engine_type=-1, pressurization_capable=False,
+        pressurization_diff_psi=0.0, altitude_ft=0.0,
+        pressure_altitude_ft=0.0, cabin_altitude_ft=0.0))
+    assert not fo._pressurized_airframe(SimpleNamespace(
+        type_code="BE58", engine_type=-1, pressurization_capable=False,
+        pressurization_diff_psi=0.0, altitude_ft=0.0,
+        pressure_altitude_ft=0.0, cabin_altitude_ft=0.0))
+    assert not fo._pressurized_airframe(SimpleNamespace(
+        type_code="B739", engine_type=0, pressurization_capable=False,
+        pressurization_diff_psi=0.0, altitude_ft=0.0,
+        pressure_altitude_ft=0.0, cabin_altitude_ft=0.0))

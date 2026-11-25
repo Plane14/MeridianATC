@@ -34,14 +34,27 @@ class _The_envelope:
         if altitude > 10000.0 and cabin and cabin < altitude - 2000.0:
             return True
         code = (getattr(state, "type_code", "") or "").upper()
-        engine = int(getattr(state, "engine_type", -1) or -1)
+        raw_engine = getattr(state, "engine_type", -1)
+        engine = int(raw_engine if raw_engine is not None else -1)
         if code in self._PRESSURIZED_PISTONS:
             return True
         if code in self._UNPRESSURIZED_TURBOPROPS or engine == 3:
             return False
-        # Jets and the common turboprop singles/twins are pressure
-        # aeroplanes; pistons are not unless the type table above says so.
-        return engine in (1, 5)
+        if engine in (1, 5):
+            return True
+        if engine == 0:
+            return False
+        if code:
+            # Manual/no-sim states often know the type but not the engine
+            # enumeration. The type table is enough for the pressurisation
+            # question: jets and ordinary turboprops are pressure aircraft,
+            # pistons are not unless the exception table already answered.
+            from .. import aircraft_class as ac
+            cls = ac.classify(code).name
+            if cls in (ac.BUSINESS_JET, ac.AIRLINER,
+                       ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN):
+                return True
+        return False
 
     @staticmethod
     def _oxygen_system_available(state) -> bool:

@@ -5080,6 +5080,8 @@ def test_a_level_enroute_flight_still_gets_the_next_climb_step():
     brain.realism = SimpleNamespace(climb_steps=True)
     brain.navdb = SimpleNamespace(airport=lambda ident: None)
     brain._transition_altitude = lambda airport: 6000
+    brain._centre_step_valid = (
+        lambda session, station, state, here, assigned, cruise: cruise)
     brain.for_station = lambda station, language="en": Phraseology("icao")
     watch = ClimbWatch(brain)
     station = Station("LECM", "CTR", 124.4, "Madrid")
@@ -5239,3 +5241,35 @@ def test_vector_step_terminal_cap_never_goes_below_intercept_or_terrain(monkeypa
                                choice, None, Phraseology(), 100.0)
     assert reply is not None
     assert reply.instruction.values["altitude_ft"] == 7600
+
+
+def test_centre_intermediate_step_uses_valid_direction_level():
+    """Boston Center's hashed intermediate band is FL260, but an east/
+    northeast-bound climb cannot be cleared to an even flight level. The
+    centre step is a band to be validated, not an exemption from the
+    semicircular rule."""
+    from meridianatc.atc.controller import ControllerBrain
+    obj = SimpleNamespace(
+        navdb=SimpleNamespace(airport=lambda ident: None),
+        _transition_altitude=lambda airport: 18000)
+    obj._valid_level = lambda feet, state, airport, upward: \
+        ControllerBrain._valid_level(obj, feet, state, airport, upward)
+    session = SimpleNamespace(departure=None)
+    station = SimpleNamespace(callsign="Boston Center", ident="KBOS")
+    state = SimpleNamespace(has_position=False)
+    step = ControllerBrain._centre_step_valid(
+        obj, session, station, state, 16500.0, 17000.0, 35000.0)
+    assert step == 27000.0
+
+
+def test_manual_state_update_is_left_for_the_next_engine_tick():
+    """No-sim `/state` drives a scripted aircraft. Refreshing the engine
+    inside the command makes the jump invisible to the previous/current
+    comparison, so descent and vector watches never see the aircraft close."""
+    from meridianatc.cli import _set_fields
+    source = SimpleNamespace(update=Mock())
+    engine = SimpleNamespace(refresh_state=Mock())
+    _set_fields(source, "latitude=42.0 longitude=-71.0 on_ground=False", engine)
+    source.update.assert_called_once_with(
+        latitude=42.0, longitude=-71.0, on_ground=False)
+    engine.refresh_state.assert_not_called()

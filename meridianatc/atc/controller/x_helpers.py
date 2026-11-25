@@ -213,6 +213,27 @@ class _Helpers:
             level = math.floor((feet - base) / step) * step + base
         return float(level)
 
+    def _centre_step_valid(self, session, station, state, here_ft: float,
+                           assigned_ft: float, cruise_ft: float) -> float:
+        """The centre's habitual intermediate step, valid for the track.
+
+        The table in ``climb.centre_step`` is a height band, not permission
+        to use the wrong parity: an eastbound flight must not be cleared to
+        FL260 merely because that is the centre's usual figure. The filed
+        cruise itself remains the final answer even when its parity is the
+        filed/approved exception.
+        """
+        from ..climb import centre_step
+
+        step = float(centre_step(station.callsign, here_ft, assigned_ft,
+                                 cruise_ft))
+        cruise = float(cruise_ft or 0.0)
+        if not step or not cruise or step >= cruise:
+            return step
+        airport = session.departure or self.navdb.airport(station.ident)
+        valid = self._valid_level(step, state, airport, upward=True)
+        return float(min(valid, cruise))
+
     def _next_level_up(self, session, state) -> float:
         """The next level up, valid for the direction, never below where the
         aeroplane is, and the filed cruise level at most."""

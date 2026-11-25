@@ -14,7 +14,6 @@ from ._shared import (
     _airborne,
     _join,
     asked_for,
-    centre_step,
     decision,
     departure_step,
     departure_top,
@@ -445,7 +444,8 @@ class _Radar_positions_departure:
                                        state.longitude)
         else:
             if here >= assigned - DEPARTURE_REACHING_FT:
-                step = centre_step(station.callsign, here, assigned, cruise)
+                step = self._centre_step_valid(
+                    session, station, state, here, assigned, cruise)
                 why = "the centre's step" if step < cruise else "the cruise"
             else:
                 why = "still climbing to departure's altitude"

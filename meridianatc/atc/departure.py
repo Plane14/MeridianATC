@@ -415,7 +415,8 @@ class ClimbWatch:
             if now - session.level_reached_at < climb.centre_wait_s(
                     station.callsign):
                 return None
-            step = climb.centre_step(station.callsign, here, assigned, cruise)
+            step = brain._centre_step_valid(
+                session, station, state, here, assigned, cruise)
             why = "the centre's step" if step < cruise else "the cruise"
         if step <= assigned:
             return None
