@@ -1519,7 +1519,7 @@ HELP = """
   /say <text>        Speak to the current controller by typing instead of talking
   /tune <mhz>        Check who is on a frequency; sets COM1 only when no
                      simulator is connected (otherwise tune it in the aircraft)
-  /atis [ICAO] [en|fr]  Play the ATIS, optionally in a given language
+  /atis [ICAO] [lang]   Play the ATIS, optionally in a given language
   /freq [ICAO]       Show frequencies near you or at an airport
   /who               Who is listening on the current frequency
   /where             Aircraft position and phase
@@ -1581,7 +1581,9 @@ def _console_loop(engine) -> None:
             # "/atis LFPO fr" or "/atis fr" for the current field.
             words = rest.split()
             language = None
-            if words and words[-1].lower() in ("en", "fr"):
+            from .atc.language import SPOKEN_HERE
+
+            if words and words[-1].lower() in SPOKEN_HERE:
                 language = words.pop().lower()
             engine.play_atis(words[0].upper() if words else None, language)
         elif command == "freq":

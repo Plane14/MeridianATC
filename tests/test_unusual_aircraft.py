@@ -29,7 +29,8 @@ class TestUnusualTypes:
         assert not ac.amphibious("B738")
 
     def test_the_types_have_speeds(self):
-        for code in ("U2", "B57", "CONC", "B2707", "US1", "US2", "LAKE"):
+        for code in ("U2", "B57", "CONC", "B2707", "US1", "US2", "LAKE",
+                     "V22", "A609", "HAR", "AV8B", "F35"):
             speeds = vspeeds.table_speeds(code)
             assert speeds.vr > 0, code
 
@@ -102,3 +103,30 @@ class TestFloatVariants:
         # The flag says the airframe can take water; it never takes its
         # pavement away -- the floats-on-wheels amphibian goes both ways.
         assert ac.runway_usable(_paved_runway(), "C172", on_floats=True)
+
+
+class TestPoweredLift:
+    def test_tiltrotors_and_stovl_jets_are_powered_lift(self):
+        for code in ("V22", "A609", "HAR", "AV8B"):
+            assert ac.classify(code).name == ac.POWERED_LIFT, code
+        assert ac.classify("F35", title="F-35B Lightning II").name == ac.POWERED_LIFT
+        assert ac.classify("F35", title="F-35A Lightning II").name != ac.POWERED_LIFT
+
+    def test_the_simulator_type_does_not_hide_powered_lift(self):
+        # A tiltrotor's engines may be reported as turboprops and a Harrier's
+        # as jets; the type evidence is more specific than either category.
+        assert ac.classify("V22", engine_type=5, engines=2).name == ac.POWERED_LIFT
+        assert ac.classify("HAR", engine_type=1, engines=1).name == ac.POWERED_LIFT
+
+    def test_powered_lift_can_plan_on_vertical_ports(self):
+        pad = SimpleNamespace(type="heliport")
+        assert ac.airport_usable(pad, [], "V22")
+        assert ac.airport_usable(pad, [], "HAR")
+        # F35 alone is ambiguous: the A and C are conventional aircraft, so
+        # the shared ICAO code is not enough to plan a pad without the B title.
+        assert not ac.airport_usable(pad, [], "F35")
+
+    def test_powered_lift_runway_planning_is_short_but_not_zero(self):
+        assert ac.min_runway_ft("V22") <= 1500
+        assert ac.min_runway_ft("HAR") <= 1500
+        assert ac.min_runway_ft("F35") >= 5000

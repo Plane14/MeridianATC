@@ -42,9 +42,15 @@ TURBOPROP_TWIN = "turboprop_twin"
 BUSINESS_JET = "business_jet"
 AIRLINER = "airliner"
 HELICOPTER = "helicopter"
+# A powered-lift aircraft is not a helicopter and not an ordinary
+# aeroplane: it can hover like the first and cruise on the wing like the
+# second. FAA JO 7110.65 3-11 treats helicopter and powered-lift surface
+# and vertical operations together.
+POWERED_LIFT = "powered_lift"
 
 CLASSES: tuple[str, ...] = (PISTON_SINGLE, PISTON_TWIN, TURBOPROP_SINGLE,
-                            TURBOPROP_TWIN, BUSINESS_JET, AIRLINER, HELICOPTER)
+                            TURBOPROP_TWIN, BUSINESS_JET, AIRLINER, HELICOPTER,
+                            POWERED_LIFT)
 
 # ``ENGINE TYPE`` as the simulator enumerates it: 0 piston, 1 jet, 2 none,
 # 3 helicopter turbine, 4 unsupported, 5 turboprop -- the SimConnect
@@ -106,6 +112,12 @@ DOC_8643: dict[str, str] = {
     # the F-14 is a fighter, which the class table has no word for; a
     # twin-jet with no airline lands as a business jet, the closest fit
     "F14": "L2J",
+    # Powered lift. ICAO Doc 8643 uses the T aircraft kind for a
+    # tiltrotor; the STOVL jets keep their landplane descriptions, so
+    # they are marked explicitly below rather than discovered from the
+    # description alone.
+    "V22": "T2T", "A609": "T2T",
+    "HAR": "L1J", "AV8B": "L1J",
     # helicopters
     "R22": "H1P", "R44": "H1P", "R66": "H1T", "CBRI": "H1P",
     "AS50": "H1T", "EC30": "H1T", "B06": "H1T", "B407": "H1T",
@@ -152,6 +164,8 @@ def _from_description(description: str) -> str:
     kind, engines, power = description[0], int(description[1]), description[2]
     if kind == "H":
         return HELICOPTER
+    if kind == "T":
+        return POWERED_LIFT
     if power == "P":
         return PISTON_SINGLE if engines == 1 else PISTON_TWIN
     if power == "T":
@@ -171,8 +185,23 @@ def _jet(code: str, engines: int, airline: bool, said: str) -> AircraftClass:
     return AircraftClass(BUSINESS_JET, f"{said}, no airline")
 
 
+def powered_lift_type(type_code: str = "", title: str = "") -> bool:
+    """Whether the evidence names a VTOL/STOVL powered-lift aircraft.
+
+    ICAO Doc 8643 marks tiltrotors with the T aircraft kind, but the
+    STOVL jets keep the landplane descriptions they share with their
+    conventional kin. HAR/AV8B are inherently STOVL; F35 is shared by
+    the A, B and C, so only the B in the model title is evidence.
+    """
+    code = (type_code or "").strip().upper()
+    if DOC_8643.get(code, "")[:1] == "T" or code in ("HAR", "AV8B"):
+        return True
+    said = (title or "").lower().replace("-", "").replace("_", " ")
+    return code == "F35" and ("f35b" in said or "stovl" in said)
+
+
 def classify(type_code: str = "", *, engine_type: int | None = None,
-             engines: int = 0, category: str = "",
+             engines: int = 0, category: str = "", title: str = "",
              airline: bool = False) -> AircraftClass:
     """The class of the pilot's aeroplane.
 
@@ -182,6 +211,9 @@ def classify(type_code: str = "", *, engine_type: int | None = None,
     callsign.
     """
     code = (type_code or "").strip().upper()
+    if powered_lift_type(code, title):
+        return AircraftClass(POWERED_LIFT,
+                             f"the type is powered lift/STOVL: {code}")
     if (category or "").strip().lower() == "helicopter" \
             or engine_type == SIM_HELO_TURBINE:
         return AircraftClass(HELICOPTER, "the simulator: a helicopter")
@@ -196,6 +228,9 @@ def classify(type_code: str = "", *, engine_type: int | None = None,
 
     description = DOC_8643.get(code)
     if description:
+        if code in ("HAR", "AV8B"):
+            return AircraftClass(POWERED_LIFT,
+                                 f"ICAO Doc 8643 plus the STOVL type: {code}")
         name = _from_description(description)
         if name:
             return AircraftClass(name, f"ICAO Doc 8643: {code} is {description}")
@@ -215,6 +250,7 @@ def of_state(state) -> AircraftClass:
                     engine_type=None if engine_type < 0 else engine_type,
                     engines=getattr(state, "engine_count", 0),
                     category=getattr(state, "category", ""),
+                    title=getattr(state, "title", ""),
                     airline=bool(getattr(state, "airline", "")))
 
 
@@ -231,6 +267,9 @@ STAND_RADIUS_M: dict[str, float] = {
     BUSINESS_JET: 9.0,
     AIRLINER: 15.0,
     HELICOPTER: 5.0,
+    # V-22/AW609 span and rotating diameter need much more room than a
+    # light helicopter; the jets are smaller but still not light-plane stands.
+    POWERED_LIFT: 13.0,
 }
 
 
@@ -262,6 +301,17 @@ def min_runway_ft(type_code: str) -> int:
         return 3000
     if code in ("U16", "PBY", "PBYA", "G73", "G73T"):
         return 3500
+    if code == "V22":
+        # Rolling takeoff is normal when weight or density altitude makes
+        # the hover expensive; the published planning figure is a short
+        # strip rather than the zero roll a light vertical lift can make.
+        return 1500
+    if code in ("HAR", "AV8B"):
+        return 1200
+    if code == "F35":
+        # The designator covers the CTOL A and carrier C as well as the
+        # STOVL B, so the conservative conventional figure remains the plan.
+        return 5000
     if code == "U2":
         # A fragile sailplane that cannot slip; it is only ever aimed at
         # a long strip.
@@ -334,6 +384,14 @@ def airport_usable(airport, runways, type_code: str = "",
     if helicopter or classify(type_code).name == HELICOPTER:
         return kind in ("heliport", "small_airport", "medium_airport",
                         "large_airport")
+    if classify(type_code).name == POWERED_LIFT and \
+            (type_code or "").strip().upper() != "F35":
+        # A powered-lift aircraft may use a runway conventionally or a pad
+        # vertically. The F-35 exception is deliberate: the shared F35 code
+        # includes CTOL/CV variants, so the code alone is not evidence of
+        # STOVL capability.
+        return kind in ("heliport", "small_airport", "medium_airport",
+                        "large_airport")
     allowed = ["large_airport", "medium_airport", "small_airport"]
     if amphibious(type_code, on_floats):
         allowed.append("seaplane_base")
@@ -352,7 +410,7 @@ def airport_usable(airport, runways, type_code: str = "",
 
 
 __all__ = ["AIRLINER", "AircraftClass", "BUSINESS_JET", "CLASSES", "DOC_8643",
-           "HELICOPTER", "PISTON_SINGLE", "PISTON_TWIN", "STAND_RADIUS_M",
+           "HELICOPTER", "PISTON_SINGLE", "PISTON_TWIN", "POWERED_LIFT", "STAND_RADIUS_M",
            "TURBOPROP_SINGLE", "TURBOPROP_TWIN", "airport_usable",
            "amphibious", "classify", "min_runway_ft", "of_state",
            "runway_usable", "stand_radius_m"]

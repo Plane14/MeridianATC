@@ -290,6 +290,31 @@ def test_a_vfr_release_readback_says_the_frequency():
     assert not instruction.mismatches(heard)
 
 
+def test_a_taxi_readback_says_the_icao_altimeter():
+    """The live ELLX loop: Ground issued QNH with the taxi route, the FO
+    omitted it, and ICAO readback rules made the controller correct him
+    forever. The pressure is now part of the readback the parser can hear."""
+    from meridianatc.atc.copilot import readback
+    from meridianatc.atc.intents import IntentParser
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import Instruction
+    from meridianatc.atc.speech import Callsign
+
+    aircraft = Aircraft(callsign=Callsign(
+        written="BEL8KA", spoken_full="beeline eight kilo alpha",
+        spoken_short="beeline eight kilo alpha", telephony="Beeline",
+        is_airline=True))
+    instruction = Instruction(
+        kind="taxi", station_key="ELLX:gnd",
+        values={"runway": "06", "route": ["C", "P", "V"],
+                "hold_short": "24", "altimeter": 1013.0},
+        required_items={"runway", "hold_short", "altimeter"})
+    said = readback(instruction, aircraft, Phraseology("icao"))
+    heard = IntentParser().parse(said, "en").readback_items
+    assert heard.get("altimeter") == 1013.0
+    assert not instruction.mismatches(heard)
+
+
 def test_no_releases_on_github_is_no_update_not_an_error():
     import urllib.error
 

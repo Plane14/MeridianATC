@@ -101,6 +101,8 @@ class _Speaking:
             # dialog up, which is the only thing that actually fixes it.
             first = not self._voices_reported
             self._voices_reported = True
+            if not first:
+                return
             log.warning("no controller voices: %s", error.where())
             self.emit(
                 "error",

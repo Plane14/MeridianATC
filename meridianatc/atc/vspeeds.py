@@ -157,6 +157,25 @@ TABLE: dict[str, Speeds] = {
     # The unusual add-ons pilots fly, all UNVERIFIED -- none publishes a
     # single set of speeds the table could quote. The figures are each
     # type's commonly quoted takeoff/approach numbers, not a handbook's.
+    "V22": _u(60, "MV-22 powered-lift white paper/NATOPS-derived figures: "
+                  "rolling takeoff rotation about 60 KIAS; running landing "
+                  "final is weight/nacelle dependent, 50-80 KIAS",
+              vapp=70),
+    "A609": _u(60, "AW609 tiltrotor: no public handbook figures; planned "
+                   "as the V-22 class of powered lift",
+               vapp=70),
+    "HAR": _u(100, "AV-8B NATOPS-derived figures: nozzle rotation around "
+                   "100 KIAS at a representative short-takeoff weight; "
+                   "conventional threshold about 135 KIAS",
+              vapp=135),
+    "AV8B": _u(100, "AV-8B NATOPS-derived figures: nozzle rotation around "
+                    "100 KIAS at a representative short-takeoff weight; "
+                    "conventional threshold about 135 KIAS",
+               vapp=135),
+    "F35": _u(150, "F-35: no public handbook figures; a conventional "
+                   "fighter rotation/approach figure rather than the B "
+                   "variant's STOVL modes",
+              vapp=160),
     "U2": _u(80, "U-2 Dragonlady: a jet sailplane's takeoff and "
                  "near-stall approach figures"),
     "B57": _u(115, "WB-57 Canberra: a mid-weight rotation figure",

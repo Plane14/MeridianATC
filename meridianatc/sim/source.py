@@ -412,6 +412,11 @@ TITLE_TO_TYPE: tuple[tuple[str, str], ...] = (
     ("vision jet", "SF50"), ("sf50", "SF50"),
     ("global 7500", "GL7T"), ("longitude", "C700"),
     ("h125", "AS50"), ("cabri", "CBRI"), ("h145", "EC45"),
+    # Powered lift and STOVL add-ons: most report a marketing title or
+    # a long model string rather than the ICAO designator.
+    ("mv-22", "V22"), ("cv-22", "V22"), ("v-22", "V22"), ("osprey", "V22"),
+    ("aw609", "A609"), ("aw-609", "A609"),
+    ("av-8", "AV8B"), ("harrier", "HAR"), ("f-35", "F35"), ("f35", "F35"),
 )
 
 

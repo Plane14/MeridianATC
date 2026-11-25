@@ -36,10 +36,10 @@ def note(*a):
     print(line, flush=True)
 
 
-def sink(kind, text, **kw):
-    if kind in ("atc", "pilot", "info", "callout", "cue", "line",
-                "checklist", "notice"):
-        note(f"  [{kind}] {text}")
+def sink(event):
+    if event.kind in ("atc", "pilot", "info", "callout", "cue", "line",
+                      "checklist", "notice", "error"):
+        note(f"  [{event.kind}] {event.text}")
 
 
 class SimAdapter:

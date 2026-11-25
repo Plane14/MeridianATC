@@ -91,6 +91,7 @@ class _Session:
                          else None),
             engines=getattr(self.state, "engine_count", 0) or 0,
             category=getattr(self.state, "category", ""),
+            title=getattr(self.state, "title", ""),
             airline=profile.airliner)
         question = profile.questioned(reported)
         if question:

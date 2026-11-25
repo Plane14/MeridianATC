@@ -44,7 +44,7 @@ _FAMILY: dict[str, frozenset[str]] = {
     AIRLINER: frozenset({ac.AIRLINER, ac.TURBOPROP_TWIN}),
     GENERAL_AVIATION: frozenset({ac.PISTON_SINGLE, ac.PISTON_TWIN,
                                  ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN,
-                                 ac.BUSINESS_JET}),
+                                 ac.BUSINESS_JET, ac.POWERED_LIFT}),
     HELICOPTER: frozenset({ac.HELICOPTER}),
 }
 # What a profile is while the simulator reports something outside it, until

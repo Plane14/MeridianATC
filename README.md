@@ -1191,14 +1191,18 @@ the checklist ends "...complete, one item open". No answer gets the item once
 more, then "holding the checklist".
 
 The checklists depend on what you're flying and how. The class — piston single
-or twin, turboprop single or twin, business jet, airliner, helicopter — comes
-from what the simulator says about the model first (a turbine conversion filed
-as a C172 is a turboprop), then from the ICAO type. A helicopter gets the same
-eleven checklists, distilled from the rotary profiles on flightchecklist.app
-(H125, Bell 407, EC135, UH-1H): preflight, start, the hover checks, before
-takeoff, the transition, cruise, descent, approach, before landing and
-shutdown, with rotor RPM, the rotor brake and the collective checked where
-the model publishes them. An IFR flight gets the clearance, the navigation
+or twin, turboprop single or twin, business jet, airliner, helicopter or
+powered lift — comes from what the simulator says about the model first (a
+turbine conversion filed as a C172 is a turboprop), then from the ICAO type
+and model title. Powered lift covers the tiltrotors ICAO marks with the T
+aircraft kind (V-22, AW609) and the STOVL jets whose type designator proves it
+(Harrier/AV-8B, or an F-35 only when the title says F-35B/STOVL); they use a
+generic powered-lift checklist until type-specific flows are written. A
+helicopter gets the same eleven checklists, distilled from the rotary profiles
+on flightchecklist.app (H125, Bell 407, EC135, UH-1H): preflight, start, the
+hover checks, before takeoff, the transition, cruise, descent, approach,
+before landing and shutdown, with rotor RPM, the rotor brake and the
+collective checked where the model publishes them. An IFR flight gets the clearance, the navigation
 source, the approach briefing and the minimums; a VFR flight the VFR squawk,
 the circuit height and the next field's frequency. The light aeroplanes' and
 the helicopter's checklists are in English and French, the others in English,
