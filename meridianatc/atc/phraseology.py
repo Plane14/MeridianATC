@@ -2718,6 +2718,10 @@ class Phraseology:
             return _join(aircraft.spoken(True), f"{verb} " + ", ".join(parts)) + "."
         return self.readback_incorrect(aircraft, ", ".join(parts) + ", read back")
 
+    def minimum_fuel_acknowledged(self, aircraft: Aircraft) -> str:
+        """A fuel advisory. Not an emergency, and no priority is implied."""
+        return _join(aircraft.spoken(True), "roger minimum fuel") + "."
+
     def emergency_acknowledged(
         self, aircraft: Aircraft, station: str, *, runway: str = "",
         souls_and_fuel: bool = True,

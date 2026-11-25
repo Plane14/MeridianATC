@@ -29,20 +29,18 @@ class _Emergencies:
         enough, it is a landing clearance.
         """
         aircraft = session.aircraft
+
+        # Minimum fuel is an advisory, not a declaration: AIM 5-5-15 is
+        # explicit that it is not an emergency and implies no traffic
+        # priority. Remember it for delay handling, acknowledge it, and
+        # leave the ordinary arrival/departure service running.
+        if parsed.intent is Intent.MINIMUM_FUEL:
+            session.minimum_fuel = True
+            return Reply(p.minimum_fuel_acknowledged(aircraft), station)
+
         kind = parsed.intent.value
         first = not session.emergency
         session.emergency = kind
-
-        # Minimum fuel is an advisory, not a declaration: nobody is asked for
-        # souls on board and no equipment is turned out for it. It is
-        # acknowledged and the flight is given priority, which is what it is
-        # for.
-        if parsed.intent is Intent.MINIMUM_FUEL:
-            runway = self._emergency_runway(session, station, weather, state)
-            return Reply(
-                p.emergency_priority(aircraft, runway, equipment=False),
-                station,
-            )
 
         if first:
             return Reply(

@@ -635,6 +635,9 @@ class FlightSession:
     # An emergency or an urgency the pilot has declared, which every position
     # answers and which outranks whatever else was being discussed.
     emergency: str = ""
+    # A minimum-fuel advisory. AIM 5-5-15: not an emergency and no
+    # priority is implied, so it is kept apart from the emergency state.
+    minimum_fuel: bool = False
     # What the pilot said when asked: souls on board, fuel endurance.
     emergency_details: dict[str, Any] = field(default_factory=dict)
 

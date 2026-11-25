@@ -10,6 +10,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from meridianatc import xplane_plugin
 from meridianatc.config import Config
 from meridianatc.integrations.xptraffic import XPlaneTraffic, aircraft_packet
 from meridianatc.sim.state import AircraftState
@@ -342,6 +343,7 @@ def test_engine_backend_selection_and_single_notice(monkeypatch, plugin):
     pytest.importorskip("scipy")
     from meridianatc import engine as module
 
+    monkeypatch.setattr(xplane_plugin, "plugin_ports", lambda: [])
     engine = module.Engine.__new__(module.Engine)
     engine.config = Config()
     engine.config.traffic.xplane_plugin_port = plugin.port

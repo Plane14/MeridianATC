@@ -428,10 +428,21 @@ class AtisGenerator:
         m = re.fullmatch(r"(\d{2})(\d{2})(\d{2})Z", stamp)
         if m:
             now = datetime.now(UTC)
-            return now.replace(day=int(m.group(1)),
-                               hour=int(m.group(2)),
-                               minute=int(m.group(3)),
-                               second=0, microsecond=0)
+            day, hour, minute = (int(part) for part in m.groups())
+            # A METAR stamp has no month. Try the current month and the
+            # adjacent ones, then take the nearest valid date: on June 1,
+            # 312350Z is May 31, not an invalid June 31 or a distant June 1.
+            choices = []
+            month_index = now.year * 12 + now.month - 1
+            for offset in (-1, 0, 1):
+                year, month0 = divmod(month_index + offset, 12)
+                try:
+                    choices.append(datetime(year, month0 + 1, day, hour,
+                                            minute, tzinfo=UTC))
+                except ValueError:
+                    continue
+            if choices:
+                return min(choices, key=lambda when: abs((when - now).total_seconds()))
         return datetime.now(UTC)
 
     def _visibility(self, wx: Weather) -> list[str]:

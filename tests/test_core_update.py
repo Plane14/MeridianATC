@@ -142,3 +142,9 @@ def test_apply_script_never_copies_over_a_process_that_did_not_exit():
     timeout = script.split(":still_running\r\n", 1)[1]
     assert "robocopy" not in timeout and 'start ""' not in timeout
     assert "exit /b 1" in timeout
+
+
+def test_update_script_carries_simulator_payload_directories():
+    script = update.apply_script(1234)
+    assert 'for %%D in (msfs-panel xplane-plugin)' in script
+    assert r'robocopy "%SRC%\%%D" "%DST%\%%D" /E' in script

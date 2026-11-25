@@ -469,3 +469,39 @@ def test_fms_cruise_takes_the_enroute_leg_levels():
     ])
     assert route is not None
     assert route.cruise_ft == 20000
+
+
+def test_atis_metar_day_reconstructs_the_nearest_month():
+    """METAR DDHHMMZ carries no month: on June 1, 312350Z is May 31,
+    not a ValueError for June 31."""
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from meridianatc.atc.atis import AtisGenerator
+
+    with patch("meridianatc.atc.atis.datetime") as dt:
+        dt.now.return_value = datetime(2026, 6, 1, 0, 10, tzinfo=UTC)
+        dt.side_effect = datetime
+        got = AtisGenerator._obs_time(SimpleNamespace(observed_utc="312350Z"))
+    assert (got.year, got.month, got.day, got.hour, got.minute) == (2026, 5, 31, 23, 50)
+
+
+def test_gsx_service_states_use_the_documented_numeric_states():
+    from meridianatc.integrations.gsx import interpret
+
+    performing = interpret({"FSDT_GSX_BOARDING_STATE": 5,
+                            "FSDT_GSX_DEPARTURE_STATE": 5})
+    assert performing.being_serviced
+    assert performing.being_pushed
+    assert not performing.pushback_done
+    completed = interpret({"FSDT_GSX_DEPARTURE_STATE": 6})
+    assert completed.pushback_done
+    requested = interpret({"FSDT_GSX_REFUELING_STATE": 4})
+    assert not requested.being_serviced
+
+
+def test_direct_lvar_bridge_listens_for_simobject_data_receive_id():
+    from meridianatc.integrations import lvars
+
+    assert lvars._RECV_SIMOBJECT_DATA == 8

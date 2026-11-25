@@ -2415,12 +2415,14 @@ class SimConnectSource:
             remaining = min(remaining, total_cap)
         wrote = False
         for name, cap, _qty in tanks:
-            if remaining <= 0.0:
-                break
             fill = min(remaining, cap) if cap > 0.0 else remaining
+            # Every tank gets a target, including zero: stopping at the
+            # first filled tank would leave the trailing tanks' old fuel
+            # aboard and the total would not be what was asked for.
             if self.set_variable(name, fill, unit="Gallons"):
                 remaining -= fill
                 wrote = True
+            remaining = max(0.0, remaining)
         return wrote
 
     def close(self) -> None:

@@ -127,21 +127,25 @@ MENU_WAIT_S = 6.0
 MENU_SETTLED_S = 3.0
 
 # How GSX numbers the progress of a service. The same six values are used for
-# boarding, deboarding, refuelling, catering, de-icing and pushback.
-NOT_AVAILABLE = 1
-CALLABLE = 2
-REQUESTED = 3
-RUNNING = 4
-COMPLETED = 5
-FINISHED = 6
+# boarding, deboarding, refuelling, catering, de-icing and pushback (GSX
+# manual, "Developers -- Interfacing with GSX").
+CALLABLE = 1
+NOT_AVAILABLE = 2
+BYPASSED = 3
+REQUESTED = 4
+PERFORMING = 5
+COMPLETED = 6
+# Compatibility aliases for the controller-facing predicates below.
+RUNNING = PERFORMING
+FINISHED = COMPLETED
 
 STATE_NAMES: dict[int, str] = {
-    NOT_AVAILABLE: "not available",
     CALLABLE: "available",
+    NOT_AVAILABLE: "not available",
+    BYPASSED: "bypassed",
     REQUESTED: "requested",
-    RUNNING: "in progress",
+    PERFORMING: "in progress",
     COMPLETED: "completed",
-    FINISHED: "finished",
 }
 
 
@@ -702,7 +706,8 @@ class GsxLink:
 __all__ = [
     "GsxState", "GsxLink", "Step", "SERVICES", "interpret", "from_aircraft",
     "LVARS", "STATE_NAMES", "NOT_AVAILABLE", "CALLABLE", "REQUESTED",
-    "RUNNING", "COMPLETED", "FINISHED", "MENU_OPEN", "MENU_CHOICE",
+    "RUNNING", "COMPLETED", "FINISHED", "BYPASSED", "PERFORMING",
+    "MENU_OPEN", "MENU_CHOICE",
     "MENU_WAIT_S", "MENU_SETTLED_S", "menu_file", "menu_now", "read_menu",
     "pushback_choice",
     "entry_choice", "PUSHBACK_WORDS", "NOT_PUSHBACK_WORDS",

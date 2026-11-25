@@ -252,9 +252,9 @@ class NativePilot:
             out[yoke_hdg] = self._steer.update(hdg_err) if have_heading else 0.0
             out[throttle] = _clamp(self._taxi.update(t_gs - gs), 0.0, 0.6)
             out[yoke_pitch] = out[yoke_roll] = 0.0
-            if t_gs <= self.HOLD_KT + 1.0 and gs > t_gs + 1.0:
-                out[f"{_CONTROLS}/l_brake_add[{slot}]"] = 1.0
-                out[f"{_CONTROLS}/r_brake_add[{slot}]"] = 1.0
+            braking = 1.0 if t_gs <= self.HOLD_KT + 1.0 and gs > t_gs + 1.0 else 0.0
+            out[f"{_CONTROLS}/l_brake_add[{slot}]"] = braking
+            out[f"{_CONTROLS}/r_brake_add[{slot}]"] = braking
             return out
 
         # Airborne: heading error to a bank demand, bank error to the
@@ -270,7 +270,8 @@ class NativePilot:
         bank = _clamp(trk_err * 1.5, -25.0, 25.0)
         out[yoke_roll] = self._roll.update(bank - phi) \
             if have_heading else 0.0
-        vs_demand = self._vert.update(alt_err) if ele_ft is not None else t_vs
+        correction = self._vert.update(alt_err) if ele_ft is not None else 0.0
+        vs_demand = t_vs + correction
         out[yoke_pitch] = _clamp(
             self._pitch.update(vs_demand - vs)
             - (pitch_deg or 0.0) * self.PITCH_DAMP,
@@ -405,9 +406,12 @@ class XPNativeTraffic(XPlaneTraffic):
         if self.source is None:
             return
         for key in _FEEDBACK:
+            # X-Plane's elevation dataref is planeN_el, while the rest of
+            # the table carries the spelled-out axis names.
+            ref = "el" if key == "ele" else key
             self.source.subscribe(
                 f"xpn{slot}:{key}",
-                f"{_POSITION}/plane{slot}_{key}")
+                f"{_POSITION}/plane{slot}_{ref}")
 
     def _send_roster(self, roster, now):
         exclusive = bool(self.exclusive)
@@ -465,6 +469,8 @@ class XPNativeTraffic(XPlaneTraffic):
                            _number(position["altitude_ft"], -2000, 100000))
                 except (ValueError, TypeError, KeyError):
                     pos = None
+                if pos is None:
+                    continue
                 op = _text(position.get("operator") or "", 3)
                 roster.append((slot, ident, tcode, op, pos))
                 position["_slot"] = slot
@@ -594,11 +600,6 @@ class XPHybridTraffic(XPNativeTraffic):
             return time.monotonic() - asked >= self.ANSWER_WITHIN_S
         if callsign in self._unmatched:
             return True
-        if self._status.get("native") and callsign not in self._slots:
-            # Queued behind the native roster: while the slots are ours
-            # the drawings cannot render at all, so waiting for a seat
-            # is no failure of the callsign's own.
-            return False
         return (not self.has(callsign)
                 and time.monotonic() - asked >= self.ANSWER_WITHIN_S)
 
@@ -650,17 +651,9 @@ class XPHybridTraffic(XPNativeTraffic):
             native_ids = {c for c in self._slots if self._is_native(c)}
             csl = [p for p in positions
                    if p.get("callsign") not in native_ids]
-            # While the plugin flies a native roster the drawings cannot
-            # render -- plane ownership is exclusive. Send nothing, and
-            # keep the unslotted callsigns asked-for so they queue for
-            # a slot instead of timing out as failures.
-            if self._status.get("native"):
-                now = time.monotonic()
-                for position in csl:
-                    ident = _text(position.get("callsign"), 64, True)
-                    if ident:
-                        # Refresh the ask-time: the drawing window starts
-                        # when a packet can actually reach the planes.
-                        self._wanted[ident] = now
-                return
+            # Native AI ownership and CSL rendering coexist: ownership is
+            # exclusive only for the multiplayer/TCAS datarefs, not for
+            # XPMP2's visible instances. Overflow traffic is still drawn,
+            # albeit without TCAS/dataref visibility while native owns the
+            # slots.
             self._sync_csl(csl, time.monotonic())

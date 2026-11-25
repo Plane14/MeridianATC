@@ -588,9 +588,9 @@ class MobiFlightBridge(Bridge):
         if not self.open():
             return False
         with self._lock:
+            capacity = max(0, MAX_VARS - len(self._registered))
             wanted = [n for n in names
-                      if n not in self._registered
-                      and len(self._registered) < MAX_VARS]
+                      if n not in self._registered][:capacity]
             start = len(self._registered)
             self._registered.extend(wanted)
         if not wanted:
@@ -697,7 +697,7 @@ class MobiFlightBridge(Bridge):
 
 SIMCONNECT_OBJECT_ID_USER = 0
 #: SIMCONNECT_RECV_ID_SIMOBJECT_DATA: the answer a data definition gets.
-_RECV_SIMOBJECT_DATA = 6
+_RECV_SIMOBJECT_DATA = 8
 #: SIMCONNECT_PERIOD_SECOND: a value a second is enough for a tug.
 _PERIOD_SECOND = 4
 #: SIMCONNECT_DATATYPE_FLOAT64: a double, the wrapper's default unit type.

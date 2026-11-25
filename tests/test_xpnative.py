@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from unittest.mock import Mock
 
 import pytest
 
+from meridianatc import xplane_plugin as xp
 from meridianatc.config import Config
 from meridianatc.integrations.xpnative import (
     HELICOPTER_TYPES,
@@ -170,7 +172,7 @@ def test_stable_assignment_and_detach(plugin, link):
     eventually(lambda: rosters(plugin)[-1]["ac"] == [])
 
 
-def test_hybrid_queues_the_drawings_while_native_flies(plugin):
+def test_hybrid_draws_the_overflow_while_native_flies(plugin):
     source = FakeSource()
     link = XPHybridTraffic(port=plugin.port, source=source, settle_s=0)
     try:
@@ -184,19 +186,13 @@ def test_hybrid_queues_the_drawings_while_native_flies(plugin):
         time.sleep(0.1)
         link.on_frame()
         assert link._status.get("native") == rostered
-        # Plane ownership is exclusive: while the roster flies, nothing
-        # sent to the drawings can render, so nothing is sent -- and the
-        # overflow callsigns wait for a slot rather than failing out.
-        sent = len([m for m in plugin.messages if m["t"] == "traffic"])
-        link.sync(many)
-        assert all(not link.failed(p["callsign"]) for p in many)
-        assert len([m for m in plugin.messages
-                    if m["t"] == "traffic"]) == sent
-        # Once the roster lets go the drawings take over again.
-        link._status["native"] = 0
-        link.sync(many)
-        eventually(lambda: any(m["t"] == "traffic" and m["ac"]
-                               for m in plugin.messages[sent:]))
+        # AI-plane ownership is exclusive only for the multiplayer/TCAS
+        # datarefs. XPMP2's visible CSL instances do not need it, so the
+        # two overflow callsigns are still sent and drawn.
+        traffic = [m for m in plugin.messages if m["t"] == "traffic"]
+        assert traffic
+        overflow = traffic[-1]["ac"]
+        assert {a["id"] for a in overflow} == {"CALL19", "CALL20"}
     finally:
         link.detach()
 
@@ -298,6 +294,7 @@ def test_engine_picks_native_renderer(monkeypatch, plugin):
     pytest.importorskip("scipy")
     from meridianatc import engine as module
 
+    monkeypatch.setattr(xp, "plugin_ports", lambda: [])
     engine = module.Engine.__new__(module.Engine)
     engine.config = Config()
     engine.config.traffic.xplane_plugin_port = plugin.port
@@ -316,3 +313,32 @@ def test_engine_picks_native_renderer(monkeypatch, plugin):
     assert engine.attach_simulator_traffic()
     from meridianatc.integrations.xptraffic import XPlaneTraffic
     assert type(engine.simtraffic) is XPlaneTraffic
+
+
+def test_slot_feedback_uses_xplanes_real_elevation_dataref(plugin, link):
+    link.sync([position()])
+    eventually(lambda: rosters(plugin))
+    assert link.source.subscriptions["xpn1:ele"].endswith("plane1_el")
+    assert not link.source.subscriptions["xpn1:ele"].endswith("plane1_ele")
+
+
+def test_native_toe_brakes_are_released():
+    pilot = NativePilot("C172")
+    target = dict(npos(type="C172", motion={"lat": 48, "lon": 11, "alt": 0,
+                       "heading": 0, "gs": 1, "on_ground": True}), _slot=2)
+    measured = {"lat": 48, "lon": 11, "ele": 0, "psi": 0,
+                "v_x": 5.0, "v_y": 0.0, "v_z": 0.0}
+    first = pilot.update(target, measured, 1.0)
+    assert first["sim/multiplayer/controls/l_brake_add[2]"] == 1.0
+    target["motion"]["gs"] = 20
+    second = pilot.update(target, measured, 2.0)
+    assert second["sim/multiplayer/controls/l_brake_add[2]"] == 0.0
+    assert second["sim/multiplayer/controls/r_brake_add[2]"] == 0.0
+
+
+def test_malformed_native_position_is_skipped_not_sent(plugin, link):
+    broken = position("BROKEN")
+    del broken["altitude_ft"]
+    link.sync([broken])
+    threading.Event().wait(.05)
+    assert all(a.get("id") != "BROKEN" for r in rosters(plugin) for a in r["ac"])

@@ -98,7 +98,7 @@ class _Working_the_user:
         traffic's reservation, or anything in the picture on the strip."""
         if self.traffic is not None:
             try:
-                if self.traffic.runway_is_busy(time.monotonic()):
+                if self.traffic.runway_is_busy(time.monotonic(), runway):
                     return True
             except Exception:
                 log.warning("could not read the runway reservation; "

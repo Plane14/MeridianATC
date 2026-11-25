@@ -258,7 +258,8 @@ def test_health_udp():
         peer.close()
 
 
-def test_read_only_plugin_probe_and_health():
+def test_read_only_plugin_probe_and_health(monkeypatch):
+    monkeypatch.setattr(xp, "plugin_ports", lambda: [])
     peer = FakePlugin()
     config = Config()
     config.sim.simulator = "xplane"
