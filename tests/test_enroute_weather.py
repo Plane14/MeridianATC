@@ -84,8 +84,8 @@ def test_metar_cells_require_explicit_convection_not_plain_rain():
          "rawOb": "EDDF 242050Z 12008KT 9999 -RA SCT020 10/05 Q1015"},
         {"lat": 50.2, "lon": 8.2, "icaoId": "EDDF",
          "rawOb": "EDDF 242050Z 12008KT 9999 TSRA SCT020CB 10/05 Q1015"},
-        {"lat": 50.3, "lon": 8.3, "icaoId": "EDDF",
-         "rawOb": "EDDF 242050Z 12008KT 9999 VCTS 10/05 Q1015"},
+        {"lat": 50.3, "lon": 8.3, "icaoId": "EDDW",
+         "rawOb": "EDDW 242050Z 12008KT 9999 VCTS 10/05 Q1015"},
     ]
     cells = metar_convective_cells(rows)
     assert len(cells) == 2
@@ -272,7 +272,8 @@ def test_repeated_station_metars_are_one_weather_cell_not_inflated_coverage():
     from meridianatc.weather.enroute import metar_convective_cells
 
     rows = []
-    for obs in (1795624200, 1795626000, 1795627800):
+    for obs in ("2026-11-25T17:30:00Z", "2026-11-25T18:00:00Z",
+                "2026-11-25T18:30:00Z"):
         rows.append({
             "lat": 43.307, "lon": -8.372, "icaoId": "LECO", "obsTime": obs,
             "rawOb": "LECO 251730Z 31004KT 9999 TSRA SCT035CB 11/09 Q1020",

@@ -17,6 +17,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 import requests
 
@@ -180,6 +181,21 @@ def xplane_cells(points, altitude_ft: float = 0.0,
     return cells
 
 
+def _report_timestamp(value) -> float:
+    """AWC observation time as epoch seconds, numeric or ISO-8601."""
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        pass
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.timestamp()
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def metar_convective_cells(raw_reports, now: float | None = None) -> list[HazardCell]:
     """Explicit thunderstorm reports near the route, as coarse strategic cells."""
     now = time.time() if now is None else now
@@ -198,12 +214,13 @@ def metar_convective_cells(raw_reports, now: float | None = None) -> list[Hazard
         severe = any(token in text for token in ("+TS", "GR", "SQ", "FC"))
         station = str(row.get("stationId") or row.get("station")
                         or row.get("site") or row.get("id")
+                        or row.get("icaoId")
                         or f"{float(lat):.3f},{float(lon):.3f}")
         # The two-hour bbox answer carries several observations per station.
         # They are one weather system reported again, not several cells, and
         # counting each copy inflates the corridor coverage into a spurious
         # circumnavigation. Keep the newest report per station.
-        obs = float(row.get("obsTime") or 0.0)
+        obs = _report_timestamp(row.get("obsTime"))
         previous = by_station.get(station)
         if previous is not None and obs < previous[0]:
             continue
