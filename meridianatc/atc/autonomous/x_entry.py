@@ -384,6 +384,17 @@ class _Entry:
         session level; capping it once here keeps the two from filing a
         level the aeroplane then refuses to fly.
         """
+        type_code = (getattr(aircraft, "type_code", "")
+                     or getattr(session.aircraft, "type_code", ""))
+        if type_code and type_code != getattr(aircraft, "type_code", ""):
+            # A no-sim/manual flight often knows the type only because the
+            # pilot filed it. The session aircraft is the same aeroplane;
+            # use that type for the pressurisation question rather than
+            # treating an empty manual dataref as an unpressurised piston.
+            from contextlib import suppress
+            from dataclasses import replace
+            with suppress(TypeError):
+                aircraft = replace(aircraft, type_code=type_code)
         ceiling = self._physiological_ceiling(aircraft)
         cruise = float(getattr(session, "cruise_altitude_ft", 0.0) or 0.0)
         if ceiling and (not cruise or cruise > ceiling):

@@ -1050,3 +1050,17 @@ def test_pressurisation_is_inferred_from_type_when_no_sim_engine_data():
         type_code="B739", engine_type=0, pressurization_capable=False,
         pressurization_diff_psi=0.0, altitude_ft=0.0,
         pressure_altitude_ft=0.0, cabin_altitude_ft=0.0))
+
+
+def test_physiology_cap_uses_filed_type_when_manual_state_has_none():
+    """`/flight aircraft_type=B739` is enough evidence that the manual
+    aeroplane is pressurised; an empty manual TYPE CODE must not silently
+    mean piston."""
+    from meridianatc.atc.autonomous.core import AutonomousFlight
+    from meridianatc.sim.state import AircraftState
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    session = SimpleNamespace(
+        aircraft=SimpleNamespace(type_code="B739"),
+        cruise_altitude_ft=35000.0)
+    fo._cap_cruise_for_physiology(session, AircraftState())
+    assert session.cruise_altitude_ft == 35000.0
