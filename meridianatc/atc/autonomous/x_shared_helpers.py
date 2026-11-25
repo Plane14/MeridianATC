@@ -533,8 +533,13 @@ class _Shared_helpers:
         # at on the one it has left.
         if self.state.emergency == "engine":
             lim = self._limits(state)
-            glide = max((lim["stall_kt"] or 0.0) * 1.4,
-                        self.performance.approach_kt * 0.9)
+            clean_stall = float(getattr(state, "design_vs1_kt", 0.0)
+                                or lim["stall_kt"] or 0.0)
+            glide = float(getattr(self.performance, "best_glide_kt", 0.0)
+                          or 0.0)
+            if glide <= 0.0:
+                glide = max(clean_stall * 1.4,
+                            self.performance.approach_kt)
             return self._safe_speed(state, glide, lim)
         if self.state.emergency == "engine-out":
             return min(target, self.state.climb_kt
@@ -1387,12 +1392,16 @@ class _Shared_helpers:
                 st.hold_leg, want = "inbound", to_fix
                 st.hold_nearest_nm = 0.0
         if st.hold_leg != "to_fix":
-            # A heading bug turns the short way round; the hold turns
-            # right. A half-turn is led round by the bug kept a quarter
+            # A heading bug turns the short way round; the hold turns in
+            # its own direction. A half-turn is led round by the bug kept
             # ahead of the nose until the short way is the right way.
+            turn_left = getattr(hold, "turn", "R") == "L"
             right = (want - track) % 360.0
-            if 150.0 < right < 300.0:
+            left = (track - want) % 360.0
+            if not turn_left and 150.0 < right < 300.0:
                 want = (track + 90.0) % 360.0
+            elif turn_left and 150.0 < left < 300.0:
+                want = (track - 90.0) % 360.0
         self.director.heading(self._magnetic(want, state))
         self.state.ap_hdg_mode = True
 

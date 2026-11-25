@@ -33,12 +33,12 @@ class _Fuel_planning:
             return False
         # The designator's power letter: 'J' and 'T' are Jet-A, 'P' is
         # avgas -- which is also what an H1P helicopter burns.
-        code = (getattr(getattr(self.session, "aircraft", None),
+        code = (getattr(getattr(getattr(self, "session", None), "aircraft", None),
                         "type_code", "") or "").strip().upper()
         description = ac.DOC_8643.get(code)
         if description:
             return description[-1] in ("T", "J")
-        if self._is_helicopter:
+        if getattr(self, "_is_helicopter", False):
             # The helicopter rows the table does not know are the turbine
             # ones almost everywhere; the pistons are listed above.
             return True

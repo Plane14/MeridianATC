@@ -290,19 +290,31 @@ class _The_engines:
                 # left lean to the flare is the go-around that answers
                 # with a cough instead of power.
                 self._mixture_leaned = False
+                self._mixture_setting = 1.0
                 self.director.mixture(1.0)
                 self._emit("info", "Mixture rich",
                            "autonomous.engines.rich")
             else:
                 self._mixture_leaned = False
             return
-        if getattr(self, "_mixture_leaned", False):
+        pressure_alt = getattr(state, "pressure_altitude_ft", None)
+        if pressure_alt is None or pressure_alt <= 0.0:
+            pressure_alt = getattr(state, "altitude_ft", None)
+        if pressure_alt is None or pressure_alt <= 0.0:
+            pressure_alt = getattr(state, "altitude_agl_ft", 0.0)
+        pressure_alt = float(pressure_alt or 0.0)
+        if pressure_alt < 3000.0:
             return
-        agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)
-        if agl < 3000.0:
+        # Lean progressively with pressure altitude rather than snapping
+        # once to a fixed three-quarter position. Without EGT feedback
+        # this stays on the conservative rich side of peak.
+        setting = max(0.65, 1.0 - min(0.35,
+                       (pressure_alt - 3000.0) / 7000.0 * 0.35))
+        if abs(getattr(self, "_mixture_setting", 1.0) - setting) < 0.01:
             return
         self._mixture_leaned = True
-        self.director.mixture(0.75)
+        self._mixture_setting = setting
+        self.director.mixture(setting)
         self._emit("info", "Mixture leaned for altitude",
                    "autonomous.engines.lean")
 

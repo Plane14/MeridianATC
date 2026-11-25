@@ -52,6 +52,7 @@ from __future__ import annotations
 import logging
 import math
 import time
+from types import SimpleNamespace
 
 from ..logs import decision
 from ..navdata.build import bearing_deg, haversine_nm
@@ -1233,12 +1234,49 @@ class ArrivalWatch:
         at = base + hh * 3600 + mm * 60
         return at if at >= hold.issued_at else at + 86400
 
+    def _published_hold_leg(self, session, destination):
+        """The last published holding leg on the filed STAR, when decoded.
+
+        Procedure data carries HA/HF/HM legs with the charted fix, inbound
+        course and leg time. Those are the hold a controller means when it
+        says "hold as published". The charted turn direction is carried
+        through both the clearance and the flown racetrack.
+        """
+        route = self._route(destination)
+        if route is None or not getattr(route, "star", ""):
+            return None
+        procs = getattr(self.brain, "terminal_procedures", {}).get(
+            getattr(destination, "ident", ""))
+        if procs is None:
+            return None
+        from .procedure_legs import choose_star
+
+        idents = [getattr(fix, "ident", "") or ""
+                  for fix in getattr(route, "fixes", ()) or ()]
+        _proc, transition = choose_star(
+            procs, route.star,
+            getattr(session, "arrival_runway", "")
+            or getattr(route, "star_runway", "") or "",
+            getattr(route, "star_transition", "") or "", idents)
+        if transition is None:
+            return None
+        for leg in reversed(getattr(transition, "legs", ()) or ()):
+            if getattr(leg, "path", "") in ("HA", "HF", "HM")                     and getattr(leg, "has_fix", False)                     and getattr(leg, "turn", "") in ("", "L", "R", "E"):
+                return leg
+        return None
+
     def _give_hold(self, session, station, state, destination, reason, ahead,
                    p, now) -> Reply | None:
         route = self._route(destination)
-        fix = hold_rules.hold_fix(self._star_path(destination),
-                                  route.fixes if route else (),
-                                  destination.lat, destination.lon)
+        published_leg = self._published_hold_leg(session, destination)
+        if published_leg is not None:
+            fix = SimpleNamespace(
+                ident=published_leg.fix_ident, lat=published_leg.lat,
+                lon=published_leg.lon, is_marker=False)
+        else:
+            fix = hold_rules.hold_fix(self._star_path(destination),
+                                      route.fixes if route else (),
+                                      destination.lat, destination.lon)
         if fix is None:
             if session.advise_once("hold:nowhere"):
                 decision("hold", airport=destination.ident, event="no fix",
@@ -1252,23 +1290,40 @@ class ArrivalWatch:
         inbound = hold_rules.inbound_course(fix.lat, fix.lon, destination.lat,
                                             destination.lon)
         legs = hold_rules.leg_minutes(altitude)
+        if published_leg is not None:
+            constraint = published_leg.altitude_constraint
+            # Floors are honoured; a ceiling is not a level to climb to.
+            from .procedure_legs import ALT_AT, ALT_AT_OR_ABOVE, ALT_IN_BETWEEN
+            if constraint > 0.0 and published_leg.alt_desc in                     (ALT_AT, ALT_AT_OR_ABOVE, ALT_IN_BETWEEN):
+                altitude = max(altitude, constraint)
+            if published_leg.course > 0.0:
+                inbound = float(published_leg.course)
+                if not published_leg.true_degree:
+                    from ..navdata.magvar import to_true, variation
+                    inbound = to_true(inbound, variation(fix.lat, fix.lon))
+            if published_leg.distance_minute and published_leg.route_distance > 0.0:
+                legs = float(published_leg.route_distance)
         hold = hold_rules.Hold(
             fix=fix.ident, lat=fix.lat, lon=fix.lon, inbound_true=inbound,
             side=hold_rules.side_of_fix(inbound), leg_minutes=legs,
             altitude_ft=altitude, reason=reason,
             efc_hhmm=hold_rules.efc(now, self._delay(reason, ahead)),
-            number=ahead + 1, issued_at=now)
+            number=ahead + 1, issued_at=now,
+            turn=("L" if published_leg.turn == "L" else "R")
+            if published_leg is not None else "R")
         session.hold = hold
         session.vector_leg = ""
         session.assigned_heading = None
         decision("hold", airport=destination.ident, event="given",
                  reason=reason, fix=fix.ident, altitude_ft=int(altitude),
-                 legs_min=legs, efc=hold.efc_hhmm, ahead=ahead)
+                 legs_min=legs, efc=hold.efc_hhmm, ahead=ahead,
+                 published=published_leg is not None)
         magnetic = int(round(self._magnetic(inbound, state))) or 360
         weather = self._weather(None, destination)
         text = p.hold_clearance(
             session.aircraft, fix.ident, hold.side, magnetic, altitude, legs,
             hold.efc_hhmm, station=self._name(session, station, p),
+            turn=hold.turn,
             abbreviated=bool(session.established_with(station)),
             **{k: v for k, v in self.brain.descent_terms(
                 destination, weather, p, altitude, altitude).items()

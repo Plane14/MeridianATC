@@ -1035,16 +1035,25 @@ class LocalisedPhraseology:
                        inbound: float, altitude_ft: float, leg_minutes: float,
                        efc_hhmm: str, *, station: str = "",
                        abbreviated: bool = True, transition_altitude: int = 0,
-                       transition_level: int = 0, fix_spoken: str = "") -> str:
+                       transition_level: int = 0, fix_spoken: str = "",
+                       turn: str = "R") -> str:
         """See :meth:`Phraseology.hold_clearance`, the ICAO form."""
         minutes = "1.5" if leg_minutes == 1.5 else self.n(int(leg_minutes))
+        right = turn != "L"
+        turns = {
+            "es": "virajes por la derecha" if right else "virajes por la izquierda",
+            "de": "Rechtskurven" if right else "Linkskurven",
+            "it": "virate a destra" if right else "virate a sinistra",
+            "pt": "curvas à direita" if right else "curvas à esquerda",
+        }.get(self.book.language, "right hand pattern" if right
+              else "left hand pattern")
         return _join(self.addressed(aircraft, station, abbreviated),
                      self._("hold_clearance").format(
                          fix=self._fix(fix, fix_spoken),
                          level=self.alt(altitude_ft, transition_altitude,
                                         transition_level),
                          course=self.hdg(inbound), minutes=minutes,
-                         time=self.d(efc_hhmm))) + "."
+                         turns=turns, time=self.d(efc_hhmm))) + "."
 
     def hold_sequence(self, aircraft: Aircraft, number: int, efc_hhmm: str) -> str:
         return _join(aircraft.spoken(True), self._("hold_sequence").format(

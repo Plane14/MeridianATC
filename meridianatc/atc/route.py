@@ -67,6 +67,34 @@ TOD_MIN_NM = 30.0
 # LocalTC): under five is not worth saying, over thirty is not a climb.
 MINUTES_RANGE = (5, 30)
 
+# A runways-as-waypoints row is how the simulator's FMS stores the
+# departure procedure, not a point the aeroplane is ever flying to in
+# the air.
+_RUNWAY_FIX = re.compile(r"^(?:RW|RWY)\d", re.IGNORECASE)
+
+
+def _first_airborne_leg(fixes: tuple[RouteFix, ...]) -> int:
+    """The first leg index whose end is an airborne route fix.
+
+    FMS readbacks often start airport, runway, then the SID. Measured
+    literally, the first leg points back at the runway threshold: after
+    lift-off the nearest point on the filed line is behind the aeroplane,
+    so progress never sequences and the steering flies back to the field
+    instead of onward to the route. The departure airfield itself remains
+    the origin of the first real leg; only its runway pseudo-fix is not a
+    destination. A direct airport-to-airport plan is left intact because
+    there is no airborne fix before its destination.
+    """
+    first = 1
+    while first < len(fixes) - 1:
+        fix = fixes[first]
+        if (fix.kind != "apt"
+                and not _RUNWAY_FIX.match(fix.ident)
+                and fix.ident.upper() not in ("TOC", "TOD")):
+            break
+        first += 1
+    return first
+
 
 def climb_groundspeed(cruise_ft: float) -> float:
     """A typical average groundspeed over the whole climb, knots (after
@@ -251,9 +279,10 @@ class Route:
         fixes = self.fixes
         if len(fixes) < 2:
             return None
-        hint = max(1, min(int(hint or 1), len(fixes) - 1))
+        first = _first_airborne_leg(fixes)
+        hint = max(first, min(int(hint or first), len(fixes) - 1))
         best = None
-        for i in range(1, len(fixes)):
+        for i in range(first, len(fixes)):
             a, b = fixes[i - 1], fixes[i]
             along, across, length = _leg_position(a, b, lat, lon)
             if length < 0.01:

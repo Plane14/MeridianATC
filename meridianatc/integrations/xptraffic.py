@@ -121,6 +121,10 @@ class XPlaneTraffic:
         self._match_pending = {}
         self._match_seq = 0
         self._sequence = 0
+        # High-rate native-slot feedback from the plugin: callsign ->
+        # (received_at, measurement). Unlike RREF, the plugin's own JSON
+        # keeps the double-precision lat/lon/elevation intact.
+        self._nativepos = {}
         # Commands the plugin's key bindings send back up the same
         # channel, drained by the engine each tick.
         self._commands = deque(maxlen=64)
@@ -182,6 +186,28 @@ class XPlaneTraffic:
                     asked = self._match_pending.pop(status["q"], None)
                     if asked is not None:
                         self._match[asked] = status["quality"]
+                    continue
+                if (isinstance(status, dict) and status.get("v") == 1
+                        and status.get("t") == "nativepos"
+                        and isinstance(status.get("ac"), dict)
+                        and len(status["ac"]) <= 64):
+                    keys = ("lat", "lon", "ele", "psi", "phi", "the",
+                            "v_x", "v_y", "v_z")
+                    valid = {}
+                    for ident, row in status["ac"].items():
+                        if (not isinstance(ident, str) or not ident
+                                or len(ident.encode()) > 64
+                                or not isinstance(row, list) or len(row) != 9
+                                or any(type(value) not in (int, float)
+                                       for value in row)):
+                            continue
+                        valid[ident] = (now, dict(zip(keys, row, strict=True)))
+                    if valid:
+                        self._nativepos.update(valid)
+                        cutoff = now - 5.0
+                        self._nativepos = {
+                            ident: pair for ident, pair in self._nativepos.items()
+                            if pair[0] >= cutoff or ident in valid}
                     continue
                 if (not isinstance(status, dict) or type(status.get("v")) is not int
                         or status["v"] != 1 or status.get("t") != "status"

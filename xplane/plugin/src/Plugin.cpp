@@ -52,7 +52,7 @@ struct Config {
 } config;
 fs::path root;
 bool initialized = false, visible = true;
-double lastStatus = -1e9;
+double lastStatus = -1e9, lastNativePositions = -1e9;
 Udp udp;
 sockaddr_in peer{};
 Session session;
@@ -505,6 +505,62 @@ void SeedPosition(int slot, const NativeAssign& assign) {
         if (XPLMDataRef ref = XPLMFindDataRef(path))
             XPLMSetDatad(ref, axes[i]);
     }
+    // A reused slot is still flying the previous occupant unless its
+    // velocity and attitude are seeded with the position. X-Plane's local
+    // axes are +x east, +y up and +z south; headings count clockwise
+    // from north. Ground spawns start at rest; airborne spawns keep the
+    // controller's motion rather than the stale one.
+    const double gs = assign.ground ? 0.0 : assign.gs * 0.514444;
+    const double rad = assign.hdg * Pi / 180.0;
+    const float velocities[] = {
+        static_cast<float>(std::sin(rad) * gs),
+        static_cast<float>(assign.ground ? 0.0 : assign.vs / 60.0 * 0.3048),
+        static_cast<float>(-std::cos(rad) * gs),
+    };
+    const char* vnames[] = {"v_x", "v_y", "v_z"};
+    for (int i = 0; i < 3; ++i) {
+        std::snprintf(path, sizeof(path),
+                      "sim/multiplayer/position/plane%d_%s", slot, vnames[i]);
+        if (XPLMDataRef ref = XPLMFindDataRef(path))
+            XPLMSetDataf(ref, velocities[i]);
+    }
+    const float attitude[] = {
+        static_cast<float>(assign.hdg), 0.0f, 0.0f,
+    };
+    const char* anames[] = {"psi", "the", "phi"};
+    for (int i = 0; i < 3; ++i) {
+        std::snprintf(path, sizeof(path),
+                      "sim/multiplayer/position/plane%d_%s", slot, anames[i]);
+        if (XPLMDataRef ref = XPLMFindDataRef(path))
+            XPLMSetDataf(ref, attitude[i]);
+    }
+}
+Json NativePositions() {
+    // RREF/DREF traffic crosses X-Plane's UDP interface as float32, which
+    // quantizes a degree of latitude to the better part of a metre. The
+    // plugin reads the same slots in their native double precision and
+    // reports them on its own channel; the control loop uses this for
+    // position and falls back to RREF only when these packets stop.
+    Json aircraft = Json::object();
+    for (const auto& [slot, pair] : nativeSlots) {
+        char path[128];
+        auto refFor = [&](const char* leaf) {
+            std::snprintf(path, sizeof(path),
+                          "sim/multiplayer/position/plane%d_%s", slot, leaf);
+            return XPLMFindDataRef(path);
+        };
+        XPLMDataRef lat = refFor("lat"), lon = refFor("lon"), ele = refFor("el");
+        XPLMDataRef psi = refFor("psi"), phi = refFor("phi"), the = refFor("the");
+        XPLMDataRef vx = refFor("v_x"), vy = refFor("v_y"), vz = refFor("v_z");
+        if (!lat || !lon || !ele || !psi || !phi || !the || !vx || !vy || !vz)
+            continue;
+        aircraft[pair.first] = {
+            XPLMGetDatad(lat), XPLMGetDatad(lon), XPLMGetDatad(ele),
+            XPLMGetDataf(psi), XPLMGetDataf(phi), XPLMGetDataf(the),
+            XPLMGetDataf(vx), XPLMGetDataf(vy), XPLMGetDataf(vz),
+        };
+    }
+    return {{"v", 1}, {"t", "nativepos"}, {"ac", aircraft}};
 }
 void ClearNative() {
     if (nativeSlots.empty() && !nativeAcquired && !nativeBlocked) return;
@@ -804,6 +860,11 @@ float Poll(float, float, int, void*) {
         FollowMeCar(now);
         if (session.Connected(now) && now - lastStatus >= 1) {
             udp.Send(Status(now).dump(), peer); lastStatus = now;
+        }
+        if (session.Connected(now) && !nativeSlots.empty()
+                && now - lastNativePositions >= 0.2) {
+            udp.Send(NativePositions().dump(), peer);
+            lastNativePositions = now;
         }
     } catch (const std::exception& e) { Log(e.what()); }
     return -1;

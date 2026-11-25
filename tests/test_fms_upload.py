@@ -363,3 +363,34 @@ def test_the_cruise_comes_from_the_leg_altitudes_when_unfiled():
     # INBOM rides at +035000.00 on the route's own upload; the
     # airports' field elevations do not count.
     assert route.cruise_ft == 35000
+
+
+def test_airborne_progress_never_flies_back_to_the_runway_row():
+    """The live LECO-LECU case: X-Plane's FMS starts airport, RW03,
+    BERAX, FORNO. Thirty miles north of the field the geometrically
+    nearest point was still the airport-to-runway pseudo-leg, so the
+    bearing bug pointed at RW03 -- almost due south, back to the field --
+    instead of BERAX and Madrid."""
+    route = Route(fixes=(
+        RouteFix("LECO", 43.301944, -8.377222, kind="apt"),
+        RouteFix("RW03", 43.291698, -8.385752, kind="wpt"),
+        RouteFix("BERAX", 43.252056, -8.176666, kind="wpt"),
+        RouteFix("FORNO", 42.468113, -7.481472, kind="wpt"),
+        RouteFix("BBI", 41.016693, -5.456833, kind="wpt"),
+        RouteFix("VP130", 40.404446, -3.879167, kind="wpt"),
+        RouteFix("LECU", 40.370556, -3.785278, kind="apt"),
+    ), origin="LECO", destination="LECU", source="sim")
+    progress = route.progress(44.934, -8.543, 200.0, hint=1)
+    assert progress is not None
+    assert progress.to_fix.ident == "BERAX"
+    assert progress.leg_name == "RW03-BERAX"
+
+
+def test_airport_to_airport_progress_still_has_a_leg():
+    route = Route(fixes=(
+        RouteFix("LECO", 43.301944, -8.377222, kind="apt"),
+        RouteFix("LECU", 40.370556, -3.785278, kind="apt"),
+    ), origin="LECO", destination="LECU", source="sim")
+    progress = route.progress(42.0, -6.0, 180.0, hint=1)
+    assert progress is not None
+    assert progress.to_fix.ident == "LECU"

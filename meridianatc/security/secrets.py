@@ -219,6 +219,22 @@ def default_store() -> SecretStore:
         return _default
 
 
+def ai_secret_path(provider: str, host: str = "") -> str:
+    """The provider- and endpoint-scoped store path for an AI key.
+
+    A key entered for one provider is never sent to another. A custom
+    endpoint has no official pin, so its key is also bound to the exact
+    URL it was entered for: changing ``ai.host`` makes the old key
+    unavailable instead of forwarding it to the new host.
+    """
+    provider = (provider or "none").strip().lower()
+    if provider != "custom":
+        return f"ai.api_key.{provider}"
+    import hashlib
+    digest = hashlib.sha256((host or "").strip().lower().rstrip("/").encode()).hexdigest()[:16]
+    return f"ai.api_key.custom.{digest}"
+
+
 def resolve_secret(config, path: str, env: str = "") -> str:
     """The one order every credential resolves in.
 

@@ -44,6 +44,12 @@ class NativePlugin(FakePlugin):
             except OSError:
                 break
 
+    def native_positions(self, rows):
+        import json
+        self.socket.sendto(json.dumps(
+            {"v": 1, "t": "nativepos", "ac": rows}).encode(),
+            self.peer or ("127.0.0.1", self.port))
+
     def status(self, **overrides):
         overrides.setdefault("native_cap", 1)
         overrides.setdefault("native", len(self.planes))
@@ -115,7 +121,8 @@ def test_roster_and_control_writes(plugin, link):
                                   "ac": [{"id": "DLH4AB", "slot": 1,
                                           "type": "A320", "op": "DLH",
                                           "lat": 48.1,
-                                          "lon": 11.7, "alt": 12000}]}
+                                          "lon": 11.7, "alt": 12000, "hdg": 359.0,
+                                              "gs": 250.0, "vs": 600.0, "gnd": False}]}
     # The callsign is not confirmed until the plugin reports the plane.
     assert not link.has("DLH4AB")
     plugin.status()
@@ -342,3 +349,45 @@ def test_malformed_native_position_is_skipped_not_sent(plugin, link):
     link.sync([broken])
     threading.Event().wait(.05)
     assert all(a.get("id") != "BROKEN" for r in rosters(plugin) for a in r["ac"])
+
+
+def test_plugin_nativepos_replaces_float32_rref_position(plugin, link):
+    """The plugin's own feedback packet carries lat/lon/ele as doubles;
+    RREF's float32 samples remain only a fallback."""
+    link.sync([position()])
+    eventually(lambda: rosters(plugin))
+    pilot = Mock()
+    pilot.type_code = "A320"
+    pilot.update.return_value = {}
+    link._pilots["DLH4AB"] = pilot
+    exact = {
+        "lat": 48.123456789, "lon": 11.987654321, "ele": 3333.33,
+        "psi": 123.0, "phi": 2.0, "the": 4.0,
+        "v_x": 1.0, "v_y": 2.0, "v_z": 3.0,
+    }
+    link._nativepos["DLH4AB"] = (time.monotonic(), exact)
+    link.source.values["xpn1:lat"] = 48.123456  # the float32-truncated value
+    link.sync([position()])
+    measured = pilot.update.call_args.args[1]
+    assert measured["lat"] == exact["lat"]
+    assert measured["lon"] == exact["lon"]
+    assert measured["ele"] == exact["ele"]
+
+    # A stale plugin packet is not flown as the present: the ordinary
+    # dataref feedback takes over again.
+    link._nativepos["DLH4AB"] = (time.monotonic() - 2.0, exact)
+    pilot.update.reset_mock()
+    link.sync([position()])
+    measured = pilot.update.call_args.args[1]
+    assert measured["lat"] == 48.123456
+
+
+def test_nativepos_packet_is_validated_and_decoded(plugin, link):
+    row = [48.123456789, 11.987654321, 3333.33,
+           123.0, 2.0, 4.0, 1.0, 2.0, 3.0]
+    plugin.native_positions({"DLH4AB": row, "bad": [1.0]})
+    eventually(lambda: (link.on_frame(), "DLH4AB" in link._nativepos)[1])
+    measured = link._nativepos["DLH4AB"][1]
+    assert measured["lat"] == row[0]
+    assert measured["v_z"] == row[-1]
+    assert "bad" not in link._nativepos

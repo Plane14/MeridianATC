@@ -17,6 +17,7 @@ import struct
 import threading
 import time
 from dataclasses import fields
+from pathlib import Path
 
 from .models import XP_READ_ALIASES, XP_WRITE_ALIASES, xp_model_key
 from .source import SimConnectSource
@@ -29,6 +30,67 @@ LB = 2.204622622
 RADIOS = "sim/cockpit2/radios/actuators/"
 
 log = logging.getLogger(__name__)
+
+
+def acf_design_values(acf_path: str, roots=None) -> dict:
+    """The loaded .acf's airframe-life-support and ATC design values.
+
+    Plane Maker writes the keys X-Plane's own systems use; they are not
+    all exposed under stable public dataref paths on every build, so the
+    aircraft file itself is the authority. Zero is Plane Maker's unset
+    value and means callers keep their table fallback.
+    """
+    rel = (acf_path or "").replace("\\", "/").lstrip("/")
+    empty = {"service_ceiling_ft": 0.0,
+             "oxygen_capacity_liters": 0.0,
+             "pressurization_capable": False}
+    if not rel or ".." in Path(rel).parts:
+        return empty
+    if roots is None:
+        try:
+            from ..xplane_plugin import install_roots
+            roots = install_roots()
+        except Exception:
+            return empty
+    keys = {"P acf/_max_atc_alt_ft": "service_ceiling_ft",
+            "P acf/_o2_bottle_liter": "oxygen_capacity_liters",
+            "P acf/_max_press_diff": "_max_press_diff"}
+    found = dict(empty)
+    raw_press_diff = 0.0
+    for root in roots or ():
+        candidate = Path(root) / rel
+        try:
+            if not candidate.is_file():
+                continue
+            with candidate.open("r", encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    parts = line.split()
+                    if len(parts) < 3 or parts[0] != "P":
+                        continue
+                    key = " ".join(parts[:2])
+                    name = keys.get(key)
+                    if name is None:
+                        continue
+                    try:
+                        value = float(parts[2])
+                    except ValueError:
+                        continue
+                    if name == "service_ceiling_ft":
+                        found[name] = value if 0.0 < value <= 100000.0 else 0.0
+                    elif name == "oxygen_capacity_liters":
+                        found[name] = max(0.0, value)
+                    else:
+                        raw_press_diff = max(0.0, value)
+            found["pressurization_capable"] = raw_press_diff > 0.0
+            return found
+        except OSError:
+            continue
+    return found
+
+
+def acf_service_ceiling(acf_path: str, roots=None) -> float:
+    """X-Plane 12.1+'s ``acf/_max_atc_alt_ft`` from the loaded .acf."""
+    return acf_design_values(acf_path, roots)["service_ceiling_ft"]
 
 
 def _slot(key):
@@ -172,6 +234,10 @@ DATAREFS = {
     "no_smoking_sign": ("sim/cockpit2/switches/no_smoking", 1),
     "wiper_pos": ("sim/cockpit2/switches/wiper_speed", 1),
     "oxygen_on": ("sim/cockpit2/oxygen/actuators/o2_valve_on", 1),
+    "oxygen_remaining_liters": ("sim/cockpit2/oxygen/indicators/o2_bottle_rem_liter", 1),
+    "oxygen_plugged_in": ("sim/cockpit2/oxygen/actuators/num_plugged_in_o2", 1),
+    "oxygen_flow_setting": ("sim/cockpit2/oxygen/actuators/demand_flow_setting", 1),
+    "pilot_felt_altitude_ft": ("sim/cockpit2/oxygen/indicators/pilot_felt_altitude_ft", 1),
     "hydraulic_pressure": ("sim/cockpit2/hydraulics/indicators/hydraulic_pressure_1", 1),
     "hydraulic_pump_on": ("sim/cockpit2/switches/electric_hydraulic_pump_on", 1),
     "rotor_brake_handle_pos": ("sim/cockpit2/switches/rotor_brake_ratio", 100),
@@ -204,10 +270,8 @@ EXTRA = {
     "hsi_source": RADIOS + "HSI_source_select_pilot",
     "nav_type": "sim/cockpit2/radios/indicators/nav1_type",
     "rain": "sim/weather/aircraft/precipitation_on_aircraft_ratio",
+    "rain_rate": "sim/weather/region/rain_percent",
     "hail": "sim/weather/aircraft/hail_on_aircraft_ratio",
-    # Snow's share of what is falling (XP12.1+ region weather); absent on
-    # older builds, which simply keep reporting rain-or-nothing.
-    "snow": "sim/weather/region/snow_percent",
     # The nosewheel's own authority in degrees -- what a -1..1 steering
     # write scales by; 0 or absent leaves the controls' default.
     "steer_deg": "sim/aircraft/gear/acf_nw_steerdeg1",
@@ -420,6 +484,8 @@ WRITABLE = {
     "DECISION HEIGHT": ("minimums_ft", 1),
     "CABIN NO SMOKING ALERT SWITCH": ("no_smoking_sign", 1),
     "OXYGEN SWITCH": ("oxygen_on", 1),
+    "OXYGEN PLUGGED IN": ("oxygen_plugged_in", 1),
+    "OXYGEN FLOW SETTING": ("oxygen_flow_setting", 1),
     "WIPER SWITCH": ("wiper_pos", 1),
     "IGNITION_KEY:1": ("ign_key0", 1),
     "IGNITION_KEY:2": ("ign_key1", 1),
@@ -511,6 +577,8 @@ class XPlaneSource:
         self._model = ""
         self._alias_factors: dict[str, float] = {}
         self._alias_index: dict[str, int] = {}
+        self._ceiling_acf = ""
+        self._acf_design = {}
         self._subscriptions = [(key, path) for key, (path, _) in DATAREFS.items()]
         self._subscriptions += list(EXTRA.items())
         self._subscriptions += [(f"{key}:{i}", f"{path}[{i}]")
@@ -755,6 +823,15 @@ class XPlaneSource:
         for key, (_path, size) in STRINGS.items():
             raw = bytes(max(0, min(255, int(values.get(f"{key}:{i}", 0)))) for i in range(size))
             setattr(state, key, raw.split(b"\0", 1)[0].decode("utf-8", errors="replace").strip())
+        if state.acf_path != self._ceiling_acf:
+            self._ceiling_acf = state.acf_path
+            self._acf_design = acf_design_values(state.acf_path)
+        state.service_ceiling_ft = self._acf_design.get(
+            "service_ceiling_ft", 0.0)
+        state.oxygen_capacity_liters = self._acf_design.get(
+            "oxygen_capacity_liters", 0.0)
+        state.pressurization_capable = bool(self._acf_design.get(
+            "pressurization_capable", False))
         model = xp_model_key(state.acf_path, state.title)
         if model != self._model:
             self._model = model
@@ -892,6 +969,7 @@ class XPlaneSource:
             if "pedal_yaw" in values:
                 state.tail_rotor_pedal_position = values["pedal_yaw"] * 100.0
         state.flaps_index = round(values.get("flaps", 0) * max(0, values.get("flap_detents", 1) - 1))
+        state.flaps_detents = int(values.get("flap_detents", 0) or 0)
         state.transponder_state = {0: 0, 1: 1, 2: 3, 3: 4, 4: 2, 5: 4, 6: 4, 7: 4}.get(
             int(values.get("xp_transponder", 0)), 0)
         state.transponder_mode = 5 if values.get("ident") else (
@@ -919,9 +997,18 @@ class XPlaneSource:
             state.fuel_selector = int(alias)
         state.gps_drives_nav1 = values.get("hsi_source", 0) in (2, 3)
         state.nav1_has_localizer = bool(int(values.get("nav_type", 0)) & (8 | 16))
-        state.ambient_precip_state = (4 if values.get("rain", 0) > 0
-                                      else 2 if values.get("snow", 0) > 0
-                                      else 0)
+        # XP12 publishes the falling precipitation as one rain ratio, not
+        # separate rain and snow channels (there is no region/snow_percent
+        # dataref). At freezing temperatures that precipitation is snow;
+        # the windshield ratio remains a rain-only fallback on builds or
+        # aircraft that do not answer the regional rate.
+        rain_rate = float(values.get("rain_rate", 0.0) or 0.0)
+        if rain_rate > 0.0:
+            freezing = float(values.get("ambient_temperature_c", 15.0)
+                             or 0.0) <= 0.0
+            state.ambient_precip_state = 2 if freezing else 4
+        else:
+            state.ambient_precip_state = 4 if values.get("rain", 0) > 0 else 0
         state.hail_ratio = values.get("hail", 0.0)
         state.cloud_type_max = max((values.get(f"cloud_type{i}", 0.0)
                                     for i in range(3)), default=0.0)

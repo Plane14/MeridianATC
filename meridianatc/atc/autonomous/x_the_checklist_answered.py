@@ -230,9 +230,9 @@ class _The_checklist_answered:
             "exits_open_pct": lambda: d.write(
                 "EXIT OPEN:1", float(expected)),
             "brake_left_pct": lambda: d.write(
-                "BRAKE LEFT POSITION", float(expected)),
+                "BRAKE LEFT POSITION", float(expected), unit="Percent"),
             "brake_right_pct": lambda: d.write(
-                "BRAKE RIGHT POSITION", float(expected)),
+                "BRAKE RIGHT POSITION", float(expected), unit="Percent"),
             "yaw_damper_on": lambda: d.write(
                 "AUTOPILOT YAW DAMPER", 1.0 if want_on else 0.0),
             "antiskid_on": lambda: d.write(

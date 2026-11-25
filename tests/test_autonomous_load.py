@@ -486,3 +486,72 @@ def test_heli_profile_table_marks_the_teetering_rotors():
     for teetering in ("R44", "R66", "B06", "UH1", "B412"):
         assert _HELI_PROFILES[teetering].low_g == 0.4
     assert _HELI_PROFILES["H125"].low_g == 0.2
+
+
+def test_model_published_ceiling_beats_the_class_figure():
+    fo = _fo(perf=Performance(cruise_kt=110.0, ceiling_ft=14000.0))
+    state = AircraftState(service_ceiling_ft=20688.0,
+                          oxygen_capacity_liters=1870.0,
+                          oxygen_remaining_liters=1870.0)
+    assert fo._limits(state)["ceiling_ft"] == pytest.approx(20688.0)
+    state = AircraftState(design_cruise_alt_ft=17000.0,
+                          pressurization_capable=True)
+    assert fo._limits(state)["ceiling_ft"] == pytest.approx(17000.0)
+
+
+def test_unpressurized_without_oxygen_is_planned_out_of_hypoxia():
+    """FAA guidance recommends oxygen above 10,000 ft in an unpressurised
+    aeroplane; EASA/ICAO require flight-crew oxygen for the whole time
+    there. A service ceiling is physical performance, not evidence the
+    occupants can breathe there."""
+    fo = _fo(perf=Performance(cruise_kt=175.0, ceiling_ft=20000.0))
+    state = AircraftState(service_ceiling_ft=20688.0, engine_type=0,
+                          type_code="BE58")
+    assert fo._limits(state)["ceiling_ft"] == pytest.approx(10000.0)
+    state.oxygen_capacity_liters = 1870.0
+    state.oxygen_remaining_liters = 1870.0
+    assert fo._limits(state)["ceiling_ft"] == pytest.approx(20688.0)
+    state = AircraftState(service_ceiling_ft=20688.0, engine_type=0,
+                          type_code="BE58", pressurization_capable=True)
+    assert fo._limits(state)["ceiling_ft"] == pytest.approx(20688.0)
+
+
+def test_manage_oxygen_uses_the_bottle_before_ten_thousand():
+    """The live Baron failure was not absence of equipment: X-Plane's
+    .acf carried 1,870 litres and two occupants were plugged in, but the
+    valve stayed closed. The FO uses the equipment before the cabin is
+    in the hypoxia range."""
+    fo = _fo()
+    fo._dir.write = Mock(return_value=True)
+    state = AircraftState(cabin_altitude_ft=9800.0, on_ground=False,
+                          oxygen_capacity_liters=1870.0,
+                          oxygen_remaining_liters=1870.0,
+                          oxygen_plugged_in=0, oxygen_on=False)
+    fo._manage_oxygen(state)
+    fo._dir.write.assert_any_call("OXYGEN PLUGGED IN", 2.0)
+    fo._dir.write.assert_any_call("OXYGEN FLOW SETTING", 2.0)
+    fo._dir.write.assert_any_call("OXYGEN SWITCH", 1.0)
+    assert "autonomous.oxygen.on" in _emit_keys(fo)
+
+
+def test_manage_oxygen_warns_when_no_system_exists():
+    fo = _fo()
+    fo._dir.write = Mock(return_value=True)
+    state = AircraftState(cabin_altitude_ft=10500.0, on_ground=False)
+    fo._manage_oxygen(state)
+    fo._dir.write.assert_not_called()
+    assert "autonomous.oxygen.none" in _emit_keys(fo)
+
+
+def test_session_cruise_is_capped_when_only_the_wings_can_get_there():
+    fo = _fo(perf=Performance(cruise_kt=175.0, ceiling_ft=20000.0))
+    session = SimpleNamespace(cruise_altitude_ft=17000.0)
+    state = AircraftState(engine_type=0, type_code="BE58",
+                          service_ceiling_ft=20688.0)
+    fo._cap_cruise_for_physiology(session, state)
+    assert session.cruise_altitude_ft == pytest.approx(10000.0)
+    session = SimpleNamespace(cruise_altitude_ft=17000.0)
+    state.oxygen_capacity_liters = 1870.0
+    state.oxygen_remaining_liters = 1870.0
+    fo._cap_cruise_for_physiology(session, state)
+    assert session.cruise_altitude_ft == pytest.approx(17000.0)

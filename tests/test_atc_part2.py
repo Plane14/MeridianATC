@@ -746,3 +746,35 @@ class TestFollowMeCar:
         msg = json.loads(sent[0])
         assert msg["t"] == "followme" and msg["on"] == 1
         assert msg["lat"] == 48.0 and msg["hdg"] == 270.0
+
+
+def test_deviation_watch_leaves_the_initial_climb_alone():
+    """Thirty seconds after liftoff nobody is at the cleared level yet:
+    the departure is flying the clearance, not deviating from it. The
+    live X-Plane case had the tower call "verify altitude" 300 ft into
+    a normal climb because the vertical-speed smoother still remembered
+    the runway roll."""
+    import time
+    from unittest.mock import Mock
+
+    from meridianatc.atc.controller import ControllerBrain
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.atc.watch import DeviationAssistWatch
+    from meridianatc.navdata.db import Station
+    from meridianatc.sim.state import AircraftState
+
+    brain = ControllerBrain(Mock(), Phraseology())
+    brain.staffed = lambda station: True
+    watch = DeviationAssistWatch(Mock(), brain)
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    session.assigned_altitude_ft = 5000.0
+    session.departed_at = time.monotonic()
+    station = Station("TEST", "TWR", 118.1, "Tower")
+    session.establish(station)
+    state = AircraftState(altitude_ft=300.0, indicated_altitude_ft=300.0,
+                          vertical_speed_fpm=50.0, on_ground=False)
+    assert watch._off_now(session, state) == []
+    session.departed_at -= watch.INITIAL_CLIMB_GRACE_S + 1.0
+    assert "altitude" in watch._off_now(session, state)

@@ -60,6 +60,8 @@ struct NativeAssign {
     // the slot was left. Missing numbers mean "no seed".
     bool pos = false;
     double lat = 0, lon = 0, ele = 0;
+    double hdg = 0, gs = 0, vs = 0;
+    bool ground = true;
 };
 
 struct Packet {
@@ -164,6 +166,10 @@ inline Packet Parse(const std::string& wire) {
                 assign.lat = Number(a, "lat", -90, 90);
                 assign.lon = Number(a, "lon", -180, 180);
                 assign.ele = Number(a, "alt", -2000, 100000);
+                if (a.contains("hdg")) assign.hdg = Number(a, "hdg", -360, 720);
+                if (a.contains("gs")) assign.gs = Number(a, "gs", 0, 1200);
+                if (a.contains("vs")) assign.vs = Number(a, "vs", -30000, 30000);
+                if (a.contains("gnd") && a.at("gnd").is_boolean()) assign.ground = a.at("gnd").get<bool>();
                 assign.pos = true;
             }
             p.native.push_back(std::move(assign));

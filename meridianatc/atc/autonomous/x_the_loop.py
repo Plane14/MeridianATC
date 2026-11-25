@@ -76,6 +76,10 @@ class _The_loop:
         # off a stop the phase cannot run on before the engine starves
         # or the prop refuses the power.
         self._manage_condition(state)
+        # Oxygen is the same kind of watch: an unpressurised cabin does
+        # not wait for the next one-second phase action before the masks
+        # and valve are used.
+        self._manage_oxygen(state)
         if not self._enabled:
             return
         # Emergencies outrank the phase: a MAYDAY changes what the flight

@@ -541,3 +541,95 @@ def test_msfs_units_are_converted_to_the_state_fields_units():
     convert = sources.SimConnectSource._convert
     assert convert(1, "bool_pct", "carb_heat_pct") == 100.0
     assert convert(0, "bool_pct", "carb_heat_pct") == 0.0
+
+
+def test_ai_keys_are_scoped_to_provider_and_custom_endpoint():
+    """A key entered for one provider is never bearer-forwarded to another;
+    a custom-provider key is also bound to the exact endpoint it was saved for."""
+    from meridianatc.security.secrets import ai_secret_path
+
+    assert ai_secret_path("openai") != ai_secret_path("anthropic")
+    first = ai_secret_path("custom", "https://one.example/v1")
+    second = ai_secret_path("custom", "https://two.example/v1")
+    assert first != second
+    assert first == ai_secret_path("custom", "https://one.example/v1")
+
+
+def test_wake_categories_cover_the_heavy_types_the_audit_found():
+    from meridianatc.atc.phraseology import wake_suffix
+
+    assert wake_suffix("A388") == "super"
+    assert wake_suffix("A124") == "heavy"
+    for type_code in ("A30B", "A400", "B703", "B741", "C135", "DC85",
+                      "DC86", "DC87", "E3CF", "E3TF", "IL62", "IL86", "L101"):
+        assert wake_suffix(type_code) == "heavy"
+
+
+def test_msfs_brake_positions_use_percent_and_flap_detents_are_read():
+    assert sources.SimConnectSource.BROKEN_UNITS[
+        "ControlsData"]["BRAKE_LEFT_POSITION"][2] == b"Percent"
+    assert sources.SimConnectSource.BROKEN_UNITS[
+        "ControlsData"]["BRAKE_RIGHT_POSITION"][2] == b"Percent"
+    assert ("FLAPS_NUM_HANDLE_POSITIONS", "flaps_detents", "int", "slow") in \
+        sources.SimConnectSource.REQUESTS
+
+
+def test_published_star_holding_fix_is_preferred_and_left_turns_are_not_misphrased():
+    """A charted HF/HM/HA leg carries the hold the controller means. It is
+    preferred over the invented last-route-fix ring; a left-hand charted hold
+    is carried through the clearance and the flown racetrack."""
+    from types import SimpleNamespace
+
+    from meridianatc.atc.arrival import ArrivalWatch
+    from meridianatc.atc.procedure_legs import (
+        AirportProcedures,
+        ProcedureLeg,
+        ProcedureTransition,
+        TerminalProcedure,
+    )
+
+    def make_watch(turn):
+        hold = ProcedureLeg(
+            1, "HF", fix_ident="LAM", lat=51.6, lon=0.1,
+            course=270.0, distance_minute=True, route_distance=1.5,
+            turn=turn)
+        star = TerminalProcedure(
+            "LAM1A", "star", transitions=[
+                ProcedureTransition(name="LAM", legs=(hold,))])
+        procs = AirportProcedures("EGLL", arrivals={"LAM1A": star})
+        route = SimpleNamespace(
+            destination="EGLL", star="LAM1A", star_transition="",
+            star_runway="", fixes=())
+        watch = ArrivalWatch.__new__(ArrivalWatch)
+        watch.brain = SimpleNamespace(
+            route=route, terminal_procedures={"EGLL": procs})
+        return watch
+
+    session = SimpleNamespace(arrival_runway="27L")
+    destination = SimpleNamespace(ident="EGLL")
+    leg = make_watch("R")._published_hold_leg(session, destination)
+    assert leg is not None and leg.fix_ident == "LAM"
+    left = make_watch("L")._published_hold_leg(session, destination)
+    assert left is not None and left.turn == "L"
+
+
+def test_go_around_flap_retraction_uses_detent_count():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from meridianatc.atc.autonomous.core import AutonomousFlight
+
+    state = SimpleNamespace(flaps_index=4, flaps_detents=5)
+    director = Mock()
+    flight = SimpleNamespace()
+    AutonomousFlight._flaps_up_one_detent(flight, state, director)
+    assert director.flaps.call_args.args[0] == pytest.approx(0.75)
+
+
+def test_msfs_design_cruise_altitude_is_read_for_ceiling_planning():
+    """MSFS 2024 documents no ui_certified_ceiling SimVar. DESIGN CRUISE
+    ALT is the flight_model.cfg cruise_alt the simulator's own ATC uses
+    for maximum cruise planning, so it is the value SimConnect can use."""
+    rows = {var: attr for var, attr, _kind, _rate
+            in sources.SimConnectSource.REQUESTS}
+    assert rows["DESIGN_CRUISE_ALT"] == "design_cruise_alt_ft"

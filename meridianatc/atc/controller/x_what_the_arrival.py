@@ -277,8 +277,16 @@ class _What_the_arrival:
                  source=self.altitude_source(airport, session.arrival_runway,
                                              which=1))
         transition = self._transition_altitude(airport)
+        published = False
+        known = self.approach_data.get(getattr(airport, "ident", "") or "")
+        choice = getattr(session, "approach_choice", None)
+        approach_name = getattr(getattr(choice, "approach", None), "name", "")
+        if known is not None:
+            published = known.missed_for(session.arrival_runway,
+                                         approach_name) is not None
         if station.position == "TWR" or told:
-            text = p.go_around_standard(aircraft, altitude, transition)
+            text = p.go_around_standard(aircraft, altitude, transition,
+                                        runway_heading=not published)
         else:
             text = p.climb_maintain(aircraft, altitude,
                                     transition_altitude=transition)

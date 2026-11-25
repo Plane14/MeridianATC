@@ -978,6 +978,8 @@ class _The_phase_machine:
                          or self.performance.rotate_kt)
             self.state.rotate_speed_kt = rotate_at
             v1 = self.state.v1_kt or (rotate_at - 10.0)
+            if int(getattr(state, "engine_count", 0) or 0) == 1:
+                v1 = 9999.0
             if self.state.runway_heading > 0 and self.state.runway_lat:
                 # Track the paint, not just the heading: a lineup can
                 # finish a few metres off the line and runway heading
@@ -1246,6 +1248,8 @@ class _The_phase_machine:
             # the limit pulls to it instead.
             ias = state.indicated_airspeed_kt or 0.0
             v1 = self.state.v1_kt or (self.state.rotate_speed_kt - 10.0)
+            if int(getattr(state, "engine_count", 0) or 0) == 1:
+                v1 = 9999.0
             late = elapsed > 8.0
             if late and ias >= v1:
                 # Past V1 and slow to unstick: the stop is no longer on
