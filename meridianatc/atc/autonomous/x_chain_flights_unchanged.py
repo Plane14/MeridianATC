@@ -152,16 +152,21 @@ class _Chain_flights_unchanged:
             else:
                 level = min(level, 11000)
 
-        # The distance ladder is a wish, not a ceiling: an aeroplane
-        # that declares one in the performance tables never files
-        # above it -- the plan is what the flight is actually flown to.
+        # The distance ladder is a wish, not a ceiling: the loaded
+        # model's own published ceiling first, the performance tables
+        # where the model never declared one.
         ceiling = 0.0
         try:
-            from ..perftable import type_perf
-            tp = type_perf(code)
-            ceiling = float(getattr(tp, "ceiling_ft", 0.0) or 0.0)
+            ceiling = self._model_ceiling(self.get_state())
         except Exception:
             ceiling = 0.0
+        if not ceiling:
+            try:
+                from ..perftable import type_perf
+                tp = type_perf(code)
+                ceiling = float(getattr(tp, "ceiling_ft", 0.0) or 0.0)
+            except Exception:
+                ceiling = 0.0
         if not ceiling:
             ceiling = float(getattr(self.performance, "ceiling_ft", 0.0)
                             or 0.0)

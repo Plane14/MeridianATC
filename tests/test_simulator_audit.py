@@ -624,3 +624,12 @@ def test_go_around_flap_retraction_uses_detent_count():
     flight = SimpleNamespace()
     AutonomousFlight._flaps_up_one_detent(flight, state, director)
     assert director.flaps.call_args.args[0] == pytest.approx(0.75)
+
+
+def test_msfs_design_cruise_altitude_is_read_for_ceiling_planning():
+    """MSFS 2024 documents no ui_certified_ceiling SimVar. DESIGN CRUISE
+    ALT is the flight_model.cfg cruise_alt the simulator's own ATC uses
+    for maximum cruise planning, so it is the value SimConnect can use."""
+    rows = {var: attr for var, attr, _kind, _rate
+            in sources.SimConnectSource.REQUESTS}
+    assert rows["DESIGN_CRUISE_ALT"] == "design_cruise_alt_ft"

@@ -621,6 +621,11 @@ class SimConnectSource:
         ("AIRSPEED_BARBER_POLE", "barber_pole_kt", "raw", "slow"),
         ("BARBER_POLE_MACH", "barber_pole_mach", "raw", "slow"),
         ("MACH_MAX_OPERATE", "mach_max_operate", "raw", "slow"),
+        # MSFS does not expose aircraft.cfg's ui_certified_ceiling as a
+        # SimVar. The SDK's operational equivalent is DESIGN CRUISE ALT:
+        # flight_model.cfg's cruise_alt, which the simulator's own ATC and
+        # flight planner use as the aircraft's maximum cruise altitude.
+        ("DESIGN_CRUISE_ALT", "design_cruise_alt_ft", "raw", "slow"),
         ("TOTAL_WEIGHT", "total_weight_lb", "raw", "slow"),
         ("MAX_GROSS_WEIGHT", "max_gross_weight_lb", "raw", "slow"),
         ("ATC_HEAVY", "atc_heavy", "bool", "slow"),
@@ -1280,6 +1285,9 @@ class SimConnectSource:
         "AUTOPILOT_ALTITUDE_LOCK_VAR:index": [
             "The altitude the autopilot holds or captures",
             b"AUTOPILOT ALTITUDE LOCK VAR:index", b"Feet", "N"],
+        "DESIGN_CRUISE_ALT": [
+            "The flight model's cruise altitude",
+            b"DESIGN CRUISE ALT", b"Feet", "N"],
         "GENERAL_ENG_STARTER_ACTIVE:index": [
             "Whether one engine starter is engaged",
             b"GENERAL ENG STARTER ACTIVE:index", b"Bool", "N"],

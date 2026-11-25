@@ -722,7 +722,22 @@ class RotorcraftFlight:
             self.state.dest_elev_ft = dest.elev_ft
             self.state.dest_ident = dest.ident
         cruise = session.cruise_altitude_ft or 3000.0
-        self.state.cruise_alt_ft = min(cruise, self._profile.ceiling_ft)
+        ceiling = self._profile.ceiling_ft
+        try:
+            state_now = self.owner.get_state()
+        except Exception:
+            state_now = None
+        if state_now is not None:
+            # The airframe file beats the type table: X-Plane's
+            # acf/_max_atc_alt_ft applies to rotorcraft too, and MSFS's
+            # DESIGN CRUISE ALT is the operational altitude its own ATC
+            # plans against where no certified-ceiling SimVar exists.
+            model_ceiling = (
+                float(getattr(state_now, "service_ceiling_ft", 0.0) or 0.0)
+                or float(getattr(state_now, "design_cruise_alt_ft", 0.0) or 0.0))
+            if model_ceiling > 0.0:
+                ceiling = model_ceiling
+        self.state.cruise_alt_ft = min(cruise, ceiling)
         self.state.pattern_alt_ft = min(
             max(self.state.dest_elev_ft + PATTERN_AGL_FT, 1500.0),
             self.state.cruise_alt_ft)

@@ -212,6 +212,13 @@ class AircraftState(_ExtraEngines):
     barber_pole_kt: float = 0.0
     barber_pole_mach: float = 0.0
     mach_max_operate: float = 0.0
+    # The airframe's own altitude figures, feet. ``service_ceiling_ft``
+    # is the certified/ATC ceiling where the simulator publishes one
+    # (X-Plane 12.1+'s acf/_max_atc_alt_ft); ``design_cruise_alt_ft`` is
+    # MSFS's DESIGN CRUISE ALT, the flight-model cruise_alt ATC uses for
+    # planning. Zero means the model did not declare the figure.
+    service_ceiling_ft: float = 0.0
+    design_cruise_alt_ft: float = 0.0
     total_weight_lb: float = 0.0
     max_gross_weight_lb: float = 0.0
     atc_heavy: bool = False
@@ -464,6 +471,16 @@ class AircraftState(_ExtraEngines):
     cabin_altitude_ft: float | None = None
     cabin_altitude_goal_ft: float | None = None
     pressurization_diff_psi: float | None = None
+    # What the airframe is built with: a pressure hull, and a crew
+    # oxygen bottle's capacity/contents in litres. Zeros mean no
+    # system; ``pilot_felt_altitude_ft`` is the altitude X-Plane's
+    # hypoxia model is actually exposing the pilot to after oxygen.
+    pressurization_capable: bool = False
+    oxygen_capacity_liters: float = 0.0
+    oxygen_remaining_liters: float = 0.0
+    oxygen_plugged_in: int = 0
+    oxygen_flow_setting: int = 0
+    pilot_felt_altitude_ft: float = 0.0
     # The radio-altimeter decision-height bug, feet -- what a
     # "minimums ... set" item names.
     minimums_ft: float | None = None

@@ -358,6 +358,8 @@ class _Entry:
         self._reset_scratch()
         # Compute aircraft performance for chain planning
         self._compute_aircraft_performance(session)
+        if aircraft is not None:
+            self._cap_cruise_for_physiology(session, aircraft)
         self._is_helicopter = self._detect_helicopter(session)
         if self._is_helicopter:
             from ..autonomous_heli import RotorcraftFlight
@@ -374,6 +376,18 @@ class _Entry:
         if self._enabled:
             self._emit("info", "Autonomous flight started",
                        "autonomous.started")
+
+    def _cap_cruise_for_physiology(self, session, aircraft) -> None:
+        """Keep a filed cruise out of the hypoxia heights with no oxygen.
+
+        The controller's clearance and the FO's envelope both read the
+        session level; capping it once here keeps the two from filing a
+        level the aeroplane then refuses to fly.
+        """
+        ceiling = self._physiological_ceiling(aircraft)
+        cruise = float(getattr(session, "cruise_altitude_ft", 0.0) or 0.0)
+        if ceiling and (not cruise or cruise > ceiling):
+            session.cruise_altitude_ft = ceiling
 
     def set_chain_flights(self, flights: list[dict]) -> None:
         """Set up chained flights from a list of flight plans."""

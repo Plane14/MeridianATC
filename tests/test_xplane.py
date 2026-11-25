@@ -13,7 +13,16 @@ import pytest
 from meridianatc.config import Config, SimConfig
 from meridianatc.sim import source as sources
 from meridianatc.sim.state import AircraftState
-from meridianatc.sim.xplane import DATAREFS, EXTRA, FT, KT, LB, RADIOS, XPlaneSource
+from meridianatc.sim.xplane import (
+    DATAREFS,
+    EXTRA,
+    FT,
+    KT,
+    LB,
+    RADIOS,
+    XPlaneSource,
+    acf_service_ceiling,
+)
 
 
 def eventually(predicate, timeout=2):
@@ -789,3 +798,41 @@ def test_xplane_torque_limit_uses_published_dataref():
     sim/aircraft/engine/acf_max_TRQ path never answers, which took the
     over-torque watch's model-specific ceiling away."""
     assert EXTRA["acf_max_trq_nm"] == "sim/aircraft/controls/acf_trq_max_eng"
+
+
+def test_xplane_service_ceiling_reads_plane_makers_acf_key(tmp_path):
+    """X-Plane 12.1 added ``P acf/_max_atc_alt_ft`` for its own ATC.
+    The value is written in Plane Maker's scientific notation, and a
+    zero/unset one is not a ceiling at all."""
+    acf = tmp_path / "Aircraft" / "Test" / "test.acf"
+    acf.parent.mkdir(parents=True)
+    acf.write_text("I\n1200 Version\nACF\n\n"
+                   "P acf/_Vso_kts 73.000000000\n"
+                   "P acf/_max_atc_alt_ft 2.0688E4\n",
+                   encoding="utf-8")
+    rel = "Aircraft/Test/test.acf"
+    assert acf_service_ceiling(rel, roots=[tmp_path]) == pytest.approx(20688.0)
+    acf.write_text("P acf/_max_atc_alt_ft 0.000000000\n", encoding="utf-8")
+    assert acf_service_ceiling(rel, roots=[tmp_path]) == 0.0
+
+
+def test_xplane_acf_reads_oxygen_and_pressurization_design(tmp_path):
+    """Plane Maker's own equipment keys decide whether altitude is an
+    oxygen problem: the bottle capacity is litres of compressed oxygen,
+    and a zero maximum pressure differential is an unpressurised hull."""
+    from meridianatc.sim.xplane import acf_design_values
+
+    acf = tmp_path / "Aircraft" / "Test" / "test.acf"
+    acf.parent.mkdir(parents=True)
+    acf.write_text("P acf/_o2_bottle_liter 1870.000000000\n"
+                   "P acf/_max_press_diff 0.000000000\n",
+                   encoding="utf-8")
+    values = acf_design_values("Aircraft/Test/test.acf", roots=[tmp_path])
+    assert values["oxygen_capacity_liters"] == pytest.approx(1870.0)
+    assert values["pressurization_capable"] is False
+    acf.write_text("P acf/_o2_bottle_liter 0.000000000\n"
+                   "P acf/_max_press_diff 4.500000000\n",
+                   encoding="utf-8")
+    values = acf_design_values("Aircraft/Test/test.acf", roots=[tmp_path])
+    assert values["oxygen_capacity_liters"] == 0.0
+    assert values["pressurization_capable"] is True

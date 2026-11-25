@@ -580,6 +580,10 @@ class DeviationAssistWatch:
     # averaging three hundred a minute still dips under a hundred for
     # seconds at a time, and each dip read alone is a "verify altitude".
     VS_TAU_S = 10.0
+    # Nobody is already at their cleared level thirty seconds after the
+    # wheels leave the runway. The climb itself is the clearance being
+    # flown, and the smoothed rate is still learning it.
+    INITIAL_CLIMB_GRACE_S = 30.0
 
     def __init__(self, navdb: NavDB, brain: ControllerBrain):
         self.navdb = navdb
@@ -667,7 +671,11 @@ class DeviationAssistWatch:
         # flown to the pavement, and a tower that has said "cleared to
         # land" does not verify a level or a figure it no longer owes.
         released = getattr(session, "cleared_landing", False)
-        if not released and session.assigned_altitude_ft:
+        departed_at = float(getattr(session, "departed_at", 0.0) or 0.0)
+        initial_climb = (departed_at
+                         and time.monotonic() - departed_at
+                         < self.INITIAL_CLIMB_GRACE_S)
+        if not released and not initial_climb and session.assigned_altitude_ft:
             delta = (session.assigned_altitude_ft
                      - (getattr(state, "indicated_altitude_ft", 0.0)
                         or getattr(state, "altitude_ft", 0.0) or 0.0))
