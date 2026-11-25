@@ -13,6 +13,7 @@ from ._shared import (
     procedure_heard,
     procedure_near,
     re,
+    required_readback_items,
     same_channel,
     squawk_for,
     station_key,
@@ -563,7 +564,8 @@ class _Clearance_delivery:
         if session.expected_exit and exit_point:
             values["exit_point"] = session.expected_exit
         instruction = session.remember(
-            Instruction("vfr_release", station_key(station), text, values)
+            Instruction("vfr_release", station_key(station), text, values,
+                        required_items=required_readback_items(values, p.dialect))
         )
         return Reply(text, station, instruction=instruction)
 

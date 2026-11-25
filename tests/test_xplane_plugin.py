@@ -269,7 +269,7 @@ def test_read_only_plugin_probe_and_health(monkeypatch):
         assert row.status == "ok" and "0.1.0" in row.detail and "100 CSL models" in row.detail
         peer.models = 0
         assert health._xplane_plugin(config).status == "warn"
-        assert peer.messages == [{"v": 1, "t": "hello"}] * 2
+        assert peer.messages == [{"v": 1, "t": "hello", "probe": True}] * 2
         config.sim.simulator = "msfs"
         assert health._xplane_plugin(config).status == "off"
     finally:

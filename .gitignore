@@ -57,3 +57,7 @@ xplane/plugin/build*/
 xplane/plugin/out/
 data/adsb_cache.json
 history.db
+
+# SQLite sidecars can contain transcript text
+history.db-shm
+history.db-wal

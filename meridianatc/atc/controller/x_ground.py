@@ -10,6 +10,7 @@ from ._shared import (
     decision,
     log,
     normalize_runway,
+    required_readback_items,
     same_channel,
     say_words,
     station_key,
@@ -399,7 +400,8 @@ class _Ground:
             # four times, on the first IFR reference flight.
             values["route"] = list(route)
         instruction = session.remember(
-            Instruction("taxi", station_key(station), text, values)
+            Instruction("taxi", station_key(station), text, values,
+                        required_items=required_readback_items(values, p.dialect))
         )
         return Reply(text, station, instruction=instruction)
 

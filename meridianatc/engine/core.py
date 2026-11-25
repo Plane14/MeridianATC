@@ -118,7 +118,9 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
             gpu=self.config.voice.gpu,
             hq_model=self.config.voice.hq_model,
             hq_takes=self.config.voice.hq_takes,
-            deepgram_key=resolve_secret(self.config, "speech.deepgram_key", env="DEEPGRAM_API_KEY"),
+            deepgram_key=(resolve_secret(self.config, "speech.deepgram_key", env="DEEPGRAM_API_KEY")
+                          if self.config.network.cloud_consent
+                          and not self.config.network.offline else ""),
             deepgram_voice=self.config.speech.deepgram_voice,
         )
         # Said once. Without voices every single transmission fails, and a

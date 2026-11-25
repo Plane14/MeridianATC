@@ -196,4 +196,7 @@ def test_every_trigger_kind_names_what_called_it():
         _airborne(aoa_deg=16.0, stall_aoa_deg=15.0)) == "alpha"
     assert fo._stall_trigger(_airborne(
         indicated_airspeed_kt=120.0, design_vs1_kt=130.0)) == "speed"
+    assert fo._stall_trigger(_airborne(
+        indicated_airspeed_kt=120.0, design_vs1_kt=130.0,
+        altitude_agl_ft=8.0)) == ""
     assert fo._stall_trigger(_airborne()) == ""

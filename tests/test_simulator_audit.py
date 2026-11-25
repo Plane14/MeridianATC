@@ -505,3 +505,39 @@ def test_direct_lvar_bridge_listens_for_simobject_data_receive_id():
     from meridianatc.integrations import lvars
 
     assert lvars._RECV_SIMOBJECT_DATA == 8
+
+
+def test_msfs_custom_wire_names_match_published_simvars():
+    """The two custom reads this audit found misnamed: MSFS documents
+    NUMBER OF MAIN ROTORS and UNUSABLE FUEL TOTAL QUANTITY. The old
+    wire names were plausible-looking but unanswered, so helicopter
+    rotor checks and unusable-fuel planning silently stood down."""
+    custom = sources.SimConnectSource.OUR_VARIABLES
+    assert custom["NUM_OF_MAIN_ROTORS"][1] == b"NUMBER OF MAIN ROTORS"
+    assert custom["UNUSABLE_FUEL_QUANTITY"][1] == b"UNUSABLE FUEL TOTAL QUANTITY"
+
+
+def test_every_msfs_request_resolves_to_a_wire_variable():
+    """The batch read used to drop any REQUESTS row the wrapper lacked,
+    after which checklist fields stayed None and were treated as agreement.
+    Every numeric row must resolve through the same lookup the batch uses."""
+    pytest.importorskip("SimConnect")
+    from SimConnect import AircraftRequests
+
+    requests = AircraftRequests(object())
+    sources.SimConnectSource.define_our_variables(requests)
+    source = sources.SimConnectSource.__new__(sources.SimConnectSource)
+    source._requests = requests
+    source._model = ""
+    missing = [name for name, _attr, kind, _tier in source.REQUESTS
+               if kind != "text" and source._definition_for(name) is None]
+    assert missing == []
+    assert source._definition_for("GENERAL_ENG_OIL_PRESSURE:1")[1] == b"Psi"
+    assert source._definition_for(
+        "PRESSURIZATION_PRESSURE_DIFFERENTIAL")[1] == b"Psi"
+
+
+def test_msfs_units_are_converted_to_the_state_fields_units():
+    convert = sources.SimConnectSource._convert
+    assert convert(1, "bool_pct", "carb_heat_pct") == 100.0
+    assert convert(0, "bool_pct", "carb_heat_pct") == 0.0

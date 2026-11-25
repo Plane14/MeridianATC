@@ -799,7 +799,7 @@ class SimConnectSource:
         ("GENERAL_ENG_OIL_PRESSURE:1", "oil_pressure_psi", "raw", "slow"),
         # Carb heat rides the piston engine's anti-ice position -- the
         # channel a 172's carb-heat knob writes. Percent over 100.
-        ("GENERAL_ENG_ANTI_ICE_POSITION:1", "carb_heat_pct", "pct", "slow"),
+        ("GENERAL_ENG_ANTI_ICE_POSITION:1", "carb_heat_pct", "bool_pct", "slow"),
         ("ENG_FUEL_FLOW_PPH:1", "eng_fuel_flow_pph", "raw", "slow"),
         ("SUCTION_PRESSURE", "suction_inhg", "raw", "slow"),   # inHg
         ("ELECTRICAL_BATTERY_BUS_AMPS", "battery_amps", "raw", "slow"),
@@ -830,7 +830,7 @@ class SimConnectSource:
         # switch (the var's own units vary by model -- a "pressure
         # normal" check reads it as nonzero, not as a figure).
         ("HYDRAULIC_PRESSURE:1", "hydraulic_pressure", "raw", "slow"),
-        ("HYDRAULIC_SWITCH:1", "hydraulic_pump_on", "bool", "slow"),
+        ("HYDRAULIC_SWITCH", "hydraulic_pump_on", "bool", "slow"),
         ("PRESSURIZATION_CABIN_ALTITUDE", "cabin_altitude_ft", "raw", "slow"),
         ("PRESSURIZATION_CABIN_ALTITUDE_GOAL", "cabin_altitude_goal_ft",
          "raw", "slow"),
@@ -1272,6 +1272,35 @@ class SimConnectSource:
         "TRANSPONDER_STATE:index": [
             "Transponder mode: 0 off, 1 standby, 2 test, 3 on, 4 alt",
             b"TRANSPONDER STATE:index", b"Enum", "N"],
+        # The wrapper either lacks these outright or keeps only the
+        # unindexed key, which _definition_for cannot use for an engine or
+        # avionics index. They are ordinary published SimVars; without the
+        # entries their checklist fields stay None forever on MSFS.
+        "AUTOPILOT_ALTITUDE_LOCK_VAR:index": [
+            "The altitude the autopilot holds or captures",
+            b"AUTOPILOT ALTITUDE LOCK VAR:index", b"Feet", "N"],
+        "GENERAL_ENG_STARTER_ACTIVE:index": [
+            "Whether one engine starter is engaged",
+            b"GENERAL ENG STARTER ACTIVE:index", b"Bool", "N"],
+        "TURB_ENG_IGNITION_SWITCH:index": [
+            "Whether one turbine ignition switch is on",
+            b"TURB ENG IGNITION SWITCH:index", b"Bool", "N"],
+        "TURB_ENG_CONDITION_LEVER_POSITION:index": [
+            "One turbine condition lever's detent",
+            b"TURB ENG CONDITION LEVER POSITION:index", b"Enum", "N"],
+        "APU_SWITCH": [
+            "Whether the APU switch is on", b"APU SWITCH", b"Bool", "N"],
+        "BLEED_AIR_APU": [
+            "Whether APU bleed air is on", b"BLEED AIR APU", b"Bool", "N"],
+        "BLEED_AIR_ENGINE:index": [
+            "Whether one engine bleed is on",
+            b"BLEED AIR ENGINE:index", b"Bool", "N"],
+        "WINDSHIELD_DEICE_SWITCH": [
+            "Whether windshield heat is on",
+            b"WINDSHIELD DEICE SWITCH", b"Bool", "N"],
+        "AMBIENT_PRECIP_RATE": [
+            "Precipitation rate, millimetres of water an hour",
+            b"AMBIENT PRECIP RATE", b"millimeters of water", "N"],
         "DESIGN_TAKEOFF_SPEED": [
             "The model's design takeoff speed",
             b"DESIGN TAKEOFF SPEED", b"Knots", "N"],
@@ -1344,6 +1373,19 @@ class SimConnectSource:
                 "Torque, per cent", b"ENG TORQUE PERCENT:index",
                 b"Percent", "N"],
         },
+        # The wheel's oil-pressure and pressurization units are native
+        # psf or worse; the state fields are psi, the unit the checklists
+        # and X-Plane both use.
+        "EngineData": {
+            "GENERAL_ENG_OIL_PRESSURE:index": [
+                "Engine oil pressure", b"GENERAL ENG OIL PRESSURE:index",
+                b"Psi", "N"],
+        },
+        "MiscellaneousData": {
+            "PRESSURIZATION_PRESSURE_DIFFERENTIAL": [
+                "Cabin pressure differential",
+                b"PRESSURIZATION PRESSURE DIFFERENTIAL", b"Psi", "N"],
+        },
     }
 
     @classmethod
@@ -1360,7 +1402,7 @@ class SimConnectSource:
         helper = getattr(requests, "MiscellaneousData", None)
         if helper is None:
             return
-        helper.list = {**type(helper).list, **cls.OUR_VARIABLES}
+        helper.list = {**helper.list, **cls.OUR_VARIABLES}
 
     def read_now(self, attribute: str):
         """One variable, read now rather than when the rotation reaches it.
@@ -1627,6 +1669,10 @@ class SimConnectSource:
             return decode_squawk(raw)
         if kind == "bool":
             return bool(float(raw))
+        if kind == "bool_pct":
+            # A two-position control stored in a percent field: MSFS's
+            # anti-ice/carb-heat position is a Bool, not 0..100 travel.
+            return 100.0 if float(raw) else 0.0
         if kind == "int":
             return int(float(raw))
         if kind == "rad":

@@ -771,10 +771,12 @@ float Poll(float, float, int, void*) {
             try {
                 auto packet = Parse(wire);
                 if (packet.kind == "hello") {
-                    auto sender = (static_cast<uint64_t>(ntohl(from.sin_addr.s_addr)) << 16) |
-                        ntohs(from.sin_port);
-                    session.Claim(sender, now);
-                    peer = from;
+                    if (!packet.probe) {
+                        auto sender = (static_cast<uint64_t>(ntohl(from.sin_addr.s_addr)) << 16) |
+                            ntohs(from.sin_port);
+                        session.Claim(sender, now);
+                        peer = from;
+                    }
                     udp.Send(Status(now).dump(), from);
                     continue;
                 }

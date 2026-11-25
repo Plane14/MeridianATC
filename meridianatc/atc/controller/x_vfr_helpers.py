@@ -12,6 +12,7 @@ from ._shared import (
     math,
     normalize_runway,
     re,
+    required_readback_items,
     squawk_for,
     station_key,
 )
@@ -128,10 +129,11 @@ class _Vfr_helpers:
                 report=said)
             decision("special_vfr", airport=station.ident, said="enter",
                      altitude_ft=altitude, point=point.name if point else None)
+            values = {"vfr_ceiling_ft": altitude,
+                      **({"altimeter": pressure} if pressure else {})}
             instruction = session.remember(
-                Instruction("svfr_entry", station_key(station), text,
-                            {"vfr_ceiling_ft": altitude,
-                             **({"altimeter": pressure} if pressure else {})}))
+                Instruction("svfr_entry", station_key(station), text, values,
+                            required_items=required_readback_items(values, p.dialect)))
             return Reply(text, station, instruction=instruction)
 
         departure_station = (self.navdb.station_for(station.ident, "DEP")
@@ -164,7 +166,8 @@ class _Vfr_helpers:
         if point is not None:
             values["exit_point"] = point.name
         instruction = session.remember(
-            Instruction("vfr_release", station_key(station), text, values))
+            Instruction("vfr_release", station_key(station), text, values,
+                        required_items=required_readback_items(values, p.dialect)))
         return Reply(text, station, instruction=instruction)
 
     # The parser hands back English compass names whatever was spoken, so the

@@ -76,7 +76,10 @@ class FakeXPlane:
                         self.values[path] = value
                 elif packet[:5] == b"CMND\0":
                     self.commands.append(packet[5:].rstrip(b"\0").decode())
-            except (TimeoutError, ConnectionResetError):
+            except (TimeoutError, OSError):
+                # Windows UDP answers a send to a since-closed peer with a
+                # connection-reset exception on the next receive; that is a
+                # client restart, not the fake simulator dying.
                 pass
             if self.respond and self.client and time.monotonic() - last > .02:
                 pairs = [(i, p) for i, p in self.subscriptions.items()
@@ -405,6 +408,7 @@ def test_fuel_distribution(xp):
 def test_writes_are_confirmed_by_readback(xp):
     # The setters wait for the subscribed value to answer their write.
     server, link = xp
+    server.missing.add(RADIOS + "com2_standby_frequency_hz_833")
     assert link.connect()
     eventually(lambda: link.connected)
     assert link.set_com(121.725, 1, standby=True)
@@ -414,8 +418,6 @@ def test_writes_are_confirmed_by_readback(xp):
     assert not link.set_com(118.6, 1)
     # A dataref the sim never answers cannot be verified; the packet
     # went out, so True stands (older installs keep working).
-    server.missing.add(RADIOS + "com2_standby_frequency_hz_833")
-    link._values.pop("com2_standby", None)
     assert link.set_com(127.4, 2, standby=True)
 
 
@@ -771,3 +773,11 @@ def test_xplane_radio_power():
     assert not decide(state)[0]
     state.main_bus_volts = 28
     assert decide(state)[0]
+
+
+def test_xplane_torque_limit_uses_published_dataref():
+    """X-Plane publishes the engine torque ceiling as
+    sim/aircraft/controls/acf_trq_max_eng. The invented
+    sim/aircraft/engine/acf_max_TRQ path never answers, which took the
+    over-torque watch's model-specific ceiling away."""
+    assert EXTRA["acf_max_trq_nm"] == "sim/aircraft/controls/acf_trq_max_eng"

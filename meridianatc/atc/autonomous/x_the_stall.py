@@ -25,9 +25,8 @@ _HORN_S = 0.5
 _SPEED_S = 1.0
 
 # Above the runway the horn means something; inside the flare's height
-# the same chirp is the arrival. The speed trigger is exempt: a speed
-# under the stall figure through the flare is the hard landing the
-# touchdown report already answers.
+# the same chirp is the arrival. The speed trigger is gated too: below
+# the flare's height a push is not a recovery, it is a nose-first arrival.
 _MIN_AGL_FT = 50.0
 
 # How long the instruments have to agree the wing is flying again
@@ -120,7 +119,7 @@ class _The_stall:
             return "alpha"
         stall_kt = float(self._limits(state).get("stall_kt") or 0.0)
         ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
-        if stall_kt > 0.0 and 0.0 < ias < stall_kt * 0.97:
+        if high and stall_kt > 0.0 and 0.0 < ias < stall_kt * 0.97:
             return "speed"
         return ""
 

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from meridianatc.atc import checklist_files, intents, intents_fr
-from meridianatc.atc.session import Instruction
+from meridianatc.atc.session import Instruction, required_readback_items
 from meridianatc.atc.trainer import VoiceTrainer
 
 
@@ -66,6 +66,13 @@ def test_empty_and_restricted_readback_requirements():
     instruction.outstanding = {"altitude_ft"}
     assert instruction.owed_items == ["altitude_ft"]
     assert instruction.mismatches({"altitude_ft": 5000}) == []
+
+
+def test_icao_altimeter_is_a_readback_item_but_faa_acknowledgement_is_enough():
+    values = {"runway": "27L", "altimeter": 1013.0}
+    assert required_readback_items(values, "icao") == {"runway", "altimeter"}
+    assert required_readback_items(values, "faa") == {"runway"}
+    assert "altimeter" not in required_readback_items({"runway": "27L"}, "icao")
 
 
 def test_north_headings_match_and_invalid_numbers_do_not():

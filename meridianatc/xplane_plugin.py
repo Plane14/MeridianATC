@@ -240,7 +240,7 @@ def probe(host="127.0.0.1", port=49010, timeout=.4) -> dict | None:
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as link:
         link.bind(("127.0.0.1", 0))
         link.setblocking(False)
-        link.sendto(b'{"v":1,"t":"hello"}', endpoint)
+        link.sendto(b'{"v":1,"t":"hello","probe":true}', endpoint)
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if not select.select([link], [], [], max(0, deadline - time.monotonic()))[0]:

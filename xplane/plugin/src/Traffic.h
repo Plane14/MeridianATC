@@ -76,6 +76,8 @@ struct Packet {
     // The pilot's cleared taxi route for the map overlay, lat/lon pairs.
     std::vector<std::pair<double, double>> route;
     bool routeOn = false;
+    // A hello marked probe is read-only: it must never claim ownership.
+    bool probe = false;
     // A METAR request's station.
     std::string icao;
     // A model-match question: what would XPMP2 draw this type/operator
@@ -98,7 +100,11 @@ inline Packet Parse(const std::string& wire) {
         throw std::invalid_argument("protocol version");
     Packet p;
     p.kind = Text(j, "t", 16, true);
-    if (p.kind == "clear" || p.kind == "hello") return p;
+    if (p.kind == "clear" || p.kind == "hello") {
+        if (p.kind == "hello" && j.contains("probe") && j.at("probe").is_boolean())
+            p.probe = j.at("probe").get<bool>();
+        return p;
+    }
     if (p.kind == "followme") {
         p.followme.on = Light(j, "on");
         p.followme.lat = Number(j, "lat", -90, 90);
@@ -322,10 +328,13 @@ public:
     }
     bool Expire(double now) {
         if (now - trafficAt < 10 || !hasSequence) return false;
-        Clear(); return true;
+        ClearTraffic(); return true;
+    }
+    void ClearTraffic() {
+        snapshot.clear(); hasSequence = false; trafficAt = -1e9;
     }
     void Clear() {
-        snapshot.clear(); hasSequence = false; trafficAt = -1e9;
+        ClearTraffic();
         followme.on = false; followmeAt = -1e9;
         route.clear(); routeAt = -1e9;
     }

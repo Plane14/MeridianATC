@@ -217,10 +217,27 @@ class Instruction:
 
 
 # Items FAA AIM 4-4-7 and ICAO Doc 4444 4.5.7.5 require the pilot to read back.
+# ICAO also names the altimeter setting and transition level explicitly; FAA
+# practice accepts an acknowledgement for those, so they join only outside
+# the FAA dialect (see required_readback_items).
 REQUIRED_READBACK = {
     "altitude_ft", "heading", "runway", "squawk", "frequency",
     "hold_short", "speed_kt",
 }
+
+
+def required_readback_items(values: dict[str, Any], dialect: str) -> set[str]:
+    """The readback items present in an instruction, dialect-adjusted.
+
+    ICAO Doc 4444 4.5.7.5 lists the altimeter setting among the items that
+    must be read back; the FAA list this engine already enforced does not.
+    Restricting the answer to keys actually issued keeps an instruction
+    without a pressure from requiring one.
+    """
+    required = set(REQUIRED_READBACK)
+    if dialect != "faa":
+        required.add("altimeter")
+    return required & set(values)
 
 
 # The readback items whose value a recogniser can get one figure wrong:

@@ -89,6 +89,7 @@ from ..session import (
     Instruction,
     Phase,
     nearly_matches,
+    required_readback_items,
     station_key,
 )
 from ..taxi import say_words
@@ -324,6 +325,7 @@ __all__ = [
     "Instruction",
     "Phase",
     "nearly_matches",
+    "required_readback_items",
     "station_key",
     "say_words",
 ]

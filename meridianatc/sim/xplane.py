@@ -223,7 +223,7 @@ EXTRA = {
     "trq_nm": "sim/flightmodel/engine/ENGN_TRQ[0]",
     "trq_red_hi_ftpds": "sim/aircraft/limits/red_hi_TRQ",
     "trq_grn_hi_ftpds": "sim/aircraft/limits/green_hi_TRQ",
-    "acf_max_trq_nm": "sim/aircraft/engine/acf_max_TRQ",
+    "acf_max_trq_nm": "sim/aircraft/controls/acf_trq_max_eng",
     "itt_red_hi_c": "sim/aircraft/limits/red_hi_ITT",
     "itt_grn_hi_c": "sim/aircraft/limits/green_hi_ITT",
     # COM1's power switch, the honest half of the COM STATUS enum; and

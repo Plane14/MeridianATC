@@ -1295,15 +1295,19 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
             radio = int((payload or {}).get("radio") or 1)
         except (TypeError, ValueError):
             return {"ok": False, "error": "radio must be 1 or 2"}
-        ok, why = engine.swap_radio(radio)
+        ok, why = await asyncio.to_thread(engine.swap_radio, radio)
         if not ok:
             return {"ok": False, "error": why}
         if radio == 1:
             station = engine.tune(engine.state.com1_active)
             return {"ok": True, "station": station.callsign if station else ""}
         if radio == 2:
-            engine.station2 = engine._resolve_com2(engine.state)
-            engine._last_com2 = engine.state.com2_active or 0.0
+            def _refresh_com2() -> None:
+                with engine._text_lock:
+                    engine.station2 = engine._resolve_com2(engine.state)
+                    engine._last_com2 = engine.state.com2_active or 0.0
+
+            await asyncio.to_thread(_refresh_com2)
             return {"ok": True,
                     "station": (engine.station2.callsign
                                 if engine.station2 else "")}
@@ -1326,7 +1330,8 @@ def create_app(engine: Engine, broadcaster: Broadcaster) -> FastAPI:
     @app.post("/api/squawk")
     async def squawk(payload: dict) -> dict:
         """Dial a transponder code into the aircraft."""
-        ok, why = engine.set_squawk(str((payload or {}).get("code") or ""))
+        ok, why = await asyncio.to_thread(
+            engine.set_squawk, str((payload or {}).get("code") or ""))
         return {"ok": ok, "error": "" if ok else why}
 
     @app.post("/api/traffic/spawn")

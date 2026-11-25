@@ -25,6 +25,7 @@ void Protocol() {
     Check(packet.aircraft.at("DLH4AB").beacon, "lights");
     Check(packet.aircraft.at("DLH4AB").alt == 12000, "altitude");
     Check(Parse(R"({"v":1,"t":"hello"})").kind == "hello", "hello");
+    Check(Parse(R"({"v":1,"t":"hello","probe":true})").probe, "probe hello parses");
     Check(Parse(R"({"v":1,"t":"clear"})").kind == "clear", "clear");
     Session session;
     Check(session.Apply(packet, 10) && session.snapshot.size() == 1, "snapshot");
@@ -32,7 +33,9 @@ void Protocol() {
     auto empty = packet; empty.aircraft.clear(); empty.seq = 2;
     Check(session.Apply(empty, 12) && session.snapshot.empty(), "absent aircraft removed");
     packet.seq = 3; session.Apply(packet, 13);
+    session.Apply(Parse(R"({"v":1,"t":"followme","on":1,"lat":48.1,"lon":11.2,"hdg":275})"), 20, 0);
     Check(!session.Expire(22.99) && session.Expire(23) && session.snapshot.empty(), "timeout");
+    Check(session.FollowmeActive(23), "traffic timeout keeps live follow-me");
     packet.seq = 0; Check(session.Apply(packet, 24), "restart after timeout");
     session.Apply(Parse(R"({"v":1,"t":"clear"})"), 25);
     Check(session.snapshot.empty(), "clear session");

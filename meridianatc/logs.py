@@ -89,7 +89,7 @@ _SECRET = re.compile(
     r"(?i)\b(api[_-]?key|authorization|bearer|token|secret|password)\b"
     r"\s*[:=]?\s*['\"]?([A-Za-z0-9._\-]{8,})"
 )
-_KEY_SHAPED = re.compile(r"\b(sk-[A-Za-z0-9._\-]{8,}|xoxb-[A-Za-z0-9._\-]{8,})\b")
+_KEY_SHAPED = re.compile(r"\b(sk-[A-Za-z0-9._\-]{8,}|gsk-[A-Za-z0-9._\-]{8,}|xoxb-[A-Za-z0-9._\-]{8,})\b")
 _CREDENTIAL_NAME = re.compile(
     r"api[_-]?key|(?:access|refresh|id)[_-]?token|token|password|secret|"
     r"client[_-]?secret|authorization", re.IGNORECASE)
