@@ -520,6 +520,7 @@ class Phraseology:
         "squawk": "the transponder code",
         "frequency": "the frequency",
         "speed_kt": "the speed",
+        "altimeter": "the altimeter setting",
     }
 
     def read_back_instruction(self, aircraft: Aircraft,
@@ -2692,6 +2693,8 @@ class Phraseology:
                     else f"contact on {self.freq(value)}")
             elif key == "speed_kt":
                 parts.append(f"speed {self.d(int(value))} knots")
+            elif key == "altimeter":
+                parts.append(self.pressure(float(value)))
             elif key == "vfr_ceiling_ft":
                 # The release's own words, not "climb to": it is a ceiling.
                 parts.append(f"maintain VFR at or below {self.vfr_alt(value)}"

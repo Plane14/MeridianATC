@@ -183,7 +183,7 @@ def xplane_cells(points, altitude_ft: float = 0.0,
 def metar_convective_cells(raw_reports, now: float | None = None) -> list[HazardCell]:
     """Explicit thunderstorm reports near the route, as coarse strategic cells."""
     now = time.time() if now is None else now
-    cells = []
+    by_station = {}
     for row in raw_reports or ():
         raw = row.get("rawOb") or row.get("raw") or ""
         lat, lon = row.get("lat"), row.get("lon")
@@ -196,11 +196,22 @@ def metar_convective_cells(raw_reports, now: float | None = None) -> list[Hazard
         if not explicit:
             continue
         severe = any(token in text for token in ("+TS", "GR", "SQ", "FC"))
-        cells.append(HazardCell(
+        station = str(row.get("stationId") or row.get("station")
+                        or row.get("site") or row.get("id")
+                        or f"{float(lat):.3f},{float(lon):.3f}")
+        # The two-hour bbox answer carries several observations per station.
+        # They are one weather system reported again, not several cells, and
+        # counting each copy inflates the corridor coverage into a spurious
+        # circumnavigation. Keep the newest report per station.
+        obs = float(row.get("obsTime") or 0.0)
+        previous = by_station.get(station)
+        if previous is not None and obs < previous[0]:
+            continue
+        by_station[station] = (obs, HazardCell(
             float(lat), float(lon), 10.0, 0.8 if severe else 0.55,
             "awc-metar", f"METAR {row.get('icaoId', '')}: explicit convection",
             at=now))
-    return cells
+    return [cell for _obs, cell in by_station.values()]
 
 
 def _rings_from_geometry(value) -> tuple[tuple[float, float], ...]:

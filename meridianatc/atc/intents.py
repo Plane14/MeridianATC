@@ -59,6 +59,13 @@ class Intent(StrEnum):
     # "Request deviation twenty degrees left for weather" (the IFR plan,
     # Phase 2): approved by a radar position, with a fix to rejoin at.
     REQUEST_DEVIATION = "request_deviation"
+    # "Deviating left for weather": the urgent report once safety has
+    # outranked waiting for the approval.
+    REPORT_DEVIATION = "report_deviation"
+    # "Clear of weather, resuming course": the report that ends the
+    # manoeuvre. Without an intent the controller answered the FO's own
+    # completion call with "say again".
+    REPORT_CLEAR_OF_WEATHER = "report_clear_of_weather"
     # The pilot's other requests (the IFR plan, Phase 6): a speed, a hold,
     # back to the field left, on to another airport.
     REQUEST_SPEED = "request_speed"
@@ -909,6 +916,7 @@ _RULES: list[tuple[Intent, str]] = [
     (Intent.REQUEST_DEVIATION, r"\b(request(ing)? (a )?(weather )?deviation|"
                                r"deviation \w+ degrees|"
                                r"(request|like) to deviate|deviate (left|right))\b"),
+    (Intent.REPORT_CLEAR_OF_WEATHER, r"\bclear of (the )?weather\b"),
     (Intent.REQUEST_DIRECT, r"\b(request direct|direct to)\b"),
     (Intent.REQUEST_DESCENT, r"\b(request (descent|lower|to descend)|"
                              r"like (to descend|lower))\b"),
@@ -931,6 +939,10 @@ _RULES: list[tuple[Intent, str]] = [
      r"(flightlevel|\d|one|two|three|four|five|six|seven|eight|nine|ten|"
      r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|"
      r"nineteen|twenty|thirty|zero))\b"),
+    # After CHECK_IN: a level report that also says it is deviating is still
+    # a check-in, and the radar controller inspects the deviation clause
+    # separately. A bare "deviating left for weather" reaches this rule.
+    (Intent.REPORT_DEVIATION, r"\bdeviating (left|right|around|for weather)\b"),
     (Intent.POSITION_REPORT, r"\b((?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty five|thirty|thirty five|forty|fifty|sixty) miles? (north|south|east|west|"
                              r"northeast|northwest|southeast|southwest)|"
                              r"position report|overhead the field|"

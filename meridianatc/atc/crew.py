@@ -891,13 +891,15 @@ class CrewDirector:
             self._fire("boarding_complete", session, state, delay=150.0)
         if previous.parking_brake and not state.parking_brake and state.on_ground:
             self.state.off_stand = True
+            off_at_the_stand = phase in AT_THE_STAND
             # The brakes are off, so the aeroplane is going somewhere and
             # boarding is over. The music stops here rather than at the end
             # of its loop: the whole point of it was the wait, and the wait
             # is finished.
             self.music(False)
             self._fire("doors_closed", session, state)
-            self._fire("pushback", session, state, delay=8.0)
+            if off_at_the_stand:
+                self._fire("pushback", session, state, delay=8.0)
             # The captain, once the push is actually under way. Late enough
             # that the first officer has called the brakes released and the
             # purser has armed the doors, because a captain who welcomes you

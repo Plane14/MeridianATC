@@ -814,9 +814,10 @@ class PilotSpeech:
     # ------------------------------------------------------------------
 
     def taxi(self, aircraft: Aircraft, runway: str, route: str = "",
-             hold_short: str = "", hold_short_taxiway: str = "") -> str:
+             hold_short: str = "", hold_short_taxiway: str = "",
+             pressure: float = 0.0) -> str:
         """The readback of a taxi clearance: the taxiways, where it holds,
-        the runway -- not the whole clearance said back."""
+        the runway -- and the pressure where ICAO readback rules require it."""
         parts = []
         if route:
             parts.append(self.book.taxi.format(route=route,
@@ -829,6 +830,8 @@ class PilotSpeech:
         if hold_short:
             parts.append(self.book.hold_short.format(
                 runway=self.p.rwy(hold_short)))
+        if pressure:
+            parts.append(self.p.pressure(pressure))
         return self.report(aircraft, _join(*parts))
 
     def cross_runway(self, aircraft: Aircraft, runway: str) -> str:

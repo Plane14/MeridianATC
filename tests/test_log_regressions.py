@@ -4789,3 +4789,196 @@ def test_night_files_the_light_aeroplane_ifr_outside_the_faa():
         assert flight._ifr_required(SimpleNamespace()) is False
     finally:
         svfr.is_night = old
+
+
+def test_a_taxi_readback_includes_the_icao_pressure_setting():
+    """The LECO live loop: the ICAO taxi instruction required QNH readback,
+    the FO never said it, and the controller kept answering an unhelpful
+    "negative, read back"."""
+    from meridianatc.atc.copilot import readback
+    from meridianatc.atc.intents import IntentParser
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import Instruction
+    from meridianatc.atc.speech import Callsign
+
+    aircraft = Aircraft(callsign=Callsign(
+        written="N45XS", spoken_full="baron four five xray sierra",
+        spoken_short="baron five xray sierra"))
+    instruction = Instruction(
+        kind="taxi", station_key="LECO:gnd",
+        values={"runway": "03", "route": ["S"], "altimeter": 1020.0})
+    said = readback(instruction, aircraft, Phraseology("icao"))
+    assert "qnh" in said.lower()
+    heard = IntentParser().parse(said, "en").readback_items
+    assert heard.get("altimeter") == 1020.0
+    assert not instruction.mismatches(heard)
+
+
+def test_an_altimeter_correction_names_the_pressure():
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.speech import Callsign
+
+    aircraft = Aircraft(callsign=Callsign(
+        written="N45XS", spoken_full="baron four five xray sierra",
+        spoken_short="baron five xray sierra"))
+    text = Phraseology("icao").correction(
+        aircraft, ["altimeter"], {"altimeter": 1020.0})
+    assert "qnh one zero two zero" in text.lower()
+    assert "negative, read back" not in text.lower()
+
+
+def test_deviating_left_for_weather_is_understood():
+    from meridianatc.atc.intents import Intent, IntentParser
+
+    parsed = IntentParser().parse(
+        "deviating left for weather, Baron five Xray Sierra", "en")
+    assert parsed.intent is Intent.REPORT_DEVIATION
+
+
+def test_an_airborne_weather_deviation_on_tower_is_not_answered_as_an_arrival():
+    """LECO live: the urgent "deviating left for weather" report reached the
+    tower and was answered with the inbound-arrival expectation list."""
+    from meridianatc.atc.intents import Intent
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.db import Station
+
+    brain = _ground_brain()
+    brain.controller_at = lambda ident, position: None
+    station = Station("LECO", "TWR", 118.1, "A Coruna Tower")
+    session = FlightSession(Aircraft(parse_callsign("N45XS")))
+    parsed = SimpleNamespace(intent=Intent.REPORT_DEVIATION)
+    reply = brain._tower(parsed, session, station, None,
+                         brain.for_station(station),
+                         SimpleNamespace(on_ground=False))
+    assert "expecting inbound" not in reply.text.lower()
+    assert "roger" in reply.text.lower() or "contact" in reply.text.lower()
+
+
+def test_airborne_transponder_standby_is_reselected_to_altitude_reporting():
+    """LECO live: the Baron climbed with the transponder still in standby
+    even though the dataref write path accepts ALT."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+
+    flight = AutonomousFlight.__new__(AutonomousFlight)
+    flight.state = AutonomousState()
+    flight.session = SimpleNamespace(squawk="1077")
+    flight.sim = None
+    flight._dir = Mock()
+    flight._dir.sim = None
+    flight._manage_transponder(
+        SimpleNamespace(on_ground=False, transponder_state=1,
+                        transponder_code="1077"), 100.0)
+    flight._dir.transponder.assert_called_once_with("1077")
+    flight._dir.write.assert_called_once_with("TRANSPONDER STATE:1", 4.0)
+    flight._dir.reset_mock()
+    flight._manage_transponder(
+        SimpleNamespace(on_ground=False, transponder_state=4,
+                        transponder_code="1077"), 101.0)
+    flight._dir.write.assert_not_called()
+
+
+def test_clear_of_weather_is_understood_and_clears_the_deviation_state():
+    from meridianatc.atc.intents import Intent, IntentParser
+
+    parsed = IntentParser().parse(
+        "clear of weather, resuming course, Baron five Xray Sierra", "en")
+    assert parsed.intent is Intent.REPORT_CLEAR_OF_WEATHER
+
+
+def test_switching_weather_reactions_off_ends_an_active_deviation():
+    """The settings switch must stop the deviation steering already in
+    progress, otherwise a bad strategic cell can hold the heading forever."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+
+    flight = AutonomousFlight.__new__(AutonomousFlight)
+    flight.state = AutonomousState()
+    flight.session = SimpleNamespace(
+        weather_deviation_at=100.0, deviating="approved",
+        weather_deviation_side="left", weather_deviation_degrees=60,
+        weather_deviation_miles_nm=25, weather_deviation_rejoin="",
+        weather_deviation_course=80.0, weather_deviation_urgent=True)
+    flight._weather_reactions = False
+    flight._fly_weather_deviation(SimpleNamespace(on_ground=False))
+    assert flight.session.weather_deviation_at == 0.0
+    assert flight.session.deviating == ""
+
+
+def test_a_checkin_carrying_a_deviation_report_gets_both_answers():
+    """The Madrid live call was a level check-in plus "deviating left of
+    course for weather"; the level answer must not swallow the deviation."""
+    from meridianatc.atc.controller import Reply
+    from meridianatc.atc.intents import Intent
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.db import Station
+
+    brain = _ground_brain()
+    brain.realism = SimpleNamespace(deviations=True)
+    station = Station("LECM", "CTR", 118.275, "Madrid Control")
+    session = FlightSession(Aircraft(parse_callsign("N45XS")))
+    session.ifr = True
+    parsed = SimpleNamespace(
+        intent=Intent.CHECK_IN,
+        normalized="madrid control baron five xray sierra climbing flight level one five two deviating left of course for weather")
+    base = Reply("Madrid Control, identified.", station)
+    approval = Reply("deviation left of course approved.", station)
+    brain._radar_check_in = Mock(return_value=base)
+    brain._approve_deviation = Mock(return_value=approval)
+    reply = brain._radar(parsed, session, station, None,
+                         brain.for_station(station),
+                         SimpleNamespace(on_ground=False))
+    brain._radar_check_in.assert_called_once()
+    brain._approve_deviation.assert_called_once()
+    assert "identified" in reply.text
+    assert "deviation left of course approved" in reply.text
+
+
+def test_radar_acknowledges_clear_of_weather_and_releases_the_old_limits():
+    from meridianatc.atc.intents import Intent
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.db import Station
+
+    brain = _ground_brain()
+    station = Station("LECM", "CTR", 118.275, "Madrid Control")
+    session = FlightSession(Aircraft(parse_callsign("N45XS")))
+    session.ifr = True
+    session.deviating = "approved"
+    session.weather_deviation_at = 100.0
+    session.weather_deviation_side = "left"
+    session.weather_deviation_degrees = 60
+    session.weather_deviation_miles_nm = 25
+    parsed = SimpleNamespace(intent=Intent.REPORT_CLEAR_OF_WEATHER,
+                             normalized="clear of weather resuming course")
+    reply = brain._radar(parsed, session, station, None,
+                         brain.for_station(station),
+                         SimpleNamespace(on_ground=False))
+    assert "roger" in reply.text.lower()
+    assert session.weather_deviation_at == 0.0
+    assert session.deviating == ""
+
+
+def test_a_brake_release_seen_late_in_the_taxi_does_not_fire_a_pushback_cue():
+    """LECO live: the crew was enabled after the stand, then the parked
+    brake transition was replayed and "pushback" was said while lined up."""
+    from meridianatc.atc.crew import CrewDirector
+    from meridianatc.atc.session import Phase
+
+    crew = CrewDirector.__new__(CrewDirector)
+    crew.state = SimpleNamespace(off_stand=False)
+    crew._fire = Mock()
+    crew.music = Mock()
+    session = SimpleNamespace(
+        phase=Phase.TAXI_OUT, cleared_takeoff=False)
+    previous = SimpleNamespace(parking_brake=True)
+    state = SimpleNamespace(
+        parking_brake=False, on_ground=True, engines_running=True,
+        ground_speed_kt=0.0)
+    crew._watch_ground(previous, state, session)
+    fired = [call.args[0] for call in crew._fire.call_args_list]
+    assert "doors_closed" in fired
+    assert "pushback" not in fired

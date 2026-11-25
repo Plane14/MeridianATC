@@ -77,7 +77,21 @@ class _Radar_positions_departure:
             return Reply(p.roger(aircraft), station)
 
         if parsed.intent in (Intent.CHECK_IN, Intent.POSITION_REPORT):
-            return self._radar_check_in(parsed, session, station, p, state, first_contact)
+            reply = self._radar_check_in(parsed, session, station, p, state,
+                                         first_contact)
+            said = parsed.normalized or ""
+            deviation_reported = any(
+                f"deviating {side}" in said for side in ("left", "right", "around"))
+            if deviation_reported and self.realism.deviations and session.ifr:
+                # A first call often carries two facts: the level check-in
+                # and the off-course manoeuvre. The level answer is still
+                # owed, and the safety report must not disappear inside it.
+                approval = self._approve_deviation(
+                    parsed, session, station, p, state)
+                return Reply(reply.text + " " + approval.text, station,
+                             instruction=reply.instruction or approval.instruction,
+                             handoff_to=reply.handoff_to)
+            return reply
 
         if parsed.intent in (Intent.GOING_AROUND, Intent.MISSED_APPROACH):
             # On approach as well as on the tower: a missed approach is
@@ -89,7 +103,22 @@ class _Radar_positions_departure:
         if parsed.intent is Intent.REQUEST_FLIGHT_FOLLOWING:
             return self._issue_flight_following(session, station, p, state)
 
-        if parsed.intent is Intent.REQUEST_DEVIATION \
+        if parsed.intent is Intent.REPORT_CLEAR_OF_WEATHER:
+            # The pilot's report is the end of the manoeuvre. Normally the
+            # FO has already cleared its own executive state before saying
+            # it; clearing it here as well keeps a typed/user report from
+            # leaving the old deviation steering in charge.
+            session.deviating = ""
+            session.weather_deviation_side = ""
+            session.weather_deviation_degrees = 0
+            session.weather_deviation_miles_nm = 0
+            session.weather_deviation_rejoin = ""
+            session.weather_deviation_at = 0.0
+            session.weather_deviation_course = -1.0
+            session.weather_deviation_urgent = False
+            return Reply(p.roger(session.aircraft), station)
+
+        if parsed.intent in (Intent.REQUEST_DEVIATION, Intent.REPORT_DEVIATION) \
                 and self.realism.deviations and session.ifr:
             return self._approve_deviation(parsed, session, station, p, state)
 

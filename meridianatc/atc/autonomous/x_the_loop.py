@@ -66,6 +66,11 @@ class _The_loop:
         # tank with fuel still aboard is a selector position, and it is
         # moved now rather than after the engine has quit.
         self._manage_fuel_tanks(state)
+        # Airborne with the transponder still in standby is not a mode a
+        # radar service can see properly; preflight may have run before the
+        # bus or model accepted the selector, so altitude reporting is a
+        # watch rather than a one-time write.
+        self._manage_transponder(state, now)
         # And a turboprop's condition lever is the same kind of watch --
         # the fuel cock and the governor's floor in one handle, lifted
         # off a stop the phase cannot run on before the engine starves
@@ -336,6 +341,22 @@ class _The_loop:
             agl = state.altitude_agl_ft or 0.0
             if 0.0 < agl < 1500.0:
                 self._transition(AutonomousPhase.APPROACH)
+
+    def _manage_transponder(self, state, now: float) -> None:
+        """Keep altitude reporting selected once the aeroplane is airborne."""
+        if getattr(state, "on_ground", True):
+            self.state.transponder_alt_written_at = 0.0
+            return
+        if getattr(state, "transponder_state", -1) == 4:
+            return
+        if now - getattr(self.state, "transponder_alt_written_at", 0.0) < 5.0:
+            return
+        self.state.transponder_alt_written_at = now
+        session = getattr(self, "session", None)
+        code = getattr(session, "squawk", "") \
+            or getattr(state, "transponder_code", "") or "1200"
+        self.director.transponder(str(code))
+        self.director.write("TRANSPONDER STATE:1", 4.0)
 
     def _can_fly_phase(self, state) -> bool:
         return capabilities(state.source).flight_axes or (

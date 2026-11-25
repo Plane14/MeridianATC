@@ -26,7 +26,7 @@ class _Weather:
         # An emergency already declared does not calm the air: the
         # windshear on the PAN PAN's diversion approach is still a
         # windshear.
-        if not self._weather_reactions:
+        if not getattr(self, "_weather_reactions", True):
             return
         self._watch_icing(state, now)
         self._watch_turbulence(state, now)
@@ -491,6 +491,12 @@ class _Weather:
         """
         session = getattr(self, "session", None)
         if session is None or not getattr(session, "weather_deviation_at", 0.0):
+            return
+        if not getattr(self, "_weather_reactions", True):
+            # Switching weather reactions off means the leg is flown as
+            # cleared; it must also end a manoeuvre already in progress,
+            # not merely prevent the next one.
+            self._clear_weather_deviation(session)
             return
         if getattr(state, "on_ground", True):
             return

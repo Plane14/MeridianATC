@@ -209,7 +209,7 @@ def parse_metar(raw: str) -> Weather:
     clouds: list[tuple[str, int]] = []
     for cover, height, kind in _RE_CLOUD.findall(body):
         clouds.append((cover, int(height) * 100))
-        if kind:
+        if kind == "CB":
             wx.cb = True
     if "CLR" in body or "SKC" in body or "NCD" in body or "NSC" in body:
         clouds = []

@@ -256,3 +256,26 @@ def test_polygon_edge_is_costed_even_when_all_vertices_are_far():
     cell = HazardCell(0.0, 5.0 / 60.0, 80.0, .8, "test", "long-edge",
                       polygon=polygon)
     assert _course_geometry_cost(cell, 0.0, 0.0, 90.0, 80.0) > 10.0
+
+
+def test_tcu_is_not_cumulonimbus_convective_evidence():
+    from meridianatc.weather.enroute import metar_convective_cells
+    from meridianatc.weather.metar import parse_metar
+
+    raw = "LECO 251730Z 31004KT 9999 FEW027 SCT035TCU 11/09 Q1020 NOSIG"
+    assert not parse_metar(raw).cb
+    rows = [{"lat": 43.307, "lon": -8.372, "icaoId": "LECO", "rawOb": raw}]
+    assert not metar_convective_cells(rows)
+
+
+def test_repeated_station_metars_are_one_weather_cell_not_inflated_coverage():
+    from meridianatc.weather.enroute import metar_convective_cells
+
+    rows = []
+    for obs in (1795624200, 1795626000, 1795627800):
+        rows.append({
+            "lat": 43.307, "lon": -8.372, "icaoId": "LECO", "obsTime": obs,
+            "rawOb": "LECO 251730Z 31004KT 9999 TSRA SCT035CB 11/09 Q1020",
+        })
+    cells = metar_convective_cells(rows)
+    assert len(cells) == 1

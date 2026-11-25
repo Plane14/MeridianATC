@@ -1664,6 +1664,14 @@ def _apply_settings(engine: Engine, payload: dict) -> set[str]:
             engine.engage_autonomous()
         else:
             engine.disengage_autonomous()
+    if "immersion.autonomous_weather" in changed:
+        flight = getattr(engine, "autonomous_flight", None)
+        if flight is not None:
+            enabled = bool(engine.config.immersion.autonomous_weather)
+            flight._weather_reactions = enabled
+            provider = getattr(flight, "enroute_weather", None)
+            if provider is not None:
+                provider.enabled = enabled and not engine.config.network.offline
 
     # Asking for the simulator is asking for it now, not on the next launch.
     if "sim.enabled" in changed:

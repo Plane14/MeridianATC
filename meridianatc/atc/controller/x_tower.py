@@ -37,6 +37,14 @@ class _Tower:
             return self._tower_check_in_on_final(parsed, session, station,
                                                  weather, p, state)
 
+        if parsed.intent in (Intent.REQUEST_DEVIATION, Intent.REPORT_DEVIATION) \
+                and airborne:
+            # Weather manoeuvring past the tower's circuit belongs to the
+            # radar position the departure is about to join. A tower that
+            # cannot issue the approval still has one useful answer: put the
+            # crew on whoever can, rather than listing the calls it expected.
+            return self._hand_off_departure(session, station, p)
+
         if parsed.intent is Intent.REQUEST_TAKEOFF:
             if airborne:
                 return Reply(p.already_airborne(aircraft), station)
