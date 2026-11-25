@@ -125,6 +125,14 @@ ERR_REF_BLEND_S = 0.5
 #: pilot who flies everything does not grow the file without limit.
 MAX_MODELS = 200
 
+#: Stored-learning format. Version two follows two measurement fixes:
+#: PID scales used to grow merely for sitting on a clamp even while the
+#: error was closing, and steering authority counted alternating sides of
+#: a weave as valid samples. Values written by those measurements are not
+#: a safe starting point, so an older store keeps its polarities and
+#: trims but relearns scales and steering authority from clean evidence.
+STORE_SCHEMA = 2
+
 
 def _store_path() -> Path:
     return data_dir() / "control_adaptations.json"
@@ -243,6 +251,7 @@ class Adaptation:
 
     def as_dict(self) -> dict:
         return {
+            "schema": STORE_SCHEMA,
             "trims": self.trims, "scales": self.scales,
             "signs": self.signs, "values": self.values,
         }
@@ -262,6 +271,11 @@ class Adaptation:
             found.values = {str(k): float(v)
                             for k, v in data.get("values", {}).items()
                             if math.isfinite(float(v))}
+            if int(data.get("schema", 1) or 1) < STORE_SCHEMA:
+                found.scales = {}
+                found.values = {
+                    k: v for k, v in found.values.items()
+                    if not k.startswith("steer.authority")}
         except (TypeError, ValueError):
             return cls()
         return found
@@ -294,6 +308,7 @@ class AdaptivePid(Pid):
         # against: neutral and unreferenced until the first pass.
         self._assist = 1.0
         self._err_ref = 0.0
+        self._learn_err = None
         if terms.ki:
             self.reset()
 
@@ -374,10 +389,17 @@ class AdaptivePid(Pid):
 
         pushing = (out >= t.high - 1e-9 and err > t.deadband) \
             or (out <= t.low + 1e-9 and err < -t.deadband)
-        if pushing:
+        # Saturation alone is not under-gain: a clamped lever cannot
+        # become more clamped, and a loop whose error is already coming
+        # in needs time rather than a hotter hand. Only an error that
+        # holds or grows against the rail counts as unanswered.
+        closing = self._learn_err is not None \
+            and abs(err) < abs(self._learn_err) - 1e-9
+        if pushing and not closing:
             self._sat_t += dt
         else:
             self._sat_t = max(0.0, self._sat_t - 2.0 * dt)
+        self._learn_err = err
 
         # An error that keeps crossing zero while the lever works
         # past half travel is the loop chasing itself: too much
@@ -437,6 +459,7 @@ class AdaptivePid(Pid):
         self._last_sign = 0
         self._assist = 1.0
         self._err_ref = 0.0
+        self._learn_err = None
         # The learned trim preloads the integrator only: ``_out`` stays
         # cleared so a caller's bumpless transfer still wins, and the
         # loop's first real update opens near the trim the model wants

@@ -1485,6 +1485,59 @@ def test_ground_steering_shrinks_as_the_speed_builds():
     assert 0.0 < abs(fast) <= 0.15
 
 
+def test_taxi_tracking_corrections_use_small_nosewheel_angles():
+    """A thirty-degree correction at ten knots is not a steering-stop
+    problem. The live Baron's large alternating nosewheel writes were
+    the pump behind its taxi slalom; the tracking cap keeps the answer
+    to a few degrees of wheel while corners still get full travel."""
+    flight = _flier()
+    flight._ground_still = lambda s, n: False
+    state = SimpleNamespace(
+        on_ground=True, ground_speed_kt=10.0, heading_true=0.0)
+    for _ in range(4):
+        flight._steer(state, 30.0, 10.0)
+    pedal = flight.director.rudder.call_args[0][0]
+    assert 0.0 < pedal <= 0.20
+    # A real corner is exempt: it is already slowed and may need the
+    # gear's travel plus the inside brake.
+    flight._pedal_out = 0.0
+    for _ in range(4):
+        flight._steer(state, 60.0, 4.0, brake_turn=True)
+    corner = flight.director.rudder.call_args[0][0]
+    assert corner > pedal
+
+
+def test_a_castoring_nosewheel_keeps_the_steering_demand_it_turns_with():
+    """Cirrus/Grumman-style free-castering nosewheels have no steering
+    angle to ration: they turn on rudder and differential brake, so the
+    small-angle nosewheel cap must not take away the demand the brake
+    assist reads."""
+    flight = _flier()
+    flight._ground_still = lambda s, n: False
+    state = SimpleNamespace(
+        on_ground=True, ground_speed_kt=10.0, heading_true=0.0,
+        type_code="SR22")
+    for _ in range(4):
+        flight._steer(state, 30.0, 10.0)
+    pedal = flight.director.rudder.call_args[0][0]
+    assert pedal > 0.20
+
+
+def test_a_taxi_weave_slows_the_aeroplane_instead_of_powering_it():
+    """When the nose is already swinging through a large correction,
+    the cruise taxi target is the wrong priority: speed gives the next
+    reversal its energy, so the target falls to corner pace and power
+    comes off."""
+    flight = _flier()
+    flight._ground_still = lambda s, n: False
+    flight._turn_rate = Mock(return_value=8.0)
+    flight._last_lever = 0.0
+    state = SimpleNamespace(
+        on_ground=True, ground_speed_kt=10.0, heading_true=0.0)
+    flight._steer(state, 20.0, 10.0)
+    assert flight.director.throttle.call_args[0][0] == 0.0
+
+
 def _lineup_flight():
     """A flier held in the lineup geometry the phase machine reads."""
     flight = _flier()
@@ -3939,6 +3992,7 @@ def test_the_roll_tracks_the_centreline(monkeypatch):
     flight._phase_takeoff(state, 1000.0)
     args, kwargs = flight._ground_directional.call_args
     assert abs(args[1] - 173.5) < 1e-6
+    assert abs(kwargs["err_gain"] - 0.01) < 1e-9
 
 
 def test_a_healthy_roll_is_not_rejected_for_a_lagging_read():

@@ -668,9 +668,12 @@ def test_steer_brakes_the_swing_before_the_line():
     fo._steer_dt = 2.0
     fo._turn_rate = Mock(return_value=8.0)
     fo._steer(state, 110.0, 12.0)
-    # err +20: the un-led ask was ~-0.1; the led one counters, walked
-    # to the first slew step on this call.
-    assert fo._dir.rudder.call_args[0][0] <= -0.15 + 1e-9
+    # err +20 with the nose already closing at eight a second: the
+    # bounded lead counters gently rather than slamming the wheel to
+    # the opposite stop -- the braking is present, without becoming the
+    # next weave's push.
+    pedal = fo._dir.rudder.call_args[0][0]
+    assert -0.15 < pedal < 0.0
 
 
 def test_steer_writes_nothing_on_the_heading():
@@ -691,12 +694,13 @@ def test_steer_orders_only_what_the_tiller_has():
     fo = _steerable_fo()
     fo._yaw_authority_b = {1: 5.0}
     state = _state(51.15, -0.19, heading_true=90.0, ground_speed_kt=8.0)
-    fo._steer(state, 130.0, 12.0)
     # Authority 5, limit ~0.40: deliverable ~1.8, floored at 2 deg/s.
     # err +40 wants 10; capped to 2 -> rudder 2/5 = 0.4, reached at the
     # wheel's walked pace a few calls in.
+    # ``brake_turn`` exempts a real corner from the straight-taxi
+    # nosewheel-angle cap, so this checks the authority cap itself.
     for _ in range(4):
-        fo._steer(state, 130.0, 12.0)
+        fo._steer(state, 130.0, 12.0, brake_turn=True)
     assert fo._dir.rudder.call_args[0][0] == pytest.approx(0.4, abs=0.05)
 
 

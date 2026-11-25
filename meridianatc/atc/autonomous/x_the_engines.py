@@ -101,27 +101,47 @@ class _The_engines:
         warning and the lever cap tell the same story.
         """
         lim = self._engine_limits()
-        # The ceilings once, the same for every engine: the model's own
-        # red lines where it publishes them -- an X-Plane author who
-        # filled in red_hi_ITT knew the figure better than the class
-        # table does -- the type's or the class's where it does not.
-        itt_ceiling = (float(getattr(state, "eng_itt_takeoff_c", 0.0)
-                             or 0.0)
-                       if takeoff else
-                       float(getattr(state, "eng_itt_limit_c", 0.0) or 0.0))
-        if not itt_ceiling:
-            itt_ceiling = (lim.itt_takeoff_c
-                           if takeoff and lim.itt_takeoff_c
-                           else lim.itt_max_c or lim.itt_takeoff_c)
-        tq_ceiling = (lim.tq_takeoff_pct if takeoff and lim.tq_takeoff_pct
-                      else lim.tq_cont_pct or lim.tq_takeoff_pct)
+        # Turbine instruments are meaningless on a piston aeroplane, but
+        # X-Plane publishes ENGN_ITT_c and generic ITT red lines there
+        # anyway -- the Baron's piston engines otherwise inherit a turbine
+        # temperature limit they do not have. Pistons keep their own RPM
+        # and CHT checks below; only jets, turboprops and turbine
+        # rotorcraft read gas-producer, torque and ITT ceilings.
+        raw_engine_type = getattr(state, "engine_type", -1)
+        engine_type = int(
+            raw_engine_type if raw_engine_type is not None else -1)
+        if engine_type >= 0:
+            turbine = engine_type in (1, 3, 5)
+        else:
+            from .. import aircraft_class as ac
+            turbine = getattr(self, "_aircraft_class", "") in (
+                ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN, ac.BUSINESS_JET,
+                ac.AIRLINER, ac.HELICOPTER)
+        if not turbine:
+            itt_ceiling = 0.0
+            tq_ceiling = 0.0
+        else:
+            # The ceilings once, the same for every engine: the model's own
+            # red lines where it publishes them -- an X-Plane author who
+            # filled in red_hi_ITT knew the figure better than the class
+            # table does -- the type's or the class's where it does not.
+            itt_ceiling = (float(getattr(state, "eng_itt_takeoff_c", 0.0)
+                                 or 0.0)
+                           if takeoff else
+                           float(getattr(state, "eng_itt_limit_c", 0.0) or 0.0))
+            if not itt_ceiling:
+                itt_ceiling = (lim.itt_takeoff_c
+                               if takeoff and lim.itt_takeoff_c
+                               else lim.itt_max_c or lim.itt_takeoff_c)
+            tq_ceiling = (lim.tq_takeoff_pct if takeoff and lim.tq_takeoff_pct
+                          else lim.tq_cont_pct or lim.tq_takeoff_pct)
         # No per-cent reference gets an absolute ceiling: the model's
         # own published one (green_hi_TRQ / acf_max_TRQ), else the
         # type's book figure -- the King Air whose torque gauge paints
         # a 1,315 ft-lb red line onto a dataref that reads 1.0 gets its
         # ceiling from the POH, not the paint.
         nm_ceiling = 0.0
-        if not tq_ceiling:
+        if turbine and not tq_ceiling:
             nm_ceiling = (float(getattr(
                 state,
                 "eng_tq_takeoff_nm" if takeoff else "eng_tq_limit_nm",

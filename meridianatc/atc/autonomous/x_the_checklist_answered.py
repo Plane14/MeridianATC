@@ -417,12 +417,17 @@ class _The_checklist_answered:
         lands, not the one a stale read reports: while the nose is
         already coming around the lead shrinks the ask, so the wheel is
         centred as it arrives rather than thrown over after it has
-        passed. The horizon is the loop's own measured period -- a
-        five-second tick needs the braking started five seconds out.
-        Without the rate term a saturated law under lag bang-bangs --
-        or with the correction arriving late enough, orbits the apron.
+        passed. The horizon is short and bounded: reads arrive late and
+        the measured rate is itself noisy, so projecting it for the
+        loop's whole period turns a sampled weave into the next
+        reversal. Without the rate term a saturated law under lag
+        bang-bangs -- or with the correction arriving late enough,
+        orbits the apron.
         """
-        horizon = max(2.0, 1.5 * getattr(self, "_steer_dt", 2.0))
+        # A second or so is about all the writes and reads can honestly
+        # predict: the two-to-three second horizon this used to project
+        # turned a sampled weave into a steering reversal of its own.
+        horizon = max(0.5, min(1.5, 1.5 * getattr(self, "_steer_dt", 2.0)))
         return err - rate * horizon
 
     def _pedal_dir(self) -> float:
@@ -457,11 +462,13 @@ class _The_checklist_answered:
         self._demand_streak = streak
         # Gain autoadjust: the degrees a second that one unit of pedal
         # buys on this model, learned from the answer each demand got.
-        # The magnitude carries the information -- the sign can be
-        # backwards while the axis is still being voted on -- and the
-        # sample must not wait for the streak the vote does: a hot
-        # axis alternates demands fast enough that no streak forms,
-        # which is exactly when the estimate matters most. The
+        # Only a held demand is evidence: the live Baron's weave was
+        # alternating pedal and rate signs every few seconds, and using
+        # absolute magnitudes there counted one side of the oscillation
+        # as the other pedal's authority. The answer must therefore
+        # agree in direction with the demand and the demand must have
+        # held long enough for the nosewheel and airframe lag to be
+        # part of the measurement rather than its reversal. The
         # aeroplane must be rolling too: a tug or the wind can put
         # rate on a parked airframe that the pedal never made.
         #
@@ -471,7 +478,8 @@ class _The_checklist_answered:
         # whole-speed value is kept updated too -- it is the fallback a
         # band that has no evidence yet reads, and the only figure an
         # old store carries.
-        if abs(prev) >= 0.15 and abs(rate) >= 3.0 and gs >= 1.0:
+        if abs(prev) >= 0.15 and abs(rate) >= 3.0 and gs >= 1.0 \
+                and streak >= 2 and rate * prev > 0.0:
             sample = abs(rate) / abs(prev)
             # A sample is only believable as steering's own work while
             # the measured swing is something a pedal could plausibly
@@ -583,7 +591,8 @@ class _The_checklist_answered:
     def _ground_directional(self, state, want_hdg: float, gs: float,
                             rate_cap: float = 5.0, pedal_max: float = 0.4,
                             demand: float = 1.0, rate_damp: float = 1.0,
-                            err_share: float = 0.3) -> float:
+                            err_share: float = 0.3,
+                            err_gain: float = 0.02) -> float:
         """The signed pedal demand that holds a heading on a fast roll.
 
         The takeoff roll, the rollout and the flare's de-crab steer by
@@ -640,7 +649,7 @@ class _The_checklist_answered:
         if pedal * err > 0.0:
             pedal = max(-pedal_max, min(
                 pedal_max, pedal + max(-err_share,
-                                       min(err_share, err * 0.02))))
+                                       min(err_share, err * err_gain))))
         if abs(err) < 1.5 and abs(rate) < 1.0:
             pedal = 0.0
         # Walked like the taxi wheel, and smoothed harder than it: the
@@ -982,6 +991,19 @@ class _The_checklist_answered:
         # and a proportional term cannot supply -- the apron showed the
         # slalom the other shape makes.
         gs = state.ground_speed_kt or 0.0
+        tail = False
+        castor = False
+        if state.on_ground:
+            from .. import tailwheel
+            tail = tailwheel.is_tailwheel(state)
+            castor = tailwheel.is_castoring(state)
+        # A weave is a slow-down first: ten knots of taxi cannot be
+        # steered out of a six-degree-per-second swing, and adding power
+        # back toward the cruise target only gives the next reversal
+        # more energy.
+        if state.on_ground and gs > 6.0 \
+                and abs(rate) > 6.0 and abs(err) > 8.0:
+            target_kt = min(target_kt, 4.0)
         # The ask also comes down with speed: fifteen degrees a second
         # is a brisk ramp turn, and the same rate at twenty-five knots
         # is the swerve a fast taxi is lost to.
@@ -1033,6 +1055,19 @@ class _The_checklist_answered:
         if rudder * err > 0.0:
             rudder += max(-0.3, min(0.3, err * 0.015))
         rudder = max(-limit, min(limit, rudder))
+        if state.on_ground and not castor \
+                and not (brake_turn or commit or abs(err) >= 45.0):
+            # Straight and gently curved taxiway does not take large
+            # nosewheel angles. At ten knots 0.18 of the Baron's
+            # forty-degree steering is already seven degrees at the
+            # wheel; the old law could command twice that for a
+            # twenty-degree correction and start the next overshoot.
+            tracking_cap = max(
+                0.08, min(limit, 0.07 + min(30.0, abs(err)) * 0.004))
+            if gs > 8.0:
+                tracking_cap = min(
+                    tracking_cap, max(0.09, 0.24 - (gs - 8.0) * 0.008))
+            rudder = max(-tracking_cap, min(tracking_cap, rudder))
         if abs(err) < 1.5 and abs(rate) < 1.0:
             # On the heading with no swing: a twitch of tiller is a
             # weave nobody feels, so nothing is written at all.
@@ -1069,19 +1104,13 @@ class _The_checklist_answered:
         # and on a taildragger the elevator back so the tail stays down.
         # Taxi-speed only: above it the elevator and aileron belong to
         # the roll, not the wind.
-        tail = False
-        castor = False
-        if state.on_ground:
-            from .. import tailwheel
-            tail = tailwheel.is_tailwheel(state)
-            castor = tailwheel.is_castoring(state)
-            if gs < 25.0:
-                elevator, aileron = tailwheel.taxi_controls(
-                    getattr(state, "ambient_wind_direction", 0.0) or 0.0,
-                    getattr(state, "ambient_wind_velocity", 0.0) or 0.0,
-                    hdg, tail)
-                d.elevator(elevator)
-                d.aileron(aileron)
+        if state.on_ground and gs < 25.0:
+            elevator, aileron = tailwheel.taxi_controls(
+                getattr(state, "ambient_wind_direction", 0.0) or 0.0,
+                getattr(state, "ambient_wind_velocity", 0.0) or 0.0,
+                hdg, tail)
+            d.elevator(elevator)
+            d.aileron(aileron)
         # Taxi and rollout speeds are throttle jobs, not AP jobs -- and
         # progressive ones: the further below target, the more asked for,
         # and the lever is walked to the answer at a hand's rate rather

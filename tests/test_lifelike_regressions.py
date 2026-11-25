@@ -2209,9 +2209,10 @@ def test_yaw_authority_is_learned_per_band_and_read_back_nearest():
     flight._adapt = adapt
     flight._yaw_authority = 0.0
     flight._yaw_authority_b = {}
-    # Two calls at the same band and demand side: one seeds, one blends.
-    flight._pedal_check(0.5, 20.0, gs=30.0)
-    flight._pedal_check(0.5, 20.0, gs=30.0)
+    # A held demand is evidence: after the first edge, two more calls
+    # establish the streak the sample requires.
+    for _ in range(3):
+        flight._pedal_check(0.5, 20.0, gs=30.0)
     band = 3  # 26-45 kt
     assert flight._yaw_authority_b[band] == pytest.approx(40.0)
     assert learned["steer.authority.3"] == pytest.approx(40.0)
@@ -2227,6 +2228,26 @@ def test_yaw_authority_defaults_when_nothing_is_learned():
     flight._yaw_authority = 0.0
     flight._yaw_authority_b = {}
     assert flight._yaw_authority_at(30.0) == pytest.approx(30.0)
+
+
+def test_a_weave_or_backwards_answer_is_not_authority_evidence():
+    """The live Baron's taxi slalom alternated pedal and yaw-rate signs.
+    Counting absolute magnitude there measured the oscillation, not the
+    nosewheel: neither alternating demands nor a sustained opposing
+    answer may write the authority table."""
+    flight = _steerable()
+    flight._yaw_authority = 0.0
+    flight._yaw_authority_b = {}
+    for demand, rate in ((0.5, -20.0), (-0.5, 20.0)) * 4:
+        flight._pedal_check(demand, rate, gs=30.0)
+    assert flight._yaw_authority_b == {}
+
+    held_backwards = _steerable()
+    held_backwards._yaw_authority = 0.0
+    held_backwards._yaw_authority_b = {}
+    for _ in range(4):
+        held_backwards._pedal_check(0.5, -20.0, gs=30.0)
+    assert held_backwards._yaw_authority_b == {}
 
 
 def test_the_pedal_check_ignores_evidence_that_is_not_the_wheels():
@@ -3044,8 +3065,9 @@ def test_the_taxi_steer_law_brakes_on_the_lead_not_the_stale_read():
     assert "_steer_lead" in src
     flight = _steerable()
     flight._steer_dt = 2.0
-    # Six a second held for three seconds lands eighteen past the read.
-    assert flight._steer_lead(10.0, 6.0) == pytest.approx(-8.0)
+    # Six a second led by the bounded 1.5-second horizon lands nine
+    # degrees past the read, leaving one degree still owed.
+    assert flight._steer_lead(10.0, 6.0) == pytest.approx(1.0)
 
 
 def test_the_pursuit_bound_follows_the_leg_being_joined():

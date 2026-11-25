@@ -323,6 +323,29 @@ def test_the_models_own_red_line_beats_the_class_table():
         same_read_without_the_model_line)
 
 
+def test_a_piston_model_does_not_inherit_xplanes_generic_itt_line():
+    """X-Plane publishes ENGN_ITT and generic red/green ITT limits even
+    on a piston Baron. Neither number is a piston instrument: the twin
+    IO-550 watch keeps RPM and CHT, and must not invent a turbine
+    temperature exceedance."""
+    fo = _fo(_aircraft_class="piston_twin")
+    fo.session.aircraft = SimpleNamespace(type_code="BE58", title="")
+    hot_itt = AircraftState(on_ground=False, engines_running=True,
+                            engine_type=0, eng_itt_c=705.0,
+                            eng_itt_limit_c=695.0,
+                            eng_itt_takeoff_c=700.0)
+    assert "itt" not in fo._engines_over_limit(hot_itt)
+    # Even if the class evidence were wrong, the simulator's explicit
+    # piston engine answer wins over it.
+    explicit = _fo()
+    explicit.session.aircraft = SimpleNamespace(type_code="BE58", title="")
+    assert "itt" not in explicit._engines_over_limit(hot_itt)
+    over_revved = AircraftState(on_ground=False, engines_running=True,
+                                engine_type=0, eng_rpm=2800.0,
+                                eng_itt_c=705.0, eng_itt_limit_c=695.0)
+    assert fo._engines_over_limit(over_revved) == ["rpm"]
+
+
 def test_percent_torque_still_governs_where_it_is_published():
     """A model that does report a sane red_hi_TRQ keeps the per-cent
     path; the N-m fallback does not double-derive its own ceiling."""

@@ -1091,8 +1091,11 @@ class _The_phase_machine:
                 # every rejected roll logged, and the troughs were the
                 # ground the left veer was gained on. A quarter of it
                 # is enough of the brake; the error's own share carries
-                # the standing correction a weak rudder keeps owing.
-                rate_damp=0.25, err_share=0.5)
+                # the standing correction a weak rudder keeps owing. It
+                # arrives at half the rollout's proportional gain: a roll
+                # corrects smoothly, where the larger share made each
+                # centreline correction the next swerve's push.
+                rate_damp=0.25, err_share=0.5, err_gain=0.01)
             # The right foot a prop takeoff is flown with: the engine's
             # left-turning moment is the roll's standing load, led
             # before the heading can leave -- a damper that waits for

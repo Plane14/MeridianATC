@@ -62,6 +62,20 @@ def test_gain_grows_when_saturated_and_unanswered():
     assert pid.terms.kp == pytest.approx(1.0 * adapt.scale("collective"))
 
 
+def test_saturation_while_the_error_closes_is_not_unanswered():
+    """A clamped lever cannot press harder this instant. If the error is
+    already shrinking, calling the loop under-gained merely teaches the
+    next unsaturated second to overshoot -- the taxi lever's learned
+    scale hitting its stop was that verdict repeated."""
+    adapt = Adaptation()
+    pid = AdaptivePid("collective", adapt,
+                      PidTerms(kp=1.0, deadband=1.0, low=0.0, high=1.0),
+                      clock=Clock())
+    for i in range(40):
+        pid.update(max(2.0, 50.0 - i), dt=0.25)
+    assert adapt.scale("collective") == pytest.approx(1.0)
+
+
 def test_gain_shrinks_when_the_loop_chases_itself():
     adapt = Adaptation()
     pid = AdaptivePid("throttle", adapt,
@@ -108,6 +122,27 @@ def test_store_round_trip(tmp_path, monkeypatch):
     again = for_aircraft("Add-on A320", "A320")
     assert again.trim("throttle") == pytest.approx(0.33)
     assert again.value("steer.authority") == pytest.approx(42.0)
+
+
+def test_pre_fix_scale_and_authority_evidence_is_not_carried_forward():
+    """Stores written before the measurement fixes can contain the exact
+    maxed scales and weave-measured authorities that made ground handling
+    worse. The migration keeps safe memory -- trims and control polarity --
+    but lets gains and steering authority be measured cleanly again."""
+    old = Adaptation.from_dict({
+        "trims": {"throttle": 0.33},
+        "scales": {"taxi": 2.5, "throttle": 2.5},
+        "signs": {"steer": 4},
+        "values": {"steer.flip": 0.0, "steer.authority": 14.0,
+                   "steer.authority.3": 5.0, "taxi.breakaway": 0.3},
+    })
+    assert old.trim("throttle") == pytest.approx(0.33)
+    assert old.signs["steer"] == 4
+    assert old.scales == {}
+    assert old.value("steer.authority") == 0.0
+    assert old.value("steer.authority.3") == 0.0
+    assert old.value("steer.flip") == 0.0
+    assert old.value("taxi.breakaway") == pytest.approx(0.3)
 
 
 def test_same_type_different_titles_learn_apart():
