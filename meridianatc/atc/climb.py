@@ -145,8 +145,9 @@ def departure_step_due(here_ft: float, vs_fpm: float, assigned_ft: float,
         return False
     if assigned_ft >= departure_top(cruise_ft):
         return False
-    if vs_fpm < CLIMBING_FPM:
-        return False
+    # Vertical speed is evidence for giving the step early, not a
+    # requirement forever: a flight already level at the last assignment
+    # is exactly the flight the next clearance exists to keep climbing.
     return here_ft >= assigned_ft - DEPARTURE_REACHING_FT
 
 

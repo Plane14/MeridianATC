@@ -3495,7 +3495,14 @@ class _The_other_aeroplanes:
         at FL350 to an approach underneath it, or to Melbourne Approach from
         a hundred and fifty miles out, because both were in radio range.
         """
-        en_route = session.phase in (Phase.DEPARTURE, Phase.ENROUTE)
+        # Descent is still enroute until the destination terminal area
+        # actually owns the flight. Treating every descent as terminal
+        # traffic made coverage handoffs hop between whatever approach
+        # units happened to be underneath -- Santiago to Salamanca while
+        # still far from Madrid -- rather than keeping the flight with
+        # a centre or waiting for the destination approach.
+        en_route = session.phase in (
+            Phase.DEPARTURE, Phase.ENROUTE, Phase.DESCENT)
         if en_route:
             centre = self.navdb.center_station(
                 state.latitude, state.longitude, state.altitude_ft

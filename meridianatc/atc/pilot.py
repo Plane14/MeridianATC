@@ -137,6 +137,7 @@ class PilotBook:
     # Convective-weather avoidance: the request, the safety report where no
     # clearance arrived in time, the readback, and the resume report.
     request_deviation: str = "request deviation {degrees} degrees {side} for weather"
+    request_level: str = "request flight level {altitude}"
     deviating_weather: str = "deviating {side} for weather"
     deviation_readback: str = "deviation {degrees} degrees {side}"
     clear_of_weather: str = "clear of weather, resuming course"
@@ -786,6 +787,15 @@ class PilotSpeech:
     def option(self, aircraft: Aircraft, runway: str) -> str:
         return self.report(
             aircraft, self.book.option.format(runway=self.p.rwy(runway)))
+
+    def request_level(self, aircraft: Aircraft, station: str,
+                      altitude_ft: float) -> str:
+        """The pilot-initiated cruise step climb: a level is requested
+        because the aeroplane has burnt enough weight to use it, not
+        because ATC happens to offer it."""
+        body = self.book.request_level.format(
+            altitude=self.p.alt(altitude_ft))
+        return self.call(aircraft, station, body)
 
     def request_deviation(self, aircraft: Aircraft, station: str,
                           degrees: int, side: str) -> str:

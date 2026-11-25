@@ -44,6 +44,7 @@ _BROADCAST_POSITIONS = ("CTAF", "INFO")
 _VOLUNTEERED = frozenset({
     "clearance", "vfr", "taxi", "ready", "pushback", "check_in",
     "weather_deviation", "clear_of_weather", "downwind", "base", "final",
+    "step_climb",
 })
 
 # Seconds of quiet on the frequency before the first officer keys in. A

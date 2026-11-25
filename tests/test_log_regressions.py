@@ -5064,3 +5064,118 @@ def test_clearance_readback_on_ground_does_not_hand_you_back_to_ground():
     assert "readback correct" in reply.text.lower()
     assert "contact coruna ground" not in reply.text.lower()
     assert reply.handoff_to is None
+
+
+def test_a_level_enroute_flight_still_gets_the_next_climb_step():
+    """The climb watch mistook "no longer climbing" for "no longer in the
+    climb": a flight level at departure's last assignment never received
+    the centre's next step, so the filed cruise stayed unreachable. The
+    centre's pause still applies, then the filed level is issued."""
+    from meridianatc.atc.departure import ClimbWatch
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import FlightSession, Phase
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.db import Station
+    brain = Mock()
+    brain.realism = SimpleNamespace(climb_steps=True)
+    brain.navdb = SimpleNamespace(airport=lambda ident: None)
+    brain._transition_altitude = lambda airport: 6000
+    brain.for_station = lambda station, language="en": Phraseology("icao")
+    watch = ClimbWatch(brain)
+    station = Station("LECM", "CTR", 124.4, "Madrid")
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    session.ifr = True
+    session.phase = Phase.ENROUTE
+    session.cruise_altitude_ft = 17000
+    session.assigned_altitude_ft = 13000
+    session.establish(station)
+    state = SimpleNamespace(on_ground=False, altitude_ft=13000.0,
+                            vertical_speed_fpm=0.0)
+    assert watch.look(session, station, state, 100.0) is None
+    reply = watch.look(session, station, state, 180.0)
+    assert reply is not None
+    assert reply.instruction.values["altitude_ft"] == 17000
+
+
+def test_enroute_descent_does_not_hop_between_neighbouring_approaches():
+    """A manual descent does not make every nearby terminal unit the next
+    controller. Until the destination's approach area owns the flight,
+    coverage handoffs must choose an enroute centre or nobody -- not an
+    unrelated Salamanca Approach simply because it is underneath."""
+    from meridianatc.atc.session import Phase
+    from meridianatc.engine.x_the_other_aeroplanes import _The_other_aeroplanes
+    eng = _The_other_aeroplanes.__new__(_The_other_aeroplanes)
+    salamanca = SimpleNamespace(ident="LESA", position="APP", mhz=124.4,
+                                callsign="Salamanca Approach")
+    eng.navdb = SimpleNamespace(
+        center_station=lambda *a: None,
+        nearest_airport=lambda *a, **k: SimpleNamespace(ident="LESA"),
+        approach_area=lambda ident: None)
+    eng.brain = SimpleNamespace(
+        realism=SimpleNamespace(approach_areas=False),
+        controller_at=lambda ident, position: salamanca)
+    destination = SimpleNamespace(ident="LECU", lat=40.2, lon=-3.7,
+                                  elev_ft=2000.0)
+    session = SimpleNamespace(phase=Phase.DESCENT, destination=destination)
+    state = SimpleNamespace(latitude=41.39, longitude=-6.04,
+                            altitude_ft=13000.0, has_position=True,
+                            distance_to=lambda lat, lon: 100.0)
+    current = SimpleNamespace(callsign="de Castro Approach")
+    assert eng._next_station(state, session, current) is None
+
+
+def test_weight_based_step_climb_is_pilot_requested_and_capped_by_cruise():
+    """A jet does not get a higher level merely because time passed. Once
+    level at an enroute clearance, the FO waits for real weight to burn
+    off, then asks the centre for the next valid level -- never above the
+    filed/approved cruise."""
+    from meridianatc.atc.autonomous._shared import AutonomousPhase, AutonomousState
+    from meridianatc.atc.autonomous.core import AutonomousFlight
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession, Phase
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.db import Station
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    station = Station("LECM", "CTR", 124.4, "Madrid")
+    session = FlightSession(Aircraft(parse_callsign("BAW123")))
+    session.ifr = True
+    session.phase = Phase.ENROUTE
+    session.cruise_altitude_ft = 35000
+    session.assigned_altitude_ft = 31000
+    session.current_station = station
+    session.establish(station)
+    session.destination = SimpleNamespace(lat=40.0, lon=-3.0)
+    fo.session = session
+    fo.state = AutonomousState(phase=AutonomousPhase.CRUISE)
+    fo._manage_radio = True
+    fo._aircraft_class = "airliner"
+    fo.brain = SimpleNamespace(
+        _valid_level=lambda feet, state, airport, upward: feet)
+    calls = []
+    fo._fo_say = lambda kind: calls.append(kind) or True
+    state = SimpleNamespace(
+        altitude_ft=31000.0, vertical_speed_fpm=0.0,
+        total_weight_lb=100000.0, max_gross_weight_lb=120000.0,
+        service_ceiling_ft=41000.0, design_cruise_alt_ft=39000.0,
+        has_position=True, distance_to=lambda lat, lon: 140.0)
+    fo._manage_step_climb(state, 100.0)
+    assert calls == []
+    state.total_weight_lb = 96500.0
+    fo._manage_step_climb(state, 700.0)
+    assert calls == ["step_climb"]
+    assert fo.state.step_climb_target_ft == 33000
+
+
+def test_step_climb_conflicting_traffic_uses_two_thousand_above_rvsm():
+    """RVSM's thousand-foot buffer ends at FL410; above it the next
+    same-direction levels are four thousand apart, so a climb toward
+    FL430 must look two thousand feet above the target."""
+    from meridianatc.atc.controller import ControllerBrain
+    contact = SimpleNamespace(on_ground=False, altitude_ft=44900.0,
+                              latitude=41.0, longitude=-5.0, written="IBE1")
+    obj = SimpleNamespace(
+        STEP_CLIMB_TRAFFIC_NM=10.0,
+        contacts=lambda: [contact])
+    state = SimpleNamespace(has_position=True, altitude_ft=41000.0,
+                            distance_to=lambda lat, lon: 5.0)
+    assert ControllerBrain._climb_blocked_by(obj, state, 43000.0) is contact

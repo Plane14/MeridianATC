@@ -928,6 +928,12 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
             if not parts:
                 return "", "no intentions"
             return speech.report(aircraft, ", ".join(parts)), ""
+        if kind == "step_climb":
+            target = getattr(getattr(self.autonomous_flight, "state", None),
+                             "step_climb_target_ft", 0.0)
+            if not target:
+                return "", "no step climb"
+            return speech.request_level(aircraft, name, target), ""
         if kind == "weather_deviation":
             plan = getattr(self.autonomous_flight, "_weather_deviation_plan", None)
             if plan is None:

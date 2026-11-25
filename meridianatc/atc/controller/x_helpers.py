@@ -252,7 +252,8 @@ class _Helpers:
 
     # A step climb is refused for an aeroplane this close laterally that sits
     # between the level the flight is leaving and the one it asked for, or
-    # less than the RVSM thousand feet above that one. UNVERIFIED as a
+    # inside the vertical buffer above that one: 1,000 ft through the RVSM
+    # band (which ends at FL410) and 2,000 ft above it. UNVERIFIED as a
     # figure: real controllers judge it off the closure, and ten miles is
     # what two airliners closing head-on cover in under a minute.
     STEP_CLIMB_TRAFFIC_NM = 10.0
@@ -263,10 +264,12 @@ class _Helpers:
             return None
         current = float(getattr(state, "altitude_ft", 0.0) or 0.0)
         nearest = None
+        vertical_buffer = 1000.0 if target_ft <= 41000.0 else 2000.0
         for contact in self.contacts():
             if contact.on_ground:
                 continue
-            if not current + 500.0 < contact.altitude_ft < target_ft + 1000.0:
+            if not current + 500.0 < contact.altitude_ft \
+                    < target_ft + vertical_buffer:
                 continue
             miles = state.distance_to(contact.latitude, contact.longitude)
             if miles > self.STEP_CLIMB_TRAFFIC_NM:

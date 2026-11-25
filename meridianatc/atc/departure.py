@@ -388,9 +388,11 @@ class ClimbWatch:
         if pending is not None and not pending.read_back:
             return None
         cruise = float(session.cruise_altitude_ft or 0)
-        if not brain._climbing_out(session, state, cruise):
+        if session.phase in (Phase.DESCENT, Phase.APPROACH, Phase.LANDING):
             return None
         here = float(state.altitude_ft or 0.0)
+        if cruise and here >= cruise - 500.0:
+            return None
         vs = float(state.vertical_speed_fpm or 0.0)
         assigned = float(session.assigned_altitude_ft or 0.0)
         if not assigned or assigned >= cruise:

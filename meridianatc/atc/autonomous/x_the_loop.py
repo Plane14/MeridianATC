@@ -80,6 +80,7 @@ class _The_loop:
         # not wait for the next one-second phase action before the masks
         # and valve are used.
         self._manage_oxygen(state)
+        self._manage_step_climb(state, now)
         if not self._enabled:
             return
         # Emergencies outrank the phase: a MAYDAY changes what the flight
@@ -166,6 +167,93 @@ class _The_loop:
         self._fly_avoidance(state)
 
         self.state.last_action_at = now
+
+    # A jet's optimum level rises as fuel weight comes off. The first
+    # officer asks for the next level after roughly this much maximum
+    # weight has burnt off at the present one; ATC still decides whether
+    # traffic permits it.
+    STEP_CLIMB_WEIGHT_DROP = 0.025
+    STEP_CLIMB_MIN_FT = 29000.0
+    STEP_CLIMB_REASK_S = 600.0
+    STEP_CLIMB_REMAINING_NM = 100.0
+
+    def _manage_step_climb(self, state, now: float) -> None:
+        """Ask ATC for a cruise step climb when the jet is light enough.
+
+        This is deliberately pilot-initiated, as it is in the real system:
+        the crew knows the weight and performance, and the controller only
+        approves or refuses. It never asks above the filed/approved cruise;
+        flight-plan step fixes may raise that cruise first.
+        """
+        self.state.step_climb_target_ft = 0.0
+        session = getattr(self, "session", None)
+        if not getattr(self, "_manage_radio", False) or session is None \
+                or not session.ifr or session.emergency:
+            return
+        if self.state.phase != AutonomousPhase.CRUISE \
+                or session.phase != Phase.ENROUTE:
+            return
+        from .. import aircraft_class as ac
+        if getattr(self, "_aircraft_class", "") not in (
+                ac.BUSINESS_JET, ac.AIRLINER):
+            return
+        station = getattr(session, "current_station", None)
+        if station is None or station.position != "CTR" \
+                or not session.established_with(station):
+            return
+        assigned = float(session.assigned_altitude_ft or 0.0)
+        cruise = float(session.cruise_altitude_ft or 0.0)
+        altitude = float(getattr(state, "altitude_ft", 0.0) or 0.0)
+        vs = abs(float(getattr(state, "vertical_speed_fpm", 0.0) or 0.0))
+        if assigned < self.STEP_CLIMB_MIN_FT or not cruise \
+                or assigned >= cruise - 500.0 \
+                or abs(altitude - assigned) > 500.0 or vs > 300.0:
+            return
+        destination = getattr(session, "destination", None)
+        if destination is not None and getattr(state, "has_position", False):
+            try:
+                if state.distance_to(destination.lat, destination.lon) \
+                        < self.STEP_CLIMB_REMAINING_NM:
+                    return
+            except Exception:
+                pass
+        ceiling = cruise
+        for published in (getattr(state, "service_ceiling_ft", 0.0),
+                          getattr(state, "design_cruise_alt_ft", 0.0)):
+            if published:
+                ceiling = min(ceiling, float(published))
+        wanted = assigned + (4000.0 if assigned >= 41000.0 else 2000.0)
+        airport = getattr(session, "departure", None)
+        try:
+            target = self.brain._valid_level(wanted, state, airport,
+                                             upward=True)
+        except Exception:
+            target = wanted
+        target = min(float(target), ceiling)
+        if target < assigned + 1000.0:
+            return
+
+        weight = float(getattr(state, "total_weight_lb", 0.0) or 0.0)
+        mtow = float(getattr(state, "max_gross_weight_lb", 0.0) or 0.0)
+        if weight <= 0.0 or mtow <= 0.0:
+            return
+        if getattr(self, "_step_climb_session", None) is not session \
+                or getattr(self, "_step_climb_level", 0.0) != assigned:
+            self._step_climb_session = session
+            self._step_climb_level = assigned
+            self._step_climb_reference_lb = weight
+            return
+        burnt = float(getattr(self, "_step_climb_reference_lb", weight)) - weight
+        if burnt < mtow * self.STEP_CLIMB_WEIGHT_DROP:
+            return
+        if now - getattr(self, "_step_climb_asked_at", 0.0) \
+                < self.STEP_CLIMB_REASK_S:
+            return
+        self.state.step_climb_target_ft = target
+        if self._fo_say("step_climb"):
+            self._step_climb_asked_at = now
+        else:
+            self.state.step_climb_target_ft = 0.0
 
     # How often the sim's own numbers are written down: dense enough to
     # rebuild a ground track from, sparse enough to leave the rest of

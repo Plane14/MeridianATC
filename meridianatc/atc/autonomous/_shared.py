@@ -169,8 +169,10 @@ class AutonomousState:
     v2_kt: float = 0.0
     vapp_kt: float = 0.0
     climb_kt: float = 0.0
-    # Climb/cruise: the top of climb, and the step the controllers are on.
+    # Climb/cruise: the top of climb, the step the controllers are on,
+    # and the level a weight-based step-climb request is asking for.
     top_of_climb: bool = False
+    step_climb_target_ft: float = 0.0
     # Descent/approach: the planned top of descent, the configuration
     # stage, the stabilized-approach verdict, the minima, and the
     # go-arounds flown.
