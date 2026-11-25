@@ -119,6 +119,12 @@ VECTOR_FROM_NM = 40.0
 VECTOR_GAP_S = 30.0
 # A new heading is said only when it differs from the last by this much.
 VECTOR_CHANGE_DEG = 15.0
+# A vectored arrival is brought down toward a terminal manoeuvring level
+# even when the pattern geometry still has many track miles to fly. The
+# long-track profile alone can otherwise say "already below profile" while
+# the aeroplane is still at 10,000 ft abeam the field. Terrain and the
+# intercept altitude still override this cap.
+VECTOR_STEP_MAX_ABOVE_FIELD_FT = 4000.0
 # A visual approach is offered, by asking for the field in sight, this many
 # track miles from the runway.
 FIELD_QUESTION_NM = 25.0
@@ -928,8 +934,14 @@ class ArrivalWatch:
             choice.approach.name)
         mva = vec.mva_ft(state.latitude, state.longitude, leg.heading_true,
                          elevation)
-        target = float(max(vec.step_altitude(leg.track_nm, elevation, intercept),
-                           math.ceil(mva / 100.0) * 100.0))
+        floor = float(max(intercept, math.ceil(mva / 100.0) * 100.0))
+        profile = float(max(vec.step_altitude(leg.track_nm, elevation, floor),
+                            floor))
+        terminal_cap = float(max(
+            floor,
+            math.ceil((elevation + VECTOR_STEP_MAX_ABOVE_FIELD_FT)
+                      / 100.0) * 100.0))
+        target = min(profile, terminal_cap)
         if target >= assigned - 500.0:
             return None
         session.vector_at = now

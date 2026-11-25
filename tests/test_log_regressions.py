@@ -5179,3 +5179,63 @@ def test_step_climb_conflicting_traffic_uses_two_thousand_above_rvsm():
     state = SimpleNamespace(has_position=True, altitude_ft=41000.0,
                             distance_to=lambda lat, lon: 5.0)
     assert ControllerBrain._climb_blocked_by(obj, state, 43000.0) is contact
+
+
+def test_vector_step_descends_even_when_the_pattern_track_is_long(monkeypatch):
+    """The Madrid failure mode: after being vectored back out, the Baron
+    was still at 10,000 ft because seventy track miles made the geometric
+    profile higher than its assigned level. A terminal vector sequence
+    must nevertheless bring the arrival down toward manoeuvring altitude,
+    never below the intercept or terrain floor."""
+    import meridianatc.atc.arrival as arrival
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.db import Station
+    monkeypatch.setattr(arrival.vec, "mva_ft", lambda *a: 0.0)
+    watch = arrival.ArrivalWatch.__new__(arrival.ArrivalWatch)
+    watch.brain = SimpleNamespace(
+        intercept_altitude=lambda *a: 3000.0,
+        descent_terms=lambda *a, **k: {})
+    session = FlightSession(Aircraft(parse_callsign("N45XS")))
+    session.ifr = True
+    session.assigned_altitude_ft = 10000.0
+    station = Station("LESA", "APP", 124.4, "Salamanca")
+    destination = SimpleNamespace(ident="LECU", elev_ft=2000.0)
+    state = SimpleNamespace(altitude_ft=10000.0, latitude=40.4,
+                            longitude=-3.9)
+    leg = SimpleNamespace(track_nm=70.0, heading_true=90.0)
+    choice = SimpleNamespace(approach=SimpleNamespace(runway="27",
+                                                      name="ILS 27"),
+                             runway="27")
+    reply = watch._vector_step(session, station, state, destination, leg,
+                               choice, None, Phraseology(), 100.0)
+    assert reply is not None
+    assert reply.instruction.values["altitude_ft"] == 6000
+
+
+def test_vector_step_terminal_cap_never_goes_below_intercept_or_terrain(monkeypatch):
+    import meridianatc.atc.arrival as arrival
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.db import Station
+    monkeypatch.setattr(arrival.vec, "mva_ft", lambda *a: 7600.0)
+    watch = arrival.ArrivalWatch.__new__(arrival.ArrivalWatch)
+    watch.brain = SimpleNamespace(
+        intercept_altitude=lambda *a: 3000.0,
+        descent_terms=lambda *a, **k: {})
+    session = FlightSession(Aircraft(parse_callsign("N45XS")))
+    session.assigned_altitude_ft = 10000.0
+    station = Station("LESA", "APP", 124.4, "Salamanca")
+    destination = SimpleNamespace(ident="LECU", elev_ft=2000.0)
+    state = SimpleNamespace(altitude_ft=10000.0, latitude=40.4,
+                            longitude=-3.9)
+    leg = SimpleNamespace(track_nm=70.0, heading_true=90.0)
+    choice = SimpleNamespace(approach=SimpleNamespace(runway="27",
+                                                      name="ILS 27"),
+                             runway="27")
+    reply = watch._vector_step(session, station, state, destination, leg,
+                               choice, None, Phraseology(), 100.0)
+    assert reply is not None
+    assert reply.instruction.values["altitude_ft"] == 7600
