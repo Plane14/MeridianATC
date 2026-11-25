@@ -11,7 +11,8 @@ for the design only) and the IFR plan:
   below the minima of every approach the aeroplane can fly, or the pilot's
   request (the runways closed is not here: nothing says a runway is);
 - the fix: the STAR's last fix, else the route's last fix, 15-60 nm out;
-- the pattern: inbound towards the field, right turns, one-minute legs at
+- the pattern: inbound towards the field, standard right turns unless the
+  published hold says left, one-minute legs at
   or below 14,000 ft, a minute and a half above (ICAO Doc 8168, FAA AIM
   5-3-8);
 - an EFC time, the sequence said again when it changes, and "cleared to
@@ -83,6 +84,8 @@ class Hold:
     issued_at: float = field(default_factory=lambda: time.time())
     # When the place and the time were last said.
     said_at: float = field(default_factory=lambda: time.time())
+    # Published holding turns: L or R; invented holds are standard right turns.
+    turn: str = "R"
 
 
 def hold_fix(star_fixes, route_fixes, field_lat: float, field_lon: float):

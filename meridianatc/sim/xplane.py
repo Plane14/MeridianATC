@@ -204,10 +204,8 @@ EXTRA = {
     "hsi_source": RADIOS + "HSI_source_select_pilot",
     "nav_type": "sim/cockpit2/radios/indicators/nav1_type",
     "rain": "sim/weather/aircraft/precipitation_on_aircraft_ratio",
+    "rain_rate": "sim/weather/region/rain_percent",
     "hail": "sim/weather/aircraft/hail_on_aircraft_ratio",
-    # Snow's share of what is falling (XP12.1+ region weather); absent on
-    # older builds, which simply keep reporting rain-or-nothing.
-    "snow": "sim/weather/region/snow_percent",
     # The nosewheel's own authority in degrees -- what a -1..1 steering
     # write scales by; 0 or absent leaves the controls' default.
     "steer_deg": "sim/aircraft/gear/acf_nw_steerdeg1",
@@ -892,6 +890,7 @@ class XPlaneSource:
             if "pedal_yaw" in values:
                 state.tail_rotor_pedal_position = values["pedal_yaw"] * 100.0
         state.flaps_index = round(values.get("flaps", 0) * max(0, values.get("flap_detents", 1) - 1))
+        state.flaps_detents = int(values.get("flap_detents", 0) or 0)
         state.transponder_state = {0: 0, 1: 1, 2: 3, 3: 4, 4: 2, 5: 4, 6: 4, 7: 4}.get(
             int(values.get("xp_transponder", 0)), 0)
         state.transponder_mode = 5 if values.get("ident") else (
@@ -919,9 +918,18 @@ class XPlaneSource:
             state.fuel_selector = int(alias)
         state.gps_drives_nav1 = values.get("hsi_source", 0) in (2, 3)
         state.nav1_has_localizer = bool(int(values.get("nav_type", 0)) & (8 | 16))
-        state.ambient_precip_state = (4 if values.get("rain", 0) > 0
-                                      else 2 if values.get("snow", 0) > 0
-                                      else 0)
+        # XP12 publishes the falling precipitation as one rain ratio, not
+        # separate rain and snow channels (there is no region/snow_percent
+        # dataref). At freezing temperatures that precipitation is snow;
+        # the windshield ratio remains a rain-only fallback on builds or
+        # aircraft that do not answer the regional rate.
+        rain_rate = float(values.get("rain_rate", 0.0) or 0.0)
+        if rain_rate > 0.0:
+            freezing = float(values.get("ambient_temperature_c", 15.0)
+                             or 0.0) <= 0.0
+            state.ambient_precip_state = 2 if freezing else 4
+        else:
+            state.ambient_precip_state = 4 if values.get("rain", 0) > 0 else 0
         state.hail_ratio = values.get("hail", 0.0)
         state.cloud_type_max = max((values.get(f"cloud_type{i}", 0.0)
                                     for i in range(3)), default=0.0)

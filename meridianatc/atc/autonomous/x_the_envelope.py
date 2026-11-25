@@ -27,7 +27,16 @@ class _The_envelope:
         if barber > 0.0:
             max_ias = min(max_ias, barber * 0.95)
         min_clean = vs1 * 1.3 if vs1 > 0.0 else 0.0
-        stall = vs0 or vs1 or 0.0
+        flap_fraction = 0.0
+        detents = int(getattr(state, "flaps_detents", 0) or 0)
+        index = int(getattr(state, "flaps_index", 0) or 0)
+        if index > 0:
+            flap_fraction = min(1.0, index / float(max(1, detents - 1))
+                                if detents > 1 else index / 4.0)
+        if vs1 > 0.0 and vs0 > 0.0:
+            stall = vs1 + (vs0 - vs1) * flap_fraction
+        else:
+            stall = vs0 or vs1 or 0.0
         # Flap and gear speeds: the model publishes neither, so the
         # figures are the class's -- where the type's own limits are
         # higher, the lower number is still safe.

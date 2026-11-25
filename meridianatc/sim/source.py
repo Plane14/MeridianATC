@@ -556,6 +556,7 @@ class SimConnectSource:
         # be built for water -- a float or a hull.
         ("SURFACE_TYPE", "surface_type", "int", "slow"),
         ("FLAPS_HANDLE_INDEX", "flaps_index", "int", "slow"),
+        ("FLAPS_NUM_HANDLE_POSITIONS", "flaps_detents", "int", "slow"),
         # For the crew rather than for the controller. Both are standard
         # variables present on nearly every aircraft; one that does not model
         # a seatbelt sign simply reports it off for the whole flight, which
@@ -1385,6 +1386,12 @@ class SimConnectSource:
             "PRESSURIZATION_PRESSURE_DIFFERENTIAL": [
                 "Cabin pressure differential",
                 b"PRESSURIZATION PRESSURE DIFFERENTIAL", b"Psi", "N"],
+        },
+        "ControlsData": {
+            "BRAKE_LEFT_POSITION": [
+                "Left brake position", b"BRAKE LEFT POSITION", b"Percent", "Y"],
+            "BRAKE_RIGHT_POSITION": [
+                "Right brake position", b"BRAKE RIGHT POSITION", b"Percent", "Y"],
         },
     }
 

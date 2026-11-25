@@ -128,6 +128,7 @@ class AircraftState(_ExtraEngines):
     # 2 water, ...); X-Plane does not fill it.
     surface_type: int = 0
     flaps_index: int = 0
+    flaps_detents: int = 0
     # The two switches the crew talk about. Nothing on the radio needs them --
     # a controller never mentions the seatbelt sign -- but the first officer
     # and the cabin do, and saying "the captain has switched off the seatbelt

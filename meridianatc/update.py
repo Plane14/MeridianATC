@@ -70,7 +70,10 @@ DOWNLOAD_TIMEOUT_S = 60.0
 CHUNK = 1 << 20
 
 #: In data/navdata, what a pilot writes by hand: an update never replaces it.
-PILOT_FILES = ("overrides.csv", "sectors.csv", "service_hours.csv")
+PILOT_FILES = (
+    "overrides.csv", "sectors.csv", "service_hours.csv",
+    "preferred_runways.csv", "minimum_altitudes.csv", "taxiway_words.csv",
+)
 
 EXECUTABLE = "MeridianATC.exe"
 

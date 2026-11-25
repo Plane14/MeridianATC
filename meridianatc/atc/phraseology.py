@@ -119,13 +119,14 @@ def without_callsign(text: str, aircraft) -> str:
 # ICAO wake categories that are spoken as part of the callsign. A 747 is
 # "heavy" on every transmission; an A380 is "super". Getting this wrong is
 # immediately obvious to an airline pilot.
-SUPER_TYPES = {"A388", "A124", "A225"}
+SUPER_TYPES = {"A388", "A225"}
 HEAVY_TYPES = {
     "A332", "A333", "A337", "A338", "A339", "A342", "A343", "A345", "A346",
     "A359", "A35K", "A3ST", "B742", "B743", "B744", "B748", "B74S", "B762",
     "B763", "B764", "B772", "B773", "B77L", "B77W", "B778", "B779", "B788",
     "B789", "B78X", "MD11", "DC10", "IL96", "A306", "A310", "C5M", "C17",
-    "K35R", "B52", "AN22", "IL76",
+    "K35R", "B52", "AN22", "IL76", "A124", "A30B", "A400", "B703", "B741",
+    "C135", "DC85", "DC86", "DC87", "E3CF", "E3TF", "IL62", "IL86", "L101",
 }
 
 
@@ -1336,7 +1337,8 @@ class Phraseology:
                        inbound: float, altitude_ft: float, leg_minutes: float,
                        efc_hhmm: str, *, station: str = "",
                        abbreviated: bool = True, transition_altitude: int = 0,
-                       transition_level: int = 0, fix_spoken: str = "") -> str:
+                       transition_level: int = 0, fix_spoken: str = "",
+                       turn: str = "R") -> str:
         """FAA JO 7110.65 4-6-4: "hold (direction) of (fix) on the (course)
         inbound, (n) minute legs, expect further clearance (time)", right
         turns unsaid. Doc 4444 12.3.4: "hold at (fix) (level) inbound track
@@ -1346,13 +1348,16 @@ class Phraseology:
         level = self.alt(altitude_ft, transition_altitude, transition_level)
         time_said = self.d(efc_hhmm)
         if self.dialect == "faa":
+            # Right turns are standard and unsaid; left turns are not.
+            direction = ["left turns"] if turn == "L" else []
             body = [f"hold {side} of {where} on the {self.hdg(inbound)} course inbound",
-                    self._legs(leg_minutes), f"maintain {level}",
+                    *direction, self._legs(leg_minutes), f"maintain {level}",
                     f"expect further clearance {time_said}"]
         else:
+            hand = "left" if turn == "L" else "right"
             body = [f"hold at {where} {level}",
                     f"inbound track {self.hdg(inbound)} degrees",
-                    "right hand pattern",
+                    f"{hand} hand pattern",
                     f"outbound time {self._legs(leg_minutes)}",
                     f"expect further clearance at {time_said}"]
         return _join(self.addressed(aircraft, station, abbreviated), *body) + "."
@@ -2631,11 +2636,13 @@ class Phraseology:
         return self.unable(aircraft, "say your destination")
 
     def go_around_standard(self, aircraft: Aircraft, altitude_ft: float = 3000,
-                           transition_altitude: int = 0) -> str:
+                           transition_altitude: int = 0,
+                           runway_heading: bool = True) -> str:
         verb = "climb and maintain" if self.dialect == "faa" else "climb to"
+        climb = f"{verb} {self.alt(altitude_ft, transition_altitude)}"
         return self.go_around(
             aircraft, "",
-            f"{self.RUNWAY_HEADING}, {verb} {self.alt(altitude_ft, transition_altitude)}",
+            f"{self.RUNWAY_HEADING}, {climb}" if runway_heading else climb,
         )
 
     def correction(

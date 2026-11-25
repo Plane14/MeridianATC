@@ -84,7 +84,7 @@ SPANISH = Phrasebook(
         # UNVERIFIED: the tower's answer on the final (Phase 5 (e)).
         "tower_continue": "continúe la aproximación, pista {runway}",
         # UNVERIFIED: holding an arrival (the IFR plan, Phase 6).
-        "hold_clearance": "espere sobre {fix}, mantenga {level}, rumbo de acercamiento {course}, virajes por la derecha, alejamiento {minutes} minutos, hora prevista de aproximación {time}",
+        "hold_clearance": "espere sobre {fix}, mantenga {level}, rumbo de acercamiento {course}, {turns}, alejamiento {minutes} minutos, hora prevista de aproximación {time}",
         "hold_sequence": "número {number}, hora prevista de aproximación {time}",
         "leave_the_hold": "abandone la espera, proceda directo a {fix}",
         "verify_holding": "confirme que está en espera sobre {fix}",
@@ -451,7 +451,7 @@ GERMAN = Phrasebook(
         # UNVERIFIED: the tower's answer on the final (Phase 5 (e)).
         "tower_continue": "setzen Sie den Anflug fort, Piste {runway}",
         # UNVERIFIED: holding an arrival (the IFR plan, Phase 6).
-        "hold_clearance": "halten Sie über {fix}, halten Sie {level}, Anflugkurs {course}, Rechtskurven, Abflugzeit {minutes} Minuten, erwartete Anflugzeit {time}",
+        "hold_clearance": "halten Sie über {fix}, halten Sie {level}, Anflugkurs {course}, {turns}, Abflugzeit {minutes} Minuten, erwartete Anflugzeit {time}",
         "hold_sequence": "Nummer {number}, erwartete Anflugzeit {time}",
         "leave_the_hold": "verlassen Sie das Warteverfahren, direkt {fix}",
         "verify_holding": "bestätigen Sie, dass Sie über {fix} halten",
@@ -816,7 +816,7 @@ ITALIAN = Phrasebook(
         # UNVERIFIED: the tower's answer on the final (Phase 5 (e)).
         "tower_continue": "continui l'avvicinamento, pista {runway}",
         # UNVERIFIED: holding an arrival (the IFR plan, Phase 6).
-        "hold_clearance": "attenda su {fix}, mantenga {level}, rotta di avvicinamento {course}, virate a destra, allontanamento {minutes} minuti, orario previsto di avvicinamento {time}",
+        "hold_clearance": "attenda su {fix}, mantenga {level}, rotta di avvicinamento {course}, {turns}, allontanamento {minutes} minuti, orario previsto di avvicinamento {time}",
         "hold_sequence": "numero {number}, orario previsto di avvicinamento {time}",
         "leave_the_hold": "lasci l'attesa, proceda diretto a {fix}",
         "verify_holding": "confermi di essere in attesa su {fix}",
@@ -1181,7 +1181,7 @@ PORTUGUESE = Phrasebook(
         # UNVERIFIED: the tower's answer on the final (Phase 5 (e)).
         "tower_continue": "continue a aproximação, pista {runway}",
         # UNVERIFIED: holding an arrival (the IFR plan, Phase 6).
-        "hold_clearance": "aguarde sobre {fix}, mantenha {level}, rumo de aproximação {course}, curvas à direita, afastamento {minutes} minutos, hora prevista de aproximação {time}",
+        "hold_clearance": "aguarde sobre {fix}, mantenha {level}, rumo de aproximação {course}, {turns}, afastamento {minutes} minutos, hora prevista de aproximação {time}",
         "hold_sequence": "número {number}, hora prevista de aproximação {time}",
         "leave_the_hold": "abandone a espera, proceda direto para {fix}",
         "verify_holding": "confirme que está em espera sobre {fix}",

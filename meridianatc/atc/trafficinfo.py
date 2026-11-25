@@ -73,6 +73,8 @@ class Contact:
     on_ground: bool = False
     observed: bool = False          # the simulator's, not ours
     runway: str = ""
+    phase: str = ""
+    arriving: bool = False
 
     def describe(self, language: str = "en") -> str:
         """"the Piper", "le Cessna": by make, as it is pointed out."""
@@ -105,7 +107,9 @@ def from_flight(flight) -> Contact:
         vertical_rate_fpm=float(getattr(flight, "vertical_rate_fpm", 0.0) or 0.0),
         on_ground=bool(getattr(flight, "on_ground", False)),
         observed=bool(getattr(flight, "observed", False)),
-        runway=getattr(flight, "runway", "") or "")
+        runway=getattr(flight, "runway", "") or "",
+        phase=str(getattr(flight, "phase", "") or ""),
+        arriving=bool(getattr(flight, "arriving", False)))
 
 
 def from_seen(one) -> Contact:

@@ -422,7 +422,8 @@ class XPNativeTraffic(XPlaneTraffic):
                   "ac": [{"id": ident, "slot": slot, "type": tcode,
                           "op": op,
                           "lat": pos[0], "lon": pos[1],
-                          "alt": pos[2]}
+                          "alt": pos[2], "hdg": pos[3], "gs": pos[4],
+                          "vs": pos[5], "gnd": pos[6]}
                          for slot, ident, tcode, op, pos in roster]}
         if exclusive:
             packet["exclusive"] = True
@@ -466,7 +467,11 @@ class XPNativeTraffic(XPlaneTraffic):
                 try:
                     pos = (_number(position["lat"], -90, 90),
                            _number(position["lon"], -180, 180),
-                           _number(position["altitude_ft"], -2000, 100000))
+                           _number(position["altitude_ft"], -2000, 100000),
+                           _number(position.get("heading", 0.0), -1000, 1000) % 360,
+                           _number(position.get("ground_speed_kt", 0.0), 0, 1200),
+                           _number(position.get("vertical_rate_fpm", 0.0), -30000, 30000),
+                           bool(position.get("on_ground", True)))
                 except (ValueError, TypeError, KeyError):
                     pos = None
                 if pos is None:
@@ -522,6 +527,12 @@ class XPNativeTraffic(XPlaneTraffic):
                 if self.source is not None:
                     for key in _FEEDBACK:
                         measured[key] = self.source.value(f"xpn{slot}:{key}")
+                precise = self._nativepos.get(ident)
+                if precise is not None and now - precise[0] < 1.0:
+                    # The plugin's double-precision readback replaces the
+                    # float32 RREF position sample; the velocities and
+                    # attitude are the same numbers through either path.
+                    measured.update(precise[1])
                 writes = pilot.update(position, measured, now)
                 if self.source is not None:
                     for path, value in writes.items():

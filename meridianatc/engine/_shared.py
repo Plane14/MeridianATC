@@ -115,7 +115,7 @@ from ..navdata.db import (
 from ..navdata.magvar import variation
 from ..paths import announcements_dir, command_hint
 from ..paths import resolve as _resolve
-from ..security.secrets import resolve_secret
+from ..security.secrets import ai_secret_path, resolve_secret
 from ..sim.capabilities import autofly_limit, capabilities
 from ..sim.source import ManualSource, StateSource, open_source
 from ..sim.state import AircraftState
@@ -353,7 +353,7 @@ __all__ = [
     "announcements_dir",
     "command_hint",
     "_resolve",
-    "resolve_secret",
+    "ai_secret_path", "resolve_secret",
     "autofly_limit",
     "capabilities",
     "ManualSource",

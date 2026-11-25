@@ -212,8 +212,10 @@ class _Circling:
         bank = abs(getattr(state, "bank_deg", 0.0) or 0.0)
         aligned = True
         if self.state.runway_heading > 0 and state.on_ground is False:
+            path = (state.track_true if abs(getattr(state, "track_true", 0.0)
+                                            or 0.0) > 0.01 else state.heading_true) or 0.0
             err = abs((self.state.runway_heading
-                       - (state.heading_true or 0.0) + 540.0)
+                       - path + 540.0)
                       % 360.0 - 180.0)
             aligned = err < 15.0
             # On the runway's line, not merely pointing its way: within
@@ -329,17 +331,72 @@ class _Circling:
         return bool(0.0 < agl < 30.0 and not self.session.cleared_landing
                     and state.on_ground is not True)
 
+    def _flaps_up_one_detent(self, state, director, managed=False) -> None:
+        """Retract one real flap detent, using the airframe's detent count.
+
+        Half travel is not "one notch": on a five-detent aeroplane it is
+        two. ``flaps_detents`` comes from MSFS's handle-position count or
+        X-Plane's ``acf_flap_detents``; four is the conservative fallback.
+        """
+        index = int(getattr(state, "flaps_index", 0) or 0)
+        if index <= 0:
+            return
+        detents = max(2, int(getattr(state, "flaps_detents", 0) or 4))
+        target = max(0.0, min(1.0, (index - 1) / float(detents - 1)))
+        if managed:
+            self._set_flaps(state, target)
+        else:
+            director.flaps(target)
+
+
+    def _published_missed_nav(self, state):
+        """A navigator for the published missed approach, where decoded.
+
+        IFR's default is the published missed approach. Only when the
+        procedure source carries no missed legs does the fallback remain
+        runway heading, because nothing more specific is known.
+        """
+        if not getattr(self.session, "ifr", True):
+            return None
+        airport = getattr(self.session, "destination", None)
+        known = getattr(getattr(self, "brain", None), "approach_data", {}).get(
+            getattr(airport, "ident", ""))
+        runway = self.state.arrival_runway or getattr(self.session, "arrival_runway", "")
+        if known is None or not runway:
+            return None
+        choice = getattr(self.session, "approach_choice", None)
+        name = getattr(getattr(choice, "approach", None), "name", "")
+        approach = known.missed_for(runway, name)
+        if approach is None or not getattr(state, "has_position", False):
+            return None
+        from ..procedure_legs import (
+            ProcedureNavigator,
+            ProcedureTransition,
+            TerminalProcedure,
+        )
+        procedure = TerminalProcedure(
+            name=f"{approach.name} missed approach", kind="sid")
+        transition = ProcedureTransition(
+            name="missed", runway=approach.runway,
+            legs=tuple(approach.missed_legs))
+        nav = ProcedureNavigator(
+            procedure, transition,
+            start=(state.latitude, state.longitude),
+            fallback_altitude_ft=self.state.missed_alt_ft,
+            fallback_speed_kt=(self.performance.goaround_kt
+                               or self.state.climb_kt or 180.0))
+        return nav if nav.active else None
+
     def _start_go_around(self, state) -> None:
         """The go-around: power, pitch, configuration, climb away."""
         if not capabilities(state.source).flight_axes:
             self._manual_control_required()
             return
-        if self.state.go_arounds >= 3:
-            # A pilot does not circuit for ever: three go-arounds without
-            # the weather's count is the field not taking the aeroplane,
-            # and the alternate is what it is there for.
-            self._divert_after_go_arounds(state)
-            return
+        # Three failures mean the fourth missed approach is still flown --
+        # power, pitch, flap and positive-rate gear first -- and the
+        # diversion is started only once the aeroplane is safely climbing
+        # away at the missed-approach altitude.
+        self.state.divert_after_missed = self.state.go_arounds >= 3
         self.state.go_arounds += 1
         self.state.circling = False
         self.state.circle_path = []
@@ -359,6 +416,7 @@ class _Circling:
             floor,
             self.session.assigned_altitude_ft or 0.0,
             (getattr(recipe, "missed_alt_ft", 0.0) or 0.0))
+        self.state.missed_nav = self._published_missed_nav(state)
         # From the landing flare the go-around is an approach again: the
         # phase owns the sub-step only from APPROACH down.
         if self.state.phase == AutonomousPhase.LANDING:
@@ -403,10 +461,9 @@ class _Circling:
         # positive rate -- the wheels stay down while the aeroplane can
         # still touch, and come up once the climb is established.
         # Flaps one stage up, not all the way: the go-around flap setting.
-        if state.flaps_index >= 2:
-            d.flaps(0.5)
-        elif state.flaps_index == 1:
-            d.flaps(0.25)
+        self._flaps_up_one_detent(state, d)
+        if getattr(state, "gear_down", False) and (getattr(state, "vertical_speed_fpm", 0.0) or 0.0) > 300.0:
+            d.gear(False)
         self.state.stabilized = False
         self.state.configured = ""
         self.state.ap_apr_mode = False
@@ -440,6 +497,8 @@ class _Circling:
     def _fly_go_around(self, state, now: float) -> None:
         """Climb away on the missed approach, then set up again."""
         d = self.director
+        if getattr(state, "gear_down", False)                 and (getattr(state, "vertical_speed_fpm", 0.0) or 0.0) > 300.0:
+            d.gear(False)
         elapsed = now - self.state.go_around_at
         # Initial: pitch and power; after positive rate, clean up. The
         # pull eases as the climb establishes, the way a pilot relaxes
@@ -472,23 +531,40 @@ class _Circling:
         # Flap comes up a stage at a time, behind the speed -- the
         # all-at-once pull to zero at a few hundred feet used to run
         # here.
-        if state.flaps_index >= 2:
-            self._set_flaps(state, 0.5)
-        elif state.flaps_index:
-            self._set_flaps(state, 0.0)
+        self._flaps_up_one_detent(state, d, managed=True)
         # Wings-level climb on the runway heading or the assigned heading.
         # The heading bug is magnetic: the runway's is degrees true off
         # the threshold's coordinates, so it is converted like every
         # other course this hands the autopilot.
-        hdg = self.session.assigned_heading
-        if hdg is None and self.state.runway_heading > 0:
-            hdg = self._magnetic(self.state.runway_heading, state)
-        self._apply_flight_director(state, altitude=self.state.missed_alt_ft,
-                                    vs_fpm=self.performance.climb_fpm,
-                                    heading=hdg if hdg is not None else -1.0,
-                                    speed_kt=(self.performance.goaround_kt
-                                              or self.state.climb_kt
-                                              or 180.0))
+        guidance = None
+        if self.state.missed_nav is not None and getattr(state, "has_position", False):
+            try:
+                guidance = self.state.missed_nav.guidance(
+                    state, climb_fpm=self.performance.climb_fpm)
+            except Exception:
+                guidance = None
+                self.state.missed_nav = None
+        if guidance is not None and not guidance.done:
+            self._apply_flight_director(
+                state,
+                altitude=guidance.altitude_ft or self.state.missed_alt_ft,
+                vs_fpm=(guidance.vs_fpm
+                        if guidance.vs_fpm else self.performance.climb_fpm),
+                heading=guidance.heading if guidance.heading is not None else -1.0,
+                speed_kt=(guidance.speed_kt or self.performance.goaround_kt
+                          or self.state.climb_kt or 180.0))
+        else:
+            if guidance is not None and guidance.done:
+                self.state.missed_nav = None
+            hdg = self.session.assigned_heading
+            if hdg is None and self.state.runway_heading > 0:
+                hdg = self._magnetic(self.state.runway_heading, state)
+            self._apply_flight_director(state, altitude=self.state.missed_alt_ft,
+                                        vs_fpm=self.performance.climb_fpm,
+                                        heading=hdg if hdg is not None else -1.0,
+                                        speed_kt=(self.performance.goaround_kt
+                                                  or self.state.climb_kt
+                                                  or 180.0))
         # Once level-ish at the missed altitude, reset for another pass --
         # unless the weather sent this one and the one before it, in
         # which case the destination is out and the alternate gets it.
@@ -500,6 +576,10 @@ class _Circling:
             # The missed is flown: the next approach's throttle is its
             # own, not held at climb power under the old missed height.
             self.state.missed_alt_ft = 0.0
+            if self.state.divert_after_missed:
+                self.state.divert_after_missed = False
+                self._divert_after_go_arounds(state)
+                return
             if self.state.weather_gas >= 2 and self._weather_reactions:
                 self._divert_for_weather(state)
                 return

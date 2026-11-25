@@ -1506,7 +1506,12 @@ def _settings_view(engine: Engine) -> dict[str, Any]:
         where[name] = ""
         # The key itself is never sent, but whether one is stored is: the
         # panel draws "saved" rather than a blank box that could mean either.
-        where[f"{name}_set"] = bool(resolve_secret(engine.config, path))
+        secret_path = path
+        if path == "ai.api_key":
+            from ..security.secrets import ai_secret_path
+            secret_path = ai_secret_path(engine.config.ai.provider,
+                                         engine.config.ai.host)
+        where[f"{name}_set"] = bool(resolve_secret(engine.config, secret_path))
     traffic = view["traffic"]
     traffic["debug_triggers"] = bool(engine.config.traffic.debug.triggers)
     traffic["gsx_vehicles"] = bool(engine.config.traffic.handling.gsx_vehicles)
@@ -1573,13 +1578,21 @@ def _apply_settings(engine: Engine, payload: dict) -> set[str]:
     """
     accepted = _check_all(payload)
     changed: set[str] = set()
+    effective_ai_provider = str(accepted.get(
+        "ai.provider", engine.config.ai.provider))
+    effective_ai_host = str(accepted.get("ai.host", engine.config.ai.host))
     for path, value in accepted.items():
         if path in SECRETS:
             # A credential is written to the DPAPI store, never to
             # config.yaml: a settings file syncs, prints and backups well,
             # none of which a key should survive.
             from ..security.secrets import default_store
-            default_store().set(path, str(value))
+            store_path = path
+            if path == "ai.api_key":
+                from ..security.secrets import ai_secret_path
+                store_path = ai_secret_path(effective_ai_provider,
+                                            effective_ai_host)
+            default_store().set(store_path, str(value))
             changed.add(path)
             continue
         if cfg.get_path(engine.config, path) == value:
@@ -2792,12 +2805,19 @@ def create_setup_app(config, broadcaster: Broadcaster) -> FastAPI:
                     "error": first["text"],
                     "config": _settings_view(_ConfigOnly(config))}
         changed = set()
+        effective_ai_provider = str(accepted.get("ai.provider", config.ai.provider))
+        effective_ai_host = str(accepted.get("ai.host", config.ai.host))
         for path, value in accepted.items():
             if path in SECRETS:
                 # As in the running panel: a credential goes to the DPAPI
                 # store, never into config.yaml.
                 from ..security.secrets import default_store
-                default_store().set(path, str(value))
+                store_path = path
+                if path == "ai.api_key":
+                    from ..security.secrets import ai_secret_path
+                    store_path = ai_secret_path(effective_ai_provider,
+                                                effective_ai_host)
+                default_store().set(store_path, str(value))
                 changed.add(path)
                 continue
             if cfg.get_path(config, path) != value:

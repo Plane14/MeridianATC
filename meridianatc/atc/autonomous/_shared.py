@@ -179,6 +179,8 @@ class AutonomousState:
     stabilized: bool = False
     minima_ft: float = 200.0
     go_arounds: int = 0
+    divert_after_missed: bool = False
+    missed_nav: object = None
     go_around_at: float = 0.0
     missed_alt_ft: float = 0.0
     # See-and-avoid: the heading an airborne traffic conflict put the

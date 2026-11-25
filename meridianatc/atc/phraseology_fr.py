@@ -919,7 +919,8 @@ class FrenchPhraseology:
                        inbound: float, altitude_ft: float, leg_minutes: float,
                        efc_hhmm: str, *, station: str = "",
                        abbreviated: bool = True, transition_altitude: int = 5000,
-                       transition_level: int = 0, fix_spoken: str = "") -> str:
+                       transition_level: int = 0, fix_spoken: str = "",
+                       turn: str = "R") -> str:
         """See :meth:`Phraseology.hold_clearance`. UNVERIFIED: the DGAC
         wording of a holding clearance."""
         legs = "une minute et demie" if leg_minutes == 1.5 else "une minute"
@@ -927,7 +928,8 @@ class FrenchPhraseology:
                      f"attendez à {fix_name_fr(fix, fix_spoken)}",
                      f"maintenez {self.alt(altitude_ft, transition_altitude, transition_level)}",
                      f"rapprochement {self.hdg(inbound)}",
-                     "virages à droite", f"éloignement {legs}",
+                     "virages à gauche" if turn == "L" else "virages à droite",
+                     f"éloignement {legs}",
                      f"heure d'approche prévue {self.d(efc_hhmm)}") + "."
 
     def hold_sequence(self, aircraft: Aircraft, number: int, efc_hhmm: str) -> str:

@@ -216,7 +216,12 @@ class _The_stall:
         flying = stall_kt > 0.0 and ias >= stall_kt * 1.05
         director.throttle(1.0 if flying else 0.4)
         director.spoilers(0.0)
-        director.elevator(_PUSH)
+        push = _PUSH
+        if flying or float(getattr(state, "pitch_deg", 0.0) or 0.0) < -5.0:
+            push = 0.0
+        if float(getattr(state, "altitude_agl_ft", 9999.0) or 0.0) < 500.0:
+            push = max(push, -0.25)
+        director.elevator(push)
         bank = float(getattr(state, "bank_deg", 0.0) or 0.0)
         director.aileron(-max(-1.0, min(1.0, bank / 40.0)) * _WINGS_LEVEL)
         director.rudder(0.0)

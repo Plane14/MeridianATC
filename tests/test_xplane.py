@@ -469,11 +469,19 @@ def test_ap_max_bank_deg_from_mode(xp):
     eventually(lambda: link.read().ap_max_bank_deg == 0.0)
 
 
+def test_freezing_precipitation_reports_snow_without_a_snow_dataref():
+    assert not any("snow_percent" in path for path in EXTRA.values())
+
+
 def test_snow_reports_precipitation(xp):
     server, link = xp
-    server.values[EXTRA["snow"]] = .7
+    server.values[EXTRA["rain_rate"]] = .7
+    server.values[DATAREFS["ambient_temperature_c"][0]] = -2.0
     assert link.connect()
     eventually(lambda: link.read().ambient_precip_state == 2)
+    server.values[DATAREFS["ambient_temperature_c"][0]] = 8.0
+    eventually(lambda: link.read().ambient_precip_state == 4)
+    server.values[EXTRA["rain_rate"]] = 0.0
     server.values[EXTRA["rain"]] = .5
     eventually(lambda: link.read().ambient_precip_state == 4)
 

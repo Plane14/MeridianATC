@@ -701,7 +701,16 @@ class _The_circuit:
             if math.isfinite(threshold_nm):
                 distance = threshold_nm
         sequence = ""
-        ahead = [f for f in self._traffic_ahead(True) if f.distance_nm < distance]
+        ahead_by_name = {}
+        for flight in self._traffic_ahead(True):
+            if flight.distance_nm < distance:
+                ahead_by_name[flight.written] = flight
+        # Observed final traffic matters exactly as much as the invented
+        # stream: an FSLTL airliner two miles ahead is not invisible merely
+        # because it is not one of ours.
+        for one in self.arrivals_ahead(airport, runway, state):
+            ahead_by_name.setdefault(one.written, one)
+        ahead = sorted(ahead_by_name.values(), key=lambda one: one.distance_nm)
         if ahead:
             sequence = p.sequence_number(len(ahead) + 1,
                                          ahead[-1].describe(language_of(p)))

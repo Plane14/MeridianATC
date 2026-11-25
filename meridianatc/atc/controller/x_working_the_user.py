@@ -90,8 +90,66 @@ class _Working_the_user:
         put on the runway and told to wait. See
         :class:`~meridianatc.atc.departure.DepartureWatch`.
         """
+        self._scan_departure_wake(airport, runway)
         return (not self._runway_blocked(airport, runway)
-                and self.landing_on_top(airport, runway) is None)
+                and self.landing_on_top(airport, runway) is None
+                and self._wake_delay_s(airport, runway) <= 0.0)
+
+    def _scan_departure_wake(self, airport, runway: str) -> None:
+        """Remember when each heavy or super first leaves the runway.
+
+        The wake interval begins at the preceding departure's roll. The
+        controller cannot see the exact throttle-up moment through the
+        traffic picture, so first airborne is the conservative observable
+        proxy: it never releases early, and can only hold a few seconds
+        long.
+        """
+        if airport is None or not runway:
+            return
+        from ..circuit import runway_frame, runway_length_nm
+        from ..final import final_for
+        from ..phraseology import wake_suffix
+
+        final = final_for(self.navdb, getattr(airport, "ident", ""), runway)
+        if final is None:
+            return
+        now = time.monotonic()
+        key = (getattr(airport, "ident", ""), runway)
+        rolls = getattr(self, "_wake_rolls", None)
+        if rolls is None:
+            rolls = self._wake_rolls = {}
+        length = runway_length_nm(self.navdb, airport.ident, runway)
+        elev = float(getattr(airport, "elev_ft", 0.0) or 0.0)
+        for contact in self.contacts():
+            wake = wake_suffix(contact.type_code)
+            if wake not in ("heavy", "super") or contact.on_ground:
+                continue
+            if contact.altitude_ft - elev > 1500.0:
+                continue
+            along, across = runway_frame(contact.latitude, contact.longitude,
+                                         final.lat, final.lon, final.course)
+            if not -0.1 <= along <= length + 0.7 or abs(across) > 0.2:
+                continue
+            ident = (key[0], key[1], contact.written)
+            rolls.setdefault(ident, (now, wake))
+        cutoff = now - 240.0
+        for ident, (rolled_at, _wake) in list(rolls.items()):
+            if rolled_at < cutoff:
+                rolls.pop(ident, None)
+
+    def _wake_delay_s(self, airport, runway: str) -> float:
+        """Seconds still owed before the next same-runway departure."""
+        if airport is None or not runway:
+            return 0.0
+        now = time.monotonic()
+        prefix = (getattr(airport, "ident", ""), runway)
+        wait = 0.0
+        for (ident, strip, _written), (rolled_at, wake) in                 getattr(self, "_wake_rolls", {}).items():
+            if (ident, strip) != prefix:
+                continue
+            need = 180.0 if wake == "super" else 120.0
+            wait = max(wait, rolled_at + need - now)
+        return max(0.0, wait)
 
     def _runway_blocked(self, airport=None, runway: str = "") -> bool:
         """Whether somebody else is on the runway right now: the invented
@@ -155,6 +213,7 @@ class _Working_the_user:
             return None
         from ..svfr import is_night
         from ..traffic import runway_traffic
+        from ..trafficinfo import runway_wet
 
         occupants = self.runway_occupants(airport, runway)
         if not occupants:
@@ -179,7 +238,20 @@ class _Working_the_user:
                                         if final is not None and state is not None
                                         and getattr(state, "has_position", False)
                                         else None))
-        if (region in ("uk", "icao", "de") and not session.pattern_work
+        aligned = bool(final is not None and abs(((first.contact.heading
+                       - final.course) + 540.0) % 360.0 - 180.0) <= 30.0)
+        long_enough = runway_length_nm(self.navdb, airport.ident, runway) >= 1.2
+        # CAP 413's reduced runway separation is a UK daylight procedure
+        # behind a preceding landing aircraft only. A lined-up departure, a
+        # crossing aircraft or a backtracking aircraft is not cover for it.
+        # An invented arrival is identifiable by its phase; an observed
+        # simulator aircraft carries no intent, so it is never assumed to
+        # be the landing traffic CAP 413's reduced separation depends upon.
+        landing_ahead = (aligned and first.moving
+                         and (first.contact.phase in ("final", "landed")
+                              or first.contact.arriving))
+        if (region == "uk" and landing_ahead and long_enough
+                and not runway_wet(weather) and not session.pattern_work
                 and not is_night(airport.lat, airport.lon, region)):
             text = p.land_after(aircraft, runway, weather,
                                 traffic=first.describe(language),

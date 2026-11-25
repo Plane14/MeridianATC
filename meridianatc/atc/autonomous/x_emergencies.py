@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+
 from ...sim.state import combustion
 from ._shared import (
     AutonomousPhase,
@@ -89,14 +91,23 @@ class _Emergencies:
         # flare would read a MAYDAY out of thin air, the same way the
         # fuel watch waits for a nonzero figure before it counts.
         ref = getattr(self, "_bus_volts_ref", 0.0) or 0.0
-        collapsed = ref > 0.0 and volts_now is not None \
-            and volts_now >= 0.0 and volts_now < 0.65 * ref
-        self._electrical_since = \
-            (getattr(self, "_electrical_since", 0.0) or now) \
-            if collapsed else 0.0
-        if collapsed and not state.on_ground \
-                and now - self._electrical_since \
-                >= self.ELECTRICAL_PERSIST_S:
+        collapsed = ref > 0.0 and volts_now is not None             and volts_now >= 0.0 and volts_now < 0.65 * ref
+        low = ref > 0.0 and volts_now is not None             and volts_now >= 0.0 and volts_now < 0.88 * ref
+        self._electrical_since =             (getattr(self, "_electrical_since", 0.0) or now)             if collapsed else 0.0
+        self._low_volts_since =             (getattr(self, "_low_volts_since", 0.0) or now) if low else 0.0
+        if not low:
+            self._low_volts_said = False
+        if (low and not collapsed and not getattr(self, "_low_volts_said", False)
+                and now - self._low_volts_since >= 30.0):
+            self._low_volts_said = True
+            director = getattr(self, "director", None)
+            if director is not None:
+                with contextlib.suppress(Exception):
+                    director.landing_light(False)
+                    director.taxi_light(False)
+            self._emit("warning", "Low electrical bus voltage; nonessential load shed",
+                       "autonomous.electrical.low_volts")
+        if collapsed and not state.on_ground                 and now - self._electrical_since                 >= self.ELECTRICAL_PERSIST_S:
             self._declare_emergency("electrical", state, mayday=True)
             return
 
@@ -157,10 +168,15 @@ class _Emergencies:
         needed = self._fuel_needed_gal(state)
         if needed is None or fuel_gal <= 0.0:
             self._fuel_leg_since = self._fuel_min_since = 0.0
-            if 0.0 < fuel_gal < 8.0:
+            flow = self._fuel_flow_pph(state)
+            per_gal = self._lb_per_gal(state)
+            reserve = (self._reserve_hours() * flow / per_gal
+                       if flow > 0.0 and per_gal > 0.0 else 0.0)
+            fallback = reserve or (capacity * 0.05 if capacity > 0.0 else 2.0)
+            if 0.0 < fuel_gal < max(1.0, fallback):
                 self._declare_emergency("fuel", state, mayday=True)
             return
-        leg_short = fuel_gal < needed["leg_gal"]
+        leg_short = fuel_gal < needed["leg_gal"] + needed["reserve_gal"]
         total_short = fuel_gal < needed["total_gal"]
         self._fuel_leg_since = \
             (getattr(self, "_fuel_leg_since", 0.0) or now) \
@@ -175,7 +191,19 @@ class _Emergencies:
                 and now - self._fuel_min_since >= self.MIN_FUEL_PERSIST_S \
                 and not self.state.minimum_fuel_said:
             self.state.minimum_fuel_said = True
-            self._declare_emergency("minimum fuel", state, mayday=False)
+            self._declare_minimum_fuel()
+
+
+    def _declare_minimum_fuel(self) -> None:
+        """The advisory 'minimum fuel' call: no PAN, squawk or divert."""
+        callsign = getattr(getattr(self.session.aircraft, "callsign", None),
+                           "written", "") or "this aircraft"
+        text = f"{callsign} minimum fuel"
+        if self.crew.transmit:
+            with contextlib.suppress(Exception):
+                self.crew.transmit(text)
+        self._emit("warning", "Minimum fuel declared to ATC",
+                   "autonomous.fuel.minimum")
 
     def _engines_out(self, state) -> tuple[int, int]:
         """How many engines are not combusting, and how many the sim
