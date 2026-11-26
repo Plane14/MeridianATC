@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ._shared import AutonomousPhase
+from ._shared import AutonomousPhase, time
 
 
 class _The_envelope:
@@ -297,11 +297,17 @@ class _The_envelope:
         if runner is not None and runner.waiting:
             # The checklist before this one is still being worked: let it
             # finish rather than abandon it mid-item. The callers move on
-            # and never ask again, so the debt is remembered and the
-            # checklist driver picks it up once the runner is free.
-            self.state.checklist_deferred = checklist_name
+            # and never ask again, so the debt is queued and the checklist
+            # driver picks it up once the runner is free.
+            deferred = list(getattr(self.state, "checklist_deferred", []))
+            if checklist_name not in deferred:
+                deferred.append(checklist_name)
+            self.state.checklist_deferred = deferred
             return
         if runner is not None:
             runner.start(checklist_name)
+            self._checklist_active = checklist_name
+            self._checklist_active_since = time.monotonic()
+            self._checklist_seen_running = False
         self.state.checklists_completed.add(checklist_name)
 

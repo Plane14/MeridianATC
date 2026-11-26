@@ -256,6 +256,9 @@ class _Entry:
         self._checklist_item_since = 0.0
         self._checklist_perform_since = 0.0
         self._checklist_sent = set()
+        self._checklist_active = ""
+        self._checklist_active_since = 0.0
+        self._checklist_seen_running = False
         self._dialled_at = float("-inf")
         self._comms_settled = True
         self._call_tried_at = float("-inf")

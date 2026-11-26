@@ -981,6 +981,10 @@ class XPlaneSource:
             if "n2_0" in values:
                 state.rotor_rpm_pct = values["n2_0"]
             if "gov_0" in values:
+                state.rotor_governor_on = bool(values["gov_0"])
+                # XP publishes the switch but not the beep trim's target:
+                # keep the legacy per cent synthesis for older cards, while
+                # rotor_governor_on carries the control's actual state.
                 state.rotor_gov_target_pct = \
                     100.0 if values["gov_0"] else 0.0
             if "pedal_yaw" in values:
@@ -1258,6 +1262,7 @@ class XPlaneSource:
             known.add("wing_deice_on")
         if state.category == "Helicopter":
             for attr, src in (("rotor_rpm_pct", "n2_0"),
+                              ("rotor_governor_on", "gov_0"),
                               ("rotor_gov_target_pct", "gov_0"),
                               ("tail_rotor_pedal_position", "pedal_yaw")):
                 if src in values:

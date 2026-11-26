@@ -649,6 +649,132 @@ def _inbound_taxi_flight(distance_to_stand_m: float, ground_speed_kt=2.0):
     return flight, state
 
 
+def test_a_busy_checklist_runner_queues_the_next_phase_instead_of_dropping_it():
+    """After landing is often still being worked when the aeroplane
+    reaches the stand. The old bookkeeping marked shutdown done while
+    only deferring it, so the chained-flight shutdown card never ran."""
+    from meridianatc.atc.autonomous.core import AutonomousFlight
+    flight = _flier()
+    runner = Mock()
+    runner.waiting = True
+    runner.pending.return_value = (None, "")
+    flight.crew.checklists = runner
+    AutonomousFlight._run_checklist_for_phase(flight, "after_landing")
+    AutonomousFlight._run_checklist_for_phase(flight, "shutdown")
+    assert "shutdown" not in flight.state.checklists_completed
+    assert flight.state.checklist_deferred == [
+        "after_landing", "shutdown"]
+    runner.waiting = False
+    AutonomousFlight._drive_checklist(flight, SimpleNamespace(), 10.0)
+    runner.start.assert_called_once_with("after_landing")
+    assert flight.state.checklists_completed == {"after_landing"}
+    assert flight.state.checklist_deferred == ["shutdown"]
+    # The runner's start inbox is asynchronous: completion, not merely
+    # the next tick, releases the queued shutdown card.
+    runner.done = {"after_landing"}
+    AutonomousFlight._drive_checklist(flight, SimpleNamespace(), 11.0)
+    assert runner.start.call_args_list[-1].args == ("shutdown",)
+    assert flight.state.checklist_deferred == []
+
+
+def test_every_after_flight_checklist_check_has_a_control_path():
+    """After-landing and shutdown cards across the fleet are procedures
+    the FO can execute, not readings he can only announce. The audit is
+    over the class defaults plus every type override in either sim."""
+    import glob
+    import inspect
+    import json
+    import re
+    from pathlib import Path
+
+    from meridianatc.atc.autonomous import x_the_checklist_answered
+    source = inspect.getsource(
+        x_the_checklist_answered._The_checklist_answered._switch_for)
+    supported = set(re.findall(r'^\s+"([a-z0-9_]+)": lambda:', source,
+                               re.MULTILINE))
+    for n in range(2, 17):
+        for suffix in ("fuel_pump_on", "generator_on", "alternator_on",
+                       "ignition_on", "magneto_pos", "bleed_air_on"):
+            supported.add(f"eng{n}_{suffix}")
+    checked = set()
+    files = (glob.glob("meridianatc/atc/checklists/*.json")
+             + glob.glob("meridianatc/atc/checklists/types/*.json"))
+    for name in files:
+        data = json.loads(Path(name).read_text(encoding="utf-8"))
+        for phase in ("after_landing", "shutdown"):
+            card = data.get("checklists", {}).get(phase)
+            if not isinstance(card, dict):
+                continue
+            for item in card.get("items", []):
+                check = item.get("check") or {}
+                if check.get("var"):
+                    checked.add(check["var"])
+    assert checked
+    assert checked - supported == set()
+
+
+def test_rotorcraft_shutdown_items_have_real_controls():
+    """The R22 card's governor/clutch/rotor-brake steps are not advisory
+    text: both simulators receive their documented rotor events."""
+    flight = _flier()
+    state = SimpleNamespace(on_ground=True, ground_speed_kt=0.0)
+    assert flight._switch_for(state, "rotor_governor_on", False)
+    flight.director.send.assert_called_with(b"ROTOR_GOV_SWITCH_OFF", 0)
+    assert flight._switch_for(state, "rotor_clutch_active", False)
+    flight.director.send.assert_called_with(b"ROTOR_CLUTCH_SWITCH_SET", 0)
+    assert flight._switch_for(state, "rotor_brake_active", True)
+    flight.director.send.assert_called_with(b"ROTOR_BRAKE_ON", 0)
+    flight.director.write.return_value = True
+    assert flight._switch_for(state, "eng2_fuel_pump_on", False)
+    flight.director.write.assert_called_with(
+        "GENERAL ENG FUEL PUMP SWITCH:2", 0.0)
+    assert flight._switch_for(state, "eng2_generator_on", False)
+    flight.director.write.assert_called_with(
+        "GENERAL ENG GENERATOR SWITCH:2", 0.0)
+
+
+def test_chained_turnaround_services_after_the_shutdown_checklist():
+    """A chained leg is still the same aeroplane: fuelling and loading
+    the next leg wait for the type's shutdown card to finish."""
+    flight = _flier()
+    flight.state.sub = "service"
+    flight._service_turnaround = Mock(return_value=True)
+    flight._goto_sub = Mock()
+    runner = flight.crew.checklists
+    runner.waiting = True
+    flight._checklist_active = "shutdown"
+    flight._phase_chain_next(flight.state, 20.0)
+    flight._service_turnaround.assert_not_called()
+    runner.waiting = False
+    runner.done = {"shutdown"}
+    flight._checklist_active = ""
+    flight._phase_chain_next(flight.state, 21.0)
+    flight._service_turnaround.assert_called_once()
+    flight._goto_sub.assert_called_once_with("load")
+
+
+def test_shutdown_electrics_wait_for_the_type_shutdown_checklist():
+    """The independent shutdown sequence must not remove battery and
+    avionics power while the type card is still using them."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _flier()
+    flight.state.phase = AutonomousPhase.SHUTDOWN
+    flight.state.sub = "electrics_off"
+    flight._ask_the_ramp = Mock()
+    flight._sub_age = lambda: 10.0
+    runner = flight.crew.checklists
+    runner.waiting = True
+    flight._checklist_active = "shutdown"
+    state = SimpleNamespace(on_ground=True, ground_speed_kt=0.0)
+    flight._phase_shutdown(state, 20.0)
+    flight.director.avionics.assert_not_called()
+    flight._transition.assert_not_called()
+    runner.waiting = False
+    flight._checklist_active = ""
+    flight._phase_shutdown(state, 21.0)
+    flight._transition.assert_called_once_with(AutonomousPhase.COMPLETE)
+
+
 def test_taxi_in_creeps_the_last_twenty_metres_onto_the_stand():
     """The live arrival stopped where the generic route pursuit called
     the end "reached" -- dozens of metres short of stand 0. Inbound taxi

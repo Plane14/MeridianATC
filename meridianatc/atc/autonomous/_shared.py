@@ -298,8 +298,9 @@ class AutonomousState:
     ap_speed_mode: bool = False
     # Checklist tracking
     checklists_completed: set[str] = field(default_factory=set)
-    # One the runner was still busy for: owed, started on a later pass.
-    checklist_deferred: str = ""
+    # Checklists the runner was still busy for: owed in phase order,
+    # each started on a later pass rather than abandoned mid-item.
+    checklist_deferred: list[str] = field(default_factory=list)
     # The radios, worked by the FO itself: COM1 has been put on the
     # departure field's position, which station was last checked in with,
     # and what the session's squawk/altimeter were when they were last

@@ -115,16 +115,17 @@
         },
         {
           "challenge": "Governor",
-          "response": "off",
+          "response": "on",
           "accept": [
-            "off",
+            "on",
             "set"
           ],
           "check": {
-            "var": "rotor_gov_target_pct",
-            "op": "min",
-            "value": 80
-          }
+            "var": "rotor_governor_on",
+            "op": "eq",
+            "value": true
+          },
+          "note": "Robinson R22 POH section 4, Before Starting Engine: governor switch ON."
         },
         {
           "challenge": "Carb heat",
@@ -314,9 +315,9 @@
             "set"
           ],
           "check": {
-            "var": "rotor_gov_target_pct",
-            "op": "min",
-            "value": 1
+            "var": "rotor_governor_on",
+            "op": "eq",
+            "value": true
           }
         }
       ]
@@ -340,9 +341,9 @@
             "set"
           ],
           "check": {
-            "var": "rotor_gov_target_pct",
-            "op": "min",
-            "value": 80
+            "var": "rotor_governor_on",
+            "op": "eq",
+            "value": false
           }
         },
         {

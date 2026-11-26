@@ -751,6 +751,7 @@ class SimConnectSource:
         ("ROTOR_BRAKE_AVAILABLE", "rotor_brake_available", "bool", "slow"),
         ("ROTOR_CLUTCH_ACTIVE", "rotor_clutch_active", "bool", "slow"),
         ("ROTOR_GOV_TARGET_PCT:1", "rotor_gov_target_pct", "pct", "slow"),
+        ("ROTOR_GOV_ACTIVE:1", "rotor_governor_on", "bool", "slow"),
         ("AMBIENT_WIND_DIRECTION", "ambient_wind_direction", "deg", "slow"),
         ("AMBIENT_WIND_VELOCITY", "ambient_wind_velocity", "raw", "slow"),  # Knots
         ("AMBIENT_TEMPERATURE", "ambient_temperature_c", "raw", "slow"),    # Celsius
@@ -1338,6 +1339,9 @@ class SimConnectSource:
         "ROTOR_GOV_TARGET_PCT:index": [
             "The governor's target RPM, per cent of nominal",
             b"ROTOR GOV TARGET PCT:index", b"Percent", "N"],
+        "ROTOR_GOV_ACTIVE:index": [
+            "Whether the rotor governor is active",
+            b"ROTOR GOV ACTIVE:index", b"Bool", "N"],
         # Fuel beyond the legacy [FUEL]-section names: what of the
         # capacity can never be burned, whether the model is a 2024
         # [FUEL_SYSTEM] one, and the fuel-system tank variables the

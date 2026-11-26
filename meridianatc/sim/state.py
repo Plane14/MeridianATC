@@ -383,6 +383,10 @@ class AircraftState(_ExtraEngines):
     rotor_brake_handle_pos: float = 0.0
     rotor_brake_available: bool = False
     rotor_clutch_active: bool = False
+    # The governor switch itself, distinct from the RPM target: the R22
+    # shutdown turns it off while the target percentage remains whatever
+    # the governor was last demanding. None means the sim never said.
+    rotor_governor_on: bool | None = None
     rotor_gov_target_pct: float = 0.0
     # The rest of the cockpit the checklists name, engine one first like
     # engines_running. Every one of them is None until the simulator has

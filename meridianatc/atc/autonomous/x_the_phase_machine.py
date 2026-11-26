@@ -2415,6 +2415,11 @@ class _The_phase_machine:
 
         elif sub == "electrics_off":
             self._ask_the_ramp(state)
+            # The type's shutdown card owns the end of the flight. Do
+            # not take the battery and avionics away while an item it
+            # is still working through needs them powered.
+            if not self._checklists_settled():
+                return
             if self._sub_age() < 5.0:
                 d.avionics(False)
                 d.battery(False)
@@ -2458,6 +2463,11 @@ class _The_phase_machine:
             self._goto_sub("service")
 
         if sub == "service":
+            # Fuelling and the rest of the turnaround begin after the
+            # shutdown card, not beside it: a checklist item may still
+            # need the electrics the service would otherwise secure.
+            if not self._checklists_settled():
+                return
             if self._service_turnaround(state, now):
                 self._goto_sub("load")
             return

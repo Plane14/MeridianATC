@@ -43,12 +43,39 @@ class _The_checklist_answered:
             # A checklist the phase machine asked for while this one was
             # still running is owed; it is started once the runner can
             # take it, not dropped.
-            deferred = getattr(self.state, "checklist_deferred", "")
+            active = getattr(self, "_checklist_active", "")
+            if active:
+                running = getattr(runner, "running", "")
+                done = getattr(runner, "done", set())
+                if running == active or runner.waiting:
+                    self._checklist_seen_running = True
+                    return
+                if active in done or getattr(
+                        self, "_checklist_seen_running", False):
+                    self._checklist_active = ""
+                    self._checklist_seen_running = False
+                elif now - getattr(self, "_checklist_active_since", 0.0) \
+                        < 3.0:
+                    # runner.start() is asynchronous. Do not feed the next
+                    # card into the same inbox before this one has even
+                    # been consumed; the second start would abandon it.
+                    return
+                else:
+                    # A card removed by the aircraft's files is answered
+                    # "there is none" and never enters ``done``; that is
+                    # not a reason to block every later phase.
+                    self._checklist_active = ""
+                    self._checklist_seen_running = False
+            deferred = list(getattr(self.state, "checklist_deferred", []))
             if deferred and not runner.waiting:
-                self.state.checklist_deferred = ""
-                if deferred not in self.state.checklists_completed:
-                    runner.start(deferred)
-                    self.state.checklists_completed.add(deferred)
+                name = deferred.pop(0)
+                self.state.checklist_deferred = deferred
+                if name not in self.state.checklists_completed:
+                    runner.start(name)
+                    self.state.checklists_completed.add(name)
+                    self._checklist_active = name
+                    self._checklist_active_since = now
+                    self._checklist_seen_running = False
             return
         if id(item) != self._checklist_item_id:
             self._checklist_item_id = id(item)
@@ -178,6 +205,28 @@ class _The_checklist_answered:
             # fraction on every engine -- a twin whose second mixture
             # was never written runs at whatever the pilot left it.
             "mixture_pct": lambda: d.mixture(float(expected) / 100.0),
+            # Rotorcraft and APU outcomes are controls upstream of the
+            # percentage the checklist verifies: the APU switch for its
+            # RPM, the collective lever for its position, and the rotor
+            # system's documented switch events on both simulators.
+            "apu_pct": lambda: d.write(
+                "APU SWITCH", 1.0 if want_on else 0.0),
+            "collective_position": lambda: d.send(
+                b"AXIS_COLLECTIVE_SET",
+                int(-16383.0 + (0.0 if float(expected) <= 10.0
+                                else float(expected)) / 100.0
+                    * 32766.0)) or d.send(
+                b"HELICOPTER_COLLECTIVE_SET",
+                int(16384.0 * (0.0 if float(expected) <= 10.0
+                               else float(expected)) / 100.0)),
+            "rotor_brake_active": lambda: d.send(
+                b"ROTOR_BRAKE_ON" if want_on else b"ROTOR_BRAKE_OFF", 0),
+            "rotor_clutch_active": lambda: d.send(
+                b"ROTOR_CLUTCH_SWITCH_SET", 1 if want_on else 0),
+            "rotor_governor_on": lambda: d.send(
+                b"ROTOR_GOV_SWITCH_ON" if want_on
+                else b"ROTOR_GOV_SWITCH_OFF", 0),
+            "engines_running": lambda: self._engines_for_checklist(want_on),
             # The condition lever's check names a percent where its
             # stops live -- under 10 cut-off, ~50 low idle, over 90 high
             # idle -- and the lever is the enum's three detents.
@@ -315,6 +364,22 @@ class _The_checklist_answered:
         except Exception:
             log.debug("checklist switch %s failed", var, exc_info=True)
             return False
+
+    def _checklists_settled(self) -> bool:
+        """No checklist is running, starting, or owed on a later pass."""
+        runner = getattr(getattr(self, "crew", None), "checklists", None)
+        if runner is None:
+            return True
+        return (not getattr(runner, "waiting", False)
+                and not getattr(self, "_checklist_active", "")
+                and not getattr(self.state, "checklist_deferred", []))
+
+    def _engines_for_checklist(self, want_on: bool) -> bool:
+        """The engine-running state a shutdown/start item verifies."""
+        if want_on:
+            return bool(self._send_event(b"ENGINE_AUTO_START", 1))
+        self._shutdown_engines()
+        return True
 
     @staticmethod
     def _magneto(d, engine: int, expected) -> bool:

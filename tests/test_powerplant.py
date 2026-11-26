@@ -1012,6 +1012,42 @@ def test_shutdown_idles_the_throttle_for_the_cooldown():
                for c in sent)
 
 
+def test_r22_governor_card_matches_the_poh_powered_states():
+    """The R22 POH starts with the governor ON and the shutdown flow
+    leaves it OFF; neither item is the governor's RPM target."""
+    import json
+    from pathlib import Path
+    data = json.loads(Path(
+        "meridianatc/atc/checklists/types/xplane-robinson-r22.json"
+    ).read_text(encoding="utf-8"))
+    states = {}
+    for phase in ("before_start", "after_start", "shutdown"):
+        for item in data["checklists"][phase]["items"]:
+            if item.get("challenge") == "Governor":
+                states[phase] = (
+                    item["response"], item["check"]["var"],
+                    item["check"]["value"])
+    assert states == {
+        "before_start": ("on", "rotor_governor_on", True),
+        "after_start": ("on", "rotor_governor_on", True),
+        "shutdown": ("off", "rotor_governor_on", False),
+    }
+
+
+def test_shutdown_starts_the_type_shutdown_checklist():
+    """The rotorcraft state machine used to cool and cut the engine
+    without ever reading the type's shutdown card; the card is owed at
+    the start of shutdown, chained leg or last leg alike."""
+    heli = _heli(stage="shutdown", type_code="R22")
+    runner = Mock()
+    runner.waiting = False
+    heli.crew.checklists = runner
+    heli._shutdown(AircraftState(on_ground=True, engines_running=True,
+                                 rotor_rpm_pct=60.0))
+    runner.start.assert_called_with("shutdown")
+    assert "shutdown" in heli.owner.state.checklists_completed
+
+
 def test_shutdown_cools_down_on_itt_where_published():
     import time
 

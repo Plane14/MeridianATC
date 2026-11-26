@@ -617,10 +617,18 @@ class XPlaneControls:
             ratio = float(name.endswith("FULL"))
             ok = source._dref(THROTTLE + "_all", ratio)
             return self._throttle_use(ratio) and ok
-        if name == "ROTOR_GOV_SWITCH_SET":
-            return value in (0, 1) and all(
-                source._dref(f"{ACT}governor_on[{i}]", value)
+        if name in ("ROTOR_GOV_SWITCH_SET", "ROTOR_GOV_SWITCH_ON",
+                    "ROTOR_GOV_SWITCH_OFF"):
+            if name == "ROTOR_GOV_SWITCH_SET":
+                on = int(bool(value))
+            else:
+                on = int(name.endswith("_ON"))
+            return all(
+                source._dref(f"{ACT}governor_on[{i}]", on)
                 for i in range(8))
+        if name == "ROTOR_CLUTCH_SWITCH_SET":
+            return value in (0, 1) and source._dref(
+                "sim/cockpit2/switches/clutch_engage", int(value))
         if name in ("ROTOR_BRAKE", "ROTOR_BRAKE_ON", "ROTOR_BRAKE_OFF"):
             on = value if name == "ROTOR_BRAKE" else int(name.endswith("_ON"))
             return source._dref("sim/cockpit2/switches/rotor_brake",

@@ -1267,6 +1267,10 @@ class RotorcraftFlight:
         running = _engines_turning(state)
         if not self.state.shutdown_at:
             self.state.shutdown_at = time.monotonic()
+            # The type's own shutdown flow is part of the shutdown, not
+            # an optional aside after it: governor/clutch/brake order is
+            # exactly what the R22 and turbine helicopter cards carry.
+            self._checklist("shutdown")
             # The cool-down only means anything at idle: the last _fly
             # pass left the throttle wherever the flight put it, so it
             # is brought back before the clock starts counting -- the
