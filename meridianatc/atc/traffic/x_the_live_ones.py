@@ -522,6 +522,18 @@ class _The_live_ones:
             if one.ground_speed_kt >= TAXIING_KT:
                 return "taxi"
             return "holding"
+        destination = (flight.destination or "").upper()
+        foreign_transit = (destination not in ("", (self.field.ident or "").upper())
+                           and (flight.origin or "").upper()
+                           != (self.field.ident or "").upper())
+        if foreign_transit:
+            # A Porto arrival low over Vigo is descending -- or even
+            # climbing through -- but it is not inbound to Vigo. The
+            # feed's filed route outranks the shape of the pass here
+            # exactly as it does in _live_arriving; otherwise the
+            # overflight checks in with the wrong approach and is
+            # answered as though it were landing here.
+            return "overflight"
         if to_run is not None and to_run <= 12.0:
             return "final"
         climbing = one.vertical_speed_fpm > 300.0

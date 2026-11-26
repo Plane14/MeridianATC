@@ -168,6 +168,36 @@ def test_a_flight_bound_elsewhere_is_not_this_arrival():
     assert not injector._taken_over
 
 
+def test_a_flight_bound_elsewhere_is_not_narrated_inbound():
+    """TAP1934 LPPT-LPPR and AEA81YT LEMD-LPPR both checked in with
+    Santiago Approach while descending toward Porto. A filed foreign
+    destination makes the pass an overflight: it is drawn and sequenced
+    against, but it is not given an inbound script for this field."""
+    injector = _injector()
+    flight = _flight(origin="LPPT", destination="LPPR", phase="taxi",
+                     arriving=False)
+    one = _seen(origin="LPPT", destination="LPPR",
+                vertical_speed_fpm=-1200.0)
+
+    injector._read_observed(flight, one, 100.0)
+
+    assert flight.phase == "overflight"
+    assert flight.arriving is False
+
+
+def test_a_climbing_foreign_transit_is_not_narrated_as_a_departure():
+    injector = _injector(_final_distance=Mock(return_value=5.0))
+    flight = _flight(origin="LEMD", destination="LPPR", phase="taxi",
+                     arriving=False)
+    one = _seen(origin="LEMD", destination="LPPR",
+                vertical_speed_fpm=1500.0)
+
+    injector._read_observed(flight, one, 100.0)
+
+    assert flight.phase == "overflight"
+    assert flight.arriving is False
+
+
 def test_a_transit_the_feed_calls_ground_is_still_an_overflight():
     """TAP36RC, Lisbon to Porto, was called on_ground by the feed on
     the low pass over Vigo, and having been seen flying here it was
