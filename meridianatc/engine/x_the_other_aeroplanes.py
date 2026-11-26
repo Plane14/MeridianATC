@@ -2009,7 +2009,11 @@ class _The_other_aeroplanes:
                                                                      session):
                 session.phase = Phase.ENROUTE
             elif session.phase is Phase.ENROUTE and state.altitude_ft < 25000:
-                if state.descending:
+                if getattr(state, "paused", False):
+                    # A paused clock is not descent time: without the reset,
+                    # the pause itself counts toward the persistence window.
+                    session.descending_since = 0.0
+                elif state.descending:
                     now = time.monotonic()
                     session.descending_since = (
                         session.descending_since or now)
