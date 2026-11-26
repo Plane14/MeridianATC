@@ -130,6 +130,18 @@ binaries += collect_dynamic_libs("av")            # audio decoding
 # program with no joystick at all, and said "pip install" to a pilot.
 binaries += collect_dynamic_libs("pygame")
 
+if WINDOWS:
+    # ONNX Runtime is built against the current Visual C++ runtime. Python's
+    # own distribution brings vcruntime140.dll but not always the _1 half,
+    # and collect_dynamic_libs() only copies the package's own files: without
+    # these the frozen voices fail with "onnxruntime_pybind11_state ... DLL
+    # load failed" on a clean Windows install.
+    system32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+    for dll in ("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"):
+        runtime = system32 / dll
+        if runtime.exists() and dll not in {Path(src).name.lower() for src, _ in binaries}:
+            binaries.append((str(runtime), "."))
+
 # CUDA is never used: the recogniser runs int8 on the CPU by design, so that
 # the program is not asking a pilot's graphics card for anything while the
 # simulator is using all of it.

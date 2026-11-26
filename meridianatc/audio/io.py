@@ -622,6 +622,7 @@ class RadioPlayer:
             seconds = len(item.audio) / float(item.sample_rate or 1)
             self._stall_at = (time.monotonic()
                               + seconds * self.STALL_FACTOR + self.STALL_GRACE_S)
+            started = time.monotonic()
             try:
                 if item.on_start:
                     item.on_start()
@@ -631,6 +632,13 @@ class RadioPlayer:
             except Exception as exc:
                 log.error("playback failed: %s", exc)
                 self._trouble(str(exc))
+                # A dead speaker must not compress the frequency: without
+                # the sound there is still a transmission's worth of radio
+                # time, and clearing it instantly lets every caller talk
+                # on top of the last in a no-audio session.
+                remaining = seconds - (time.monotonic() - started)
+                if remaining > 0.0:
+                    self._stop.wait(remaining)
             finally:
                 if item.on_done:
                     try:

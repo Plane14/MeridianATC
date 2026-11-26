@@ -4,6 +4,7 @@ import itertools
 import queue
 import sys
 import threading
+import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -214,6 +215,23 @@ def test_player_stop_does_not_poison_restart(device):
     completed = threading.Event()
     player.play(np.zeros(10), 16000, on_done=completed.set)
     assert completed.wait(2)
+    player.stop()
+
+
+def test_failed_playback_still_takes_a_transmissions_time(device):
+    """No speaker is silent, not instant: the frequency stays occupied for
+    the transmission's length instead of letting callers pile up."""
+    sd, _ = device
+    def broken(*args, **kwargs):
+        raise RuntimeError("no output device")
+    sd.play = broken
+    sd.stop = lambda: None
+    player = RadioPlayer()
+    completed = threading.Event()
+    player.play(np.zeros(3200), 16000, on_done=completed.set)
+    time.sleep(0.05)
+    assert not completed.is_set()
+    assert completed.wait(1.0)
     player.stop()
 
 

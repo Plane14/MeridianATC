@@ -422,8 +422,16 @@ class _The_phase_machine:
         # is light enough and the pavement is long enough for it.
         if self.session.lined_up or self.session.cleared_takeoff \
                 or self.session.phase in (Phase.LINED_UP, Phase.TAKEOFF):
+            pending = getattr(self.session, "pending", None)
+            if pending is not None and pending.readback_required \
+                    and not pending.read_back:
+                # The bars are crossed after the line-up or takeoff
+                # clearance has been acknowledged, not while that
+                # readback is still owed to the tower.
+                return
             if not self._departure_possible(state):
                 return
+            self._backtrack_turned = False
             self._transition(AutonomousPhase.LINE_UP)
             return
 
@@ -663,6 +671,7 @@ class _The_phase_machine:
                         return
             if not on_path and err["along_m"] > self.BACKTRACK_MIN_M \
                     and abs(err["offset_m"]) <= 60.0 \
+                    and not getattr(self, "_backtrack_turned", False) \
                     and not getattr(self.session,
                                     "departure_remaining_m", 0.0):
                 # Joined the runway far from the departure end: the way
@@ -726,8 +735,8 @@ class _The_phase_machine:
             # ``along_m`` keeps it honest the other way: on the extended
             # centreline but still short of the numbers is the taxiway,
             # not a lineup.
-            if abs(err["offset_m"]) < min(8.0, self._runway_half_m()) \
-                    and err["along_m"] > -40.0 and hdg_err < 5.0:
+            if abs(err["offset_m"]) < min(3.0, self._runway_half_m()) \
+                    and err["along_m"] > -40.0 and hdg_err < 2.0:
                 self.state.aligned = True
                 self._goto_sub("set")
                 self._emit("info", "Lined up on runway",
@@ -775,6 +784,7 @@ class _The_phase_machine:
             d.parking_brake(False)
             self._steer(state, steer_hdg, target_kt)
             if err["along_m"] <= self.BACKTRACK_TURN_M:
+                self._backtrack_turned = True
                 self._goto_sub("turn_out")
                 self._emit("info", "At the departure end: turning round",
                            "autonomous.backtrack.turn")
@@ -821,8 +831,8 @@ class _The_phase_machine:
                 # Beside the paint is a re-align, not a takeoff waited
                 # for half a lane off -- the slack over the align gate
                 # is the creep a hold brake allows, no more.
-                if abs(err["offset_m"]) > min(12.0, self._runway_half_m()) \
-                        or hdg_err > 10.0:
+                if abs(err["offset_m"]) > min(6.0, self._runway_half_m()) \
+                        or hdg_err > 5.0:
                     self.state.aligned = False
                     self._goto_sub("align")
                     return

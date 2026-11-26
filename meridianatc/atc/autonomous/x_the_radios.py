@@ -637,13 +637,27 @@ class _The_radios:
         # tower knows the aeroplane is there, and the crew that waits a
         # stretch is the one that does not get a second telling-off.
         interval = READY_REASK_S if kind == "ready" else 25.0
-        if (not fresh
-                and now - max(self.state.last_radio_at, tried) < interval) \
-                or not self._unkeyed():
+        if not self._unkeyed():
+            return
+        if kind == "ready":
+            # A readback or a taxi request on this same frequency is not a
+            # ready call already made. Only the ready call itself starts the
+            # ninety seconds of patience; otherwise every surface readback
+            # silences the crew for a minute and a half at the bars.
+            ready_on = getattr(self, "_ready_asked_on", "")
+            ready_at = getattr(self, "_ready_asked_at", float("-inf"))
+            if ready_on == station_key(current) \
+                    and now - ready_at < READY_REASK_S:
+                return
+        elif not fresh \
+                and now - max(self.state.last_radio_at, tried) < interval:
             return
         self._call_tried_at = now
         if not self._fo_say(kind):
             return
+        if kind == "ready":
+            self._ready_asked_at = now
+            self._ready_asked_on = station_key(current)
         if kind == "taxi":
             # The taxi call went out: on an unanswered frequency it is
             # the announcement, not something to keep asking for.

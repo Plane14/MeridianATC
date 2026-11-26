@@ -18,3 +18,5 @@
 # Frequencies change, and a confidently wrong frequency is worse than a gap.
 #
 ident,position,mhz,facility,description,action
+# skeyes eAIP AD 2.ELLX-2.18, valid 26 Nov 2026: Luxembourg Delivery.
+ELLX,DEL,121.855,Luxembourg,Luxembourg Delivery,add

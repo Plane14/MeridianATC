@@ -21,3 +21,10 @@ def test_python_package_and_frozen_metadata_have_one_version():
     installer = (root / "installer" / "MeridianATC.iss").read_text(encoding="utf-8")
     assert "AppVersion={#AppVersion}" in installer
     assert "VersionInfoVersion={#NumericVersion}" in installer
+
+
+def test_frozen_build_carries_the_voice_native_runtime_on_windows():
+    source = (Path(__file__).resolve().parents[1] / "meridianatc.spec").read_text(
+        encoding="utf-8")
+    assert "vcruntime140_1.dll" in source
+    assert "msvcp140.dll" in source

@@ -929,6 +929,29 @@ def test_taxi_waits_for_the_instruction_at_a_controlled_field():
     flight._taxi_along_path.assert_called_once()
 
 
+def test_taxi_does_not_start_before_the_taxi_readback():
+    """The route is read back before the wheels turn: a slow frequency
+    must not leave the aeroplane at the bars still owing the words."""
+    import time as _time
+
+    from meridianatc.atc.autonomous import AutonomousPhase
+    from meridianatc.atc.session import Instruction
+    flight = _taxi_flight(stations=[_gnd()])
+    flight.state.phase = AutonomousPhase.TAXI_OUT
+    flight.state.sub = "taxi"
+    flight.state.sub_entered_at = _time.monotonic() - 60.0
+    flight.session.phase = "taxi_out"
+    flight.session.taxi_route = "via A to holding point runway 35"
+    flight.session.pending = Instruction(
+        "taxi", "LPPT:GND", "taxi via A", {"route": ["A"]})
+    state = SimpleNamespace(ground_speed_kt=0.0)
+    flight._phase_taxi_out(state, 60.0)
+    flight._taxi_along_path.assert_not_called()
+    flight.session.pending.read_back = True
+    flight._phase_taxi_out(state, 61.0)
+    flight._taxi_along_path.assert_called_once()
+
+
 def test_taxi_without_a_ground_position_announces_and_goes():
     """Nowhere to ask: the call is the announcement, then it taxis."""
     import time as _time
@@ -2344,6 +2367,29 @@ def test_the_fos_own_hold_marks_the_session():
     flight.session.phase = Phase.LINED_UP
     flight._phase_holding_short(state, 11.0)
     assert flight.session.phase == Phase.LINED_UP
+
+
+def test_the_bars_are_not_crossed_with_the_lineup_readback_owed():
+    """A line-up clearance is answered before the runway is entered;
+    the aeroplane does not cross the bars still owing the readback."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    from meridianatc.atc.session import Instruction, Phase
+    flight = _taxi_flight(stations=[_gnd()], phase=Phase.HOLDING_SHORT)
+    flight.state.phase = AutonomousPhase.HOLDING_SHORT
+    flight.session.lined_up = True
+    flight.session.cleared_takeoff = False
+    flight.session.current_station = None
+    flight.session.pending = Instruction(
+        "line_up_and_wait", "LPPT:TWR", "line up runway 03",
+        {"runway": "03"})
+    flight._clearance_strobes = Mock()
+    flight._departure_possible = Mock(return_value=True)
+    state = SimpleNamespace(ground_speed_kt=0.0, on_ground=True)
+    flight._phase_holding_short(state, 10.0)
+    flight._transition.assert_not_called()
+    flight.session.pending.read_back = True
+    flight._phase_holding_short(state, 11.0)
+    flight._transition.assert_called_once_with(AutonomousPhase.LINE_UP)
 
 
 def _hold_point_engine():
@@ -4001,12 +4047,14 @@ def test_a_waited_ready_call_is_asked_again_on_the_crews_clock():
     flight = _ready_flight("HOLDING_SHORT", lined_up=False,
                            phase=Phase.HOLDING_SHORT)
     state = SimpleNamespace(on_ground=True, ground_speed_kt=0.0)
-    # Twenty-five seconds of quiet is not a reason to ask again.
-    flight.state.last_radio_at = 1000.0 - 30.0
+    # Twenty-five seconds after the ready call itself is not a reason
+    # to ask again.
+    flight._ready_asked_on = ""
+    flight._ready_asked_at = 1000.0 - 30.0
     flight._work_the_calls(state, flight.session, 1000.0)
     flight._fo_say.assert_not_called()
     # The crew's interval is.
-    flight.state.last_radio_at = 1000.0 - READY_REASK_S - 1.0
+    flight._ready_asked_at = 1000.0 - READY_REASK_S - 1.0
     flight._work_the_calls(state, flight.session, 1000.0)
     flight._fo_say.assert_called_once_with("ready")
 
@@ -4286,8 +4334,28 @@ def test_the_same_stations_ready_call_still_waits_out_the_clock():
     flight._call_on = station_key(twr)
     flight.state.last_radio_at = 1000.0 - 30.0
     flight._call_tried_at = 1000.0 - 30.0
+    flight._ready_asked_on = station_key(twr)
+    flight._ready_asked_at = 1000.0 - 30.0
     flight._work_the_calls(state, flight.session, 1000.0)
     assert "ready" not in kinds
+
+
+def test_a_readback_on_tower_is_not_a_ready_call_already_made():
+    """The taxi readback owes nothing to the departure ask: it must not
+    start the ninety-second ready re-ask clock and leave the aeroplane
+    silent at the bars."""
+    from meridianatc.atc.session import station_key
+    twr = _station("TWR", 118.45)
+    flight, state, dialled, kinds = _radio_flight(
+        stations=[twr], phase="holding_short", com1=118.45,
+        current_station=twr, session_phase="holding_short")
+    flight._call_on = station_key(twr)
+    # The last thing said on tower was the taxi readback seconds ago,
+    # not a ready-for-departure call.
+    flight.state.last_radio_at = 1000.0 - 8.0
+    flight._call_tried_at = 1000.0 - 8.0
+    flight._work_the_calls(state, flight.session, 1000.0)
+    assert "ready" in kinds
 
 
 def test_a_handoff_is_discharged_by_the_call_it_sent():

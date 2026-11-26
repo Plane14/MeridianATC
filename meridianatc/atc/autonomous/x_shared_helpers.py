@@ -1111,7 +1111,12 @@ class _Shared_helpers:
                              Phase.TAKEOFF) \
                 or getattr(session, "taxi_path", None) \
                 or getattr(session, "taxi_route", None):
-            return True
+            pending = getattr(session, "pending", None)
+            # The taxi clearance is acknowledged before the wheels turn;
+            # otherwise a slow frequency has the aeroplane most of the way
+            # to the bars before its readback is heard.
+            return pending is None or not pending.readback_required \
+                or pending.read_back
         if self._taxi_issuing_position() is not None:
             # Somebody owns the surface: the instruction is theirs
             # to give, and the aeroplane waits for it.

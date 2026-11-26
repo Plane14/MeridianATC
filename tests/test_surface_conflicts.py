@@ -344,6 +344,20 @@ def test_fo_does_not_call_aligned_at_the_runway_edge():
     assert fo.state.sub == "set"
 
 
+def test_fo_does_not_call_aligned_four_degrees_off_the_strip():
+    """Four degrees was inside the old gate, yet even a prompt correction
+    puts a fast aeroplane tens of metres sideways in the first few hundred
+    metres of roll. That is still the line-up turn, not a finished lineup."""
+    fo = _fo_for_lineup()
+    fo.state.runway_width_ft = 148.0
+    fo.session = _fo_session(_path())
+    fo._runway_blocked = Mock(return_value=False)
+    state = _state(51.15, -0.19, heading_true=94.0)
+    fo._phase_line_up(state, 100.0)
+    assert fo.state.aligned is False
+    assert fo.state.sub == "align"
+
+
 def test_fo_does_not_call_aligned_short_of_the_numbers():
     """On the extended centreline a hundred metres before the threshold
     is the taxiway, not a lineup -- the roll would start in the grass."""
@@ -1331,6 +1345,13 @@ def test_fo_backtracks_a_far_entry_then_lines_up():
     state = _state(51.15, -0.19, heading_true=88.0)
     fo._phase_line_up(state, 102.0)
     assert fo.state.sub == "align"
+    # Rolling out a little long after that 180 is a lineup to finish,
+    # not a reason to turn round and backtrack the same pavement again.
+    state = _state(51.15, -0.19 + (300.0 / 111320.0)
+                   / max(math.cos(math.radians(51.15)), 0.01),
+                   heading_true=89.0)
+    fo._phase_line_up(state, 103.0)
+    assert fo.state.sub in ("align", "set")
 
 
 # -- gear ------------------------------------------------------------------

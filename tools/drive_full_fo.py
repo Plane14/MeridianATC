@@ -253,6 +253,9 @@ def main():
                     ses = fo.session
                     extra = (f"cto={ses.cleared_takeoff} rej={fo.state.rejected} "
                              f"sph={ses.phase} aligned={fo.state.aligned} "
+                             f"held={getattr(ses,'held_for_landing','')} "
+                             f"wait={time.monotonic()-getattr(ses,'told_to_wait_at',0.0):.0f} "
+                             f"radio={time.monotonic()-fo.state.last_radio_at:.0f} "
                              f"pend={getattr(getattr(ses,'pending',None),'readback_required',None)}/"
                              f"{getattr(getattr(ses,'pending',None),'read_back',None)}")
                     if phase in (AutonomousPhase.APPROACH,
@@ -338,11 +341,19 @@ def main():
                 # for -- a synthetic nosewheel servo kept hunting into
                 # limit cycles; the FO still picks the target.
                 want_hdg = getattr(fo, "_steer_want", None)
-                if want_hdg is not None and p.ias > 0.5:
+                taxi_steering = phase in (
+                    AutonomousPhase.PUSHBACK, AutonomousPhase.TAXI_OUT,
+                    AutonomousPhase.HOLDING_SHORT, AutonomousPhase.LINE_UP,
+                    AutonomousPhase.TAXI_IN)
+                if want_hdg is not None and p.ias > 0.5 and taxi_steering:
                     herr = (want_hdg - p.hdg + 540.0) % 360.0 - 180.0
                     rate = min(12.0, abs(herr) * 0.5)
                     p.hdg += max(-rate, min(rate, herr)) * dt
                 else:
+                    # The takeoff and landing rolls are steered by the FO's
+                    # rudder pedals directly; keeping the stale taxi target
+                    # here made the scripted airframe ignore those pedals and
+                    # run off the side no matter what the controller wrote.
                     p.hdg += p.rudder_cmd * 18.0 \
                         * min(1.0, p.ias / 10.0) * dt
                 p.vs = 0.0
