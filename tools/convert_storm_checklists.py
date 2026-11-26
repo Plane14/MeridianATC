@@ -83,6 +83,29 @@ def convert(path: Path) -> dict | None:
         items.append(item)
     if not items:
         return None
+    # StormATC's shipped files use the root Category "Preflight" for a
+    # list that nevertheless continues through engine start, takeoff,
+    # landing and shutdown. Those phases cannot be reconstructed safely
+    # from the flat list, and keeping them in preflight made the FO read
+    # airborne/landing items before departure. Keep the pre-start part;
+    # MeridianATC's class cards own the later phases.
+    cut = len(items)
+    magnetos_seen = False
+    start_words = ("engine master", "starter", "start engine", "engine start",
+                   "ignition start")
+    for index, item in enumerate(items):
+        challenge = str(item.get("challenge") or "").lower()
+        if any(word in challenge for word in start_words):
+            cut = index
+            break
+        if "magnetos switch" in challenge or "magneto switch" in challenge:
+            if magnetos_seen:
+                cut = index
+                break
+            magnetos_seen = True
+    items = items[:cut]
+    if not items:
+        return None
     category = str(raw.get("Category") or "preflight").strip().lower()
     name = str(raw.get("Name") or raw.get("Id") or path.stem).strip()
     match = {path.stem.lower()}
@@ -94,7 +117,9 @@ def convert(path: Path) -> dict | None:
     return {
         "_comment": ("Converted from StormATC data/flightchecklists/"
                      f"{path.name} ({name}). Verification steps keep their "
-                     "challenge and note rather than a guessed simvar check."),
+                     "challenge and note rather than a guessed simvar check. "
+                     "Only the pre-start part is kept from StormATC's "
+                     "flattened phase list."),
         "source": f"StormATC {name} checklist set",
         "match": match,
         "checklists": {

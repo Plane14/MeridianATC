@@ -5926,7 +5926,6 @@ def test_tower_is_the_pushback_authority_where_no_ground_exists():
     though the aircraft had already left it, while Tower was explicitly
     refused. With no Ground or Ramp published, Tower is the surface
     authority a pilot actually asks."""
-    import types
     from meridianatc.atc.autonomous.x_shared_helpers import _Shared_helpers
     from meridianatc.navdata.db import Station
 
@@ -5941,3 +5940,39 @@ def test_tower_is_the_pushback_authority_where_no_ground_exists():
     fo.navdb = navdb
     fo._get_current_airport = lambda: None
     assert _Shared_helpers._pushback_by_radio(fo) is True
+
+
+def test_type_preflight_cards_are_run_before_before_start():
+    """Most type-specific POH files carry a ``preflight`` card. It loaded
+    correctly but the autonomous phase machine jumped straight to
+    before-start, so those aircraft never adhered to their type card."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+    from meridianatc.atc.autonomous_heli import RotorcraftFlight
+
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.state = AutonomousState()
+    calls = []
+    fo._run_checklist_for_phase = calls.append
+    fo._goto_sub = lambda sub: None
+    # Directly exercise the checklist subphase without the systems setup.
+    fo.state.sub = "checklist"
+    fo.session = SimpleNamespace()
+    fo.sim = Mock()
+    fo._dir = SimpleNamespace(sim=fo.sim)
+    fo._ensure_systems_on = lambda state: None
+    fo._altimeter_hpa = lambda value: value
+    state = SimpleNamespace(transponder_state=4, kohlsman_hpa=1013,
+                            seatbelt_sign=True)
+    AutonomousFlight._phase_preflight(fo, state, 0.0)
+    assert calls[:2] == ["preflight", "before_start"]
+
+    heli = RotorcraftFlight.__new__(RotorcraftFlight)
+    heli.session = SimpleNamespace(ifr=False, destination=object())
+    heli.state = SimpleNamespace(ifr_downgraded=False)
+    heli.owner = SimpleNamespace(_set_error=lambda text: None)
+    heli._emit = lambda *a, **k: None
+    heli._goto = lambda stage: None
+    heli_calls = []
+    heli._checklist = heli_calls.append
+    RotorcraftFlight._preflight(heli, SimpleNamespace())
+    assert heli_calls[:2] == ["preflight", "before_start"]

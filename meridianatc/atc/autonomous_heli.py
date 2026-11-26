@@ -640,12 +640,21 @@ class RotorcraftFlight:
         if name in done:
             return
         runner = self.crew.checklists
-        if runner is not None and runner.waiting:
+        active = bool(getattr(self.owner, "_checklist_active", ""))
+        if runner is not None and (runner.waiting or active):
             # Still working the one before: start() would abandon it
-            # mid-item, and the stage is checked again on the next pass.
+            # mid-item. Queue the debt with the owner's checklist driver;
+            # merely returning here is not enough because the stage machine
+            # itself advances below.
+            deferred = list(getattr(self.owner.state, "checklist_deferred", []))
+            if name not in deferred:
+                deferred.append(name)
+            self.owner.state.checklist_deferred = deferred
             return
         if runner is not None:
             runner.start(name)
+            self.owner._checklist_active = name
+            self.owner._checklist_active_since = time.monotonic()
         done.add(name)
 
     def _elapsed(self) -> float:
@@ -848,6 +857,7 @@ class RotorcraftFlight:
         if self.session.destination is None:
             self.owner._set_error("no destination for the rotorcraft leg")
             return
+        self._checklist("preflight")
         self._checklist("before_start")
         self._goto("start")
 

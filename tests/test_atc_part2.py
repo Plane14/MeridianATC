@@ -778,3 +778,41 @@ def test_deviation_watch_leaves_the_initial_climb_alone():
     assert watch._off_now(session, state) == []
     session.departed_at -= watch.INITIAL_CLIMB_GRACE_S + 1.0
     assert "altitude" in watch._off_now(session, state)
+
+
+def test_every_shipped_type_checklist_loads_without_problems():
+    """The fleet-wide POH audit: every aircraft and rotorcraft type card,
+    not only the class defaults, parses with every checkable variable
+    resolved. A bad type file must fail here rather than silently fall
+    back to generic procedures."""
+    for path in sorted(checklist_files.TYPES.glob("*.json")):
+        problems = []
+        data = checklist_files._read(path, problems)
+        assert data is not None, (path.name, problems)
+        assert problems == [], (path.name, problems)
+
+
+def test_storm_type_preflights_do_not_read_later_flight_phases():
+    """StormATC's source files flattened startup, takeoff, cruise, landing
+    and shutdown into one list labelled preflight. Those later items must
+    not be read before departure; the class phase cards own them."""
+    import json
+
+    forbidden = ("positive climb", "touchdown", "landing roll",
+                 "reverse thrust", "v1", "rotate at", "flare")
+    matched = 0
+    for path in sorted(checklist_files.TYPES.glob("*.json")):
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if "StormATC" not in str(raw.get("_comment", "")):
+            continue
+        matched += 1
+        card = raw.get("checklists", {}).get("preflight") or {}
+        challenges = []
+        for item in card.get("items", []):
+            challenge = item.get("challenge", "")
+            if not isinstance(challenge, str):
+                challenge = challenge.get("en", "")
+            challenges.append(challenge.lower())
+        assert not any(word in challenge for word in forbidden
+                       for challenge in challenges), path.name
+    assert matched > 50

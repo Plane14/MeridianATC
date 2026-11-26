@@ -294,7 +294,8 @@ class _The_envelope:
         if checklist_name in self.state.checklists_completed:
             return
         runner = self.crew.checklists
-        if runner is not None and runner.waiting:
+        active = bool(getattr(self, "_checklist_active", ""))
+        if runner is not None and (runner.waiting or active):
             # The checklist before this one is still being worked: let it
             # finish rather than abandon it mid-item. The callers move on
             # and never ask again, so the debt is queued and the checklist

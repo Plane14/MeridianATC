@@ -19,7 +19,7 @@ One file per class of aeroplane ships here:
 | `airliner.json` | A320, 737, 777, E-Jets, CRJ... |
 | `helicopter.json` | H125, EC135, Bell 407, UH-1H, Robinson... |
 
-Helicopters get the same eleven checklists, but a thinner set of them: a
+Helicopters get the same phase checklists, but a thinner set of them: a
 rotorcraft's systems are fewer, and the flows are distilled from the
 rotary profiles on flightchecklist.app (H125, Bell 407, EC135, UH-1H)
 rather than from a flight manual each. Where the simulator publishes a
@@ -27,11 +27,12 @@ variable the item is checked against it; where it does not -- most
 helicopter systems -- the answer is taken on trust, and the item's
 `note` says so. The rotorcraft variables are listed at the bottom.
 
-`types/` also carries a file per known rotary add-on title (the Asobo
-H125 and EC135 family, the Nemeth Bell 407/427/505, Taog's UH-1H). They
-only carry `match` and `no_check`: until a `logs crew` `mismatch` line
-shows what an add-on actually publishes, the checks on the rotorcraft
-variables are off for it.
+`types/` also carries files matched on add-on titles. Some hold a
+type-specific preflight card; some hold `no_check` entries for variables a
+study-level add-on does not publish truthfully. Cards converted from
+StormATC are limited to their pre-start portion: their source flattened
+later flight phases into a list incorrectly labelled preflight, so the
+class cards own takeoff, cruise, landing and shutdown.
 
 The class comes from the simulator first (its engine type and number of
 engines), then from the type's ICAO designator; `logs crew` says which.
@@ -97,7 +98,7 @@ program. An item with a bad check keeps its words and loses only the check.
 | `rules` | `any`, `vfr`, `ifr` | Which flights it is for. Default `any`. |
 | `items` | list | In the order they are read. |
 
-The checklist names the first officer knows: `before_start`, `after_start`,
+The checklist names the first officer knows: `preflight`, `before_start`, `after_start`,
 `taxi`, `before_takeoff` (the run-up, for a piston), `after_takeoff`,
 `cruise`, `descent`, `approach`, `before_landing`, `after_landing`,
 `shutdown`. You may add others; you start them by name.

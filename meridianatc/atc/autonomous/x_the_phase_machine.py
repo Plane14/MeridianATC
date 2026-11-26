@@ -55,6 +55,13 @@ class _The_phase_machine:
             self._goto_sub("checklist")
 
         elif sub == "checklist":
+            # A matched type card's exterior/interior preflight is a
+            # separate POH card before the before-start one. The type
+            # files name it "preflight"; leaving it out here meant those
+            # cards loaded but were never read. Where a type has none the
+            # runner simply has nothing to start, and the class's
+            # before-start card still follows.
+            self._run_checklist_for_phase("preflight")
             self._run_checklist_for_phase("before_start")
             self._goto_sub("clearance")
 

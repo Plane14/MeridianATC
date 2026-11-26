@@ -52,7 +52,7 @@ TYPES = SHIPPED / "types"
 
 #: The checklists every class with checklists ships, in the order a flight
 #: meets them. A file may add others, which are started by name.
-STANDARD_CHECKLISTS = ("before_start", "after_start", "taxi",
+STANDARD_CHECKLISTS = ("preflight", "before_start", "after_start", "taxi",
                        "before_takeoff", "after_takeoff", "cruise", "descent",
                        "approach", "before_landing", "after_landing",
                        "shutdown")
