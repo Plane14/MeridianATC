@@ -261,8 +261,9 @@ def main():
                     if phase in (AutonomousPhase.APPROACH,
                                  AutonomousPhase.LANDING):
                         state = fo.state
+                        sim_state = getattr(engine, "state", None) or state
                         try:
-                            off = fo._centreline_offset_m(state)
+                            off = fo._centreline_offset_m(sim_state)
                         except Exception:
                             off = "?"
                         try:
