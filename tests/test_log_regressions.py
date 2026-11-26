@@ -677,6 +677,65 @@ def test_a_busy_checklist_runner_queues_the_next_phase_instead_of_dropping_it():
     assert flight.state.checklist_deferred == []
 
 
+
+
+
+
+def test_downwind_touch_and_go_and_full_stop_are_circuit_intentions():
+    """The real downwind report carries the pilot's intention. It must stay
+    a circuit report as well as an intention: "downwind touch and go" is
+    position plus the option, and "downwind full stop" ends the circuit."""
+    from meridianatc.atc.intents import Intent, IntentParser
+    parser = IntentParser(["N123", "November one two three"])
+    touch = parser.parse("N123 downwind touch and go")
+    assert touch.intent is Intent.REQUEST_PATTERN_WORK
+    assert touch.values["pattern_leg"] == "downwind"
+    full = parser.parse("N123 downwind full stop")
+    assert full.intent is Intent.REQUEST_LANDING
+    assert full.values["pattern_leg"] == "downwind"
+    assert full.values["full_stop"] is True
+
+
+def test_the_option_is_the_runway_clearance_until_touchdown():
+    """FAA JO 7110.65 3-8-2 treats a touch-and-go aircraft as arriving
+    until touchdown. The option therefore satisfies the same runway-
+    clearance gate as a full-stop landing clearance instead of being
+    issued again on every final report."""
+    from meridianatc.atc.controller.x_the_circuit import _The_circuit
+    brain = _The_circuit.__new__(_The_circuit)
+    brain.landing_or_withheld = Mock(return_value=None)
+    brain.navdb = SimpleNamespace(airport=lambda ident: None)
+    station = SimpleNamespace(ident="EBBR", position="TWR", mhz=120.775)
+    session = SimpleNamespace(
+        aircraft=Mock(), pattern_work=True, cleared_option=False,
+        cleared_landing=False, phase=None,
+        established_with=lambda station: False,
+        allow_runway=Mock(), note_clearance_wind=Mock(),
+        remember=lambda instruction: instruction)
+    p = Mock()
+    p.cleared_touch_and_go.return_value = "cleared for the option"
+    reply = brain._clear_the_circuit(
+        session, station, None, p, "25R", "", "Brussels Tower")
+    assert reply.text == "cleared for the option"
+    assert session.cleared_option is True
+    assert session.cleared_landing is True
+
+
+def test_a_full_stop_spends_the_option_clearance():
+    """An aircraft that stays on the ground has used the option as a
+    full stop. Leaving the flag set made its next unannounced landing
+    look cleared by a circuit clearance that was already over."""
+    from meridianatc.engine.x_the_other_aeroplanes import _The_other_aeroplanes
+    engine = _The_other_aeroplanes.__new__(_The_other_aeroplanes)
+    session = SimpleNamespace(
+        pattern_work=False, touchdown_at=time.monotonic() - 30.0,
+        full_stop_judged_at=0.0, rollout_liftoff_at=0.0,
+        touchdown_runway="25R", cleared_option=True)
+    engine._full_stop_after_touchdown(
+        SimpleNamespace(on_ground=True), session)
+    assert session.cleared_option is False
+
+
 def test_every_after_flight_checklist_check_has_a_control_path():
     """After-landing and shutdown cards across the fleet are procedures
     the FO can execute, not readings he can only announce. The audit is

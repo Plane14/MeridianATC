@@ -104,8 +104,13 @@ class PilotBook:
     # An approach clearance, read back: "cleared ILS approach runway two five
     # left". Each book sets its own.
     cleared_approach: str = "cleared {approach} approach runway {runway}"
-    # Reporting a leg of the circuit, and reading back the option.
+    # Reporting a leg of the circuit, and reading back the option. The
+    # intention is part of a downwind report where one is needed: CAP 413's
+    # example is "downwind touch and go", and an unstated intention is a
+    # full stop.
     on_leg: str = "turning {leg}"
+    touch_and_go: str = "touch and go"
+    full_stop: str = "full stop"
     # A circuit report the pilot handed the first officer to make.
     runway_vacated: str = "runway vacated"
     # The rejected takeoff, told to the tower while the speed is still
@@ -254,6 +259,8 @@ FRENCH = PilotBook(
     at_intersection="à l'intersection {taxiway}",
     pattern_entry="{leg} main {direction} piste {runway}",
     on_leg="en {leg}",
+    touch_and_go="pour un touch and go",
+    full_stop="pour un posé complet",
     continuing_approach="poursuivons l'approche piste {runway}",
     runway_vacated="piste dégagée",
     following="numéro deux, derrière {traffic}",
@@ -320,6 +327,8 @@ SPANISH = PilotBook(
     at_intersection="en {taxiway}",
     pattern_entry="{leg} por la {direction} pista {runway}",
     on_leg="en {leg}",
+    touch_and_go="para toque y despegue",
+    full_stop="para aterrizaje completo",
     continuing_approach="continuamos aproximación pista {runway}",
     following="número dos, detrás de {traffic}",
     option="autorizada la opción pista {runway}",
@@ -385,6 +394,8 @@ GERMAN = PilotBook(
     at_intersection="an {taxiway}",
     pattern_entry="{leg} {direction} Piste {runway}",
     on_leg="im {leg}",
+    touch_and_go="für Touch and Go",
+    full_stop="zur vollen Landung",
     continuing_approach="setzen den Anflug fort Piste {runway}",
     following="Nummer zwei, hinter {traffic}",
     option="Option genehmigt Piste {runway}",
@@ -449,6 +460,8 @@ ITALIAN = PilotBook(
     at_intersection="al raccordo {taxiway}",
     pattern_entry="{leg} {direction} pista {runway}",
     on_leg="in {leg}",
+    touch_and_go="per touch and go",
+    full_stop="per atterraggio completo",
     continuing_approach="continuiamo l'avvicinamento pista {runway}",
     following="numero due, dietro {traffic}",
     option="autorizzato all'opzione pista {runway}",
@@ -514,6 +527,8 @@ PORTUGUESE = PilotBook(
     at_intersection="na interseção {taxiway}",
     pattern_entry="{leg} pela {direction} pista {runway}",
     on_leg="na {leg}",
+    touch_and_go="para toque e arremetida",
+    full_stop="para pouso completo",
     continuing_approach="continuamos aproximação pista {runway}",
     following="número dois, atrás de {traffic}",
     option="autorizada a opção pista {runway}",
@@ -766,21 +781,28 @@ class PilotSpeech:
             body += ", " + self.p.alt(altitude_ft)
         return self.report(aircraft, body)
 
-    def on_leg(self, aircraft: Aircraft, leg: str, following: str = "") -> str:
+    def on_leg(self, aircraft: Aircraft, leg: str, following: str = "",
+               intention: str = "") -> str:
         """Reporting a leg of the circuit: "turning base", "en finale"; on a
         field nobody works, with who is ahead ("number two, following the
-        Cessna")."""
+        Cessna"). A downwind report can carry the intention with it, the
+        CAP 413 "downwind touch and go" form."""
         body = self.book.on_leg.format(leg=leg)
+        if intention:
+            body += " " + intention
         if following:
             body += ", " + self.book.following.format(traffic=following)
         return self.report(aircraft, body)
 
-    def circuit_report(self, aircraft: Aircraft, leg: str) -> str:
-        """"Downwind": the report the pilot handed the first officer, the leg
-        on its own as CAP 413 has it. With the runway after it the parser
-        reads the call as a readback ("downwind runway two four" is how a
-        join is read back), so the runway is left to the controller."""
-        return self.report(aircraft, leg)
+    def circuit_report(self, aircraft: Aircraft, leg: str,
+                       intention: str = "") -> str:
+        """"Downwind touch and go": the report the pilot handed the first
+        officer, the leg on its own as CAP 413 has it. With the runway after
+        it the parser reads the call as a readback ("downwind runway two
+        four" is how a join is read back), so the runway is left to the
+        controller."""
+        body = leg + ((" " + intention) if intention else "")
+        return self.report(aircraft, body)
 
     def runway_vacated(self, aircraft: Aircraft) -> str:
         return self.report(aircraft, self.book.runway_vacated)

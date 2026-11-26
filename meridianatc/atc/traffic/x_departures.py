@@ -25,6 +25,22 @@ class _Departures:
         except Exception:
             return True
 
+
+    def _midfield_downwind(self, flight: Flight) -> bool:
+        """Whether the downwind leg has reached the runway midpoint.
+
+        The report is positional, not a timer: extended for traffic it is
+        still made abeam the field, and a short circuit does not get it
+        before the aeroplane has turned downwind.
+        """
+        end = self._threshold(flight.runway)
+        if end is None:
+            return True
+        along, _across = self._runway_frame(flight, end[2])
+        surface = self.field.surfaces.get((flight.runway or "").upper())
+        length_nm = surface[2] if surface else 0.8
+        return along <= length_nm / 2.0
+
     def _advance_departure(self, flight: Flight, now: float) -> None:
         phase = flight.phase
 
@@ -236,8 +252,27 @@ class _Departures:
             return
 
         if phase in _CIRCUIT_PHASES:
-            # Round the circuit after a departure: the legs fly themselves and
-            # the aeroplane becomes an arrival when it turns final.
+            # Round the circuit after a departure. The midfield-downwind
+            # report the tower asked for on climb-out is made once the leg
+            # is established; at a broadcast field the same call is the
+            # traffic information every other pilot is listening for.
+            if (phase == "downwind" and flight.step == 0
+                    and self._midfield_downwind(flight)):
+                def answer(c, a, s):
+                    after, _expect = c.report_after_downwind()
+                    return c.report_position(a, after)
+
+                self._exchange(
+                    flight, now, "TWR",
+                    pilot_first=lambda p, a, s: p.on_leg(
+                        a, self._phrase(flight.language).leg("downwind"),
+                        intention=(p.book.touch_and_go if flight.pattern_work
+                                   else p.book.full_stop
+                                   if flight.last_circuit else "")),
+                    controller=answer,
+                    pilot_back=lambda p, a, s: p.wilco(a),
+                )
+                flight.step = 1
             flight.next_at = now + 4.0
             return
 

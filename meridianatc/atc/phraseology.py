@@ -752,8 +752,8 @@ class Phraseology:
                              caution: str = "") -> str:
         """"Cleared for the option" leaves the choice to the pilot.
 
-        FAA JO 7110.65 3-10-6: it authorises a touch-and-go, a low approach, a
-        missed approach, a stop-and-go or a full stop, and it is what a tower
+        FAA JO 7110.65 3-8-1/3-8-2: it authorises a touch-and-go, a low
+        approach, a missed approach, a stop-and-go or a full stop, and it is what a tower
         issues to an aircraft doing circuits rather than reissuing a landing
         clearance every time round.
         """

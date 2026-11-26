@@ -1878,7 +1878,7 @@ class _The_other_aeroplanes:
         and a pilot who simply landed and taxied in kept it -- so the next
         arrival of the session, hours later, was cleared for the option.
         """
-        if not session.pattern_work or not session.touchdown_at:
+        if not session.touchdown_at:
             return
         if session.full_stop_judged_at == session.touchdown_at:
             return
@@ -1887,9 +1887,14 @@ class _The_other_aeroplanes:
         if time.monotonic() - session.touchdown_at < self.FULL_STOP_AFTER_S:
             return
         session.full_stop_judged_at = session.touchdown_at
-        session.pattern_work = False
-        decision("circuits_ended", why="landed and stayed down",
-                 runway=session.touchdown_runway)
+        if session.pattern_work:
+            session.pattern_work = False
+            decision("circuits_ended", why="landed and stayed down",
+                     runway=session.touchdown_runway)
+        # The option is spent by the full stop it also authorises. Left
+        # set, the next unannounced landing inherited a runway clearance
+        # issued for a circuit that had already ended.
+        session.cleared_option = False
 
     def _update_phase(self, previous: AircraftState, state: AircraftState,
                       session: FlightSession) -> None:

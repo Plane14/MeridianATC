@@ -461,6 +461,35 @@ def test_a_parked_adopted_aeroplane_rejoins_when_the_real_one_is_heard():
     assert real in out  # the feed's aeroplane is heard again
 
 
+
+
+def test_circuit_traffic_makes_the_downwind_report_it_was_asked_for():
+    """Closed traffic is not silent between the takeoff clearance and
+    final: the midfield downwind report is made once, at a towered field
+    for sequencing and on a broadcast frequency as traffic information."""
+    from meridianatc.atc.language import phraseology_for
+    injector = _injector()
+    injector._phrase = lambda language: phraseology_for(language)
+    injector._exchange = Mock()
+    flight = _flight(phase="downwind", step=0, arriving=False,
+                     pattern_work=True)
+    injector._advance_departure(flight, 100.0)
+    injector._exchange.assert_called_once()
+    assert flight.step == 1
+
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.pilot import PilotSpeech
+    from meridianatc.atc.speech import parse_callsign
+    pilot = PilotSpeech("en", phraseology_for("en"))
+    aircraft = Aircraft(parse_callsign("BAW123"))
+    pilot_first = injector._exchange.call_args.kwargs["pilot_first"]
+    assert "downwind touch and go" in pilot_first(
+        pilot, aircraft, "Brussels Tower").lower()
+    injector._exchange.reset_mock()
+    injector._advance_departure(flight, 104.0)
+    injector._exchange.assert_not_called()
+
+
 def test_a_live_aeroplane_is_adopted_once():
     """Handed back to the feed it is read rather than flown again: adopted
     a second time it would be worked and handed off over and over for as

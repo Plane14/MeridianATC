@@ -1023,7 +1023,14 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
             return speech.ready_for_departure(
                 aircraft, session.departure_runway or ""), ""
         if kind in ("downwind", "base", "final"):
-            return speech.circuit_report(aircraft, p.leg(kind)), ""
+            # CAP 413's circuit example advises the intention with the
+            # downwind call: "downwind touch and go". A silent intention
+            # means a full stop, so only the touch-and-go needs saying.
+            intention = (speech.book.touch_and_go
+                         if kind == "downwind" and session.pattern_work
+                         else "")
+            return speech.circuit_report(
+                aircraft, p.leg(kind), intention=intention), ""
         if kind == "vacated":
             return speech.runway_vacated(aircraft), ""
         return "", "which"

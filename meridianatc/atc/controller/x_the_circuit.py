@@ -529,6 +529,11 @@ class _The_circuit:
                 station=station_name, abbreviated=abbreviated, caution=caution)
             kind = "option_clearance"
             session.cleared_option = True
+            # The option is still the runway clearance for this approach:
+            # JO 7110.65 3-8-2 treats the aeroplane as arriving until the
+            # touchdown, and the tower must not issue the same clearance
+            # again merely because the flag names the full-stop kind.
+            session.cleared_landing = True
         else:
             text = p.cleared_to_land(
                 aircraft, runway, weather, station=station_name,
