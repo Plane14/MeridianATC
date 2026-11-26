@@ -154,14 +154,18 @@ Each entry carries that leg's required altitude. X-Plane's v1100 flight-plan
 format and XPLM entry API have no separate global cruise-altitude field.
 The airliner CDU does have a VNAV `CRZ ALT` page, and X-Plane 12.4.4's own
 ATC filing can put a cruise altitude in the FMS, but SDK 4.4.0 still exposes
-no semantic XPLM or dataref accessor for that value. The documented
-`fms_fpta_pilot` and `altitude_vnav_ft` datarefs are dynamic vertical-target
-outputs, not the filed cruise level, so they must not be substituted for it.
-On the ground only, MeridianATC therefore uses X-Plane's local web API when
-it is available: it briefly selects the default CDU's CRZ page, reads the
-documented screen-text datarefs, and returns to FPLN. The exact value then
-beats waypoint-altitude inference; aircraft without the default CDU simply
-keep the inference. In the entry flags, `active` is the destination entry
+no semantic XPLM or dataref accessor for that value. On the ground only,
+MeridianATC therefore uses X-Plane's local web API when it is available: it
+briefly selects the default CDU's CRZ page, reads the documented screen-text
+datarefs, and returns to FPLN. The exact value then beats waypoint-altitude
+inference. GNS430/530, G1000 and similar units expose no screen-text rows or
+cruise page; for those, MeridianATC uses the documented `fms_fpta` /
+`altitude_vnav_ft` vertical-profile outputs only as a ground-only fallback.
+They are dynamic target altitudes rather than a guaranteed filed-cruise
+field, so an absent or sentinel value is ignored and ordinary waypoint
+inference remains the final fallback. Unsuccessful probes retry with a
+backoff because avionics are often still dark when the plan first loads.
+In the entry flags, `active` is the destination entry
 the FMS is flying to, while `shown` is only the page the pilot is viewing.
 This does not write a MeridianATC plan *into* the simulator -- load the FMS
 from SimBrief or by hand first.

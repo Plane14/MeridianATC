@@ -497,3 +497,62 @@ def test_nav_cycle_reads_xplanes_installed_custom_data(tmp_path):
     assert link.nav_cycle() == "2611"
     (custom / "cycle.json").write_text(json.dumps({"cycle": "junk"}))
     assert link.nav_cycle() == ""
+
+
+def test_an_unsuccessful_cruise_probe_backs_off_and_can_retry(monkeypatch):
+    """At engine start the CDU can still be blank. That failed probe must
+    not mark the flight plan as read forever; it waits, then tries again."""
+    import meridianatc.integrations.xptraffic as xp
+
+    started = []
+
+    class Worker:
+        def __init__(self, target, daemon):
+            self.target = target
+            self.daemon = daemon
+
+        def start(self):
+            started.append(self.target)
+
+    monkeypatch.setattr(xp.threading, "Thread", Worker)
+    link = XPlaneTraffic(enabled=False)
+    link.fms = [{"t": 1, "id": "LECO", "lat": 43.3, "lon": -8.3, "alt": 327}]
+    link.request_cruise_probe()
+    assert len(started) == 1
+
+    # The attempt ends without a cruise value: immediate polls do not keep
+    # flicking the CDU, but the plan is eligible again after the backoff.
+    link._cruise_probe_running = False
+    link.request_cruise_probe()
+    assert len(started) == 1
+    link._cruise_probe_next_at = 0.0
+    link.request_cruise_probe()
+    assert len(started) == 2
+
+
+def test_gps_class_cruise_probe_uses_the_flight_plan_target_altitude():
+    """GNS/G1000 units expose no CDU text rows. Before departure their
+    FMS target-altitude dataref carries the vertical profile's level."""
+    link = XPlaneTraffic(enabled=False)
+    link.fms = [{"t": 1, "id": "LECO", "lat": 43.3, "lon": -8.3, "alt": 327}]
+    link._xp_float_dataref = lambda name: (
+        17000.0 if name.endswith("fms_fpta_pilot") else 0.0)
+    link._xp_named_id = lambda kind, name: None
+
+    link._probe_cruise()
+
+    assert link.fms_cruise_ft == 17000
+    assert link._cruise_probe_key is not None
+    assert link._cruise_probe_running is False
+
+
+def test_gps_class_probe_rejects_the_absent_fpta_sentinel():
+    link = XPlaneTraffic(enabled=False)
+    link.fms = [{"t": 1, "id": "LECO", "lat": 43.3, "lon": -8.3, "alt": 327}]
+    link._xp_float_dataref = lambda name: -1000.0
+    link._xp_named_id = lambda kind, name: None
+
+    link._probe_cruise()
+
+    assert not link.fms_cruise_ft
+    assert link._cruise_probe_key is None

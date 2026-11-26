@@ -189,6 +189,7 @@ class XPlaneTraffic:
         self.fms_cruise_ft = 0
         self._cruise_probe_key = None
         self._cruise_probe_running = False
+        self._cruise_probe_next_at = 0.0
 
 
     def _send(self, message):
@@ -388,9 +389,16 @@ class XPlaneTraffic:
             key = tuple((e.get("id"), round(float(e.get("lat", 0) or 0), 4),
                          round(float(e.get("lon", 0) or 0), 4))
                         for e in self.fms[:64] if isinstance(e, dict))
-            if not key or key == self._cruise_probe_key or self._cruise_probe_running:
+            now = time.monotonic()
+            if (not key or key == self._cruise_probe_key
+                    or self._cruise_probe_running
+                    or now < self._cruise_probe_next_at):
                 return
-            self._cruise_probe_key = key
+            # The key marks a successful read, not an attempt: a probe made
+            # before the avionics/CDU are powered must not lock the plan out
+            # forever. Failed or unavailable probes back off instead of
+            # flicking the CDU page every flight-plan poll.
+            self._cruise_probe_next_at = now + 30.0
             self._cruise_probe_running = True
         threading.Thread(target=self._probe_cruise, daemon=True).start()
 
@@ -411,6 +419,16 @@ class XPlaneTraffic:
         if ident:
             self._xp_api_json(f"/command/{ident}/activate", {"duration": 0})
 
+    def _xp_float_dataref(self, name):
+        ident = self._xp_named_id("datarefs", name)
+        if not ident:
+            return 0.0
+        try:
+            return float(self._xp_api_json(f"/datarefs/{ident}/value").get("data")
+                         or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
     def _xp_cdu_lines(self, cdu):
         lines = []
         for line in range(16):
@@ -424,7 +442,24 @@ class XPlaneTraffic:
         return lines
 
     def _probe_cruise(self):
+        with self._lock:
+            key = tuple((e.get("id"), round(float(e.get("lat", 0) or 0), 4),
+                         round(float(e.get("lon", 0) or 0), 4))
+                        for e in self.fms[:64] if isinstance(e, dict))
         try:
+            fallback = 0
+            for name in (
+                    "sim/cockpit2/radios/indicators/fms_fpta_pilot",
+                    "sim/cockpit2/radios/indicators/fms_fpta_copilot",
+                    "sim/cockpit2/autopilot/altitude_vnav_ft"):
+                value = self._xp_float_dataref(name)
+                if 1000.0 <= value <= 59000.0:
+                    # GNS/G1000-class units have no cruise page or screen
+                    # text datarefs. On the ground their flight-plan target
+                    # altitude is the vertical profile's first level, which
+                    # is the filed cruise where the planner created one.
+                    fallback = int(round(value))
+                    break
             for cdu in (2, 1):
                 prefix = f"sim/FMS{cdu if cdu == 2 else ''}"
                 crz = self._xp_named_id("commands", prefix + "/crz")
@@ -442,7 +477,12 @@ class XPlaneTraffic:
                 if cruise:
                     with self._lock:
                         self.fms_cruise_ft = cruise
+                        self._cruise_probe_key = key
                     return
+            if fallback:
+                with self._lock:
+                    self.fms_cruise_ft = fallback
+                    self._cruise_probe_key = key
         except Exception:
             log.debug("X-Plane CDU cruise-altitude probe failed", exc_info=True)
         finally:
