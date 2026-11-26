@@ -172,7 +172,7 @@ class _Helpers:
         key = (airport.ident, True)
         first_selection = key not in self.runway_in_use
         baseline = self._wind_runway(airport, weather, departing=True)
-        if not first_selection:
+        if not first_selection or not self.realism.runway_change:
             return baseline
         picked = self._ai_runway_choice(airport, weather, departing=True,
                                         baseline=baseline)
@@ -193,7 +193,7 @@ class _Helpers:
         baseline = self._wind_runway(airport, weather, departing=False)
         if not allow_ai:
             return baseline
-        if not first_selection:
+        if not first_selection or not self.realism.runway_change:
             return baseline
         picked = self._ai_runway_choice(airport, weather, departing=False,
                                         baseline=baseline)

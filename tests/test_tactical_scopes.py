@@ -168,3 +168,59 @@ def test_ai_runway_choice_is_tracked_as_the_runway_in_use():
     assert brain._departure_runway(airport, weather) == "09"
     assert brain.runway_changes["TEST"] == ("09L", "09")
     brain.decision_gateway.close()
+
+
+
+def test_runway_change_disabled_never_uses_the_ai_choice():
+    from types import SimpleNamespace
+
+    from meridianatc.atc.controller.x_helpers import _Helpers
+
+    class Runway:
+        le_ident = "09"
+        he_ident = "27"
+
+        def ends(self):
+            return ((self.le_ident, 90.0, 0.0, 0.0),
+                    (self.he_ident, 270.0, 0.0, 0.0))
+
+    class Nav:
+        def runways(self, _ident):
+            return [Runway()]
+
+        def best_runway(self, *_args, **_kwargs):
+            return ("09",)
+
+        def runway_within_limits(self, *_args, **_kwargs):
+            return True
+
+    calls = []
+
+    class Provider:
+        def available(self):
+            return True
+
+        def complete(self, *_args, **_kwargs):
+            calls.append(1)
+            return '{"choice": 1}'
+
+    class Brain(_Helpers):
+        pass
+
+    weather = SimpleNamespace(wind_dir=90.0, wind_kt=8.0, gust_kt=0.0,
+                              variable=False, source="test")
+    airport = SimpleNamespace(ident="TEST")
+    brain = Brain()
+    brain.navdb = Nav()
+    brain.realism = SimpleNamespace(runway_change=False)
+    brain.runway_in_use = {}
+    brain.runway_changes = {}
+    brain.decision_gateway = DecisionGateway(
+        Provider(), mode_for={"atc.runway_selection": "active"})
+    brain._planned = lambda *_args, **_kwargs: ""
+    brain._flow_runway = lambda *_args, **_kwargs: ""
+
+    assert brain._departure_runway(airport, weather) == "09"
+    assert brain._departure_runway(airport, weather) == "09"
+    assert not calls
+    brain.decision_gateway.close()
