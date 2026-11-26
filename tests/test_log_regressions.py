@@ -625,6 +625,54 @@ def test_the_rollout_uses_reverse_then_less_brake():
     assert not light.state.reversers_out
 
 
+def _inbound_taxi_flight(distance_to_stand_m: float, ground_speed_kt=2.0):
+    """A taxi-in on an eighty-metre straight final leg to the stand."""
+    from meridianatc.navdata.build import project
+    end = (43.3000, -8.3800)
+    start = project(end[0], end[1], 270.0, 80.0 / 1852.0)
+    where = project(end[0], end[1], 270.0,
+                    distance_to_stand_m / 1852.0)
+    flight = _flier()
+    flight.session.taxi_path = [start, end]
+    flight.session.hold_position = False
+    flight._clearance_strobes = Mock()
+    flight._yield_to_traffic = Mock(return_value=False)
+    flight._expedite_kt = lambda state, kt: kt
+    flight._ground_still = Mock(return_value=False)
+    flight._steer = Mock()
+    flight._stop = Mock()
+    flight._goto_sub = Mock()
+    state = SimpleNamespace(
+        latitude=where[0], longitude=where[1], taxi_light=True,
+        heading_true=90.0, ground_speed_kt=ground_speed_kt,
+        on_ground=True)
+    return flight, state
+
+
+def test_taxi_in_creeps_the_last_twenty_metres_onto_the_stand():
+    """The live arrival stopped where the generic route pursuit called
+    the end "reached" -- dozens of metres short of stand 0. Inbound taxi
+    is parking, not enroute leg-following: the last metres are crept
+    onto the stand point instead of accepted as close enough."""
+    flight, state = _inbound_taxi_flight(20.0)
+    flight._taxi_along_path(state, outbound=False)
+    flight._stop.assert_not_called()
+    assert flight._steer.call_args is not None
+    assert 0.0 < flight._steer.call_args.args[2] <= 2.5
+    assert not any(call.args == ("park",)
+                   for call in flight._goto_sub.call_args_list)
+
+
+def test_taxi_in_parks_only_at_the_stand_point():
+    """The same tolerance that used to end the taxi early is not a
+    parking clearance either: the sub-step changes at the stand itself."""
+    flight, state = _inbound_taxi_flight(5.0, ground_speed_kt=0.5)
+    flight._taxi_along_path(state, outbound=False)
+    flight._stop.assert_called()
+    assert any(call.args == ("park",)
+               for call in flight._goto_sub.call_args_list)
+
+
 def test_taxi_in_does_not_follow_the_stale_departure_route():
     """The live LECO landing entered taxi-in with the LEVX departure
     path still on the session, measured itself 121 km off that line and

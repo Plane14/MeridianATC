@@ -101,6 +101,10 @@ class _Taxi:
     CORNER_OVER_DEG = 25.0
     CORNER_AIM_M = 20.0
     NEAREST_SKIP_M = 6.0
+    # A stand is a point, not a fifty-metre neighbourhood: the generic
+    # pursuit's "reached" answer is for route legs. Inbound the aeroplane
+    # creeps until the datum is on the parking position, then stops.
+    STAND_REACHED_M = 6.0
     # (degrees, knots): a vertex is arrived at this fast -- a hairpin at
     # walking pace, a mild bend barely under taxi speed -- plus the run
     # in metres at CORNER_BRAKE_KT_M sheds beforehand: shallow enough
@@ -420,8 +424,13 @@ class _Taxi:
                 target_kt = 0.0
             elif end_m < 60.0:
                 target_kt = min(target_kt, 4.0)
-        elif remaining < 25.0:
+        elif end_m <= self.STAND_REACHED_M:
             target_kt = 0.0
+        elif remaining < 25.0:
+            # Not the neighbourhood of the stand -- on it. The old
+            # full stop here parked the aeroplane a whole path-pursuit
+            # tolerance short of the parking position.
+            target_kt = min(target_kt, 2.5)
 
         if target_kt <= 0.0 \
                 or self._ground_still(state, time.monotonic()):
@@ -502,8 +511,10 @@ class _Taxi:
                 self._transition(AutonomousPhase.HOLDING_SHORT)
                 return
         else:
-            # Inbound: the stand is the end of the path.
-            if steer.get("done"):
+            # Inbound: the stand is the end of the path -- the point
+            # itself, not the pursuit's fifty-metre route-leg tolerance.
+            if end_m <= self.STAND_REACHED_M \
+                    and (state.ground_speed_kt or 0.0) <= 1.0:
                 self._goto_sub("park")
                 return
 
