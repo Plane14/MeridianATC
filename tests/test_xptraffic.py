@@ -467,3 +467,20 @@ def test_match_query_and_drawn_models(plugin, link):
     threading.Event().wait(.05)
     link.on_frame()
     assert link.title_of("JBU1234") == "A21N JBU"
+
+
+def test_cdu_cruise_parser_reads_default_fms_values():
+    from meridianatc.integrations.xptraffic import parse_cdu_cruise
+
+    assert parse_cdu_cruise(["VNAV CRUISE 2/3", "CRZ ALT FL280"]) == 28000
+    assert parse_cdu_cruise(["VNAV CRUISE 2/3", "CRZ ALT", "FL170"]) == 17000
+    assert parse_cdu_cruise(["VNAV CRUISE 2/3", "CRZ ALT", "17000"]) == 17000
+    assert parse_cdu_cruise(["FPLN", "LECO"]) == 0
+
+
+def test_fms_entries_carry_the_exact_cdu_cruise_probe():
+    link = XPlaneTraffic(enabled=False)
+    link.fms = [{"t": 1, "id": "LECO", "lat": 43.3, "lon": -8.3, "alt": 327}]
+    assert "cruise_ft" not in link.fms_entries()[0]
+    link.fms_cruise_ft = 17000
+    assert link.fms_entries()[0]["cruise_ft"] == 17000

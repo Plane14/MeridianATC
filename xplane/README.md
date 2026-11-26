@@ -150,11 +150,21 @@ plugin forwards the active primary plan's entry list on the status channel
 (the pilot-side plan first, the copilot-side plan when the pilot side is
 empty on X-Plane 12.1+) and the engine rebuilds it as origin, enroute
 fixes and destination, re-adopting it whenever the FMS's own list changes.
-Each entry carries that leg's constraint altitude; X-Plane's FMS format has
-no separate global cruise-altitude field. In the entry flags, `active` is
-the destination entry the FMS is flying to, while `shown` is only the page
-the pilot is viewing. This does not write a MeridianATC
-plan *into* the simulator -- load the FMS from SimBrief or by hand first.
+Each entry carries that leg's required altitude. X-Plane's v1100 flight-plan
+format and XPLM entry API have no separate global cruise-altitude field.
+The airliner CDU does have a VNAV `CRZ ALT` page, and X-Plane 12.4.4's own
+ATC filing can put a cruise altitude in the FMS, but SDK 4.4.0 still exposes
+no semantic XPLM or dataref accessor for that value. The documented
+`fms_fpta_pilot` and `altitude_vnav_ft` datarefs are dynamic vertical-target
+outputs, not the filed cruise level, so they must not be substituted for it.
+On the ground only, MeridianATC therefore uses X-Plane's local web API when
+it is available: it briefly selects the default CDU's CRZ page, reads the
+documented screen-text datarefs, and returns to FPLN. The exact value then
+beats waypoint-altitude inference; aircraft without the default CDU simply
+keep the inference. In the entry flags, `active` is the destination entry
+the FMS is flying to, while `shown` is only the page the pilot is viewing.
+This does not write a MeridianATC plan *into* the simulator -- load the FMS
+from SimBrief or by hand first.
 Custom aircraft may intercept or ignore the standard AP commands. COM
 and NAV frequency and squawk writes are confirmed by subscribed RREF
 read-back before they report success; other UDP sends are not execution

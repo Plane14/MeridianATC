@@ -123,7 +123,10 @@ class _The_plan_the:
             # The plan the box shows is already the flight's -- this is
             # an upload of ours landing, or the box re-reading itself.
             # Re-adopting it as a new flight would restart a session in
-            # the middle of the taxi it is already on.
+            # the middle of the taxi it is already on. A late exact CRZ
+            # ALT probe can still refine the level of that same route.
+            if route.cruise_ft and route.cruise_exact:
+                self.config.flight.cruise_altitude_ft = route.cruise_ft
             return
         flight = self.config.flight
         if route.origin:
@@ -203,14 +206,19 @@ class _The_plan_the:
                 origin_ft = next((f.alt_ft for f in fixes
                                   if f.kind == "apt"
                                   and f.ident == airports[0]), 0.0)
+        exact = next((int(e.get("cruise_ft", 0) or 0) for e in entries[:8]
+                      if isinstance(e, dict)
+                      and 1000 <= int(e.get("cruise_ft", 0) or 0) <= 59000), 0)
+        inferred = max((f.alt_ft for f in fixes
+                        if f.kind != "apt"
+                        and not self._RUNWAY_IDENT.match(f.ident)
+                        and f.alt_ft > origin_ft),
+                       default=0)
         return Route(fixes=tuple(fixes),
                      origin=airports[0] if airports else "",
                      destination=airports[-1] if airports else "",
-                     cruise_ft=max((f.alt_ft for f in fixes
-                                    if f.kind != "apt"
-                                    and not self._RUNWAY_IDENT.match(f.ident)
-                                    and f.alt_ft > origin_ft),
-                                   default=0),
+                     cruise_ft=exact or inferred,
+                     cruise_exact=bool(exact),
                      source="sim")
 
     def _use_pln_plan(self, path: str) -> None:

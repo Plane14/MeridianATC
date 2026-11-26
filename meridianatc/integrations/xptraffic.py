@@ -6,14 +6,19 @@ the plugin's ``drawn`` list admits an invented aircraft to the frequency.
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import json
 import logging
 import math
+import re
 import select
 import socket
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections import deque
 
 log = logging.getLogger(__name__)
@@ -81,6 +86,42 @@ def aircraft_packet(position):
     }
 
 
+def _cdu_altitude_token(token):
+    try:
+        value = int(token)
+    except (TypeError, ValueError):
+        return 0
+    if 30 <= value <= 590:
+        return value * 100
+    return value if 1000 <= value <= 59000 else 0
+
+
+def parse_cdu_cruise(lines):
+    """The numeric CRZ ALT on a default-FMS CDU page, or zero.
+
+    X-Plane pads CDU text datarefs to fixed-width lines. The value can be
+    beside the label or on the following line, and is commonly rendered as
+    FL280 rather than 28000.
+    """
+    rows = [re.sub(r"\s+", " ", str(line or "").replace(chr(0), " ")).upper()
+            for line in lines]
+    if not any("CRZ ALT" in row for row in rows):
+        return 0
+    for index, row in enumerate(rows):
+        if "CRZ ALT" not in row:
+            continue
+        after = row.split("CRZ ALT", 1)[1]
+        chunks = [after]
+        chunks.extend(rows[index + 1:index + 3])
+        for chunk in chunks:
+            for token in re.findall(r"(?<![\d/.])(?:FL\s*)?(\d{2,5})(?:\s*FT)?(?!\d)", chunk):
+                value = _cdu_altitude_token(token)
+                if value:
+                    return value
+    return 0
+
+
+
 class XPlaneTraffic:
     HELLO_EVERY_S = 2.0
     STATUS_WITHIN_S = 3.0
@@ -142,6 +183,13 @@ class XPlaneTraffic:
         # type, position and constraint altitude. What is actually in
         # the box corroborates the route the engine thinks was filed.
         self.fms = []
+        # The airliner CDU's VNAV CRZ ALT value, when X-Plane's web API
+        # let a brief ground-only page probe read it. XPLM itself exposes
+        # no semantic cruise-altitude dataref.
+        self.fms_cruise_ft = 0
+        self._cruise_probe_key = None
+        self._cruise_probe_running = False
+
 
     def _send(self, message):
         try:
@@ -303,6 +351,88 @@ class XPlaneTraffic:
                 e["id"].strip().upper() for e in self.fms
                 if isinstance(e, dict) and e.get("t") in self._ROUTE_NAV_TYPES
                 and isinstance(e.get("id"), str) and e["id"].strip())
+
+    def fms_entries(self):
+        """FMS entries annotated with any exact CDU CRZ ALT probe result."""
+        with self._lock:
+            entries = [dict(e) for e in self.fms if isinstance(e, dict)]
+            cruise = int(self.fms_cruise_ft or 0)
+        if entries and cruise:
+            entries[0]["cruise_ft"] = cruise
+        return entries
+
+    def request_cruise_probe(self):
+        """Read the default FMS's CRZ ALT once per loaded plan, in the background.
+
+        X-Plane exposes the value only as CDU screen text. The probe briefly
+        selects the CRZ page and then FPLN; callers therefore invoke it only
+        on the ground. If the web API or default CDU is absent, this silently
+        leaves the per-leg altitude inference as the fallback.
+        """
+        with self._lock:
+            key = tuple((e.get("id"), round(float(e.get("lat", 0) or 0), 4),
+                         round(float(e.get("lon", 0) or 0), 4))
+                        for e in self.fms[:64] if isinstance(e, dict))
+            if not key or key == self._cruise_probe_key or self._cruise_probe_running:
+                return
+            self._cruise_probe_key = key
+            self._cruise_probe_running = True
+        threading.Thread(target=self._probe_cruise, daemon=True).start()
+
+    def _xp_api_json(self, path, payload=None, timeout=.5):
+        url = "http://127.0.0.1:8086/api/v2" + path
+        data = None if payload is None else json.dumps(payload).encode()
+        req = urllib.request.Request(url, data=data,
+            headers={"Accept": "application/json", "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as reply:
+            return json.loads(reply.read() or b"null")
+
+    def _xp_named_id(self, kind, name):
+        query = urllib.parse.urlencode({"filter[name]": name})
+        rows = self._xp_api_json(f"/{kind}?{query}").get("data") or []
+        return rows[0]["id"] if rows and rows[0].get("id") else None
+
+    def _xp_activate(self, ident):
+        if ident:
+            self._xp_api_json(f"/command/{ident}/activate", {"duration": 0})
+
+    def _xp_cdu_lines(self, cdu):
+        lines = []
+        for line in range(16):
+            name = f"sim/cockpit2/radios/indicators/fms_cdu{cdu}_text_line{line}"
+            ident = self._xp_named_id("datarefs", name)
+            if not ident:
+                return []
+            value = self._xp_api_json(f"/datarefs/{ident}/value").get("data")
+            raw = base64.b64decode(value or b"")
+            lines.append(raw.split(b"\0", 1)[0].decode("utf-8", "replace"))
+        return lines
+
+    def _probe_cruise(self):
+        try:
+            for cdu in (2, 1):
+                prefix = f"sim/FMS{cdu if cdu == 2 else ''}"
+                crz = self._xp_named_id("commands", prefix + "/crz")
+                fpln = self._xp_named_id("commands", prefix + "/fpln")
+                if not crz or not fpln:
+                    continue
+                before = self._xp_cdu_lines(cdu)
+                if not any(row.strip() for row in before):
+                    continue
+                self._xp_activate(crz)
+                time.sleep(.45)
+                rows = self._xp_cdu_lines(cdu)
+                self._xp_activate(fpln)
+                cruise = parse_cdu_cruise(rows)
+                if cruise:
+                    with self._lock:
+                        self.fms_cruise_ft = cruise
+                    return
+        except Exception:
+            log.debug("X-Plane CDU cruise-altitude probe failed", exc_info=True)
+        finally:
+            with self._lock:
+                self._cruise_probe_running = False
 
     @property
     def available(self):

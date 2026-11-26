@@ -167,6 +167,9 @@ class Route:
     star_runway: str = ""
     approach: str = ""        # e.g. "ILS W 16L" as the plan names it
     cruise_ft: int = 0
+    # True when the value is the box's own cruise field rather than an
+    # inference from waypoint constraint altitudes.
+    cruise_exact: bool = False
     source: str = ""          # simbrief, pln, string, sim
     # What the loader could not do, said rather than hidden: a fix nobody
     # could place, an airway flown direct for want of its points.

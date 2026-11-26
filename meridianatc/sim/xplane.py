@@ -1453,7 +1453,14 @@ class XPlaneSource:
     def request_flight_plan(self):
         """Whether the FMS entries can be asked for right now."""
         try:
-            return bool(self.fms_reader and self.fms_reader())
+            ready = bool(self.fms_reader and self.fms_reader())
+            if ready:
+                with self._lock:
+                    ground = bool(self._values.get("on_ground", 0))
+                prober = getattr(self, "fms_cruise_prober", None)
+                if ground and prober:
+                    prober()
+            return ready
         except Exception:
             return False
 

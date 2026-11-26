@@ -683,3 +683,18 @@ def test_observed_traffic_log_does_not_call_live_adsb_simulator_traffic():
         emit=Mock())
     _The_other_aeroplanes._say_observed(engine)
     assert engine.emit.call_args.kwargs["count"] == "1"
+
+
+def test_exact_fms_cruise_probe_beats_inferred_constraint_altitudes():
+    pytest.importorskip("scipy")
+    from meridianatc.engine.x_the_plan_the import _The_plan_the
+
+    planner = _The_plan_the()
+    route = planner._route_from_fms([
+        {"t": 1, "id": "LEVX", "lat": 42.2, "lon": -8.6, "alt": 854,
+         "cruise_ft": 17000},
+        {"t": 512, "id": "STG", "lat": 42.5, "lon": -8.0, "alt": 4000},
+        {"t": 1, "id": "LECO", "lat": 43.3, "lon": -8.3, "alt": 327},
+    ])
+    assert route.cruise_ft == 17000
+    assert route.cruise_exact

@@ -296,7 +296,9 @@ class _Setup:
             # RequestSystemState("FlightPlan") answers it on MSFS.
             if hasattr(self.source, "fms_reader"):
                 self.source.fms_reader = \
-                    lambda: list(self.simtraffic.fms)
+                    lambda: self.simtraffic.fms_entries()
+                self.source.fms_cruise_prober = \
+                    self.simtraffic.request_cruise_probe
             drawing = self.simtraffic.attach()
             if not drawing and self.simtraffic.enabled:
                 self._warn_xplane_traffic()
