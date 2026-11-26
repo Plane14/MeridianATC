@@ -301,10 +301,17 @@ def _read(path: Path, problems: list[str]) -> dict | None:
     return data
 
 
-def _add_ons(title: str) -> list[Path]:
-    """The add-on files whose fragments are in the simulator's title."""
+def _add_ons(title: str, type_code: str = "") -> list[Path]:
+    """The add-on files whose fragments are in the simulator's title.
+
+    The type designator is a weaker but still useful key: a no-sim or
+    minimally reported aircraft often has no rich title at all, and a
+    POH file matched only by title then silently never applies.
+    """
     title = (title or "").lower()
-    if not title or not TYPES.is_dir():
+    code = (type_code or "").strip().lower()
+    compact = code.replace("-", "")
+    if not TYPES.is_dir():
         return []
     found = []
     for path in sorted(TYPES.glob("*.json")):
@@ -320,7 +327,9 @@ def _add_ons(title: str) -> list[Path]:
         if not isinstance(matches, list) or not all(isinstance(m, str) and m.strip() for m in matches):
             found.append(path)
             continue
-        if any(m.lower() in title for m in matches):
+        if any(m.lower() in title
+               or (code and m.lower() in (code, compact))
+               for m in matches):
             found.append(path)
     return found
 
@@ -328,8 +337,8 @@ def _add_ons(title: str) -> list[Path]:
 def _files(aircraft_class: str, type_code: str,
            own: Path | None = None, title: str = "") -> list[Path]:
     own = own if own is not None else own_folder()
-    files = [SHIPPED / f"{aircraft_class}.json", *_add_ons(title),
-             own / f"{aircraft_class}.json"]
+    files = [SHIPPED / f"{aircraft_class}.json",
+             *_add_ons(title, type_code), own / f"{aircraft_class}.json"]
     code = (type_code or "").strip().upper()
     if code and code.lower() not in CLASSES:
         files.append(own / f"{code}.json")

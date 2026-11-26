@@ -830,3 +830,11 @@ def test_turbine_helicopter_types_do_not_use_fixed_wing_prestart_items():
         raw = json.loads((checklist_files.TYPES / name).read_text(
             encoding="utf-8"))
         assert "checklists" not in raw or not raw["checklists"]
+
+
+def test_type_checklists_match_the_type_code_when_no_title_is_reported():
+    """No-sim and lightly reported aircraft often have an ICAO type but
+    no rich add-on title. The A320 POH file must still apply rather than
+    silently falling back to the generic airliner card."""
+    matches = checklist_files._add_ons("", "A320")
+    assert any(path.name == "a320-neo.json" for path in matches)
