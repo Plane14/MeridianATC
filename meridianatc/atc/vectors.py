@@ -60,7 +60,7 @@ AWAY_DEG = 135.0
 FT_PER_NM = 250.0
 # Too high: more than this above what the miles can lose -- a steep 400 ft
 # a mile from far out, the 3-degree path close in.
-TOO_HIGH_MARGIN_FT = 1500.0
+TOO_HIGH_MARGIN_FT = 500.0
 STEEP_FT_PER_NM = 400.0
 STEEP_FROM_NM = 20.0
 GLIDE_FT_PER_NM = 318.0
@@ -217,10 +217,18 @@ def vector(final, lat: float, lon: float, *, speed_kt: float = 0.0,
 
 def too_high(leg: Vector, altitude_ft: float, elev_ft: float,
              slow: bool = False) -> bool:
-    """More than 1,500 ft above what the miles still to fly can lose."""
-    rate = STEEP_FT_PER_NM if leg.track_nm > STEEP_FROM_NM and not slow \
-        else GLIDE_FT_PER_NM
-    return altitude_ft - elev_ft > leg.track_nm * rate + TOO_HIGH_MARGIN_FT
+    """More height than the final itself can lose, with little slack.
+
+    ``track_nm`` includes the miles spent turning onto the centreline. A
+    "maintain ... until established" level cannot be descended during
+    those miles, so they are not descent room: the height check is the
+    centreline distance the capture leaves, ``join_nm``. The half-margin
+    still allows a slightly high capture, but not a 3,000-ft level joined
+    five miles from the runway.
+    """
+    remaining = leg.join_nm or leg.track_nm
+    rate = STEEP_FT_PER_NM if remaining > STEEP_FROM_NM and not slow         else GLIDE_FT_PER_NM
+    return altitude_ft - elev_ft > remaining * rate + TOO_HIGH_MARGIN_FT
 
 
 def extended(final, lat: float, lon: float) -> Vector:

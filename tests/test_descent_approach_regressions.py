@@ -639,6 +639,20 @@ def test_a_thirty_degree_cut_inside_the_gate_is_not_an_intercept():
     assert leg.join_nm >= vec.SLOW.gate_nm - 0.5
 
 
+def test_the_height_check_counts_only_the_final_left_after_capture():
+    """The no-sim Brussels scan: the intercept's total track included the
+    turn onto the centreline, but the 3,000-ft "until established" level
+    could not be descended there. Counting those miles let a five-mile
+    final begin thousands of feet high."""
+    from meridianatc.atc import vectors as vec
+
+    leg = vec.Vector(250.0, "intercept", 7.5, 1.0, 5.0)
+    assert vec.too_high(leg, 3000.0, 175.0, slow=True)
+
+    long_enough = vec.Vector(250.0, "intercept", 11.0, 1.0, 9.0)
+    assert not vec.too_high(long_enough, 3000.0, 175.0, slow=True)
+
+
 def _fo_for_computed_floor(out_nm=7.0, side_nm=1.0, altitude=3150.0):
     """An FO on a straight final, with the moving parts spied."""
     from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
