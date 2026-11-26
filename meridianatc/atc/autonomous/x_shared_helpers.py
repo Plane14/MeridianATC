@@ -892,7 +892,8 @@ class _Shared_helpers:
             target_alt = float(self._altitude_target(state) or 0.0)
         except (TypeError, ValueError, AttributeError):
             target_alt = 0.0
-        if target_alt and not overspeed:
+        if target_alt and not overspeed and self.state.phase not in (
+                AutonomousPhase.APPROACH, AutonomousPhase.LANDING):
             from ..trajectory import energy_speed_height
             altitude = float(getattr(state, "altitude_ft", 0.0) or 0.0)
             energy = energy_speed_height(

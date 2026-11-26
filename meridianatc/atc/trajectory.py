@@ -240,7 +240,7 @@ def energy_speed_height(height_error_ft: float, speed_error_kt: float,
     height = clamp(height_error_ft, -max_correction_ft, max_correction_ft)
     throttle = clamp(energy_ft / max_correction_ft, -1.0, 1.0)
     pitch = clamp(height / max_correction_ft, -1.0, 1.0)
-    priority = "speed" if speed_error_kt < -abs(underspeed_margin_kt) \
+    priority = "speed" if speed_error_kt > abs(underspeed_margin_kt) \
         else "balanced"
     if priority == "speed":
         throttle = max(throttle, 0.5)

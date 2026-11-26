@@ -85,7 +85,14 @@ def test_energy_allocation_balances_height_and_speed():
 
 
 def test_underspeed_protection_is_speed_priority():
-    cmd = energy_speed_height(200.0, -15.0, 150.0)
+    # speed_error is target minus actual: positive means the aircraft is slow.
+    cmd = energy_speed_height(200.0, 15.0, 150.0)
     assert cmd.priority == "speed"
     assert cmd.throttle >= 0.5
     assert cmd.pitch <= -0.15
+
+
+def test_overspeed_is_not_speed_priority_or_added_power():
+    cmd = energy_speed_height(200.0, -15.0, 150.0)
+    assert cmd.priority == "balanced"
+    assert cmd.throttle < 0.5
