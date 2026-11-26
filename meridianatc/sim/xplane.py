@@ -564,6 +564,7 @@ class XPlaneSource:
         # returning the FMS entries the plugin reads, for the flight
         # plan the simulator itself is flying.
         self.fms_reader = None
+        self.fms_cycle_reader = None
         # Teleport/slew detection: the position a read ago and until when
         # a jump it could not have flown marks the state relocated.
         self._last_geo = None
@@ -1487,7 +1488,14 @@ class XPlaneSource:
         try:
             from ..atc.route import to_fms
 
-            text = to_fms(route)
+            cycle = ""
+            reader = getattr(self, "fms_cycle_reader", None)
+            if reader:
+                try:
+                    cycle = reader() or ""
+                except Exception:
+                    cycle = ""
+            text = to_fms(route, cycle=cycle)
         except Exception:
             log.debug("the .fms text could not be built", exc_info=True)
             return False

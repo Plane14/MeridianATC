@@ -484,3 +484,16 @@ def test_fms_entries_carry_the_exact_cdu_cruise_probe():
     assert "cruise_ft" not in link.fms_entries()[0]
     link.fms_cruise_ft = 17000
     assert link.fms_entries()[0]["cruise_ft"] == 17000
+
+
+def test_nav_cycle_reads_xplanes_installed_custom_data(tmp_path):
+    import json
+
+    custom = tmp_path / "Custom Data"
+    custom.mkdir()
+    (custom / "cycle.json").write_text(json.dumps({"cycle": "2611"}))
+    link = XPlaneTraffic(enabled=False)
+    link.sysroot = str(tmp_path)
+    assert link.nav_cycle() == "2611"
+    (custom / "cycle.json").write_text(json.dumps({"cycle": "junk"}))
+    assert link.nav_cycle() == ""

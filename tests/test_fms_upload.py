@@ -95,6 +95,11 @@ def test_the_declared_cycle_is_the_airac_in_force():
     assert _airac_cycle(d(2027, 1, 21)) == "2701"   # the next year
 
 
+def test_to_fms_uses_the_simulators_installed_cycle_when_given():
+    text = to_fms(_route(), cycle="2611")
+    assert text.split("\n")[2] == "CYCLE 2611"
+
+
 def test_xplane_load_fms_plan_sends_an_fpln_datagram():
     link = XPlaneSource()
     # A connected-looking source without a socket: _packet is
@@ -104,6 +109,7 @@ def test_xplane_load_fms_plan_sends_an_fpln_datagram():
     link._last_packet = time.monotonic()
     sent = []
     link._packet = sent.append
+    link.fms_cycle_reader = lambda: "2611"
     assert link.load_fms_plan(_route())
     assert len(sent) == 1
     wire = sent[0]
@@ -111,6 +117,7 @@ def test_xplane_load_fms_plan_sends_an_fpln_datagram():
     # The reference client's 1400-byte pad, and the whole plan inside.
     assert len(wire) == 5 + 1400
     plan = wire[5:].decode().split("\n")
+    assert "CYCLE 2611" in plan
     assert "ADEP LPPR" in plan and "ADES LPPT" in plan
     assert any(line.startswith("NUMENR") for line in plan)
 

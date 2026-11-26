@@ -155,9 +155,21 @@ def vector(final, lat: float, lon: float, *, speed_kt: float = 0.0,
                       max(join, 0.0))
 
     # Through the centreline on its base: back to it from where it is.
-    if after == "base" and side is not None and lateral * side < 0:
+    if after == "base" and side is not None and lateral * side < 0 \
+            and out >= p.gate_nm - 0.5:
         return cut_in()
-    close_in = abs(lateral) <= INTERCEPT_SIDE_NM and out >= p.gate_nm - 2.0
+    def intercept_join_nm() -> float:
+        if abs(lateral) < ON_CENTRELINE_NM:
+            return out
+        return out - abs(lateral) / math.tan(math.radians(INTERCEPT_DEG))
+
+    # The gate is the point of the pattern: a thirty-degree cut that
+    # reaches the centreline inside it is not an intercept, however
+    # close to the final the aeroplane already is. Clearing there puts
+    # a heavy or fast aeroplane high inside the FAF; the pattern goes
+    # back out and makes the room instead.
+    close_in = abs(lateral) <= INTERCEPT_SIDE_NM \
+        and intercept_join_nm() >= p.gate_nm - 0.5
     if visual and (after in ("intercept", "final") or (close_in and not away)):
         from_side = 1.0 if lateral >= 0 else -1.0
         current = heading_true if heading_true is not None \
@@ -179,6 +191,11 @@ def vector(final, lat: float, lon: float, *, speed_kt: float = 0.0,
         return Vector((inbound - 90.0 * from_side) % 360.0, "base",
                       abs(lateral) + out, from_side)
     to_centreline = (inbound - 90.0 * s) % 360.0
+    if after == "base" and out < p.gate_nm - 0.5:
+        # Reaching the centreline from here still joins inside the gate:
+        # continuing the base only makes the bad intercept closer. Turn
+        # the pattern back out and sequence it again.
+        return Vector(outbound, "downwind", out + abs(off) + p.base_nm, s)
     if after == "base" or (patterned and out >= p.base_nm - p.lead_nm):
         return Vector(to_centreline, "base", abs(off) + max(out, p.gate_nm), s)
     if not patterned and out >= p.base_nm \

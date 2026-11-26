@@ -352,6 +352,21 @@ class XPlaneTraffic:
                 if isinstance(e, dict) and e.get("t") in self._ROUTE_NAV_TYPES
                 and isinstance(e.get("id"), str) and e["id"].strip())
 
+    def nav_cycle(self) -> str:
+        """The AIRAC cycle installed in the simulator, when declared."""
+        with self._lock:
+            root = str(self.sysroot or "")
+        if not root:
+            return ""
+        try:
+            import os
+            path = os.path.join(root, "Custom Data", "cycle.json")
+            with open(path, encoding="utf-8") as f:
+                cycle = str(json.load(f).get("cycle", "")).strip()
+            return cycle if len(cycle) == 4 and cycle.isdigit() else ""
+        except (OSError, ValueError, TypeError):
+            return ""
+
     def fms_entries(self):
         """FMS entries annotated with any exact CDU CRZ ALT probe result."""
         with self._lock:

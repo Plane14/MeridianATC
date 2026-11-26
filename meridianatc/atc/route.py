@@ -807,7 +807,7 @@ def _fms_rows(route: Route) -> list[tuple[int, str, str, float, float, float]]:
     return rows
 
 
-def to_fms(route: Route) -> str:
+def to_fms(route: Route, cycle: str = "") -> str:
     """The route as an X-Plane 11+ flight plan (the ``1100`` text).
 
     This is the exact payload a ``FPLN`` datagram and
@@ -822,7 +822,10 @@ def to_fms(route: Route) -> str:
         return ""
     origin = route.origin or route.fixes[0].ident
     destination = route.destination or route.fixes[-1].ident
-    lines = ["I", "1100 Version", f"CYCLE {_airac_cycle()}"]
+    declared = str(cycle or "").strip()
+    if len(declared) != 4 or not declared.isdigit():
+        declared = _airac_cycle()
+    lines = ["I", "1100 Version", f"CYCLE {declared}"]
     lines.append(f"ADEP {origin}")
     if route.sid_runway:
         lines.append(f"DEPRWY RW{route.sid_runway}")

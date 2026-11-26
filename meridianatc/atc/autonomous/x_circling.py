@@ -416,6 +416,13 @@ class _Circling:
             floor,
             self.session.assigned_altitude_ft or 0.0,
             (getattr(recipe, "missed_alt_ft", 0.0) or 0.0))
+        # "Maintain until established" and the intercept vector died with
+        # the approach. Kept on the session they are read back as the
+        # missed approach's own clearance and steer the climb back toward
+        # the final it is leaving; the tower's new instructions replace
+        # them when they arrive.
+        self.session.assigned_altitude_ft = None
+        self.session.assigned_heading = None
         self.state.missed_nav = self._published_missed_nav(state)
         # From the landing flare the go-around is an approach again: the
         # phase owns the sub-step only from APPROACH down.
@@ -544,12 +551,18 @@ class _Circling:
             except Exception:
                 guidance = None
                 self.state.missed_nav = None
+        assigned = float(getattr(self.session, "assigned_altitude_ft", 0.0)
+                         or 0.0)
+        target = max(self.state.missed_alt_ft or 0.0, assigned)
         if guidance is not None and not guidance.done:
+            target = max(target, float(guidance.altitude_ft or 0.0))
+            remaining = target - (state.altitude_ft or 0.0)
             self._apply_flight_director(
                 state,
-                altitude=guidance.altitude_ft or self.state.missed_alt_ft,
-                vs_fpm=(guidance.vs_fpm
-                        if guidance.vs_fpm else self.performance.climb_fpm),
+                altitude=target,
+                vs_fpm=((guidance.vs_fpm
+                         if guidance.vs_fpm else self.performance.climb_fpm)
+                        if remaining > 150.0 else 0.0),
                 heading=guidance.heading if guidance.heading is not None else -1.0,
                 speed_kt=(guidance.speed_kt or self.performance.goaround_kt
                           or self.state.climb_kt or 180.0))
@@ -559,8 +572,10 @@ class _Circling:
             hdg = self.session.assigned_heading
             if hdg is None and self.state.runway_heading > 0:
                 hdg = self._magnetic(self.state.runway_heading, state)
-            self._apply_flight_director(state, altitude=self.state.missed_alt_ft,
-                                        vs_fpm=self.performance.climb_fpm,
+            remaining = target - (state.altitude_ft or 0.0)
+            self._apply_flight_director(state, altitude=target,
+                                        vs_fpm=(self.performance.climb_fpm
+                                                if remaining > 150.0 else 0.0),
                                         heading=hdg if hdg is not None else -1.0,
                                         speed_kt=(self.performance.goaround_kt
                                                   or self.state.climb_kt
@@ -569,7 +584,7 @@ class _Circling:
         # unless the weather sent this one and the one before it, in
         # which case the destination is out and the alternate gets it.
         alt = state.altitude_ft or 0.0
-        if alt >= self.state.missed_alt_ft - 150.0 \
+        if alt >= target - 150.0 \
                 and abs(state.vertical_speed_fpm or 0.0) < 300:
             self.state.stabilized = False
             self.state.configured = ""

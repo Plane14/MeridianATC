@@ -290,7 +290,8 @@ def test_a_go_around_drops_the_modes_the_approach_armed():
     flight.state.ap_speed_mode = True
     flight.state.ap_nav_mode = True
     flight._field_elevation = Mock(return_value=0.0)
-    flight.session = SimpleNamespace(assigned_altitude_ft=0.0)
+    flight.session = SimpleNamespace(assigned_altitude_ft=1800.0,
+                                     assigned_heading=182.0)
     flight._prop_levers = Mock()
     flight._g_pull_cap = Mock(return_value=0.3)
     flight._perf = SimpleNamespace(goaround_kt=0.0)
@@ -307,6 +308,8 @@ def test_a_go_around_drops_the_modes_the_approach_armed():
     flight._dir.airspeed_hold.assert_called_with(False)
     assert flight.state.ap_master is False
     assert flight.state.ap_vs_mode is False
+    assert flight.session.assigned_altitude_ft is None
+    assert flight.session.assigned_heading is None
 
 
 def test_a_go_around_pull_yields_to_the_speed():
@@ -412,3 +415,37 @@ def test_the_first_officer_answers_to_his_first_name():
     who, _ = _addressed(fold("marie can you check the cabin"), "en",
                         names=[], first_officer=["mar"])
     assert who != FIRST_OFFICER
+
+
+def test_go_around_stops_commanding_climb_at_the_cleared_altitude():
+    """The live LECO scan: the tower's 3,000-ft go-around clearance was
+    read back correctly, but the vertical-speed hold stayed commanded at
+    climb rate and the Baron climbed through the level. Near or above the
+    cleared target the director gets altitude hold, not a continuing VS
+    climb, and a clearance received after the go-around started updates
+    that target."""
+    import time
+
+    flight = _flight()
+    flight.sim = Mock()
+    flight._dir = Mock()
+    flight._dir.sim = flight.sim
+    flight._apply_flight_director = Mock()
+    flight._flaps_up_one_detent = Mock()
+    flight._magnetic = Mock(return_value=32.0)
+    flight._perf = SimpleNamespace(climb_fpm=1500.0, goaround_kt=90.0)
+    flight.session = SimpleNamespace(assigned_altitude_ft=3000.0,
+                                     assigned_heading=32.0)
+    flight.state.sub = "go_around"
+    flight.state.go_around_at = time.monotonic() - 20.0
+    flight.state.missed_alt_ft = 2300.0
+    flight.state.missed_nav = None
+    flight.state.runway_heading = 210.0
+    state = SimpleNamespace(altitude_ft=2900.0, vertical_speed_fpm=1400.0,
+                            gear_down=False, has_position=False)
+
+    flight._fly_go_around(state, time.monotonic())
+
+    kwargs = flight._apply_flight_director.call_args.kwargs
+    assert kwargs["altitude"] == 3000.0
+    assert kwargs["vs_fpm"] == 0.0

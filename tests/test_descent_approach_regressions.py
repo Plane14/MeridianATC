@@ -609,3 +609,29 @@ def test_the_circle_steering_can_only_move_on():
                             altitude_ft=900.0, has_position=True)
     assert fo._fly_circle(state, recipe) is True
     assert fo.state.circle_index >= 2
+
+
+def test_a_thirty_degree_cut_inside_the_gate_is_not_an_intercept():
+    """The live LECO runway-21 scan: base at 3.0 nm out and 2.8 nm
+    beside the centreline was cleared straight onto the ILS. That cut
+    joined well inside the slow pattern's 5 nm gate, left the Baron high
+    on final, and caused the second go-around. Geometry that cannot
+    reach the gate is re-sequenced instead."""
+    from meridianatc.atc import vectors as vec
+    from meridianatc.atc.final import Final
+    from meridianatc.navdata.build import project
+
+    final = Final("21", 43.308586, -8.3719, 211.0)
+    lat, lon = project(final.lat, final.lon, (final.course + 180.0) % 360.0, 3.0)
+    lat, lon = project(lat, lon, (final.course + 90.0) % 360.0, 2.8)
+    leg = vec.vector(final, lat, lon, speed_kt=126.0,
+                     heading_true=122.0, after="base", side=1.0)
+    assert leg.leg == "downwind"
+    assert leg.heading_true == (final.course + 180.0) % 360.0
+
+    lat, lon = project(final.lat, final.lon, (final.course + 180.0) % 360.0, 7.0)
+    lat, lon = project(lat, lon, (final.course + 90.0) % 360.0, 1.0)
+    leg = vec.vector(final, lat, lon, speed_kt=126.0,
+                     heading_true=122.0, after="base", side=1.0)
+    assert leg.leg == "intercept"
+    assert leg.join_nm >= vec.SLOW.gate_nm - 0.5

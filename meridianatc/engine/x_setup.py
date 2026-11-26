@@ -299,6 +299,8 @@ class _Setup:
                     lambda: self.simtraffic.fms_entries()
                 self.source.fms_cruise_prober = \
                     self.simtraffic.request_cruise_probe
+                self.source.fms_cycle_reader = \
+                    self.simtraffic.nav_cycle
             drawing = self.simtraffic.attach()
             if not drawing and self.simtraffic.enabled:
                 self._warn_xplane_traffic()
