@@ -2281,6 +2281,24 @@ class _The_phase_machine:
     def _phase_taxi_in(self, state, now: float) -> None:
         """Taxi to the stand after landing."""
         self._run_checklist_for_phase("after_landing")
+        if self.session.phase == Phase.LANDED and (
+                getattr(self.session, "taxi_path", None)
+                or getattr(self.session, "taxi_route", None)):
+            # A path left from the departure is not a taxi-in route.
+            # Until the arrival instruction lands there is nowhere valid
+            # to follow: keeping the old line made the just-landed
+            # aeroplane measure itself against its origin airport and
+            # hold for being a hundred kilometres off that route.
+            self.session.taxi_route = []
+            self.session.taxi_nodes = []
+            self.session.taxi_path = []
+            self.session.taxi_crossings = []
+            self.session.taxi_rest = []
+            self.session.taxi_split_at = None
+            self.session.taxi_stand = None
+            self.session.hold_short_of = ""
+            self.session.crossing_index = 0
+            self.session.crossing_granted = ""
         # Off the runway: the tower, and after it whoever the frequency
         # belongs to, hears the vacated call it expects. It is retried
         # until it has actually gone out -- a call marked made on a

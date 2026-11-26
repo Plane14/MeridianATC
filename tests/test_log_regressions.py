@@ -625,6 +625,64 @@ def test_the_rollout_uses_reverse_then_less_brake():
     assert not light.state.reversers_out
 
 
+def test_taxi_in_does_not_follow_the_stale_departure_route():
+    """The live LECO landing entered taxi-in with the LEVX departure
+    path still on the session, measured itself 121 km off that line and
+    stopped. Until a taxi-in instruction exists there is no valid route:
+    the departure line is discarded and the aeroplane waits to be told."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    from meridianatc.atc.session import Phase
+    flight = _flier()
+    flight.session.phase = Phase.LANDED
+    flight.session.taxi_route = ["A", "B"]
+    flight.session.taxi_nodes = [("a", 1)]
+    flight.session.taxi_path = [(42.2, -8.6), (42.2, -8.5)]
+    flight.session.taxi_crossings = ["19"]
+    flight.session.taxi_rest = ["C"]
+    flight.session.taxi_split_at = (42.2, -8.5)
+    flight.session.taxi_stand = 4
+    flight.session.hold_short_of = "19"
+    flight.session.crossing_index = 1
+    flight.session.crossing_granted = "19"
+    flight.state.phase = AutonomousPhase.TAXI_IN
+    flight.state.sub = "taxi"
+    flight.state.vacated_call = True
+    flight._manage_radio = False
+    flight._taxi_along_path = Mock()
+    state = SimpleNamespace(flaps_index=0, ground_speed_kt=8.0)
+    flight._phase_taxi_in(state, 10.0)
+    assert flight.session.taxi_route == []
+    assert flight.session.taxi_nodes == []
+    assert flight.session.taxi_path == []
+    assert flight.session.taxi_crossings == []
+    assert flight.session.taxi_rest == []
+    assert flight.session.taxi_split_at is None
+    assert flight.session.taxi_stand is None
+    assert flight.session.hold_short_of == ""
+    assert flight.session.crossing_index == 0
+    assert flight.session.crossing_granted == ""
+
+
+def test_an_already_issued_taxi_in_route_is_not_discarded():
+    """A real arrival instruction can arrive before the rollout is
+    done; only the pre-instruction stale departure route is cleared."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    from meridianatc.atc.session import Phase
+    flight = _flier()
+    flight.session.phase = Phase.TAXI_IN
+    flight.session.taxi_route = ["S"]
+    flight.session.taxi_path = [(43.3, -8.38), (43.3, -8.39)]
+    flight.state.phase = AutonomousPhase.TAXI_IN
+    flight.state.sub = "taxi"
+    flight.state.vacated_call = True
+    flight._manage_radio = False
+    flight._taxi_along_path = Mock()
+    state = SimpleNamespace(flaps_index=0, ground_speed_kt=8.0)
+    flight._phase_taxi_in(state, 10.0)
+    assert flight.session.taxi_route == ["S"]
+    assert flight.session.taxi_path == [(43.3, -8.38), (43.3, -8.39)]
+
+
 def test_the_flare_phase_still_finishes_configuring_an_airborne_final():
     """The live go-around re-attack was handed to LANDING at six miles:
     the approach's flap gates stopped running, and the aeroplane crossed
