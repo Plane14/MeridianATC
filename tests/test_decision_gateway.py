@@ -306,3 +306,19 @@ def test_saturated_active_workers_fall_back_without_queueing():
     for thread in threads:
         thread.join()
     gateway.close()
+
+
+
+def test_close_during_pending_submissions_returns_promptly():
+    def complete(*_args, **_kwargs):
+        time.sleep(0.5)
+        return '{"choice": 2}'
+
+    provider = SimpleNamespace(complete=complete, available=lambda: True)
+    gateway = DecisionGateway(
+        provider, mode_for={"traffic.circuit_spacing": "shadow"})
+    for index in range(4):
+        gateway.submit(request(cache_key=f"close-{index}"))
+    started = time.monotonic()
+    gateway.close()
+    assert time.monotonic() - started < 0.2

@@ -365,6 +365,10 @@ class DecisionGateway:
             if self._closed:
                 return
             self._closed = True
+        # Executor cancellation takes the executors' own work-queue and
+        # future locks. Never hold the gateway lock across that handoff: a
+        # finishing worker needs the gateway lock to record telemetry, while
+        # shutdown cancellation reaches callbacks in the opposite direction.
         self._executor.shutdown(wait=False, cancel_futures=True)
         self._sync_executor.shutdown(wait=False, cancel_futures=True)
         if self._scopes:
