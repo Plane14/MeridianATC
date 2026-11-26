@@ -77,11 +77,17 @@ def safe_value(value: Any, *, _depth: int = 0, _seen: set[int] | None = None,
         if is_dataclass(value) and not isinstance(value, type):
             if _depth >= 8:
                 return f"<{type(value).__name__}>"
-            return {
-                item.name: safe_value(getattr(value, item.name), _depth=_depth + 1,
-                                      _seen=_seen, _key=item.name)
-                for item in fields(value)
-            }
+            settings = getattr(type(value), "__settings__", {}) or {}
+            out = {}
+            for item in fields(value):
+                setting = settings.get(item.name)
+                if getattr(setting, "kind", "") == "secret":
+                    out[item.name] = "<redacted>"
+                else:
+                    out[item.name] = safe_value(
+                        getattr(value, item.name), _depth=_depth + 1,
+                        _seen=_seen, _key=item.name)
+            return out
         if isinstance(value, dict):
             if _depth >= 8:
                 return f"<dict[{len(value)}]>"

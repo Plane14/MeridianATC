@@ -8,11 +8,15 @@ from unittest.mock import patch
 
 from meridianatc.atc.autonomous._shared import AutonomousState
 from meridianatc.atc.phraseology import Aircraft
-from meridianatc.atc.session import FlightSession
+from meridianatc.atc.session import FlightSession, Instruction
 from meridianatc.atc.speech import parse_callsign
 from meridianatc.logs import _plain
 from meridianatc.sim.state import AircraftState
-from meridianatc.state_trace import ParameterTracer, runtime_snapshot
+from meridianatc.state_trace import (
+    ParameterTracer,
+    runtime_snapshot,
+    safe_value,
+)
 
 
 def _session() -> FlightSession:
@@ -96,6 +100,17 @@ def test_config_secrets_are_traced_as_redacted_not_written():
     from meridianatc.config import Config
     config = Config()
     config.ai.api_key = "sk-test-secret-value"
+    config.speech.deepgram_key = "deepgram-test-secret"
     snap = runtime_snapshot(AircraftState(), AutonomousState(), _session(), config)
     assert snap["config"]["ai"]["api_key"] == "<redacted>"
-    assert "sk-test-secret-value" not in json.dumps(_plain(snap))
+    assert snap["config"]["speech"]["deepgram_key"] == "<redacted>"
+    written = json.dumps(_plain(snap))
+    assert "sk-test-secret-value" not in written
+    assert "deepgram-test-secret" not in written
+
+
+def test_identifier_keys_are_not_mistaken_for_credentials():
+    traced = runtime_snapshot(AircraftState(), AutonomousState(), _session())
+    traced["instruction"] = safe_value(Instruction(
+        kind="taxi", station_key="leco_app"))
+    assert traced["instruction"]["station_key"] == "leco_app"
