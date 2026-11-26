@@ -54,14 +54,22 @@ class _Situation_loop:
             return
         self._parameter_trace_at = now
         try:
-            from ..state_trace import ParameterTracer, runtime_snapshot, safe_value
+            from ..state_trace import (
+                ParameterTracer,
+                rotorcraft_snapshot,
+                runtime_snapshot,
+                safe_value,
+            )
             tracer = getattr(self, "_parameter_tracer", None)
             if tracer is None:
                 tracer = self._parameter_tracer = ParameterTracer()
-            autonomous = getattr(
-                getattr(self, "autonomous_flight", None), "state", None)
+            autonomous_flight = getattr(self, "autonomous_flight", None)
+            autonomous = getattr(autonomous_flight, "state", None)
             snapshot = runtime_snapshot(
                 state, autonomous, session, getattr(self, "config", None))
+            rotorcraft = getattr(autonomous_flight, "_heli", None)
+            if rotorcraft is not None:
+                snapshot["rotorcraft"] = rotorcraft_snapshot(rotorcraft)
             sim_values = getattr(getattr(self, "source", None), "_values", None)
             if isinstance(sim_values, dict):
                 snapshot["sim_values"] = safe_value(dict(sim_values))
