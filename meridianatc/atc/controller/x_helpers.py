@@ -75,6 +75,91 @@ class _Helpers:
         ends = flow.ends(departing) if flow is not None else []
         return normalize_runway(ends[0]) if ends else ""
 
+
+    def _ai_runway_choice(self, airport, weather, *, departing: bool,
+                          baseline: str) -> str:
+        """A bounded tactical runway choice, or the deterministic baseline.
+
+        Planned and preferential-flow runways never reach this method. The
+        candidates are only runway ends the current wind leaves inside the
+        same deterministic limits the baseline logic uses; the model may
+        choose among them, it may not invent one. Results are cached per
+        baseline because runway-in-use is a stable operational decision, not
+        a per-transmission coincidence.
+        """
+        gateway = getattr(self, "decision_gateway", None)
+        if gateway is None or not baseline or airport is None:
+            return baseline
+        try:
+            cache = getattr(self, "_ai_runway_cache", None)
+            if cache is None:
+                cache = self._ai_runway_cache = {}
+            key = (airport.ident, bool(departing), baseline)
+            if key in cache:
+                cached = cache[key]
+                if self.navdb.runway_within_limits(
+                        airport.ident, cached, weather.wind_dir,
+                        weather.wind_kt, gust_kt=weather.gust_kt,
+                        variable=weather.variable):
+                    return cached
+                cache.pop(key, None)
+            candidates = []
+            seen = set()
+            baseline_pair = set()
+            for rw in self.navdb.runways(airport.ident):
+                ends = {normalize_runway(rw.le_ident),
+                        normalize_runway(rw.he_ident)}
+                if baseline in ends:
+                    baseline_pair = ends
+                    break
+            for rw in self.navdb.runways(airport.ident):
+                for end, heading, _lat, _lon in rw.ends():
+                    name = normalize_runway(end)
+                    if not name or name in seen or heading is None:
+                        continue
+                    # A reversal of the same strip is a runway-change
+                    # operation requiring coordination this scope does not
+                    # own. Parallel or crossing wind-legal runways may be
+                    # compared; the reciprocal end may not be selected.
+                    if name != baseline and name in baseline_pair:
+                        continue
+                    if not self.navdb.runway_within_limits(
+                            airport.ident, name, weather.wind_dir,
+                            weather.wind_kt, gust_kt=weather.gust_kt,
+                            variable=weather.variable):
+                        continue
+                    seen.add(name)
+                    candidates.append({
+                        "id": name,
+                        "label": f"use runway {name}",
+                        "speed_kt": float(weather.wind_kt or 0.0),
+                        "max_speed_kt": 999.0,
+                    })
+            if len(candidates) < 2 or baseline not in seen:
+                cache[key] = baseline
+                return baseline
+            from ..decisioning import select_candidate
+            picked = select_candidate(
+                gateway,
+                "atc.runway_selection",
+                "Which legal runway end should be the runway in use?",
+                {"airport": airport.ident,
+                 "departing": bool(departing),
+                 "wind_dir": round(float(weather.wind_dir or 0.0), 1),
+                 "wind_kt": round(float(weather.wind_kt or 0.0), 1),
+                 "gust_kt": round(float(weather.gust_kt or 0.0), 1),
+                 "baseline": baseline},
+                candidates, baseline,
+                f"atc.runway:{airport.ident}:{departing}:{baseline}",
+                state_version=(int(float(weather.wind_dir or 0.0) / 10) * 100
+                               + int(float(weather.wind_kt or 0.0))),
+                timeout_s=0.5)
+            picked = picked if picked in seen else baseline
+            cache[key] = picked
+            return picked
+        except Exception:
+            return baseline
+
     def _departure_runway(self, airport, weather) -> str:
         if airport is None:
             return "01"
@@ -84,7 +169,9 @@ class _Helpers:
         flow = self._flow_runway(airport, weather, departing=True)
         if flow:
             return flow
-        return self._wind_runway(airport, weather, departing=True)
+        baseline = self._wind_runway(airport, weather, departing=True)
+        return self._ai_runway_choice(airport, weather, departing=True,
+                                      baseline=baseline)
 
     def _arrival_runway(self, airport, weather) -> str:
         if airport is None:
@@ -95,7 +182,9 @@ class _Helpers:
         flow = self._flow_runway(airport, weather, departing=False)
         if flow:
             return flow
-        return self._wind_runway(airport, weather, departing=False)
+        baseline = self._wind_runway(airport, weather, departing=False)
+        return self._ai_runway_choice(airport, weather, departing=False,
+                                      baseline=baseline)
 
     def _wind_runway(self, airport, weather, *, departing: bool) -> str:
         """The runway the wind gives, kept until the wind takes it away.

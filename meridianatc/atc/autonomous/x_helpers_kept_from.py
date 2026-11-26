@@ -79,9 +79,17 @@ class _Helpers_kept_from:
         self.state.aircraft_range_nm = range_nm
         log.info("Aircraft %s: estimated range %d NM", type_code, range_nm)
 
-    def _transition(self, new_phase: AutonomousPhase) -> None:
-        """Transition to a new autonomous phase."""
-        log.info("Autonomous phase: %s -> %s", self.state.phase.value, new_phase.value)
+    def _transition(self, new_phase: AutonomousPhase, *, reason: str = "deterministic") -> None:
+        """Transition to a new autonomous phase, with its provenance."""
+        log.info("Autonomous phase: %s -> %s (%s)",
+                 self.state.phase.value, new_phase.value, reason)
+        try:
+            from ...logs import decision
+            decision("autonomous_phase", previous=self.state.phase.value,
+                     phase=new_phase.value, reason=reason)
+        except Exception:
+            pass
+        self.state.phase_reason = reason
         self.state.previous_phase = self.state.phase
         self.state.phase = new_phase
         self.state.phase_entered_at = time.monotonic()
@@ -90,12 +98,37 @@ class _Helpers_kept_from:
         self._emit("info", f"Autonomous: {new_phase.value}", f"autonomous.phase.{new_phase.value}")
 
     def _set_error(self, message: str) -> None:
-        """Set error state."""
+        """Set error state, with the deterministic fallback named."""
         self.state.error_message = message
         self.state.error_count += 1
-        log.error("autonomous flight error in %s: %s",
-                  self.state.phase.value, message)
-        self._transition(AutonomousPhase.ERROR)
+        rotorcraft = bool(getattr(self, "_is_helicopter", False)
+                          or getattr(self, "_heli", None) is not None)
+        airborne = self.state.phase not in (
+            AutonomousPhase.PREFLIGHT, AutonomousPhase.PUSHBACK,
+            AutonomousPhase.REQUEST_CLEARANCE, AutonomousPhase.TAXI_OUT,
+            AutonomousPhase.HOLDING_SHORT, AutonomousPhase.LINE_UP,
+            AutonomousPhase.PARKED, AutonomousPhase.SHUTDOWN)
+        try:
+            from ..assurance import choose_fallback
+            fallback = choose_fallback(
+                rotorcraft=rotorcraft, airborne=airborne,
+                rotor_failed="rotor" in message.lower(),
+                engine_failed="engine" in message.lower())
+            self.state.fallback_action = fallback.name
+            try:
+                from ...logs import decision
+                decision("autonomous_fallback", phase=self.state.phase.value,
+                         rotorcraft=rotorcraft, airborne=airborne,
+                         action=fallback.name, intent=fallback.intent,
+                         reason=message)
+            except Exception:
+                pass
+            log.error("autonomous flight error in %s: %s; fallback=%s",
+                      self.state.phase.value, message, fallback.name)
+        except Exception:
+            log.error("autonomous flight error in %s: %s",
+                      self.state.phase.value, message)
+        self._transition(AutonomousPhase.ERROR, reason="error_fallback")
 
     def _emit(self, kind: str, text: str, key: str = "") -> None:
         """Emit an event."""

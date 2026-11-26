@@ -576,6 +576,9 @@ class RotorcraftFlight:
         self._adapt = getattr(owner, "_adapt", None)
         self._tq_warned = False
         self._nr_warned = ""
+        self._governor = None
+        self._governor_at = 0.0
+        self._governor_fault = ""
         # The situation loop runs faster than a pilot's hand can; the
         # controls are closed-loop, so a few passes a second is plenty and
         # every pass is a SimConnect round trip.
@@ -713,6 +716,9 @@ class RotorcraftFlight:
         # torque and rotor RPM where the model reports them.
         self._limits = limits_for(
             getattr(session.aircraft, "type_code", ""), HELICOPTER)
+        self._governor = None
+        self._governor_at = 0.0
+        self._governor_fault = ""
         self._tq_warned = False
         self._nr_warned = ""
         dest = session.destination
@@ -1022,8 +1028,9 @@ class RotorcraftFlight:
         # The speed a steady one-knot-a-second deceleration arrives at a
         # walk from: forty-five knots still in hand at two hundred feet,
         # the corner of the height-velocity curve, and off from there.
-        speed = min(math.sqrt(144.0 + 6600.0 * dist),
-                    self.state.ias_approach_kt)
+        from .trajectory import stopping_speed_kt
+        speed = stopping_speed_kt(dist, final_kt=12.0, decel_kt_s=0.9167,
+                                  cap_kt=self.state.ias_approach_kt)
         # The rate the line asks for at this groundspeed, never more
         # than the profile's descent onto a spot allows near the ground.
         vs = -gs * 101.3 * (APPROACH_FT_PER_NM / 6076.0) \
@@ -1503,7 +1510,7 @@ class RotorcraftFlight:
 
         # -- throttle ---------------------------------------------------------
         if throttle is not None:
-            self._throttle(throttle)
+            self._throttle(self._governed_throttle(state, throttle, coll))
 
         # -- envelope -----------------------------------------------------------
         self._protect(state, vs, ias, agl)
@@ -1515,6 +1522,52 @@ class RotorcraftFlight:
         # The collective axis is signed like a joystick's: -16383 is the
         # floor. A bare 0..16384 put zero collective at mid-stick.
         self._send(COLLECTIVE_SET, int(-16383.0 + pct / 100.0 * 32766.0))
+
+    def _rotor_governor(self):
+        """The power-on rotor-speed governor for this type, lazily built."""
+        if self._governor is None:
+            from .rotor import RotorSpeedGovernor
+            nr_min = self._limits.nr_min_pct or 95.0
+            nr_max = self._limits.nr_max_pct or 104.0
+            target = (nr_min + nr_max) / 2.0
+            self._governor = RotorSpeedGovernor(
+                target_pct=target, min_pct=nr_min, max_pct=nr_max,
+                deadband_pct=max(0.3, (nr_max - nr_min) * 0.08),
+                proportional=0.006, trim_rate=0.002, max_corr=0.12)
+        return self._governor
+
+    def _governed_throttle(self, state, base_axis: int,
+                           collective_pct: float) -> int:
+        """The stage's throttle demand with bounded rotor-speed correction.
+
+        The deterministic phase still owns the base demand. The governor only
+        trims it when rotor RPM is reported outside a narrow deadband, and a
+        persistent excursion is surfaced as an explicit underspeed/overspeed
+        fault. In autorotation and shutdown the rotor is deliberately not
+        governed by throttle.
+        """
+        if self.state.stage in ("autorotate", "shutdown", "done"):
+            return base_axis
+        rpm = float(getattr(state, "rotor_rpm_pct", 0.0) or 0.0)
+        if rpm <= 1.0:
+            return base_axis
+        now = time.monotonic()
+        previous = getattr(self, "_governor_at", 0.0)
+        dt = 0.25 if not previous else max(0.0, min(1.0, now - previous))
+        self._governor_at = now
+        governor = self._rotor_governor()
+        out = governor.update(base_axis / AXIS_MAX, rpm, dt,
+                              collective_pct=collective_pct)
+        if out.fault != self._governor_fault:
+            self._governor_fault = out.fault
+            if out.fault:
+                self._emit("warning",
+                           f"Rotor {out.fault} ({rpm:.0f}%): "
+                           "governor correcting the throttle",
+                           "autonomous.rotorcraft.governor_fault")
+            else:
+                log.info("rotor governor fault cleared at %.1f%%", rpm)
+        return int(out.throttle * AXIS_MAX)
 
     def _throttle(self, value: int) -> None:
         """The helicopter throttle events, best effort: the axis where the

@@ -2686,28 +2686,35 @@ class CrewDirector:
         never held behind the pick, and a notice a setting has refused
         is never offered to the model at all.
         """
-        if self.advisor is None:
+        gateway = getattr(self, "decision_gateway", None)
+        gateway_mode = (gateway.mode("crew.notice_priority")
+                        if gateway is not None else "off")
+        if gateway is not None and gateway_mode == "off":
+            return calls
+        if self.advisor is None and gateway is None:
             return calls
         if any(call.cue in SAFETY_NOTICES for call in calls):
             # Something urgent is already due: safety calls first, the
             # rest behind them, and nothing waits on the model. A shadow
             # advisor only observes: the deterministic order stands.
-            if getattr(self.advisor, "shadow", False):
+            if gateway is not None:
+                if gateway_mode == "shadow":
+                    return calls
+            elif getattr(self.advisor, "shadow", False):
                 return calls
             return sorted(calls, key=lambda c: c.cue not in SAFETY_NOTICES)
         refused = [call for call in calls if self.refused(call.cue)]
         rest = [call for call in calls if call not in refused]
         if not rest:
             return calls
-        if not getattr(self.advisor, "model_available", True):
+        if gateway is None and not getattr(self.advisor, "model_available", True):
             # The provider is failing: back to saying everything due, not
             # to a decline cached while it still answered.
             return calls
         signature = tuple(sorted(call.cue for call in rest))
         now = time.monotonic()
         cached = self._notice_pick
-        if cached is not None and cached[0] == signature \
-                and now - cached[2] < NOTICE_REASK_S:
+        if cached is not None and cached[0] == signature                 and now - cached[2] < NOTICE_REASK_S:
             picked = cached[1]
         else:
             options = [call.cue.replace("_", " ")
@@ -2715,13 +2722,40 @@ class CrewDirector:
                        for call in rest]
             where = (session.phase.name.lower() if session.phase is not None
                      else "in flight")
-            picked = self.advisor.pick(
-                "fo_notice",
-                f"You are the first officer; the aeroplane is {where}, "
-                f"{int(state.altitude_ft or 0)} feet"
-                f"{', on the ground' if state.on_ground else ''}. Which of "
-                "these, if any, do you mention to the captain now?",
-                options, allow_none=True, default=None, wait_s=1.0)
+            question = (f"You are the first officer; the aeroplane is {where}, "
+                        f"{int(state.altitude_ft or 0)} feet"
+                        f"{', on the ground' if state.on_ground else ''}. Which of "
+                        "these, if any, do you mention to the captain now?")
+            if gateway is not None:
+                from .decisioning import select_candidate
+                candidates = [{"id": "all_due",
+                               "label": "mention everything that is due"}]
+                candidates.extend(
+                    {"id": call.cue,
+                     "label": call.cue.replace("_", " ")
+                              + (f" ({call.why})" if call.why else ""),
+                     "safety_critical": call.cue in SAFETY_NOTICES}
+                    for call in rest)
+                chosen = select_candidate(
+                    gateway, "crew.notice_priority", question,
+                    {"phase": where, "altitude_ft": int(state.altitude_ft or 0),
+                     "on_ground": bool(state.on_ground),
+                     "notice_count": len(rest)},
+                    candidates, "all_due",
+                    "crew.notices:" + ";".join(signature),
+                    state_version=hash(signature) & 0x7fffffff,
+                    timeout_s=1.0, allow_none=True)
+                if chosen == "all_due":
+                    picked = None
+                elif chosen == "none":
+                    picked = -1
+                else:
+                    picked = next((i for i, call in enumerate(rest)
+                                   if call.cue == chosen), None)
+            else:
+                picked = self.advisor.pick(
+                    "fo_notice", question, options,
+                    allow_none=True, default=None, wait_s=1.0)
             self._notice_pick = (signature, picked, now)
         if picked is None:
             # Model absent, slow, or shadowing: everything due is said.

@@ -2379,8 +2379,10 @@ Off by default, and deliberately narrow. A language model has three jobs,
 all optional: understanding a transmission the phraseology rules couldn't
 place, rewording a reply the engine already composed, and proposing among
 options the engine already enumerated. It never writes a clearance, never
-invents an option, and never decides anything the engine couldn't have
-decided alone.
+invents an option, writes a simulator axis or dataref, or decides anything
+the engine couldn't have decided alone. Movement authority is candidate
+selection only: the deterministic pilot/controller still computes and flies
+the target.
 
 ```
 pilot speech -> recogniser -> rules ---------------> intent
@@ -2477,6 +2479,31 @@ Where it is heard, today:
 | Traffic advisories | Choose which qualifying contact to call out first — or decline the call |
 | Traffic pilots | Word their reply, within the facts of their own flight |
 | First officer | Word his answers, pick which due non-safety notice is worth a mention now, and pick which fitting checklist to offer — or none yet |
+| `traffic.circuit_spacing` | Choose turn-base versus extend-downwind at an already legal circuit decision point |
+| `crew.notice_priority` | Choose which due non-safety crew notice is worth a mention now, or none |
+| `fo.weather_deviation` | Choose the safe side of an already forced weather deviation |
+| `atc.runway_selection` | Choose among wind-legal runway ends where no planned or preferential-flow runway applies |
+
+The tactical scopes are governed per scope group and default off:
+
+```yaml
+ai:
+  decisions: true
+  traffic_decisions: shadow   # off | shadow | active
+  crew_decisions: shadow
+  fo_decisions: off
+  atc_decisions: off
+  decision_timeout_ms: 800
+  movement_targets: candidates_only
+```
+
+`shadow` asks the model and logs the disagreement but executes the
+deterministic baseline. `active` may execute a valid model choice. In both
+modes the same operational monitor vets the option: runway protection,
+separation, terrain/envelope facts supplied by the deterministic candidate
+producer, and explicit safety-critical exclusions. A timeout, malformed
+answer, unavailable provider or veto is the baseline. Takeoff and landing
+release authority remains deterministic.
 
 A proposal the engine can't validate — out of range, unparseable, a new
 fact, a changed operational word — keeps the deterministic answer. Picks
@@ -4423,8 +4450,11 @@ worth knowing about:
 | `toolbar.port` | `8787` | the fixed loopback port the panel finds the application on |
 | `ai.provider` | `none` | `ollama`, `local`/`openatc` (a local OpenAI-compatible server), `anthropic`, or an OpenAI-compatible endpoint (`openrouter`, `openai`, `groq`, `deepseek`, `custom`) to understand non-standard phrasing |
 | `ai.phrasing` | `false` | `true` to let the model reword engine-composed transmissions, fact-checked before they're spoken |
-| `ai.decisions` | `false` | `true` to let the model propose among engine-enumerated options (traffic picks, FO notices, wording) — every proposal validated, deterministic fallback |
-| `ai.decisions_shadow` | `false` | `true` to log what the model would have picked while the deterministic answer goes out |
+| `ai.decisions` | `false` | `true` to let the model propose among engine-enumerated options — every proposal validated, deterministic fallback |
+| `ai.decisions_shadow` | `false` | `true` to log what the model would have picked while the deterministic answer goes out; also caps every active scope at shadow |
+| `ai.traffic_decisions` / `crew_decisions` / `fo_decisions` / `atc_decisions` | `off` | per-scope `off`, `shadow` or `active` tactical proposals; active choices remain candidate-only and validated |
+| `ai.decision_timeout_ms` | `800` | maximum wait for a tactical model answer before the deterministic baseline executes |
+| `ai.movement_targets` | `candidates_only` | movement authority is deliberately limited to engine-generated candidates |
 | `speech.model` | `small.en` | `medium` if your CPU has headroom; the `.en` suffix is dropped automatically unless the languages are pinned to English |
 | `ptt.key` | `grave` | any key you do not use in the sim |
 | `atc.dialect` | `auto` | force `faa` or `icao` instead of following the region |

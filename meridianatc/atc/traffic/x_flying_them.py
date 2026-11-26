@@ -539,10 +539,35 @@ class _Flying_them:
             # heard the tower and did it anyway.
             holding = flight.extending or self._already_told(flight, "extend")
             if not holding and along <= -self._base_nm(flight):
-                if self._room_on_final(
-                        -along, ignore=flight,
-                        within_s=self._rollout_s(flight, across),
-                        runway=flight.runway):
+                room = self._room_on_final(
+                    -along, ignore=flight,
+                    within_s=self._rollout_s(flight, across),
+                    runway=flight.runway)
+                baseline = "turn_base" if room else "extend_downwind"
+                # The only AI movement authority here is tactical selection
+                # between two legal circuit outcomes. The flight model below
+                # still flies whichever target the deterministic logic sets,
+                # and a no-room base turn is vetoed by the shared candidate
+                # validator before it can be selected.
+                from ..decisioning import select_candidate
+                chosen = select_candidate(
+                    getattr(self, "decision_gateway", None),
+                    "traffic.circuit_spacing",
+                    "Should this circuit traffic turn base now or extend downwind?",
+                    {"phase": flight.phase, "runway": flight.runway,
+                     "along_nm": round(along, 2),
+                     "final_gap": bool(room),
+                     "speed_kt": round(flight.ground_speed_kt, 1)},
+                    [{"id": "turn_base", "label": "turn base into the available gap",
+                      "separation_nm": 99.0 if room else 0.0,
+                      "min_separation_nm": 0.5},
+                     {"id": "extend_downwind", "label": "extend downwind for spacing",
+                      "speed_kt": round(flight.ground_speed_kt, 1),
+                      "max_speed_kt": 500.0}],
+                    baseline,
+                    f"circuit:{getattr(flight, 'written', id(flight))}:{flight.runway}",
+                    timeout_s=0.35)
+                if chosen == "turn_base":
                     flight.phase = "base"
                 else:
                     # No gap by the time it would be there. It carries on

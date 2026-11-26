@@ -882,6 +882,26 @@ class _Shared_helpers:
                 # deadband return left riding at climb power forever.
                 return
         lever = max(0.05, min(0.97, lever))
+        # Total-energy coordination: height owed and speed owed both cost
+        # energy, so the lever sees a small bounded share of the combined
+        # deficit instead of treating airspeed as the whole aeroplane. The
+        # phase floors/caps and the engine-limit ceiling below still own the
+        # final lever; this is a deterministic TECS-like bias, not an AI or
+        # autopilot replacement.
+        try:
+            target_alt = float(self._altitude_target(state) or 0.0)
+        except (TypeError, ValueError, AttributeError):
+            target_alt = 0.0
+        if target_alt and not overspeed:
+            from ..trajectory import energy_speed_height
+            altitude = float(getattr(state, "altitude_ft", 0.0) or 0.0)
+            energy = energy_speed_height(
+                float(target_alt) - altitude, target_kt - ias, ias,
+                max_correction_ft=400.0)
+            lever += energy.throttle * 0.08
+            if energy.priority == "speed":
+                lever = min(0.95, lever + 0.05)
+            lever = max(0.05, min(0.97, lever))
         # The engine watch's ceiling: a gauge past its published red line
         # gets power off, whatever the speed loop wanted.
         lever = min(lever, self._engine_limit_cap(state))

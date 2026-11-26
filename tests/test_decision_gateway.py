@@ -1,0 +1,213 @@
+from __future__ import annotations
+
+import threading
+import time
+from types import SimpleNamespace
+
+import pytest
+
+from meridianatc.llm.contracts import (
+    NONE_ID,
+    ContractError,
+    DecisionOption,
+    DecisionRequest,
+)
+from meridianatc.llm.gateway import DecisionGateway
+
+
+def provider(raw='{"choice": 2}', *, available=True):
+    return SimpleNamespace(
+        complete=lambda *a, **k: raw,
+        classify=lambda *a, **k: raw,
+        available=lambda: available,
+        name="stub",
+    )
+
+
+def request(**kw):
+    options = kw.pop("options", (
+        DecisionOption("baseline", "continue as cleared"),
+        DecisionOption("hold", "hold position"),
+        DecisionOption("avoid", "take the weather deviation"),
+    ))
+    values = dict(
+        scope="traffic.circuit_spacing",
+        question="What should the traffic do?",
+        state_digest={"airport": "EGLL", "airborne": True},
+        state_version=7,
+        options=options,
+        baseline_id="baseline",
+        cache_key="flight-1",
+        timeout_s=0.5,
+    )
+    values.update(kw)
+    return DecisionRequest(**values)
+
+
+def test_contract_rejects_duplicate_ids():
+    with pytest.raises(ContractError):
+        request(options=(
+            DecisionOption("same", "one"),
+            DecisionOption("same", "two")))
+
+
+def test_contract_rejects_a_missing_baseline():
+    with pytest.raises(ContractError):
+        request(baseline_id="missing")
+
+
+def test_active_valid_model_choice_is_selected():
+    gateway = DecisionGateway(provider(), mode_for={"traffic.circuit_spacing": "active"})
+    result = gateway.select_sync(request())
+    assert result.source == "model"
+    assert result.selected_id == "hold"
+    assert result.model_id == "hold"
+    assert result.valid
+    gateway.close()
+
+
+def test_shadow_logs_model_choice_but_selects_baseline():
+    gateway = DecisionGateway(provider(), mode_for={"traffic.circuit_spacing": "shadow"})
+    result = gateway.select_sync(request())
+    assert result.source == "shadow"
+    assert result.selected_id == "baseline"
+    assert result.model_id == "hold"
+    assert result.valid
+    gateway.close()
+
+
+def test_malformed_choice_falls_back():
+    gateway = DecisionGateway(provider("I choose the second one"),
+                              mode_for={"traffic.circuit_spacing": "active"})
+    result = gateway.select_sync(request())
+    assert result.source == "fallback"
+    assert result.selected_id == "baseline"
+    assert not result.valid
+    assert result.reason == "invalid choice"
+    gateway.close()
+
+
+def test_none_is_an_explicit_active_outcome():
+    gateway = DecisionGateway(provider('{"choice": "none"}'),
+                              mode_for={"traffic.circuit_spacing": "active"})
+    result = gateway.select_sync(request())
+    assert result.source == "none"
+    assert result.selected_id == NONE_ID
+    gateway.close()
+
+
+def test_none_rejected_when_not_allowed():
+    gateway = DecisionGateway(provider('{"choice": "none"}'),
+                              mode_for={"traffic.circuit_spacing": "active"})
+    result = gateway.select_sync(request(allow_none=False))
+    assert result.selected_id == "baseline"
+    assert result.reason == "none not allowed"
+    gateway.close()
+
+
+def test_unavailable_provider_never_throws_and_falls_back():
+    gateway = DecisionGateway(provider(available=False),
+                              mode_for={"traffic.circuit_spacing": "active"})
+    result = gateway.select_sync(request())
+    assert result.selected_id == "baseline"
+    assert result.reason == "provider unavailable"
+    gateway.close()
+
+
+def test_off_scope_makes_no_provider_call():
+    called = []
+    p = SimpleNamespace(
+        complete=lambda *a, **k: called.append(a) or '{"choice": 2}',
+        available=lambda: True,
+    )
+    gateway = DecisionGateway(p, mode_for={"traffic.circuit_spacing": "off"})
+    result = gateway.select_sync(request())
+    assert result.source == "off"
+    assert result.selected_id == "baseline"
+    assert called == []
+    gateway.close()
+
+
+def test_operational_validator_vetoes_a_model_pick():
+    gateway = DecisionGateway(
+        provider(), mode_for={"traffic.circuit_spacing": "active"},
+        validators={"traffic.circuit_spacing": lambda req, pick: "runway protected"})
+    result = gateway.select_sync(request())
+    assert result.source == "veto"
+    assert result.selected_id == "baseline"
+    assert result.model_id == "hold"
+    assert result.reason == "runway protected"
+    gateway.close()
+
+
+def test_safety_critical_candidate_is_never_model_selected():
+    gateway = DecisionGateway(provider(), mode_for={"traffic.circuit_spacing": "active"})
+    req = request(options=(
+        DecisionOption("baseline", "continue"),
+        DecisionOption("hold", "hold", safety_critical=True),
+    ))
+    result = gateway.select_sync(req)
+    assert result.source == "veto"
+    assert result.selected_id == "baseline"
+    gateway.close()
+
+
+def test_sync_timeout_falls_back():
+    wait = threading.Event()
+
+    def slow(*a, **k):
+        wait.wait(2.0)
+        return '{"choice": 2}'
+
+    p = SimpleNamespace(complete=slow, available=lambda: True)
+    gateway = DecisionGateway(p, mode_for={"traffic.circuit_spacing": "active"})
+    started = time.monotonic()
+    result = gateway.select_sync(request(timeout_s=0.1))
+    assert result.selected_id == "baseline"
+    assert time.monotonic() - started < 1.0
+    wait.set()
+    gateway.close()
+
+
+def test_submit_is_async_deduplicates_and_current_marks_state_stale():
+    release = threading.Event()
+
+    def slow(*a, **k):
+        release.wait(2.0)
+        return '{"choice": 2}'
+
+    p = SimpleNamespace(complete=slow, available=lambda: True)
+    gateway = DecisionGateway(p, mode_for={"traffic.circuit_spacing": "active"})
+    req = request()
+    gateway.submit(req)
+    gateway.submit(req)
+    assert gateway.scopes[req.scope]["deduplicated"] == 1
+    assert gateway.current(req.scope, req.cache_key, req.state_version) is None
+    release.set()
+    deadline = time.monotonic() + 2.0
+    result = None
+    while time.monotonic() < deadline:
+        result = gateway.current(req.scope, req.cache_key, req.state_version)
+        if result is not None:
+            break
+        time.sleep(0.01)
+    assert result is not None
+    assert result.selected_id == "hold"
+    assert not result.stale
+    stale = gateway.current(req.scope, req.cache_key, req.state_version + 1)
+    assert stale is not None and stale.stale
+    gateway.close()
+
+
+def test_config_modes_are_mastered_and_shadow_is_a_demotion():
+    from meridianatc.config import AiConfig
+
+    ai = AiConfig(decisions=True, traffic_decisions="active",
+                  fo_decisions="shadow", atc_decisions="active")
+    assert ai.decision_mode("traffic.circuit_spacing") == "active"
+    assert ai.decision_mode("fo.goaround") == "shadow"
+    assert ai.decision_mode("crew.priority") == "off"
+    ai.decisions_shadow = True
+    assert ai.decision_mode("traffic.circuit_spacing") == "shadow"
+    ai.decisions = False
+    assert ai.decision_mode("traffic.circuit_spacing") == "off"
