@@ -57,7 +57,7 @@ double lastStatus = -1e9, lastNativePositions = -1e9;
 Udp udp;
 sockaddr_in peer{};
 Session session;
-XPLMFlightLoopID loop = nullptr;
+XPLMFlightLoopID loop = nullptr, retireLoop = nullptr;
 XPLMMenuID menu = nullptr;
 int menuIndex = -1;
 XPLMDataRef connectedRef = nullptr, aircraftRef = nullptr;
@@ -215,7 +215,34 @@ public:
     }
 };
 std::map<std::string, std::unique_ptr<TrafficAircraft>> aircraft;
+std::vector<std::unique_ptr<TrafficAircraft>> retiredAircraft;
 std::set<std::string> unmatched;
+
+float DestroyRetiredAircraft(float, float, int, void*) {
+    // X-Plane wants instances created and destroyed before the flight
+    // model. Traffic removal is noticed in the networking callback after
+    // it, so the object shell waits one frame and dies here instead.
+    retiredAircraft.clear();
+    return 0.0f;
+}
+void RetireAircraft(std::unique_ptr<TrafficAircraft>& ac) {
+    if (retireLoop) {
+        retiredAircraft.push_back(std::move(ac));
+        XPLMScheduleFlightLoop(retireLoop, -1.0f, 0);
+    } else {
+        ac.reset();
+    }
+}
+void RetireAircraft(const std::string& id) {
+    auto it = aircraft.find(id);
+    if (it == aircraft.end()) return;
+    RetireAircraft(it->second);
+    aircraft.erase(it);
+}
+void RetireAllAircraft() {
+    for (auto& [id, ac] : aircraft) RetireAircraft(ac);
+    aircraft.clear();
+}
 
 void TCAS();
 
@@ -717,16 +744,23 @@ void TCAS() {
 void Sync(double now) {
     unmatched.clear();
     for (auto it = aircraft.begin(); it != aircraft.end();) {
-        if (!session.snapshot.count(it->first)) it = aircraft.erase(it); else ++it;
+        if (!session.snapshot.count(it->first)) {
+            RetireAircraft(it->second);
+            it = aircraft.erase(it);
+        } else ++it;
     }
     for (const auto& [id, s] : session.snapshot) {
         try {
             auto it = aircraft.find(id);
             auto key = s.type + "\n" + s.op + "\n" + s.livery;
-            if (it != aircraft.end() && it->second->modelKey != key) { aircraft.erase(it); it = aircraft.end(); }
+            if (it != aircraft.end() && it->second->modelKey != key) {
+                RetireAircraft(it->second);
+                aircraft.erase(it);
+                it = aircraft.end();
+            }
             if (it == aircraft.end()) aircraft.emplace(id, std::make_unique<TrafficAircraft>(s, now));
             else it->second->Apply(s, now);
-        } catch (const std::exception&) { aircraft.erase(id); unmatched.insert(id); }
+        } catch (const std::exception&) { RetireAircraft(id); unmatched.insert(id); }
     }
 }
 struct FmsFlightPlanApi {
@@ -871,7 +905,7 @@ float Poll(float, float, int, void*) {
     try {
         double now = Now();
         if (session.Expire(now)) {
-            aircraft.clear(); unmatched.clear(); ClearNative();
+            RetireAllAircraft(); unmatched.clear(); ClearNative();
         }
         // The sim clears the AI override when it pleases; the engine's
         // control writes only hold if the flag keeps standing.
@@ -937,7 +971,7 @@ void Menu(void*, void* item) {
             case 0: visible = !visible; for (auto& [id, ac] : aircraft) ac->SetVisible(visible); break;
             case 1: config.labels = !config.labels; Labels(); break;
             case 2: config.tcas = !config.tcas; TCAS(); break;
-            case 3: aircraft.clear(); LoadCSL(); Sync(Now()); break;
+            case 3: RetireAllAircraft(); LoadCSL(); Sync(Now()); break;
             case 4: Log(Status(Now()).dump()); break;
         }
         Checks();
@@ -948,6 +982,8 @@ int AircraftCount(void*) { return static_cast<int>(session.snapshot.size()); }
 void Shutdown() {
     ClearNative();
     if (loop) { XPLMDestroyFlightLoop(loop); loop = nullptr; }
+    if (retireLoop) { XPLMDestroyFlightLoop(retireLoop); retireLoop = nullptr; }
+    retiredAircraft.clear();
     for (auto layer : mapLayers) XPLMDestroyMapLayer(layer);
     mapLayers.clear();
     if (followmeInstance) { XPLMDestroyInstance(followmeInstance); followmeInstance = nullptr; }
@@ -998,6 +1034,11 @@ PLUGIN_API int XPluginEnable() {
         XPLMRegisterMapCreationHook(MapOpened, nullptr);
         if (XPLMMapExists(XPLM_MAP_USER_INTERFACE))
             MapOpened(XPLM_MAP_USER_INTERFACE, nullptr);
+        XPLMCreateFlightLoop_t retiredParams{}; retiredParams.structSize = sizeof(retiredParams);
+        retiredParams.phase = xplm_FlightLoop_Phase_BeforeFlightModel;
+        retiredParams.callbackFunc = DestroyRetiredAircraft;
+        retireLoop = XPLMCreateFlightLoop(&retiredParams);
+        if (!retireLoop) throw std::runtime_error("Cannot create retirement flight loop");
         XPLMCreateFlightLoop_t params{}; params.structSize = sizeof(params);
         params.phase = xplm_FlightLoop_Phase_AfterFlightModel; params.callbackFunc = Poll;
         loop = XPLMCreateFlightLoop(&params);
