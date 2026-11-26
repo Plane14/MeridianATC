@@ -10,6 +10,8 @@ from ._shared import (
 
 
 class _Situation_loop:
+    PARAMETER_TRACE_S = 5.0
+
     # ------------------------------------------------------------------
     # situation loop
     # ------------------------------------------------------------------
@@ -39,6 +41,43 @@ class _Situation_loop:
         with timed("tick", warn_over_ms=1500):
             self._one_tick()
 
+    def _trace_state_parameters(self, state, session) -> None:
+        """The complete runtime parameter tree, as a reconstructable feed.
+
+        A full snapshot is written at startup and every few minutes; the
+        samples between carry only leaf-level changes. That is what makes
+        "every parameter" practical in a rotating jsonl log. This trace is
+        diagnostic data and must never break the situation loop itself.
+        """
+        now = time.monotonic()
+        if now - getattr(self, "_parameter_trace_at", 0.0) < self.PARAMETER_TRACE_S:
+            return
+        self._parameter_trace_at = now
+        try:
+            from ..state_trace import ParameterTracer, runtime_snapshot, safe_value
+            tracer = getattr(self, "_parameter_tracer", None)
+            if tracer is None:
+                tracer = self._parameter_tracer = ParameterTracer()
+            autonomous = getattr(
+                getattr(self, "autonomous_flight", None), "state", None)
+            snapshot = runtime_snapshot(
+                state, autonomous, session, getattr(self, "config", None))
+            sim_values = getattr(getattr(self, "source", None), "_values", None)
+            if isinstance(sim_values, dict):
+                snapshot["sim_values"] = safe_value(dict(sim_values))
+            full, changes = tracer.observe(snapshot, now)
+            if full:
+                log.info("state trace: full snapshot",
+                         extra={"state_snapshot": snapshot})
+            elif changes:
+                log.info("state trace: %d parameter changes", len(changes),
+                         extra={"state_changes": changes})
+            self._parameter_trace_failed = False
+        except Exception:
+            if not getattr(self, "_parameter_trace_failed", False):
+                log.warning("state parameter trace failed", exc_info=True)
+            self._parameter_trace_failed = True
+
     def _one_tick(self) -> None:
         # Before anything is read: is the thing being read from still there?
         self._watch_simulator()
@@ -58,6 +97,7 @@ class _Situation_loop:
         # thread: the radio to the player, a crew line to its queue slot.
         self.synth.drain_renders()
         session = self.session
+        self._trace_state_parameters(state, session)
         if session is None:
             return
         # Every watcher below reads the debounced on-ground flag: the raw one

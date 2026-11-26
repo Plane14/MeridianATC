@@ -4344,6 +4344,13 @@ question.
 | `meridianatc.jsonl` | the same records as JSON lines, with whatever fields the call site attached |
 | `radio.jsonl` | every transmission, with the intent, the confidence and the numbers the parser took out of it -- and where each taxi route came from: the simulator's taxiways, or the invented route and why |
 
+`meridianatc.jsonl` also carries the complete runtime parameter trace:
+`state_snapshot` is the full aircraft, session, autopilot/FO, adapter-value
+and non-secret configuration tree at startup and every five minutes, while
+`state_changes` records each parameter that changed between five-second
+samples with its previous and new value. Credential fields are redacted
+before they reach the file.
+
 The third one is the reason this exists. "It heard me wrong" becomes a
 question with an answer:
 
