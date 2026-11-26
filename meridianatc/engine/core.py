@@ -277,13 +277,22 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         # deterministic answer stands on any failure -- the same provider and
         # consent rules as phrasing.
         self.decisions = None
+        self.decision_gateway = None
         if self.config.ai.decisions and provider is not None \
                 and not self.config.network.offline \
                 and (not is_cloud or self.config.network.cloud_consent):
             from ..llm.decisions import Decisions
+            from ..llm.gateway import DecisionGateway
             self.decisions = Decisions(
                 provider, shadow=self.config.ai.decisions_shadow)
+            from ..atc.decisioning import candidate_validator
+            self.decision_gateway = DecisionGateway(
+                provider, mode_for=self.config.ai.decision_mode,
+                validators={"*": candidate_validator},
+                default_timeout_s=max(
+                    0.05, self.config.ai.decision_timeout_ms / 1000.0))
         self.crew.advisor = self.decisions
+        self.crew.decision_gateway = self.decision_gateway
         self.brain = ControllerBrain(
             self.navdb, self._base_phraseology(),
             strict_icao_digits=self.config.atc.strict_icao_digits,
@@ -291,6 +300,7 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         )
         self.brain.realism = self.config.immersion.controller
         self.brain.hearing = self.config.speech
+        self.brain.decision_gateway = self.decision_gateway
         # Autonomous flight (First Officer flying the aircraft). Built after
         # the brain it talks to; the session arrives with begin_flight.
         # Always built: the panel's engage button needs the machine to
@@ -302,6 +312,8 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
                 lambda: self.state, self.emit, use_route=self.use_route
             )
         )
+        if self.autonomous_flight is not None:
+            self.autonomous_flight.decision_gateway = self.decision_gateway
         # When the search for an enroute frequency last came up empty, so a
         # flight over a country that publishes none is not made to look for
         # one on every pass of the situation loop.
@@ -373,6 +385,7 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         # The same advisor words a traffic crew's answers; PilotsTalking
         # treats it as optional.
         self.traffic.advisor = self.decisions
+        self.traffic.decision_gateway = self.decision_gateway
         self.traffic.max_invented = self.config.traffic.in_simulator_limit
         # The invented aeroplanes' own switch (traffic.invented); the
         # situation loop re-reads it every tick so a mid-flight toggle

@@ -13,9 +13,47 @@ import time
 from pathlib import Path
 
 import yaml
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
+
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+except ModuleNotFoundError:  # test environments install the CLI's light deps only
+    class Console:
+        """Small stdout fallback used when Rich is not installed."""
+
+        def print(self, *objects, **_kwargs) -> None:
+            print(*objects)
+
+        def rule(self, title: str = "", **_kwargs) -> None:
+            print(title)
+
+        def input(self, prompt: str = "", **_kwargs) -> str:
+            return input(prompt)
+
+    class Panel:
+        def __init__(self, renderable, *_, **__):
+            self.renderable = renderable
+
+        def __str__(self) -> str:
+            return str(self.renderable)
+
+    class Table:
+        def __init__(self, *_, title: str = "", **__):
+            self.title = title
+            self.rows = []
+
+        def add_column(self, *_args, **_kwargs) -> None:
+            return None
+
+        def add_row(self, *values, **_kwargs) -> None:
+            self.rows.append(values)
+
+        def __str__(self) -> str:
+            lines = [self.title] if self.title else []
+            lines.extend("  ".join(str(value) for value in row)
+                         for row in self.rows)
+            return "\n".join(lines)
 
 from . import __version__, logs
 from .audio.voices import VoicesMissing

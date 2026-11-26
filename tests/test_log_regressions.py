@@ -316,6 +316,31 @@ def test_a_taxi_readback_says_the_icao_altimeter():
     assert not instruction.mismatches(heard)
 
 
+def test_a_taxi_readback_says_the_qnh():
+    """The live loop: Ground issued QNH 1017 with the taxi route, the FO
+    read back only route and runway, and the controller correctly answered
+    negative twice. The issued altimeter is part of the spoken readback."""
+    from meridianatc.atc.copilot import readback
+    from meridianatc.atc.intents import IntentParser
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import Instruction
+    from meridianatc.atc.speech import Callsign
+
+    aircraft = Aircraft(callsign=Callsign(
+        written="ECX3S", spoken_full="king air three xray sierra",
+        spoken_short="king air three xray sierra", telephony="King Air",
+        is_airline=False))
+    instruction = Instruction(
+        kind="taxi", station_key="LECO:gnd",
+        values={"runway": "21", "route": ["N"], "altimeter": 1017.0})
+    said = readback(instruction, aircraft, Phraseology("icao"))
+    assert "QNH" in said.upper()
+    heard = IntentParser().parse(said, "en").readback_items
+    assert heard.get("altimeter") == 1017.0
+    assert heard.get("runway") == "21"
+    assert not instruction.mismatches(heard)
+
+
 def test_no_releases_on_github_is_no_update_not_an_error():
     import urllib.error
 
@@ -2353,6 +2378,38 @@ def _departure_session(phase, lineup=None):
 # The bars the Delta route's line-up leg starts from, per the plan the
 # session was given.
 _BARS_01 = (42.22123, -8.63034)
+
+
+def test_a_level_capture_dip_is_not_the_descent_phase():
+    """The live FL170 capture dipped below -300 fpm for a few seconds and
+    the session became "descent" 230 nm out, which then masked the centre
+    handoff. Only a sustained descent re-phases the flight."""
+    from unittest.mock import patch
+
+    from meridianatc.atc.session import Phase
+    from meridianatc.sim.state import AircraftState
+    engine = _hold_point_engine()
+    session = _departure_session(Phase.ENROUTE)
+    level = AircraftState(on_ground=False, altitude_ft=16900.0,
+                          vertical_speed_fpm=-400.0, ground_speed_kt=240.0)
+    with patch("meridianatc.engine.x_the_other_aeroplanes.time.monotonic") as clock:
+        clock.return_value = 100.0
+        engine._update_phase(level, level, session)
+        clock.return_value = 110.0
+        engine._update_phase(level, level, session)
+        assert session.phase == Phase.ENROUTE
+        clock.return_value = 121.0
+        engine._update_phase(level, level, session)
+        assert session.phase == Phase.DESCENT
+
+    session = _departure_session(Phase.ENROUTE)
+    with patch("meridianatc.engine.x_the_other_aeroplanes.time.monotonic") as clock:
+        clock.return_value = 200.0
+        engine._update_phase(level, level, session)
+        level.vertical_speed_fpm = 0.0
+        clock.return_value = 230.0
+        engine._update_phase(level, level, session)
+        assert session.phase == Phase.ENROUTE
 
 
 def test_a_parked_stand_near_the_end_is_not_a_holding_point():
@@ -4679,6 +4736,71 @@ def test_throttle_servo_survives_an_engine_out():
     state.eng2_combustion = False
     flight._manage_throttle(state, 130.0)
     flight._lever_position.assert_not_called()
+
+
+def test_a_turboprop_initial_climb_uses_climb_power_not_takeoff_power():
+    """The live King Air sat at ninety per cent lever and on the torque
+    red line through the initial climb: after liftoff the floor is climb
+    power, not the roll's takeoff setting."""
+    from meridianatc.atc import aircraft_class as ac
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _taxi_flight()
+    flight._aircraft_class = ac.TURBOPROP_TWIN
+    flight.state.phase = AutonomousPhase.CLIMB
+    flight.state.sub = ""
+    flight._lever_position = Mock(return_value=0.97)
+    flight._altitude_target = lambda _state: 5000.0
+    flight._engine_limit_cap = lambda _state: 1.0
+    flight._slew_lever = lambda lever, **_kwargs: lever
+    flight.session.assigned_altitude_ft = 5000.0
+    state = _engine_state(engines_running=True, eng2_combustion=True,
+                          on_ground=False, indicated_airspeed_kt=140.0,
+                          altitude_ft=1000.0, autothrottle=False,
+                          barber_pole_kt=0.0, mach_max_operate=0.0,
+                          barber_pole_mach=0.0, airspeed_mach=0.0)
+    flight._manage_throttle(state, 130.0)
+    assert flight._dir.throttle.call_args.args[0] <= 0.85
+    # On target with the open-loop law, the deadband must not leave the
+    # lever up either: the climb-power ceiling is applied before returning.
+    flight._dir.throttle.reset_mock()
+    state.indicated_airspeed_kt = 130.0
+    flight._manage_throttle(state, 130.0)
+    assert flight._dir.throttle.call_args.args[0] <= 0.85
+
+
+def test_a_turboprop_takeoff_powerup_takes_seconds_not_two():
+    """The PT6's fuel unit is not slammed: takeoff power-up is a slower
+    progressive advance than a piston or jet's brisk lever movement."""
+    from meridianatc.atc import aircraft_class as ac
+    flight = _flier()
+    flight._aircraft_class = ac.TURBOPROP_TWIN
+    flight._lever_at = 0.0
+    flight._set_takeoff_power()
+    flight._lever_at -= 1.0
+    flight._set_takeoff_power()
+    assert flight.director.throttle.call_args[0][0] <= 0.18
+
+
+def test_underspeed_climb_energy_does_not_cap_existing_climb_power():
+    """A slow aeroplane already at climb power keeps climb power."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _taxi_flight()
+    flight.state.phase = AutonomousPhase.CLIMB
+    flight.state.sub = ""
+    flight._lever_position = Mock(return_value=0.97)
+    flight._altitude_target = lambda _state: 5000.0
+    flight._engine_limit_cap = lambda _state: 1.0
+    flight._slew_lever = lambda lever, **_kwargs: lever
+    flight.session.assigned_altitude_ft = 5000.0
+    flight.session.cruise_altitude_ft = 0.0
+    flight.session.initial_altitude_ft = 0.0
+    state = _engine_state(engines_running=True, eng2_combustion=True,
+                          on_ground=False, indicated_airspeed_kt=100.0,
+                          altitude_ft=1000.0, autothrottle=False,
+                          barber_pole_kt=0.0, mach_max_operate=0.0,
+                          barber_pole_mach=0.0, airspeed_mach=0.0)
+    flight._manage_throttle(state, 130.0)
+    assert flight._dir.throttle.call_args.args[0] >= 0.95
 
 
 def test_a_stale_push_dispatch_is_the_tug_that_never_came():

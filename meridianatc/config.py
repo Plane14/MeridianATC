@@ -597,6 +597,42 @@ class AiConfig:
     # done -- the deterministic answer is used. For measuring agreement
     # before the pick is trusted.
     decisions_shadow: bool = False
+    # Tactical scopes are independent: each may be off, shadowed, or active.
+    # A shadowed scope calls the model and records what it would have chosen
+    # while the deterministic answer is used; an active one may use a valid
+    # model pick after structural and operational validation. Off is the
+    # default and makes no provider call at all. The master ``decisions``
+    # switch and network consent still gate every one of them.
+    traffic_decisions: str = "off"
+    crew_decisions: str = "off"
+    fo_decisions: str = "off"
+    atc_decisions: str = "off"
+    # How long a synchronous tactical decision may wait before the baseline
+    # stands. Movement and control loops never wait on the model directly.
+    decision_timeout_ms: int = 800
+    # Movement authority. ``candidates_only`` means the model may select only
+    # engine-generated intents and targets; it cannot emit positions, axes or
+    # unconstrained numeric control commands. This is deliberately not an
+    # open-ended control mode.
+    movement_targets: str = "candidates_only"
+
+    def decision_mode(self, scope: str) -> str:
+        """The effective mode for one tactical scope.
+
+        The scope's first dotted component selects its group. The legacy
+        global shadow switch forces every enabled tactical scope back to
+        shadow, so turning it on can never increase behavioural authority.
+        """
+        if not self.decisions:
+            return "off"
+        group = (scope or "").split(".", 1)[0]
+        mode = getattr(self, f"{group}_decisions", "off")
+        mode = str(mode or "off").lower()
+        if mode not in ("off", "shadow", "active"):
+            return "off"
+        if self.decisions_shadow and mode == "active":
+            return "shadow"
+        return mode
 
 
 describe(
@@ -625,6 +661,29 @@ describe(
     decisions=Setting("understanding", "understanding", restart=True,
                       advanced=True, when="ai.provider!=none"),
     decisions_shadow=Setting("understanding", "understanding", restart=True,
+                             advanced=True, when="ai.provider!=none"),
+    traffic_decisions=Setting("understanding", "understanding",
+                              choices=("off", "shadow", "active"),
+                              restart=True, advanced=True,
+                              when="ai.provider!=none"),
+    crew_decisions=Setting("understanding", "understanding",
+                           choices=("off", "shadow", "active"),
+                           restart=True, advanced=True,
+                           when="ai.provider!=none"),
+    fo_decisions=Setting("understanding", "understanding",
+                         choices=("off", "shadow", "active"),
+                         restart=True, advanced=True,
+                         when="ai.provider!=none"),
+    atc_decisions=Setting("understanding", "understanding",
+                          choices=("off", "shadow", "active"),
+                          restart=True, advanced=True,
+                          when="ai.provider!=none"),
+    decision_timeout_ms=Setting("understanding", "understanding",
+                                min=100, max=5000, step=100, unit="ms",
+                                restart=True, advanced=True,
+                                when="ai.provider!=none"),
+    movement_targets=Setting("understanding", "understanding",
+                             choices=("candidates_only",), restart=True,
                              advanced=True, when="ai.provider!=none"),
 )
 
@@ -2430,6 +2489,11 @@ def _coerce(setting: Setting, value: Any, default: Any) -> Any:
             return int(number)
         return number
     if kind == "choice":
+        # PyYAML still reads the unquoted YAML 1.1 words ``off`` and ``on``
+        # as booleans. Those are legitimate choices here (not toggles), so
+        # map them back before rejecting the value.
+        if isinstance(value, bool):
+            value = "off" if value is False else "on"
         wanted = str(value if value is not None else "").strip().lower()
         for choice in setting.choices:
             if str(choice).lower() == wanted:

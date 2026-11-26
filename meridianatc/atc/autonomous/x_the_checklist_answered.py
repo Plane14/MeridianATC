@@ -804,7 +804,10 @@ class _The_checklist_answered:
         self._prop_levers(mixture=self._takeoff_mixture(state))
         cap = (self._engine_limit_cap(state, takeoff=True)
                if state is not None else 1.0)
-        lever = self._slew_lever(min(1.0, cap), up_per_s=0.45)
+        from .. import aircraft_class as ac
+        rate = (0.18 if getattr(self, "_aircraft_class", "") in (
+                    ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN) else 0.45)
+        lever = self._slew_lever(min(1.0, cap), up_per_s=rate)
         d.throttle(lever)
         if lever >= 1.0:
             d.takeoff_power()

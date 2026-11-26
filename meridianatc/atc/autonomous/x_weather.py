@@ -149,14 +149,73 @@ class _Weather:
             return
         course = float(getattr(state, "track_true", 0.0)
                        or getattr(state, "heading_true", 0.0) or 0.0)
+        # Once the deterministic safety timer has expired the crew must act;
+        # the model's only authority is which safe side of the cell to use.
+        # Continuing into close convection is explicitly safety-critical and
+        # therefore vetoed before an active model answer can select it.
+        from ..decisioning import select_candidate
+        planned = f"deviate_{plan.side.lower()}"
+        opposite_side = "right" if plan.side.lower() == "left" else "left"
+        opposite = f"deviate_{opposite_side}"
+        # The opposite side is a candidate only where deterministic route
+        # geometry says it is not materially worse than the planned side.
+        # Otherwise it is marked safety-critical and the gateway vetoes it
+        # even in active mode.
+        try:
+            from ...weather.enroute import SCAN_AHEAD_NM, _course_geometry_cost
+            cells = self._enroute_weather_cells(state)
+            courses = {
+                "left": (course - plan.degrees + 360.0) % 360.0,
+                "right": (course + plan.degrees + 360.0) % 360.0,
+            }
+            costs = {
+                side: sum(_course_geometry_cost(cell, state.latitude,
+                                                state.longitude, track,
+                                                SCAN_AHEAD_NM)
+                          for cell in cells)
+                for side, track in courses.items()
+            }
+            opposite_cost = costs.get(opposite_side, 0.0)
+            # Any positive cost means body penetration or a clearance
+            # shortfall somewhere on the scan. A different escape heading is
+            # acceptable only when geometry shows it is genuinely clear, not
+            # merely no worse than the heading already unsafe enough to force
+            # this urgent deviation.
+            opposite_unsafe = opposite_cost > 1e-6
+        except Exception:
+            opposite_unsafe = True
+        chosen = select_candidate(
+            getattr(self, "decision_gateway", None),
+            "fo.weather_deviation",
+            "Convection is imminent and ATC has not answered. Which safe deviation side should the crew use?",
+            {"nearest_nm": round(plan.nearest_nm, 1),
+             "degrees": plan.degrees, "planned_side": plan.side,
+             "altitude_ft": int(getattr(state, "altitude_ft", 0.0) or 0),
+             "source": self._weather_source_label(plan)},
+            [{"id": planned,
+              "label": f"deviate {plan.degrees} degrees {plan.side}",
+              "separation_nm": max(0.0, plan.nearest_nm),
+              "min_separation_nm": 0.0},
+             {"id": opposite,
+              "label": f"deviate {plan.degrees} degrees {opposite_side}",
+              "safety_critical": opposite_unsafe,
+              "separation_nm": max(0.0, plan.nearest_nm),
+              "min_separation_nm": 0.0},
+             {"id": "continue_course", "label": "continue on course",
+              "safety_critical": True,
+              "terrain_clearance_ft": 0.0, "min_terrain_ft": 1.0}],
+            planned,
+            "fo.weather_deviation:" + str(int(course)),
+            state_version=int(plan.nearest_nm * 10), timeout_s=0.5)
+        deviation_side = opposite_side if chosen == opposite else plan.side
         session.deviating = "approved"
-        session.weather_deviation_side = plan.side
+        session.weather_deviation_side = deviation_side
         session.weather_deviation_degrees = plan.degrees
         session.weather_deviation_miles_nm = plan.miles_nm
         session.weather_deviation_course = course
         session.weather_deviation_at = now
         session.weather_deviation_urgent = True
-        self._urgent_deviation_side = plan.side
+        self._urgent_deviation_side = deviation_side
         self._fo_say("deviating_weather")
         self._emit("warning",
                    "No ATC answer with convection imminent: deviating and advising",

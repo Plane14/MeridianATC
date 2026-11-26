@@ -612,6 +612,10 @@ class FlightSession:
     touchdown_cleared: bool = False
     rollout_min_kt: float = 0.0
     rollout_liftoff_at: float = 0.0
+    # When an enroute descent read began. A level-off capture dips a few
+    # hundred feet per minute for seconds; only a sustained descent is the
+    # arrival phase, so the clock below is the witness.
+    descending_since: float = 0.0
     # The last liftoff read outbound. A re-touch inside the settling
     # window that follows it -- the struts' own bounce straight off the
     # runway, a settle back after a low rotation -- is still the

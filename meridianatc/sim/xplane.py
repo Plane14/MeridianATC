@@ -150,7 +150,7 @@ DATAREFS = {
     "ap_airspeed_kt": ("sim/cockpit2/autopilot/airspeed_dial_kts", 1),
     "ap_altitude_ft": ("sim/cockpit2/autopilot/altitude_dial_ft", 1),
     "ap_heading_deg": ("sim/cockpit2/autopilot/heading_dial_deg_mag_pilot", 1),
-    "throttle_pct": ("sim/cockpit2/engine/actuators/throttle_ratio[0]", 100),
+    "throttle_pct": ("sim/flightmodel/engine/ENGN_thro_use[0]", 100),
     # The trim actuators, ratio of their travel to per cent -- the
     # figures a trim write reads back as (xpcontrols.TRIMS writes the
     # same datarefs).
@@ -362,7 +362,7 @@ for _engine in range(1, 16):
     EXTRA[f"rpm{_engine}"] = \
         f"sim/cockpit2/engine/indicators/engine_speed_rpm[{_engine}]"
     EXTRA[f"thr{_engine}"] = \
-        f"sim/cockpit2/engine/actuators/throttle_ratio[{_engine}]"
+        f"sim/flightmodel/engine/ENGN_thro_use[{_engine}]"
     EXTRA[f"mix{_engine}"] = \
         f"sim/cockpit2/engine/actuators/mixture_ratio[{_engine}]"
     EXTRA[f"prop{_engine}"] = \

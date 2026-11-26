@@ -838,11 +838,20 @@ class _Shared_helpers:
         # idles the engine six hundred feet up for being ten knots fast
         # is the mush into the trees off the end.
         climb_floor = 0.0
+        climb_power_cap = 0.0
         if self.state.phase == AutonomousPhase.CLIMB:
             target_alt = self._altitude_target(state)
             if target_alt and float(getattr(state, "altitude_ft", 0.0)
                                     or 0.0) < target_alt - 200.0:
-                climb_floor = 0.90
+                from .. import aircraft_class as ac
+                # Takeoff power is timed, not a climb setting. A turboprop
+                # held at ninety per cent lever through the initial climb
+                # sits on its torque red line; climb power is the lower
+                # setting the type would be reduced to after the roll.
+                turboprop = getattr(self, "_aircraft_class", "") in (
+                    ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN)
+                climb_floor = 0.85 if turboprop else 0.90
+                climb_power_cap = 0.85 if turboprop else 0.0
         # And the mirror: a descent that still owes height is flown at
         # descent power -- near idle for a light aeroplane -- the pitch
         # holding the rate and the lever the speed. Left where the
@@ -881,15 +890,39 @@ class _Shared_helpers:
             elif err < -15.0:
                 lever += min(0.06, 0.02 + (-err) * 0.003)
             elif self._engine_limit_cap(state) >= 1.0 \
-                    and (not descent_cap or lever <= descent_cap):
+                    and (not descent_cap or lever <= descent_cap) \
+                    and (not climb_power_cap or lever <= climb_power_cap):
                 # On target and no gauge over its red line: nothing to
                 # move -- unless a descent owes the lever back, which a
                 # deadband return left riding at climb power forever.
                 return
         lever = max(0.05, min(0.97, lever))
+        # Total-energy coordination: height owed and speed owed both cost
+        # energy, so the lever sees a small bounded share of the combined
+        # deficit instead of treating airspeed as the whole aeroplane. The
+        # phase floors/caps and the engine-limit ceiling below still own the
+        # final lever; this is a deterministic TECS-like bias, not an AI or
+        # autopilot replacement.
+        try:
+            target_alt = float(self._altitude_target(state) or 0.0)
+        except (TypeError, ValueError, AttributeError):
+            target_alt = 0.0
+        if target_alt and not overspeed and self.state.phase not in (
+                AutonomousPhase.APPROACH, AutonomousPhase.LANDING):
+            from ..trajectory import energy_speed_height
+            altitude = float(getattr(state, "altitude_ft", 0.0) or 0.0)
+            energy = energy_speed_height(
+                float(target_alt) - altitude, target_kt - ias, ias,
+                max_correction_ft=400.0)
+            lever += energy.throttle * 0.08
+            if energy.priority == "speed":
+                lever += 0.05
+            lever = max(0.05, min(0.97, lever))
         # The engine watch's ceiling: a gauge past its published red line
         # gets power off, whatever the speed loop wanted.
         lever = min(lever, self._engine_limit_cap(state))
+        if climb_power_cap:
+            lever = min(lever, climb_power_cap)
         if descent_cap:
             lever = min(lever, descent_cap)
         if not overspeed:
