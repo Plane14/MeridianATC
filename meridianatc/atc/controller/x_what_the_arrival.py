@@ -184,9 +184,19 @@ class _What_the_arrival:
         elevation = float(getattr(airport, "elev_ft", 0.0) or 0.0)
         believed = elevation + 1000.0 <= value <= elevation + 12000.0
         if value:
-            decision("procedure_altitude", airport=airport.ident, runway=runway,
-                     which=("faf", "missed")[which], value_ft=round(value),
-                     field_ft=round(elevation), accepted=believed)
+            # This is a lookup the vectoring loop can ask several times a
+            # second. The audit trail wants the procedure value when it is
+            # first learned or changes, not the same row hundreds of times.
+            key = (airport.ident, runway, which, round(value),
+                   round(elevation), believed)
+            logged = getattr(self, "_procedure_altitude_logged", set())
+            if key not in logged:
+                decision("procedure_altitude", airport=airport.ident,
+                         runway=runway, which=("faf", "missed")[which],
+                         value_ft=round(value), field_ft=round(elevation),
+                         accepted=believed)
+                logged.add(key)
+                self._procedure_altitude_logged = logged
         if believed:
             return float(round(value / 100.0) * 100.0)
         return 0.0

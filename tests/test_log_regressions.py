@@ -5543,3 +5543,27 @@ def test_manual_state_update_is_left_for_the_next_engine_tick():
     source.update.assert_called_once_with(
         latitude=42.0, longitude=-71.0, on_ground=False)
     engine.refresh_state.assert_not_called()
+
+
+def test_procedure_altitude_lookup_is_not_logged_every_tick(monkeypatch):
+    """The live LEVX-LECO scan wrote the identical accepted FAF altitude
+    several times a second while vectors were being worked. The lookup can
+    be hot; the audit trail cannot be."""
+    from types import SimpleNamespace
+
+    import meridianatc.atc.controller.x_what_the_arrival as what
+
+    class Known:
+        def altitudes(self, runway, kind):
+            return (2500.0, 4000.0)
+
+    brain = what._What_the_arrival()
+    brain.approach_data = {"LECO": Known()}
+    calls = []
+    monkeypatch.setattr(what, "decision",
+                        lambda what_, **kw: calls.append((what_, kw)))
+    airport = SimpleNamespace(ident="LECO", elev_ft=326.0)
+    for _ in range(20):
+        assert brain._published(airport, "03", "rnav", 0) == 2500.0
+    assert len(calls) == 1
+    assert calls[0][1]["which"] == "faf"
