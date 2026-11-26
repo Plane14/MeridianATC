@@ -107,6 +107,45 @@ def safe_value(value: Any, *, _depth: int = 0, _seen: set[int] | None = None,
         _seen.discard(ident)
 
 
+def rotorcraft_snapshot(rotorcraft: Any) -> dict[str, Any]:
+    """The active helicopter controller's stage, trims and loop memory."""
+    out: dict[str, Any] = {
+        "state": safe_value(getattr(rotorcraft, "state", None)),
+    }
+    governor = getattr(rotorcraft, "_governor", None)
+    if governor is not None:
+        out["governor"] = {
+            name: safe_value(getattr(governor, name, None))
+            for name in (
+                "target_pct", "min_pct", "max_pct", "deadband_pct",
+                "proportional", "trim_rate", "feedforward", "max_corr",
+                "fault_after_s", "trim", "_low_s", "_high_s")
+        }
+    for attr in (
+            "_governor_fault", "_transitioned_owner", "_land_hdg",
+            "_spot_best_m", "_spot_nearest_nm", "_side_want_kt",
+            "_turn_commit", "_pedal_demand", "_pedal_hdg", "_pedal_votes",
+            "_pedal_authority", "_cyclic_votes", "_cyc_demand",
+            "_cyc_pitch", "_last_tick"):
+        if hasattr(rotorcraft, attr):
+            out[attr.lstrip("_")] = safe_value(getattr(rotorcraft, attr))
+    pids = getattr(rotorcraft, "_pids", None)
+    if isinstance(pids, dict):
+        loops: dict[str, Any] = {}
+        for channel, pid in pids.items():
+            loops[str(channel)] = {
+                "integral": safe_value(getattr(pid, "_i", None)),
+                "output": safe_value(getattr(pid, "_out", None)),
+                "previous_error": safe_value(getattr(pid, "_prev_error", None)),
+                "previous_measurement": safe_value(
+                    getattr(pid, "_prev_measure", None)),
+                "scale": safe_value(getattr(pid, "_scale", None)),
+                "assist": safe_value(getattr(pid, "_assist", None)),
+            }
+        out["control_loops"] = loops
+    return out
+
+
 def runtime_snapshot(aircraft: Any, autonomous: Any, session: Any,
                      config: Any = None) -> dict[str, Any]:
     """The complete serializable runtime parameter tree."""
@@ -172,4 +211,7 @@ class ParameterTracer:
         return full, changes
 
 
-__all__ = ["ParameterTracer", "flatten", "runtime_snapshot", "safe_value"]
+__all__ = [
+    "ParameterTracer", "flatten", "rotorcraft_snapshot", "runtime_snapshot",
+    "safe_value",
+]

@@ -67,11 +67,18 @@ def test_the_tracer_logs_every_change_after_one_full_snapshot():
 
 def test_the_engine_trace_writes_the_full_snapshot_then_state_changes():
     import meridianatc.engine.x_situation_loop as loop_module
+    from meridianatc.atc.autonomous_heli import HeliState
+    from meridianatc.atc.rotor import RotorSpeedGovernor
     from meridianatc.engine.x_situation_loop import _Situation_loop
-
+    heli = SimpleNamespace(
+        state=HeliState(stage="cruise", coll_trim=43.0, cyclic_trim=51.0),
+        _governor=RotorSpeedGovernor(),
+        _pids={"collective": SimpleNamespace(
+            _i=0.2, _out=0.61, _prev_error=1.5, _prev_measure=None)},
+        _governor_fault="")
     owner = SimpleNamespace(
         config=None,
-        autonomous_flight=SimpleNamespace(state=AutonomousState()),
+        autonomous_flight=SimpleNamespace(state=AutonomousState(), _heli=heli),
         source=SimpleNamespace(_values={"sim/test/raw_value": 12.5}),
         _parameter_trace_at=-10.0,
         PARAMETER_TRACE_S=5.0)
@@ -83,6 +90,11 @@ def test_the_engine_trace_writes_the_full_snapshot_then_state_changes():
         assert "state_snapshot" in first
         assert first["state_snapshot"]["aircraft"]["eng_torque_nm"] == 1700.0
         assert first["state_snapshot"]["sim_values"]["sim/test/raw_value"] == 12.5
+        rotorcraft = first["state_snapshot"]["rotorcraft"]
+        assert rotorcraft["state"]["stage"] == "cruise"
+        assert rotorcraft["state"]["coll_trim"] == 43.0
+        assert rotorcraft["state"]["cyclic_trim"] == 51.0
+        assert rotorcraft["control_loops"]["collective"]["integral"] == 0.2
 
         owner._parameter_trace_at = -10.0
         state.eng_torque_nm = 1710.0
