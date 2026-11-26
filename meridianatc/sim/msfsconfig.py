@@ -76,23 +76,113 @@ def _title_index(folder_keys: tuple[str, ...]) -> dict[str, Path]:
     return found
 
 
-def _propeller_section(text: str) -> str:
-    """Only the [PROPELLER] section, so another rotation= cannot answer."""
+def _section(text: str, name: str) -> str:
+    """One CFG section, so same-named keys elsewhere cannot answer."""
     starts = list(_SECTION.finditer(text))
     for index, match in enumerate(starts):
-        if match.group(1).strip().casefold() != "propeller":
+        if match.group(1).strip().casefold() != name.casefold():
             continue
         end = starts[index + 1].start() if index + 1 < len(starts) else len(text)
         return text[match.end():end]
     return ""
 
 
-def parse_rotation(engines_cfg: str, count: int) -> tuple[float, ...]:
-    """The propeller rotation list, +1 clockwise and -1 anticlockwise.
+def _parameter(section: str, name: str) -> str:
+    match = re.search(r"^\s*" + re.escape(name) + r"\s*=\s*([^;\r\n]+)",
+                      section, re.I | re.M)
+    return match.group(1).strip().strip('"') if match else ""
 
-    MSFS documents clockwise as the default, so a short list is padded in
-    that direction; an absent list is empty, meaning unpublished.
+
+def _boolean(section: str, name: str, default: bool) -> bool:
+    value = _parameter(section, name)
+    if not value:
+        return default
+    if value.casefold() in ("true", "yes", "on"):
+        return True
+    if value.casefold() in ("false", "no", "off"):
+        return False
+    try:
+        return float(value.split()[0]) != 0.0
+    except (ValueError, IndexError):
+        return default
+
+
+def _modern_propellers(section: str) -> bool:
+    """Whether the modern propeller model owns the physical direction."""
+    version_text = _parameter(section, "prop_mod_version")
+    try:
+        version = int(float(version_text.split()[0])) if version_text else None
+    except (ValueError, IndexError):
+        version = None
+    use_modern = _boolean(section, "prop_mod_use_modern", False)
+    if version is None:
+        return use_modern
+    # MSFS documents the legacy switch as winning even over an explicit
+    # version 0; only a positive version selects the modern model by itself.
+    return version > 0 or use_modern
+
+
+def _engine_laterals(text: str) -> dict[int, float]:
+    """Engine index -> lateral offset, negative left and positive right."""
+    section = _section(text, "GENERALENGINEDATA")
+    found: dict[int, float] = {}
+    for match in re.finditer(r"^\s*engine\.(\d+)\s*=\s*([^;\r\n]+)",
+                             section, re.I | re.M):
+        parts = [part.strip() for part in match.group(2).split(",")]
+        if len(parts) < 2:
+            continue
+        try:
+            found[int(match.group(1))] = float(parts[1])
+        except ValueError:
+            continue
+    return found
+
+
+def _modern_rotation(engines_cfg: str, count: int) -> tuple[float, ...]:
+    """Physical directions under MSFS's modern propeller model.
+
+    Unlike legacy ``rotation``, these switches are by aircraft side rather
+    than an ordered list. A clear reverse flag is an anticlockwise propeller;
+    a false one is clockwise. Their documented defaults are left reversed,
+    right and centre not reversed.
     """
+    section = _propeller_section(engines_cfg)
+    reverse = {
+        "left": _boolean(section, "prop_mod_reverse_left", True),
+        "right": _boolean(section, "prop_mod_reverse_right", False),
+        "centre": _boolean(section, "prop_mod_reverse_centre", False),
+    }
+    laterals = _engine_laterals(engines_cfg)
+    signs: list[float] = []
+    for index in range(max(1, count)):
+        lateral = laterals.get(index)
+        if lateral is None:
+            if count <= 1 or count % 2 and index == count // 2:
+                lateral = 0.0
+            else:
+                lateral = -1.0 if index < count / 2.0 else 1.0
+        side = "centre" if abs(lateral) < 0.05 else (
+            "left" if lateral < 0.0 else "right")
+        signs.append(-1.0 if reverse[side] else 1.0)
+    return tuple(signs[:max(1, count)])
+
+
+def _propeller_section(text: str) -> str:
+    """Only the [PROPELLER] section, so another rotation= cannot answer."""
+    return _section(text, "PROPELLER")
+
+
+def parse_rotation(engines_cfg: str, count: int) -> tuple[float, ...]:
+    """The physical propeller directions, +1 clockwise and -1 anticlockwise.
+
+    Legacy aircraft use the ordered ``rotation`` list. MSFS 2024's modern
+    propeller model ignores that list for physics and uses the three
+    ``prop_mod_reverse_*`` switches instead, mapped onto each engine's
+    lateral position. There is no direct SimConnect variable for either:
+    ``PROP ROTATION ANGLE`` is only the animated angle in radians.
+    """
+    if _modern_propellers(_propeller_section(engines_cfg)):
+        return _modern_rotation(engines_cfg, count)
     match = _ROTATION.search(_propeller_section(engines_cfg))
     if match is None:
         return ()

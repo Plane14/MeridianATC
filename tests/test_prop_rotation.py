@@ -93,3 +93,34 @@ def test_msfs2024_modular_preset_reads_preset_then_common_rotation(tmp_path):
         encoding="utf-8")
     assert propeller_rotation("Modular Test Twin", 2,
                               folders=[tmp_path / "Packages"]) == (-1.0, 1.0)
+
+
+def test_msfs2024_modern_props_use_physical_reverse_switches_not_rotation():
+    newline = chr(10)
+    text = newline.join([
+        "[GENERALENGINEDATA]",
+        "Engine.0 = 10, -8.4, 0.5",
+        "Engine.1 = 10, 8.4, 0.5",
+        "[PROPELLER]",
+        "rotation = 1, 1 ; ignored by the modern physics",
+        "prop_mod_version = 2",
+        "prop_mod_reverse_left = 0",
+        "prop_mod_reverse_right = 1",
+        "",
+    ])
+    assert parse_rotation(text, 2) == (1.0, -1.0)
+
+
+def test_msfs_legacy_rotation_still_rules_without_the_modern_model():
+    newline = chr(10)
+    text = newline.join([
+        "[GENERALENGINEDATA]",
+        "Engine.0 = 10, -8.4, 0.5",
+        "Engine.1 = 10, 8.4, 0.5",
+        "[PROPELLER]",
+        "rotation = 1, 1",
+        "prop_mod_reverse_left = 0",
+        "prop_mod_reverse_right = 1",
+        "",
+    ])
+    assert parse_rotation(text, 2) == (1.0, 1.0)
