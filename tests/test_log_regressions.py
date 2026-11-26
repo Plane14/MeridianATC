@@ -5976,3 +5976,33 @@ def test_type_preflight_cards_are_run_before_before_start():
     heli._checklist = heli_calls.append
     RotorcraftFlight._preflight(heli, SimpleNamespace())
     assert heli_calls[:2] == ["preflight", "before_start"]
+
+
+def test_crossing_the_threshold_still_high_is_a_goaround():
+    """The complete no-sim Brussels run reached the runway at 1,600 ft:
+    every low gate still waited for the aeroplane to get low, so it flew
+    across the field and out the other side. Passing the threshold high
+    on a runway-aligned final is itself the missed approach."""
+    flight = _flier()
+    flight.state.runway_lat = 50.9
+    flight.state.runway_lon = 4.5
+    flight.state.runway_heading = 250.0
+    flight.state.runway_length_ft = 9800.0
+    flight.state.minima_ft = 200.0
+    from meridianatc.navdata.build import project
+    lat, lon = project(50.9, 4.5, 250.0, 0.3)
+    state = SimpleNamespace(
+        latitude=lat, longitude=lon, has_position=True, on_ground=False,
+        altitude_agl_ft=1600.0, track_true=250.0, heading_true=250.0,
+        vertical_speed_fpm=-900.0, indicated_airspeed_kt=143.0,
+        bank_deg=0.0, gear_down=True)
+    assert flight._should_go_around(state) is True
+
+    # The same position at normal crossing height is the landing flare,
+    # not a go-around; and crossing overhead perpendicular is not a final.
+    state.altitude_agl_ft = 100.0
+    flight.state.stabilized = True
+    assert flight._should_go_around(state) is False
+    state.altitude_agl_ft = 1600.0
+    state.track_true = 160.0
+    assert flight._should_go_around(state) is False

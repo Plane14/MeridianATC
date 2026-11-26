@@ -292,6 +292,29 @@ class _Circling:
         if (agl < (self.state.minima_ft or 200.0) and agl > 0
                 and not self.session.cleared_landing and self.session.ifr):
             return True
+        # Over the threshold still hundreds of feet up is not a landing
+        # at all: the glideslope puts the wheels at about fifty feet
+        # there. The no-sim Brussels run crossed the runway at 1,600 ft
+        # and simply flew out the other side because every unstable-
+        # approach gate below waited for the aeroplane to get low first.
+        # Only a final-aligned aeroplane trips this; crossing the field
+        # downwind or on a base is not a missed approach by itself.
+        if agl > 250.0 and self.state.runway_heading > 0                 and getattr(state, "has_position", False)                 and state.on_ground is False:
+            where = auto_nav.align(
+                state.latitude, state.longitude, self.state.runway_lat,
+                self.state.runway_lon, self.state.runway_heading)
+            track = (getattr(state, "track_true", None)
+                     or getattr(state, "heading_true", 0.0) or 0.0)
+            off_course = abs((self.state.runway_heading - track + 540.0)
+                             % 360.0 - 180.0)
+            length_m = (self.state.runway_length_ft or 0.0) * 0.3048
+            past_threshold = where["along_m"] > 0.0
+            before_departure_end = not length_m or where["along_m"] < length_m
+            if (past_threshold and before_departure_end
+                    and abs(where["offset_m"]) < 300.0
+                    and off_course <= 45.0):
+                return True
+
         # Unstable low down: sink rate, bank, or speed far off.
         if 0 < agl < 500.0:
             vs = state.vertical_speed_fpm or 0.0
