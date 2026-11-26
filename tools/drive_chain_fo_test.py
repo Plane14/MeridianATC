@@ -239,7 +239,7 @@ def arguments():
     parser.add_argument("--aircraft-type", default="A320")
     parser.add_argument("--timeout", type=float, default=3600.0)
     parser.add_argument("--label", default="")
-    parser.add_argument("--start-offset-nm", type=float, default=0.25,
+    parser.add_argument("--start-offset-nm", type=float, default=0.5,
                         help="place the no-sim stand this far northeast of the airport reference")
     parser.add_argument("--live-traffic", action="store_true",
                         help="keep online/simulator-observed traffic enabled")

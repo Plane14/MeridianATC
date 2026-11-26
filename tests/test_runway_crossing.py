@@ -239,3 +239,49 @@ def test_report_vacated_in_every_book(language):
     from meridianatc.atc.language import phraseology_for
 
     assert phraseology_for(language, "TEST").report_vacated().strip()
+
+
+def test_invented_taxi_never_holds_short_of_the_same_strip():
+    """At a one-runway field "hold short of the reciprocal" was really the
+    departure runway itself, so the FO was bound to incur on it."""
+    from types import SimpleNamespace
+
+    from meridianatc.atc.controller import ControllerBrain
+
+    strip = SimpleNamespace()
+    parallel = SimpleNamespace()
+    navdb = SimpleNamespace(runway_ends=lambda ident: [
+        ("03", 28.0, strip), ("21", 208.0, strip)])
+    brain = SimpleNamespace(navdb=navdb)
+    assert ControllerBrain._hold_short_candidate(
+        brain, SimpleNamespace(ident="X"), "03") == ""
+
+    navdb.runway_ends = lambda ident: [
+        ("08R", 78.0, strip), ("26L", 258.0, strip),
+        ("08L", 78.0, parallel), ("26R", 258.0, parallel)]
+    assert ControllerBrain._hold_short_candidate(
+        brain, SimpleNamespace(ident="X"), "08R") == "08L"
+
+
+def test_first_officer_crossing_request_is_parsed_as_one():
+    from meridianatc.atc.pilot import PilotSpeech
+
+    aircraft = Aircraft(parse_callsign("N123"))
+    said = PilotSpeech("en", Phraseology()).request_cross_runway(
+        aircraft, "Ground", "09")
+    assert IntentParser().parse(said, "en").intent \
+        is Intent.REQUEST_CROSS_RUNWAY
+
+
+def test_invented_hold_short_can_be_crossed_when_asked_without_a_layout():
+    """No-sim has no taxiway graph. The controller still has the published
+    strip, so a pilot held short on an invented route can be cleared across."""
+    navdb, layout = _navdb(), _layout()
+    brain = _brain(navdb, layout)
+    brain.ground_layout = None
+    session = _session(())
+    session.hold_short_of = "09"
+    reply = brain.crossing_clearance(
+        session, GROUND, brain.for_station(GROUND), AWAY, asked=True)
+    assert reply is not None and "cross" in reply.text.lower()
+    assert session.crossing_granted == "09"

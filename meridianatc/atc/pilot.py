@@ -87,6 +87,7 @@ class PilotBook:
     request_pattern_work: str = ""
     request_landing: str = ""
     request_taxi_to_parking: str = ""
+    request_cross_runway: str = "request cross runway {runway}"
     request_transition: str = ""
     request_flight_following: str = ""
     ready_for_departure_plain: str = ""
@@ -154,6 +155,7 @@ ENGLISH = PilotBook(
     request_clearance="request IFR clearance to {dest}",
     request_clearance_plain="request IFR clearance",
     request_taxi="request taxi",
+    request_cross_runway="request cross runway {runway}",
     ready_for_departure="ready for departure runway {runway}",
     checking_in_climbing="climbing {altitude}",
     checking_in_descending="descending {altitude}",
@@ -205,6 +207,7 @@ FRENCH = PilotBook(
     request_clearance="demande la clairance IFR pour {dest}",
     request_clearance_plain="demande la clairance IFR",
     request_taxi="demande le roulage",
+    request_cross_runway="demande à traverser la piste {runway}",
     ready_for_departure="prêt au départ piste {runway}",
     checking_in_climbing="en montée {altitude}",
     checking_in_descending="en descente {altitude}",
@@ -270,6 +273,7 @@ SPANISH = PilotBook(
     request_clearance="solicito autorización IFR para {dest}",
     request_clearance_plain="solicito autorización IFR",
     request_taxi="solicito rodaje",
+    request_cross_runway="solicito cruzar la pista {runway}",
     ready_for_departure="listo para salida pista {runway}",
     checking_in_climbing="ascendiendo {altitude}",
     checking_in_descending="descendiendo {altitude}",
@@ -334,6 +338,7 @@ GERMAN = PilotBook(
     request_clearance="erbitte IFR Freigabe nach {dest}",
     request_clearance_plain="erbitte IFR Freigabe",
     request_taxi="erbitte Rollen",
+    request_cross_runway="erbitte Bahnquerung Piste {runway}",
     ready_for_departure="startbereit Piste {runway}",
     checking_in_climbing="im Steigflug {altitude}",
     checking_in_descending="im Sinkflug {altitude}",
@@ -398,6 +403,7 @@ ITALIAN = PilotBook(
     request_clearance="chiedo autorizzazione IFR per {dest}",
     request_clearance_plain="chiedo autorizzazione IFR",
     request_taxi="chiedo rullaggio",
+    request_cross_runway="chiedo di attraversare la pista {runway}",
     ready_for_departure="pronti al decollo pista {runway}",
     checking_in_climbing="in salita {altitude}",
     checking_in_descending="in discesa {altitude}",
@@ -461,6 +467,7 @@ PORTUGUESE = PilotBook(
     request_clearance="peço autorização IFR para {dest}",
     request_clearance_plain="peço autorização IFR",
     request_taxi="peço táxi",
+    request_cross_runway="peço para atravessar a pista {runway}",
     ready_for_departure="prontos para descolar pista {runway}",
     checking_in_climbing="a subir {altitude}",
     checking_in_descending="a descer {altitude}",
@@ -843,6 +850,12 @@ class PilotSpeech:
         if pressure:
             parts.append(self.p.pressure(pressure))
         return self.report(aircraft, _join(*parts))
+
+    def request_cross_runway(self, aircraft: Aircraft, station: str,
+                             runway: str) -> str:
+        body = self.book.request_cross_runway.format(
+            runway=self.p.rwy(runway))
+        return self.call(aircraft, station, body)
 
     def cross_runway(self, aircraft: Aircraft, runway: str) -> str:
         return self.report(

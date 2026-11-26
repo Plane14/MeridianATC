@@ -365,6 +365,14 @@ class _Ground:
                      source="invented", route=route, why=why)
         session.taxi_route = route
         session.hold_short_of = hold_short
+        if plan is None and hold_short:
+            # The invented route has no taxiway points, but its hold-short
+            # is still a runway the pilot may not cross without a separate
+            # clearance. Keeping it in the crossing list lets the crossing
+            # watch grant it, spend it once vacated, and clear the grant.
+            session.taxi_crossings = [hold_short]
+            session.crossing_index = 0
+            session.crossing_granted = ""
 
         altimeter = (
             weather.altimeter_inhg if p.dialect == "faa" else weather.qnh_hpa
@@ -464,13 +472,18 @@ class _Ground:
             return ""
         ends = self.navdb.runway_ends(airport.ident)
         target = normalize_runway(runway)
+        # The reciprocal end is the same strip, not a runway crossed on the
+        # way. Compare the runway records, not just the numbers: 21R is not
+        # the reciprocal of 03L, but 21 is exactly the same pavement as 03.
+        target_strips = {id(row[2]) for row in ends
+                         if normalize_runway(row[0]) == target}
         others = sorted(
-            {normalize_runway(e[0]) for e in ends} - {target}
+            {normalize_runway(row[0]) for row in ends
+             if normalize_runway(row[0]) != target
+             and (not target_strips or id(row[2]) not in target_strips)}
         )
         if not others:
             return ""
-        # Only pick a runway that is not the reciprocal of the assigned one.
-        target_number = int(target[:2]) if target[:2].isdigit() else 0
         for candidate in others:
             # Not a helicopter strip: an "H" end (de Gaulle's 08H/26H, grass,
             # 440 m) is not a runway a jet taxis across, and the readback
@@ -478,9 +491,7 @@ class _Ground:
             # the LFPG-EGLL reference flight.
             if not candidate[:2].isdigit() or candidate.endswith("H"):
                 continue
-            number = int(candidate[:2])
-            if abs(((number - target_number) * 10 + 540) % 360 - 180) > 30:
-                return candidate
+            return candidate
         return ""
 
     # How far short of the runway the crossing question is decided. Holding
@@ -555,7 +566,7 @@ class _Ground:
         to the hold; ``remind`` is the crossing watch asking whether a
         refusal should be heard this look or wait for the next interval.
         """
-        runway = session.pending_crossing()
+        runway = session.pending_crossing() or session.hold_short_of
         if not runway:
             return None
         if session.crossing_granted:
@@ -571,7 +582,15 @@ class _Ground:
             return None
         layout = self._layout_for(station.ident)
         if layout is None:
-            return None
+            # No-sim has no taxiway graph, but the runway itself is still
+            # published geometry. An empty layout is only the projection
+            # the crossing measurement needs -- not a taxi route.
+            airport = self.navdb.airport(station.ident)
+            if airport is None:
+                return None
+            from ..ground import GroundLayout
+            layout = GroundLayout(station.ident, airport.lat, airport.lon,
+                                  [], [], [], [])
         line = self._crossing_line(layout, station.ident, runway)
         if line is None:
             return None

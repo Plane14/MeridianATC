@@ -3310,6 +3310,18 @@ def test_a_read_back_handoff_still_moves_the_dial_if_the_marker_is_gone():
     assert dialled == [119.10]
 
 
+def test_radio_setting_writes_do_not_block_the_com_retune():
+    """Squawk/altimeter retries share one clock in the no-sim plant because
+    the model never confirms them; that clock must not hold COM1 hostage."""
+    twr = _station("TWR", 118.10)
+    flight, state, dialled, kinds = _radio_flight(
+        stations=[twr], phase="holding_short", com1=121.65, handed=twr)
+    flight.session.squawk = "4567"
+    flight.session.altimeter = 1013.0
+    flight._manage_comms(state, 1000.0)
+    assert dialled == [118.10]
+
+
 def test_taxi_in_tunes_the_arrival_fields_ground_not_the_departures():
     """After landing, ground is this field's -- the leg left hours ago."""
     flight, state, dialled, kinds = _radio_flight(
@@ -3664,6 +3676,36 @@ def test_a_new_taxi_route_restarts_the_walk():
     flight._taxi_along_path(_ground_state(41.2410, -8.6725, gs=5.0),
                             outbound=True)
     assert flight._taxi_progress == 0
+
+
+def test_taxi_stops_short_of_an_uncleared_runway_crossing():
+    """The matrix incursions: the route's end is the departure hold, so
+    without a crossing-specific stop the FO rolled straight onto the
+    intermediate runway it had only been told to hold short of."""
+    class Layout:
+        @staticmethod
+        def to_xy(lat, lon):
+            return lon * 85000.0, lat * 111000.0
+
+    flight = _path_flight(list(_TAXI_PATH))
+    runway = SimpleNamespace(
+        le_lat=41.2415, le_lon=-8.6735, he_lat=41.2415, he_lon=-8.6715,
+        le_ident="17", he_ident="35", width_ft=100.0)
+    flight.session.departure = SimpleNamespace(ident="LPPR")
+    flight.session.pending_crossing = lambda: "17"
+    flight.session.crossing_granted = ""
+    flight.navdb = SimpleNamespace(runways=lambda ident: [runway])
+    flight.brain = SimpleNamespace(ground_layout=lambda ident: Layout())
+    state = _ground_state(41.2413, -8.6725, gs=4.0)
+    flight._taxi_along_path(state, outbound=True)
+    assert flight._stop.called
+    assert not flight._steer.called
+
+    flight._stop.reset_mock()
+    flight.session.crossing_granted = "17"
+    flight._taxi_along_path(state, outbound=True)
+    assert flight._steer.called
+    assert not flight._stop.called
 
 
 def test_the_throttle_lever_is_written_as_a_fraction():

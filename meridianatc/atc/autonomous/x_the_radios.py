@@ -197,7 +197,7 @@ class _The_radios:
         self._comms_settled = self._work_the_frequency(
             state, session, handed, now)
         if not self._comms_settled \
-                and now - getattr(self, "_dialled_at", 0.0) > 30.0:
+                and now - getattr(self, "_com_dialled_at", 0.0) > 30.0:
             # A radio that never confirms the dial still carried the
             # write -- keyed anyway after half a minute, or a model
             # that ignores COM writes wedges every call it owns.
@@ -428,11 +428,12 @@ class _The_radios:
         active = float(getattr(state, "com1_active", 0.0) or 0.0)
         if abs(active - mhz) <= 0.004:
             return True
-        if now - self._dialled_at < gap_s:
+        com_dialled_at = getattr(self, "_com_dialled_at", float("-inf"))
+        if now - com_dialled_at < gap_s:
             return False
         if not self.sim.set_com(mhz, 1):
             return False
-        self._dialled_at = now
+        self._com_dialled_at = now
         name = f"{callsign} " if callsign else ""
         self._emit("info", f"COM1 to {name}{mhz:.3f}",
                    "autonomous.comms.tune")
@@ -525,27 +526,38 @@ class _The_radios:
             kind = "clearance"
         elif phase == AutonomousPhase.TAXI_OUT:
             reask = getattr(self, "_taxi_reask", False)
-            if not reask and not getattr(self, "_held_at_split", False) and (
-                    session.phase in (Phase.HOLDING_SHORT,
-                                      Phase.LINED_UP, Phase.TAKEOFF)
-                    or getattr(session, "taxi_path", None)
-                    or getattr(session, "taxi_route", None)):
-                # Under a clearance already -- except held at a cut
-                # taxi's split, where the call is the "ready to
-                # continue" that brings the rest of the route, and
-                # except the re-ask a stop off the route wants.
-                # TAXI_OUT alone does not count: the phase flips on
-                # groundspeed without an instruction ever having
-                # landed, and trusting it is how the aeroplane went
-                # off down the apron on no route at all.
-                return
-            if not reask and getattr(self, "_taxi_announced", False) \
-                    and self._taxi_issuing_position() is None:
-                # Where nobody issues a route the call is the
-                # announcement itself: made once, not repeated to an
-                # empty room.
-                return
-            kind = "taxi"
+            kind = ""
+            crossing = self._pending_crossing_distance(state)
+            at_crossing = False
+            if (crossing is not None and not reask
+                    and (state.ground_speed_kt or 0.0) <= 1.0):
+                crossing_m, half_width_m = crossing
+                at_crossing = (crossing_m
+                               <= half_width_m + self._bars_stop_m() + 8.0)
+            if at_crossing:
+                kind = "cross_runway"
+            else:
+                if not reask and not getattr(self, "_held_at_split", False) and (
+                        session.phase in (Phase.HOLDING_SHORT,
+                                          Phase.LINED_UP, Phase.TAKEOFF)
+                        or getattr(session, "taxi_path", None)
+                        or getattr(session, "taxi_route", None)):
+                    # Under a clearance already -- except held at a cut
+                    # taxi's split, where the call is the "ready to
+                    # continue" that brings the rest of the route, and
+                    # except the re-ask a stop off the route wants.
+                    # TAXI_OUT alone does not count: the phase flips on
+                    # groundspeed without an instruction ever having
+                    # landed, and trusting it is how the aeroplane went
+                    # off down the apron on no route at all.
+                    return
+                if (not reask and getattr(self, "_taxi_announced", False)
+                        and self._taxi_issuing_position() is None):
+                    # Where nobody issues a route the call is the
+                    # announcement itself: made once, not repeated to an
+                    # empty room.
+                    return
+                kind = "taxi"
         elif phase == AutonomousPhase.TAXI_IN:
             # Inbound the stand is the ground controller's to name: the
             # aeroplane asks where to park until the instruction or its

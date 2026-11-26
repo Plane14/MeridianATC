@@ -967,6 +967,11 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
                 or getattr(destination, "ident", "")), ""
         if kind == "vfr":
             return speech.request_vfr_departure(aircraft, name), ""
+        if kind == "cross_runway":
+            runway = session.pending_crossing() or session.hold_short_of
+            if not runway:
+                return "", "no crossing"
+            return speech.request_cross_runway(aircraft, name, runway), ""
         if kind == "taxi":
             if station.position not in ("GND", "INFO", "CTAF", "UNICOM",
                                         "RDO", "AFIS"):

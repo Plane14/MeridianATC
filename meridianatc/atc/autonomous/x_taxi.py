@@ -112,6 +112,53 @@ class _Taxi:
     CORNER_BRAKE_KT_M = 0.1
     CORNER_FULL_M = 8.0
 
+    def _pending_crossing_distance(self, state):
+        """(centreline metres, half-width metres) for the route's next
+        uncrossed runway, or None when there is no hold to work.
+
+        The taxi route's end is the departure runway's holding point; a
+        runway crossed on the way is not that end, so the end-of-route
+        slow-down alone is not what protects it. The ground controller
+        grants the crossing once the aeroplane is near the strip -- this
+        distance is what lets the FO stop at the edge and wait for that
+        grant rather than discover it from the incursion call.
+        """
+        session = self.session
+        pending_crossing = getattr(session, "pending_crossing", None)
+        runway = (pending_crossing() if callable(pending_crossing)
+                  else "") or getattr(session, "hold_short_of", "")
+        if not runway or getattr(session, "crossing_granted", ""):
+            return None
+        airport = (getattr(session, "departure", None)
+                   or self._get_current_airport())
+        ask = getattr(getattr(self, "brain", None), "ground_layout", None)
+        if airport is None or self.navdb is None:
+            return None
+        try:
+            layout = ask(airport.ident) if callable(ask) else None
+            if layout is None:
+                # No-sim has no taxiway graph, but the crossing strip is
+                # still published geometry. An empty layout is only the
+                # airport-centred projection ``runway_lines`` needs.
+                from ..ground import GroundLayout
+                layout = GroundLayout(airport.ident, airport.lat,
+                                      airport.lon, [], [], [], [])
+            from ...navdata.db import normalize_runway
+            from .. import taxi as taxiplan
+            wanted = normalize_runway(runway)
+            lines = taxiplan.runway_lines(
+                layout, self.navdb.runways(airport.ident))
+            line = next((one for one in lines if wanted in one.ends), None)
+            if line is None:
+                return None
+            return (taxiplan.distance_to_line(
+                layout, line, state.latitude, state.longitude),
+                    line.half_width_m)
+        except Exception:
+            log.debug("could not measure the pending runway crossing",
+                      exc_info=True)
+            return None
+
     def _taxi_along_path(self, state, outbound: bool) -> None:
         """Follow ``session.taxi_path`` at taxi speed, or hold short.
 
@@ -356,6 +403,17 @@ class _Taxi:
         if corner_cap is not None:
             target_kt = min(target_kt, corner_cap)
         if outbound:
+            crossing = self._pending_crossing_distance(state)
+            if crossing is not None:
+                crossing_m, half_width_m = crossing
+                crossing_hold_m = half_width_m + 22.3
+                speed_ms = (state.ground_speed_kt or 0.0) * 0.514444
+                stop_m = (speed_ms * speed_ms * 0.5
+                          + (2.0 if speed_ms < 0.6 else 8.0))
+                if crossing_m <= crossing_hold_m + stop_m:
+                    target_kt = 0.0
+                elif crossing_m < crossing_hold_m + 120.0:
+                    target_kt = min(target_kt, 4.0)
             # Creep the last metres to the bars instead of stopping a
             # taxiway short of them.
             if end_m <= self._bars_stop_m():
@@ -618,8 +676,21 @@ class _Taxi:
                                 (rwy_lat, rwy_lon)]):
                     self._stop(state)
                     return
-                self._steer(state, hdg,
-                            self._expedite_kt(state, self.performance.taxi_kt))
+                target_kt = self._expedite_kt(
+                    state, self.performance.taxi_kt)
+                crossing = self._pending_crossing_distance(state)
+                if crossing is not None:
+                    crossing_m, half_width_m = crossing
+                    hold_m = half_width_m + 22.3
+                    speed_ms = (state.ground_speed_kt or 0.0) * 0.514444
+                    stop_m = (speed_ms * speed_ms * 0.5
+                              + (2.0 if speed_ms < 0.6 else 8.0))
+                    if crossing_m <= hold_m + stop_m:
+                        self._stop(state)
+                        return
+                    if crossing_m < hold_m + 120.0:
+                        target_kt = min(target_kt, 4.0)
+                self._steer(state, hdg, target_kt)
             else:
                 self._steer(state, self.state.runway_heading,
                             self._expedite_kt(state, self.performance.taxi_kt))
