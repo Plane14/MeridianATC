@@ -406,6 +406,13 @@ EXTRA["wing_heat"] = "sim/cockpit2/ice/ice_surfce_heat_on"
 # a landplane's own code never says (a C172 on floats is "C172").
 for _gear in range(10):
     EXTRA[f"gear_type{_gear}"] = f"sim/aircraft/parts/acf_gear_type[{_gear}]"
+for _engine in range(16):
+    # Plane Maker's direction for each propeller: +1 clockwise, -1
+    # anticlockwise from the cockpit (sim/aircraft/prop/acf_prop_dir).
+    # It is configuration rather than motion, but it is small and the
+    # websocket already batches the static reads.
+    EXTRA[f"propdir{_engine}"] = (
+        f"sim/aircraft/prop/acf_prop_dir[{_engine}]")
 
 EXTRA.update(READS)
 
@@ -869,6 +876,12 @@ class XPlaneSource:
         state.engine_type = {0: 0, 1: 0, 2: 5, 3: 4, 4: 1, 5: 1, 6: 4,
                              7: 1, 8: 5, 9: 5, 10: 5}.get(
             int(values.get("xp_engine_type", -1)), -1)
+        prop_dirs: list[float] = []
+        for i in range(max(0, min(16, int(state.engine_count or 0)))):
+            raw_dir = values.get(f"propdir{i}")
+            if raw_dir is not None:
+                prop_dirs.append(1.0 if raw_dir >= 0.0 else -1.0)
+        state.prop_rotation_dirs = tuple(prop_dirs)
         state.tail_dragger = (bool(values["tail_dragger"])
                               if "tail_dragger" in values else None)
         # acf_nw_steerdeg1 is the deflection the gear steers by; a model

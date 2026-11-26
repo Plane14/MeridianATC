@@ -872,6 +872,11 @@ class SimConnectSource:
         # MSFS_ALIASES then answers stock wire names with the model's
         # own L: variables, in both the batched read and the writes.
         self._model = ""
+        # The propeller rotation list is static engines.cfg data, cached
+        # per aircraft title because scanning the package folders in the
+        # telemetry loop would be absurd.
+        self._prop_rotation_title = ""
+        self._prop_rotation_dirs: tuple[float, ...] = ()
         # How often each variable that has never answered has been asked.
         self._silent: dict[str, int] = {}
         self._state = AircraftState()
@@ -1571,6 +1576,19 @@ class SimConnectSource:
         state.connected = not state.stalled
         for attribute, value in self._values.items():
             setattr(state, attribute, value)
+        if (state.title and state.engine_count > 0
+                and state.engine_type in (0, 5)):
+            if state.title != self._prop_rotation_title:
+                from .msfsconfig import propeller_rotation
+                try:
+                    self._prop_rotation_dirs = propeller_rotation(
+                        state.title, int(state.engine_count))
+                except Exception:
+                    log.info("could not read propeller rotation for %s",
+                             state.title, exc_info=True)
+                    self._prop_rotation_dirs = ()
+                self._prop_rotation_title = state.title
+            state.prop_rotation_dirs = self._prop_rotation_dirs
         model = msfs_model_key(state.title)
         if model != self._model:
             # A new aeroplane, or the title just answered. Rebuild the

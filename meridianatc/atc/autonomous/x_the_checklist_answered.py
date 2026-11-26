@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+from ..aircraft_class import (
+    PISTON_SINGLE,
+    PISTON_TWIN,
+    SIM_PISTON,
+    SIM_TURBOPROP,
+    TURBOPROP_SINGLE,
+    TURBOPROP_TWIN,
+)
 from ._shared import (
     _engine_check,
     _gs_band,
@@ -746,30 +754,72 @@ class _The_checklist_answered:
         self._pedal_check(pedal, rate, gs, vote=False)
         return pedal * self._pedal_dir()
 
-    def _right_foot(self, state) -> float:
-        """The standing right-rudder a prop takeoff is flown with.
+    def _prop_rotation_balance(self, state) -> float:
+        """The signed propeller-turning moment, +1 clockwise to -1 opposite.
 
-        The engine's left-turning moment -- torque, the prop's
-        slipstream, P-factor where the tail is low -- is the roll's
-        standing load, and a damper that only answers the yaw it makes
-        has already spent the heading it was bought to keep. A pilot
-        leads with the right foot as the power comes in and stands it
-        down as the airflow builds; this is that, full ask below the
-        speed the rudder flies at, faded to nothing at rotate where
-        the wings finally take the load the pedals were carrying. The
-        moment it answers is standing until the wheels leave -- a fade
-        that ends sooner hands the dead band between the nosewheel's
-        authority and the rudder's back to the veer.
+        FAA-H-8083-3C's critical-engine explanation is geometry: with both
+        propellers clockwise the P-factor thrust line of every disc is to
+        its right, so the moments add into a left yaw. With the left prop
+        clockwise and the right one anticlockwise the thrust lines are the
+        same distance either side of the centreline and cancel -- the twin
+        has no critical engine and no standing P-factor foot on a symmetric
+        takeoff. The balance is zero for jets and helicopters as well;
+        before this, every airliner was given a Cessna's right rudder.
+        """
+        raw_type = getattr(state, "engine_type", -1)
+        engine_type = -1 if raw_type is None else int(raw_type)
+        if engine_type in (SIM_PISTON, SIM_TURBOPROP):
+            propellered = True
+        elif engine_type >= 0:
+            propellered = False
+        else:
+            aircraft_class = getattr(self, "_aircraft_class", "")
+            # No answer at all keeps the historic light-single assumption;
+            # a jet answer or a jet class is what removes the foot.
+            propellered = not aircraft_class or aircraft_class in (
+                PISTON_SINGLE, PISTON_TWIN,
+                TURBOPROP_SINGLE, TURBOPROP_TWIN)
+        if not propellered:
+            return 0.0
+        count = max(0, min(16, int(getattr(state, "engine_count", 0) or 0)))
+        directions = []
+        for value in getattr(state, "prop_rotation_dirs", ()):
+            try:
+                directions.append(1.0 if float(value) >= 0.0 else -1.0)
+            except (TypeError, ValueError):
+                continue
+        if count:
+            # Clockwise is both simulators' documented default when the
+            # static configuration did not answer for an engine.
+            directions.extend([1.0] * (count - len(directions)))
+            directions = directions[:count]
+        if not directions:
+            directions = [1.0]
+        return sum(directions) / len(directions)
+
+    def _right_foot(self, state) -> float:
+        """The standing rudder a prop takeoff is flown with.
+
+        Torque, slipstream and P-factor are the roll's standing load, and
+        a damper that only answers the yaw they make has already spent the
+        heading it was bought to keep. A pilot leads with the foot as the
+        power comes in and stands it down as the airflow builds. The foot
+        is right for clockwise propellers, left for anticlockwise ones,
+        and absent where opposite rotation cancels on a multiengine
+        aeroplane; it fades to nothing at rotate, where the wings finally
+        take the load the pedals were carrying.
         """
         throttle = max(0.0, min(1.0,
                                 (getattr(state, "throttle_pct", 0.0)
                                  or 0.0) / 100.0))
         ias = (getattr(state, "indicated_airspeed_kt", 0.0)
                or getattr(state, "ground_speed_kt", 0.0) or 0.0)
-        rotate = (getattr(self.state, "rotate_speed_kt", 0.0) or 0.0) \
-            or 55.0
-        return 0.30 * throttle * max(
-            0.0, 1.0 - ias / max(1.0, rotate))
+        rotate = ((getattr(self.state, "rotate_speed_kt", 0.0) or 0.0)
+                  or 55.0)
+        balance = self._prop_rotation_balance(state)
+        return (0.30 * throttle * balance * max(
+            0.0, 1.0 - ias / max(1.0, rotate)))
+
 
     def _roll_aileron(self, state, gs_kt: float, takeoff: bool) -> float:
         """Aileron into the wind on the ground roll -- the AFH technique.

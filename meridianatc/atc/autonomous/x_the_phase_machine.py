@@ -1106,11 +1106,10 @@ class _The_phase_machine:
                 # corrects smoothly, where the larger share made each
                 # centreline correction the next swerve's push.
                 rate_damp=0.25, err_share=0.5, err_gain=0.01)
-            # The right foot a prop takeoff is flown with: the engine's
-            # left-turning moment is the roll's standing load, led
-            # before the heading can leave -- a damper that waits for
-            # the error spends the error first, and the capped share it
-            # was spending was half the foot the model wanted.
+            # The foot a prop takeoff is flown with: torque, slipstream
+            # and P-factor are the roll's standing load, led before the
+            # heading can leave. Its side follows the propeller rotation;
+            # opposite-rotating twins cancel and jets have no such foot.
             keep = max(-1.0, min(1.0, keep + self._right_foot(state)
                                  * self._pedal_dir()))
             self._roll_demand = keep

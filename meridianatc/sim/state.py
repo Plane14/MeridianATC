@@ -148,6 +148,12 @@ class AircraftState(_ExtraEngines):
     engine_type: int = -1
     engine_count: int = 0
     category: str = ""
+    # Propeller rotation by engine, left to right: +1 clockwise and -1
+    # anticlockwise from the cockpit. X-Plane publishes it directly;
+    # MSFS has it only in the aircraft's static engines.cfg. Empty means
+    # the source never established it, not that the aeroplane has no
+    # propellers.
+    prop_rotation_dirs: tuple[float, ...] = ()
     # What a checklist answer is checked against (meridianatc.atc.checklist).
     # A default here is not evidence: the first officer reads a variable
     # again on its own before objecting, and says nothing if it has no
