@@ -175,7 +175,6 @@ class _Weather:
                           for cell in cells)
                 for side, track in courses.items()
             }
-            planned_cost = costs.get(plan.side.lower(), 0.0)
             opposite_cost = costs.get(opposite_side, 0.0)
             # Any positive cost means body penetration or a clearance
             # shortfall somewhere on the scan. A different escape heading is
