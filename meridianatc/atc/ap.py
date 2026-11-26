@@ -328,8 +328,10 @@ class FlightDirector:
         never written runs at whatever the pilot left it -- the shared
         axis event after it, so a model that takes the variables does
         not also get the event's step."""
-        position = self._slewing(
-            b"THROTTLE", max(0.0, min(1.0, position)))
+        # Throttle callers rate-limit in time, not per frame: a fixed
+        # per-call step here made the same lever move several times faster
+        # on a fast control loop and slammed a turboprop's fuel unit.
+        position = max(0.0, min(1.0, position))
         ok = False
         for engine in range(1, 5):
             # The simulator's lever variable is "Percent over 100" --

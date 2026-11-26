@@ -115,7 +115,8 @@ def readback(instruction: Instruction, aircraft: Aircraft,
         if kind == "taxi":
             return speech.taxi(aircraft, str(values.get("runway", "")),
                                _spoken_route(values.get("route"), language),
-                               str(values.get("hold_short", "")))
+                               str(values.get("hold_short", "")),
+                               pressure=float(values.get("altimeter", 0) or 0))
         if kind == "cross_runway":
             return speech.cross_runway(aircraft,
                                        str(values.get("runway", "")))

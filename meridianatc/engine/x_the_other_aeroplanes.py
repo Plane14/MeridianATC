@@ -2008,9 +2008,15 @@ class _The_other_aeroplanes:
             if session.phase is Phase.DEPARTURE and self._enroute_now(state,
                                                                      session):
                 session.phase = Phase.ENROUTE
-            elif session.phase is Phase.ENROUTE and state.descending and \
-                    state.altitude_ft < 25000:
-                session.phase = Phase.DESCENT
+            elif session.phase is Phase.ENROUTE and state.altitude_ft < 25000:
+                if state.descending:
+                    now = time.monotonic()
+                    session.descending_since = (
+                        session.descending_since or now)
+                    if now - session.descending_since >= 20.0:
+                        session.phase = Phase.DESCENT
+                else:
+                    session.descending_since = 0.0
 
         if state.on_ground and session.phase in (Phase.LANDED,
                                                  Phase.TAXI_IN) \
