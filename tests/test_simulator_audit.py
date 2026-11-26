@@ -633,3 +633,36 @@ def test_msfs_design_cruise_altitude_is_read_for_ceiling_planning():
     rows = {var: attr for var, attr, _kind, _rate
             in sources.SimConnectSource.REQUESTS}
     assert rows["DESIGN_CRUISE_ALT"] == "design_cruise_alt_ft"
+
+
+def test_no_sim_start_is_moved_off_a_runway_reference_point():
+    """Airport reference points often sit on the runway. A no-sim aircraft
+    parked exactly there starts life on active pavement, so the fallback
+    start scans to the nearest point clear of it."""
+    from meridianatc.engine.x_session import _off_runway_start
+
+    airport = SimpleNamespace(ident="ELLX", lat=49.626845, lon=6.212134)
+    navdb = Mock()
+    navdb.runway_at.side_effect = (
+        lambda ident, lat, lon: "06" if (lat, lon) == (airport.lat, airport.lon) else "")
+
+    start_lat, start_lon = _off_runway_start(navdb, airport)
+
+    assert (start_lat, start_lon) != (airport.lat, airport.lon)
+    assert not navdb.runway_at(airport.ident, start_lat, start_lon)
+
+
+def test_observed_traffic_log_does_not_call_live_adsb_simulator_traffic():
+    """Live ADS-B aeroplanes share the observed-traffic list, but they did
+    not come from the simulator -- especially in a no-sim session."""
+    from meridianatc.engine.x_the_other_aeroplanes import _The_other_aeroplanes
+
+    engine = SimpleNamespace(
+        traffic=SimpleNamespace(flights=[
+            SimpleNamespace(observed=True, source="live"),
+            SimpleNamespace(observed=True, source="simulator"),
+        ]),
+        _observed_said=0,
+        emit=Mock())
+    _The_other_aeroplanes._say_observed(engine)
+    assert engine.emit.call_args.kwargs["count"] == "1"

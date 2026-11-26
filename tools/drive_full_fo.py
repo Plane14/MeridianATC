@@ -25,6 +25,7 @@ from flight_plant import Plant  # noqa: E402
 from meridianatc.atc.autonomous._shared import AutonomousPhase  # noqa: E402
 from meridianatc.config import Config  # noqa: E402
 from meridianatc.engine import Engine  # noqa: E402
+from meridianatc.engine.x_session import _off_runway_start  # noqa: E402
 from meridianatc.navdata.db import NavDB  # noqa: E402
 
 LOG = []
@@ -197,8 +198,11 @@ def main():
     engine.start(connect_sim=False)
     time.sleep(1.5)
 
-    p = Plant(49.6268, 6.2121, 1234.0, 0.0, 0.0,
-              field_elev_ft=1234.0, stall_kt=115.0, autothrottle=True)
+    airport = engine.navdb.airport("ELLX")
+    start_lat, start_lon = _off_runway_start(engine.navdb, airport)
+    start_elev = float(getattr(airport, "elev_ft", 1234.0) or 1234.0)
+    p = Plant(start_lat, start_lon, start_elev, 0.0, 0.0,
+              field_elev_ft=start_elev, stall_kt=115.0, autothrottle=True)
     p.vref = 145.0
     p.on_ground = True
     p.type_code = "A320"

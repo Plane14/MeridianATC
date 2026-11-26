@@ -1034,7 +1034,12 @@ class _The_other_aeroplanes:
         them" is otherwise a question with no answer on screen -- and a line
         every time an aeroplane taxis out of range is not news.
         """
-        count = self.traffic.observed_count
+        # Only the simulator's own aeroplanes. Live ADS-B flights are put
+        # through the same observed list so they can be worked, but calling
+        # them simulator traffic is wrong -- and in a no-sim session there is
+        # no simulator for them to have come from at all.
+        count = sum(1 for flight in self.traffic.flights
+                    if flight.observed and flight.source != "live")
         if count == self._observed_said:
             return
         if count and abs(count - self._observed_said) < 3 and self._observed_said:

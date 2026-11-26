@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ..navdata.build import project
 from ._shared import (
     Aircraft,
     AircraftState,
@@ -15,6 +16,29 @@ from ._shared import (
     log,
     wake_suffix,
 )
+
+
+def _off_runway_start(navdb, airport) -> tuple[float, float]:
+    """A plausible no-sim parking position, never the runway itself.
+
+    Airport reference points are surveyed at the middle of the field and very
+    often lie on the pavement -- Luxembourg's is on runway 06/24. Parking the
+    manual aircraft there made a no-sim flight begin on an active runway,
+    which is both impossible and changes how the tower treats its first call.
+    Without a simulator ground layout there is no honest stand coordinate, so
+    use the nearest clear point around the reference position instead.
+    """
+    lat, lon = airport.lat, airport.lon
+    if not navdb.runway_at(airport.ident, lat, lon):
+        return lat, lon
+    for distance_nm in (0.12, 0.20, 0.30, 0.45, 0.65):
+        for bearing in range(0, 360, 45):
+            candidate_lat, candidate_lon = project(
+                lat, lon, float(bearing), distance_nm)
+            if not navdb.runway_at(
+                    airport.ident, candidate_lat, candidate_lon):
+                return candidate_lat, candidate_lon
+    return lat, lon
 
 
 class _Session:
@@ -182,8 +206,9 @@ class _Session:
         # there: it is the only place the flight could sensibly be starting.
         if (departure is not None and not self.state.has_position
                 and hasattr(self.source, "update")):
+            start_lat, start_lon = _off_runway_start(self.navdb, departure)
             self.source.update(
-                latitude=departure.lat, longitude=departure.lon,
+                latitude=start_lat, longitude=start_lon,
                 altitude_ft=departure.elev_ft, on_ground=True,
             )
             self.refresh_state()

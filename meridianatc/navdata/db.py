@@ -1086,7 +1086,20 @@ class NavDB:
         published = self.stations(ident)
         if not published:
             return None
-        facility = published[0].facility
+        # The name comes from a controlling position, never whichever row
+        # the table happens to sort first. Fields can publish a non-control
+        # service on the same channel -- Luxembourg carries a VDF "Homer"
+        # row beside Luxembourg Tower -- and using it here invented a
+        # "Homer Clearance Delivery" that does not exist.
+        facility = ""
+        for held in (position, "DEL", "GND", "TWR", "APP", "DEP", "CTR"):
+            controlling = [row for row in self.stations(ident, held)
+                           if row.is_controller]
+            if controlling:
+                facility = controlling[0].facility
+                break
+        if not facility:
+            facility = airport.spoken or published[0].facility
         return Station(
             ident=airport.ident,
             position=position,
