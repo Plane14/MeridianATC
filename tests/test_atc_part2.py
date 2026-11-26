@@ -816,3 +816,17 @@ def test_storm_type_preflights_do_not_read_later_flight_phases():
         assert not any(word in challenge for word in forbidden
                        for challenge in challenges), path.name
     assert matched > 50
+
+
+def test_turbine_helicopter_types_do_not_use_fixed_wing_prestart_items():
+    """The converted Bell/H125/EC135 cards were a fixed-wing template:
+    mixture, wheel brakes and a propeller area on turbine helicopters.
+    Those cards are intentionally absent so the rotorcraft POH/class
+    cards govern instead."""
+    import json
+
+    for name in ("bell-407.json", "bell-uh-1h-huey.json",
+                 "ec135-t1.json", "h125.json"):
+        raw = json.loads((checklist_files.TYPES / name).read_text(
+            encoding="utf-8"))
+        assert "checklists" not in raw or not raw["checklists"]
