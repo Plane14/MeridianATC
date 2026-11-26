@@ -1980,8 +1980,16 @@ class _The_phase_machine:
             return
 
         if self.session.phase == Phase.LANDING or self.session.phase == Phase.LANDED:
-            self._transition(AutonomousPhase.LANDING)
-            self._goto_sub("flare")
+            # The tower marks the session LANDING when the clearance is
+            # issued, miles before the flare. That radio phase is not
+            # itself a handoff: taken literally it abandons the approach
+            # configuration gates early, the live six-mile final that
+            # reached the runway with the flaps up. Only the aeroplane's
+            # own height -- or the ground itself -- completes the handoff.
+            agl = state.altitude_agl_ft or 0.0
+            if getattr(state, "on_ground", False) or 0.0 < agl < 500.0:
+                self._transition(AutonomousPhase.LANDING)
+                self._goto_sub("flare")
             return
 
         self._phase_overdue(
@@ -2001,6 +2009,14 @@ class _The_phase_machine:
 
         if sub == "flare":
             self._run_checklist_for_phase("before_landing")
+            # A tower-phase handoff can reach this phase before the
+            # approach's distance gates have finished configuring the
+            # aeroplane. Airborne short final is still the final: keep
+            # the gear-and-flap schedule running here instead of
+            # freezing whatever configuration the approach happened
+            # to have reached.
+            if not getattr(state, "on_ground", False):
+                self._configure_final(state)
             if state.on_ground:
                 self.state.touchdown_at = now
                 # What this flare earned is this model's next flare:

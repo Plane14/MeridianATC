@@ -168,14 +168,18 @@ class _Circling:
         """The approach configuration, by distance to the threshold."""
         d = self.director
         distance = self._distance_to_destination_nm(state)
-        agl = (state.altitude_ft or 0.0) - self._field_elevation(state)
+        elevation = self._field_elevation(state)
+        altitude = getattr(state, "altitude_ft", None)
+        if altitude is None:
+            altitude = (getattr(state, "altitude_agl_ft", 0.0) or 0.0) + elevation
+        agl = (altitude or 0.0) - elevation
 
         # Gear down on final, flaps through the stages, speedbrake armed.
         # Only a model that has said the gear is down already is not
         # asked: up or unanswered both get the command. The inverted
         # check used to ask only the aeroplane already configured.
         if (agl < 2000 or (distance is not None and distance < 10.0)) \
-                and state.gear_down is not True \
+                and getattr(state, "gear_down", None) is not True \
                 and self._gear_allowed(state):
             d.gear(True)
         if distance is not None and distance < 6.0 and agl < 2500:

@@ -625,6 +625,66 @@ def test_the_rollout_uses_reverse_then_less_brake():
     assert not light.state.reversers_out
 
 
+def test_the_flare_phase_still_finishes_configuring_an_airborne_final():
+    """The live go-around re-attack was handed to LANDING at six miles:
+    the approach's flap gates stopped running, and the aeroplane crossed
+    the fence with the lever up. Short final is still final -- the
+    landing phase finishes the configuration rather than freezing it."""
+    from meridianatc.atc import flying
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _flier(flying.LIGHT)
+    flight.state.phase = AutonomousPhase.LANDING
+    flight.state.sub = "flare"
+    flight._distance_to_destination_nm = lambda state: 2.5
+    flight._field_elevation = lambda state: 0.0
+    flight._gear_allowed = lambda state: True
+    flight._flaps_allowed = lambda state: True
+    flight._vapp = lambda state: 80.0
+    flight._fly_short_final = Mock()
+    flight._check_stabilized = Mock()
+    flight._should_go_around = Mock(return_value=False)
+    state = SimpleNamespace(
+        on_ground=False, altitude_agl_ft=800.0, altitude_ft=800.0,
+        gear_down=True, indicated_airspeed_kt=85.0, landing_light=True)
+    flight._phase_landing(state, 10.0)
+    want = flight.performance.landing_flaps or 1.0
+    assert flight.director.flaps.call_args is not None
+    assert flight.director.flaps.call_args[0][0] == want
+
+
+def test_landing_clearance_alone_does_not_end_the_approach_miles_out():
+    """The tower marks the session LANDING when it clears the aeroplane
+    to land. The live fallback treated that radio phase as the flare
+    handoff itself, leaving the approach at six miles and 1,800 feet."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    from meridianatc.atc.session import Phase
+    flight = _flier()
+    flight.session.phase = Phase.LANDING
+    flight.session.cleared_landing = True
+    flight.state.phase = AutonomousPhase.APPROACH
+    flight.state.sub = "intercept"
+    flight._fly_orbit = Mock(return_value=False)
+    flight._configure_final = Mock()
+    flight._approach_recipe = Mock(return_value=None)
+    flight._maybe_tune_nav = Mock()
+    flight._join_final = Mock(return_value=False)
+    flight._fly_visual_final = Mock()
+    flight._check_stabilized = Mock()
+    flight._should_go_around = Mock(return_value=False)
+    flight._phase_overdue = Mock()
+    state = SimpleNamespace(
+        on_ground=False, altitude_agl_ft=1800.0, altitude_ft=2000.0,
+        landing_light=True, nav1_has_localizer=False,
+        nav1_has_glideslope=False)
+    flight._phase_approach(state, 10.0)
+    assert not any(call.args[0] == AutonomousPhase.LANDING
+                   for call in flight._transition.call_args_list)
+    state.altitude_agl_ft = 450.0
+    flight._phase_approach(state, 20.0)
+    assert any(call.args[0] == AutonomousPhase.LANDING
+               for call in flight._transition.call_args_list)
+
+
 def test_speed_is_capped_at_250_below_ten_thousand():
     """Two-fifty below ten, for the aeroplanes fast enough to break it."""
     from meridianatc.atc import flying
