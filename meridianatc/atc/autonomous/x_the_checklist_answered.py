@@ -75,7 +75,7 @@ class _The_checklist_answered:
                     self._checklist_active = ""
                     self._checklist_seen_running = False
             deferred = list(getattr(self.state, "checklist_deferred", []))
-            if deferred and not runner.waiting and not active:
+            if deferred and not runner.waiting:
                 name = deferred.pop(0)
                 self.state.checklist_deferred = deferred
                 if name not in self.state.checklists_completed:

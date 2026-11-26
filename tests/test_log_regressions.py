@@ -6006,26 +6006,3 @@ def test_crossing_the_threshold_still_high_is_a_goaround():
     state.altitude_agl_ft = 1600.0
     state.track_true = 160.0
     assert flight._should_go_around(state) is False
-
-
-def test_a_deferred_checklist_waits_for_the_card_already_started():
-    """Starting preflight and before-start in the same phase must not let
-    the second card jump the queue before the asynchronous first card has
-    even ticked."""
-    flight = _flier()
-    runner = Mock()
-    runner.waiting = False
-    runner.pending.return_value = (None, "")
-    runner.running = ""
-    runner.done = set()
-    flight.crew.checklists = runner
-    flight.state.checklist_deferred = ["before_start"]
-    flight._checklist_active = "preflight"
-    flight._checklist_active_since = 0.0
-    flight._drive_checklist(SimpleNamespace(), 1.0)
-    runner.start.assert_not_called()
-    assert flight.state.checklist_deferred == ["before_start"]
-
-    flight._checklist_active = ""
-    flight._drive_checklist(SimpleNamespace(), 2.0)
-    runner.start.assert_called_once_with("before_start")

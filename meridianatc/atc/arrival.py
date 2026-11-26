@@ -820,9 +820,14 @@ class ArrivalWatch:
             return False
         if station.position in ("APP", "DEP"):
             return True
-        return station.position == "CTR" and not any(
-            self.brain.controller_at(destination.ident, position)
-            for position in ("APP", "DEP"))
+        # A centre does not stop shaping the arrival merely because the
+        # terminal position exists on paper. In the no-sim Brussels run
+        # the centre held the flight until nine miles out, handed it to
+        # Approach far inside the forty-mile vectoring gate, and the first
+        # "vector" was therefore a close-in clearance. Real centres vector
+        # and step arrivals down before the handoff; the terminal position
+        # simply owns the later turns once the flight is on its frequency.
+        return station.position == "CTR"
 
     def _radar_vectors(self, session, station, state, destination, to_run,
                        weather_for, p) -> Reply | None:
