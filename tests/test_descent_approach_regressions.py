@@ -15,6 +15,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+
 
 def _engine_for_check_in():
     from meridianatc.atc.phraseology import Phraseology
@@ -635,3 +637,60 @@ def test_a_thirty_degree_cut_inside_the_gate_is_not_an_intercept():
                      heading_true=122.0, after="base", side=1.0)
     assert leg.leg == "intercept"
     assert leg.join_nm >= vec.SLOW.gate_nm - 0.5
+
+
+def _fo_for_computed_floor(out_nm=7.0, side_nm=1.0, altitude=3150.0):
+    """An FO on a straight final, with the moving parts spied."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+    from meridianatc.navdata.build import project
+    from meridianatc.sim.state import AircraftState
+    recipe = _legpath_recipe(offset_course=34.0, runway_course=34.0)
+    lat, lon = project(recipe.threshold_lat, recipe.threshold_lon,
+                       recipe.final_course + 180.0, out_nm)
+    if side_nm:
+        lat, lon = project(lat, lon, recipe.final_course + 90.0, side_nm)
+    state = AircraftState(
+        latitude=lat, longitude=lon, altitude_ft=altitude,
+        indicated_altitude_ft=altitude, track_true=recipe.final_course,
+        heading_true=recipe.final_course, ground_speed_kt=110.0,
+        connected=True, source="test")
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.state = AutonomousState()
+    fo.session = SimpleNamespace(assigned_altitude_ft=3000.0)
+    sim = object()
+    fo.sim = sim
+    fo._dir = Mock()
+    fo._dir.sim = sim
+    fo._apply_flight_director = Mock()
+    fo._recipe_vertical = Mock(return_value=-800.0)
+    fo._approach_speed = Mock(return_value=90.0)
+    fo._into_wind = lambda _state, heading: heading
+    fo._magnetic = lambda heading, _state: heading
+    fo._final_alt_bug = lambda elev: elev
+    fo._flown_altitude_ft = lambda _state: altitude
+    return fo, state, recipe
+
+
+def test_maintain_until_established_is_not_descended_through_off_final():
+    """"Maintain three thousand until established" still binds after the
+    vector itself is spent: the computed final may be joined laterally,
+    but it may not take the aeroplane below the platform level early."""
+    fo, state, recipe = _fo_for_computed_floor(side_nm=1.0)
+    assert not fo._established_on_final(state, recipe)
+    fo._fly_computed(state, recipe)
+    kwargs = fo._apply_flight_director.call_args.kwargs
+    assert kwargs["altitude"] == 3000.0
+    # 150 ft above the floor: no more than about 300 fpm down, so the
+    # level is captured rather than swept through at the profile's rate.
+    assert kwargs["vs_fpm"] == pytest.approx(-300.0)
+    assert fo.session.assigned_altitude_ft == 3000.0
+
+
+def test_the_until_established_level_is_spent_once_established():
+    fo, state, recipe = _fo_for_computed_floor(side_nm=0.0, altitude=3000.0)
+    assert fo._established_on_final(state, recipe)
+    fo._fly_computed(state, recipe)
+    kwargs = fo._apply_flight_director.call_args.kwargs
+    assert kwargs["altitude"] == recipe.field_elev_ft
+    assert kwargs["vs_fpm"] == -800.0
+    assert fo.session.assigned_altitude_ft is None

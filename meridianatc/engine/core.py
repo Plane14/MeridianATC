@@ -441,6 +441,19 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         from ..integrations.runways import SimRunways
 
         self.simrunways = SimRunways(self.config.sim.simconnect_dll)
+        # The localizer/VOR frequency behind each runway's navaid ident.
+        # MSFS is asked through the same facility API; X-Plane's
+        # earth_nav.dat is read from disk. The approach resolver reaches
+        # them through the brain rather than importing the engine.
+        from ..integrations.navaids import SimNavaids
+        from ..integrations.xpnavaids import XPlaneNavaids
+
+        self.simnavaids = SimNavaids(self.config.sim.simconnect_dll)
+        try:
+            self.xpnavaids = XPlaneNavaids()
+        except Exception:
+            self.xpnavaids = None
+        self.brain.navaid_lookup = self._sim_navaid
         # Where each field's runways have been said to come from (logs radio).
         self._runways_said: dict[str, str] = {}
         self._approaches_asked: set[str] = set()

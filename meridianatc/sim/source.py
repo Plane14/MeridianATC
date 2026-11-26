@@ -2637,12 +2637,32 @@ class ManualSource:
         return True
 
     def set_nav(self, mhz: float, radio: int = 1) -> bool:
-        """No radios without a simulator; answered False, not raised."""
-        return False
+        """Tune the scripted aeroplane's NAV1, as the simulator would.
+
+        The no-sim aircraft has no receiver geometry behind the frequency,
+        but the frequency itself is real state: the approach tuner reads it
+        back instead of retrying for ever, and tests can tell a tuning that
+        happened from one that did not.
+        """
+        try:
+            value = round(float(mhz), 3)
+        except (TypeError, ValueError):
+            return False
+        if int(radio) != 1 or not (108.0 <= value <= 117.95):
+            return False
+        self._state.nav1_freq = value
+        return True
 
     def set_adf(self, khz: float, radio: int = 1) -> bool:
-        """No radios without a simulator; answered False, not raised."""
-        return False
+        """Tune the scripted aeroplane's ADF1 for an NDB approach."""
+        try:
+            value = round(float(khz), 3)
+        except (TypeError, ValueError):
+            return False
+        if int(radio) != 1 or not (190.0 <= value <= 1750.0):
+            return False
+        self._state.adf1_freq_khz = value
+        return True
 
     def set_squawk(self, code: str) -> bool:
         text = "".join(c for c in str(code) if c.isdigit())[:4]

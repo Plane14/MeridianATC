@@ -176,7 +176,7 @@ def _as_navaid(row: dict | None) -> Navaid | None:
 
 
 def _navaid(navdb, ident: str, runway: str, family: str,
-            near: tuple[float, float]) -> Navaid | None:
+            near: tuple[float, float], brain=None) -> Navaid | None:
     """The station this approach is tuned to, or None.
 
     The runway end's own navaid first -- the localizer or the VOR the
@@ -197,6 +197,17 @@ def _navaid(navdb, ident: str, runway: str, family: str,
     if end_ident and (family in ("ils", "loc")
                       or (family == "vor" and end_kind == "VOR")):
         found = _as_navaid(navdb.navaid(end_ident, near=near))
+        if found is None:
+            # Localizers are absent from the static worldwide navaid
+            # table. The running simulator is the authoritative source
+            # for the frequency its own runway just named.
+            lookup = getattr(brain, "navaid_lookup", None)
+            if lookup is not None:
+                try:
+                    found = _as_navaid(lookup(
+                        end_ident, airport=ident, runway=wanted, near=near))
+                except Exception:
+                    found = None
         if found:
             return found
     types = {"vor": ("VOR", "VORTAC", "VOR-DME", "TACAN"),
@@ -323,8 +334,8 @@ def resolve(session, brain, navdb, state) -> ApproachRecipe | None:
                                faf_dist)
 
     navaid = _navaid(navdb, ident, approach_runway, family,
-                     (t_lat, t_lon)) if family in ("ils", "loc", "vor",
-                                                   "ndb") else None
+                     (t_lat, t_lon), brain) if family in (
+                         "ils", "loc", "vor", "ndb") else None
 
     # The published legs where the feed carries them: the path the chart
     # draws instead of the synthetic final -- RF arcs and all. The last

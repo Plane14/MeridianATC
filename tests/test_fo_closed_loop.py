@@ -320,3 +320,106 @@ def test_a_flap_stage_refused_for_speed_is_selected_once_slow_enough():
     state.indicated_airspeed_kt = fast - 40.0
     fo._configure_owed(state)
     assert plant.flaps > 0.0 and fo._flaps_owed is None
+
+
+def test_below_the_glidepath_is_intercepted_level_not_climbed_back_to():
+    """A low final holds what height it has until the descending path is
+    met. Climbing back up to the glideslope close to the runway is the
+    unstable manoeuvre this regression removes."""
+    plant = _start(5.0, 600.0)
+    fo = _fo(plant)
+    state = plant.state()
+    vs = fo._three_degree_vs(state, RWY_LAT, RWY_LON, 0.0, RWY_HDG)
+    assert vs == 0.0
+
+
+def test_the_final_configuration_is_measured_from_the_threshold():
+    """The airport reference point can sit miles from the active runway.
+    A short final measured from it used to remain outside the three-mile
+    full-flap gate and reach the runway clean."""
+    plant = _start(2.5, 850.0)
+    fo = _fo(plant)
+    # Same runway, airport reference six miles north of it.
+    import dataclasses
+    fo.session.destination = dataclasses.replace(
+        fo.session.destination, lat=fo.session.destination.lat + 0.1)
+    assert fo._distance_to_destination_nm(plant.state()) > 3.0
+    fo._configure_final(plant.state())
+    assert plant.flaps == 3
+    assert fo.state.configured == "flaps_full"
+
+
+def test_nav1_frequency_gates_ils_needle_guidance():
+    """A live ILS needle on the wrong frequency is not this approach.
+
+    The tuner may still be catching up, or the last field's localizer may
+    be the one in the radio. Either way the FO must fly the computed final
+    until NAV1 reads the approach station back.
+    """
+    plant = _start(5.0, 1640.0)
+    fo = _fo(plant)
+    fo.session.ifr = True
+    fo._fly_computed = Mock()
+    fo._approach_speed = Mock(return_value=65.0)
+    fo._manage_throttle = Mock()
+    director = Mock()
+    director.approach.return_value = True
+    director.speed.return_value = True
+    director.airspeed_hold.return_value = True
+    director.vs_hold.return_value = True
+    fo._dir = director
+    # ``director`` is remade when its sim is not the current one; pin it.
+    director.sim = fo.sim
+    nav = SimpleNamespace(ident="ITE", freq_mhz=110.10)
+    recipe = SimpleNamespace(family="ils", navaid=nav, circling=False)
+
+    state = plant.state()
+    state.nav1_freq = 109.90
+    state.nav1_has_localizer = True
+    state.nav1_has_glideslope = True
+    assert fo._fly_recipe(state, recipe, 1000.0) is True
+    fo._fly_computed.assert_called_once()
+    director.approach.assert_not_called()
+
+    fo._fly_computed.reset_mock()
+    state.nav1_freq = 110.10
+    assert fo._fly_recipe(state, recipe, 1000.0) is True
+    director.approach.assert_called_once_with(True)
+    fo._fly_computed.assert_not_called()
+
+
+def test_the_no_sim_manual_nav_radio_really_tunes_nav1():
+    """The no-sim radio used to refuse every NAV write, so an instrument
+    approach could never be verified end to end without a simulator."""
+    from meridianatc.sim.source import ManualSource
+
+    source = ManualSource()
+    assert source.set_nav(110.10, 1) is True
+    assert source.read().nav1_freq == pytest.approx(110.10)
+    assert source.set_nav(118.00, 1) is False
+    assert source.set_nav(110.10, 2) is False
+
+
+def test_the_approach_navaid_is_tuned_into_nav1_in_no_sim():
+    plant = _start(5.0, 1640.0)
+    fo = _fo(plant)
+    from meridianatc.sim.source import ManualSource
+    source = ManualSource()
+    fo.sim = source
+    nav = SimpleNamespace(ident="ITE", freq_mhz=110.10)
+    recipe = SimpleNamespace(navaid=nav)
+    fo._maybe_tune_nav(plant.state(), recipe, 1000.0)
+    assert source.read().nav1_freq == pytest.approx(110.10)
+
+
+def test_an_ndb_approach_is_tuned_on_adf_not_the_impossible_nav_band():
+    plant = _start(5.0, 1640.0)
+    fo = _fo(plant)
+    from meridianatc.sim.source import ManualSource
+    source = ManualSource()
+    fo.sim = source
+    nav = SimpleNamespace(ident="TES", freq_mhz=0.350, kind="NDB")
+    recipe = SimpleNamespace(navaid=nav)
+    fo._maybe_tune_nav(plant.state(), recipe, 1000.0)
+    assert source.read().adf1_freq_khz == pytest.approx(350.0)
+    assert source.read().nav1_freq == 0.0

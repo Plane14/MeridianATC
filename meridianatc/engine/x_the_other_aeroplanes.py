@@ -357,6 +357,41 @@ class _The_other_aeroplanes:
         decision("airport", airport=ident, runways_from=source, ends=ends,
                  **self.navdb.runway_differences(ident))
 
+    def _sim_navaid(self, ident: str, airport: str = "", runway: str = "",
+                    near=None):
+        """The active simulator's navaid row for an approach resolver.
+
+        The runway names the localizer by ident, not frequency. MSFS can
+        answer that ident through the facility API; X-Plane's earth_nav
+        rows carry ident, airport and runway together. A failed lookup is
+        simply None -- the recipe then keeps computed guidance rather than
+        inventing a frequency.
+        """
+        try:
+            if capabilities(self.state.source).facilities:
+                return self.simnavaids.navaid(ident)
+            if self.state.source == "xplane":
+                # The plugin reports the install root only after it
+                # connects; a lookup service built at engine start from
+                # Laminar's install list can therefore be empty on a
+                # portable/unregistered install. Bind the live root then.
+                sysroot = getattr(getattr(self, "simtraffic", None),
+                                  "sysroot", "")
+                if sysroot and (self.xpnavaids is None
+                                or not getattr(self.xpnavaids, "_roots", [])):
+                    from ..integrations.xpnavaids import XPlaneNavaids
+                    try:
+                        self.xpnavaids = XPlaneNavaids(sysroot)
+                    except Exception:
+                        log.debug("could not bind X-Plane navdata root %s",
+                                  sysroot, exc_info=True)
+                if self.xpnavaids is not None:
+                    return self.xpnavaids.navaid(ident, airport=airport,
+                                                 runway=runway)
+        except Exception:
+            log.debug("could not look up navaid %s", ident, exc_info=True)
+        return None
+
     def _procedure_sources(self):
         """The procedure and approach readers for the active simulator.
 

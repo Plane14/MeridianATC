@@ -299,6 +299,9 @@ class AircraftState(_ExtraEngines):
     # What NAV1 is tuned to, MHz -- what the first officer set for the
     # approach, so it can tell a needle that is alive from one that is not.
     nav1_freq: float = 0.0
+    # ADF1's tuned frequency, kHz -- the NDB approach's counterpart to
+    # NAV1. Zero means unset or unreported.
+    adf1_freq_khz: float = 0.0
     ap_airspeed_kt: float = 0.0
     # The FCU/MCP windows: AUTOPILOT ALTITUDE LOCK VAR and HEADING LOCK
     # DIR on MSFS, the altitude and heading dials on X-Plane -- what a

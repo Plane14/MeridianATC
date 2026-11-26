@@ -164,10 +164,26 @@ class _Circling:
         filed_floor = float(getattr(route, "arrival_floor_ft", 0.0) or 0.0)
         return max(elev + 3000.0, filed_floor)
 
+    def _distance_to_landing_threshold_nm(self, state) -> float | None:
+        """Distance to the runway being landed on, not the airport centre.
+
+        Large fields put their reference point miles from the active
+        threshold. Configuration gates measured from that centre can still
+        read "six miles out" while the aeroplane is on short final, which is
+        how a final reached the runway clean. Where the runway is known it
+        is the measure; the airport reference is only the fallback.
+        """
+        self._find_runway(state)
+        if getattr(state, "has_position", False) \
+                and (self.state.runway_lat or self.state.runway_lon):
+            return state.distance_to(self.state.runway_lat,
+                                     self.state.runway_lon)
+        return self._distance_to_destination_nm(state)
+
     def _configure_final(self, state) -> None:
         """The approach configuration, by distance to the threshold."""
         d = self.director
-        distance = self._distance_to_destination_nm(state)
+        distance = self._distance_to_landing_threshold_nm(state)
         elevation = self._field_elevation(state)
         altitude = getattr(state, "altitude_ft", None)
         if altitude is None:

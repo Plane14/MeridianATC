@@ -74,6 +74,28 @@ class _The_cleared_approach:
         sim = self.sim
         if sim is None or not getattr(sim, "connected", False):
             return
+        ndb = nav.freq_mhz < 108.0 or str(getattr(nav, "kind", "")).upper() == "NDB"
+        if ndb:
+            adf_khz = round(nav.freq_mhz * 1000.0, 3)
+            tuned_adf = float(getattr(state, "adf1_freq_khz", 0.0) or 0.0)
+            if tuned_adf and abs(tuned_adf - adf_khz) < 0.5:
+                if not self.state.approach_tuned:
+                    self.state.approach_tuned = True
+                    self._emit("info",
+                               f"ADF1 showing {nav.ident} {adf_khz:.1f} kHz",
+                               "autonomous.nav_tuned")
+                return
+            if now - self.state.nav_tune_at < 10.0:
+                return
+            self.state.nav_tune_at = now
+            if hasattr(sim, "set_adf") and sim.set_adf(adf_khz, 1):
+                # Real ADF readbacks are not yet universal across the two
+                # simulators; a successful write is the command record here.
+                self.state.approach_tuned = True
+                self._emit("info",
+                           f"Tuning ADF1 to {nav.ident} {adf_khz:.1f} kHz",
+                           "autonomous.nav_tune")
+            return
         tuned = float(getattr(state, "nav1_freq", 0.0) or 0.0)
         if tuned and abs(tuned - nav.freq_mhz) < 0.005:
             if not self.state.approach_tuned:
@@ -90,6 +112,22 @@ class _The_cleared_approach:
             self._emit("info",
                        f"Tuning NAV1 to {nav.ident} {nav.freq_mhz:.3f} MHz",
                        "autonomous.nav_tune")
+
+    @staticmethod
+    def _nav1_matches(recipe, state) -> bool:
+        """Whether NAV1 is tuned to the station these needles belong to.
+
+        A live localizer flag is not evidence of the approach: the radio may
+        still be showing the last field's ILS. Flying APR on it is worse
+        than flying the computed path, so needle guidance is gated on the
+        frequency readback matching the recipe's navaid. Where the procedure
+        has no navaid frequency there is nothing safe to trust.
+        """
+        nav = getattr(recipe, "navaid", None) if recipe is not None else None
+        if nav is None or not nav.freq_mhz:
+            return False
+        tuned = float(getattr(state, "nav1_freq", 0.0) or 0.0)
+        return bool(tuned) and abs(tuned - nav.freq_mhz) < 0.005
 
     @staticmethod
     def _magnetic(true_heading: float, state) -> float:
@@ -111,13 +149,23 @@ class _The_cleared_approach:
         """
         d = self.director
         family = recipe.family
-        has_loc = bool(getattr(state, "nav1_has_localizer", False))
-        has_gs = bool(getattr(state, "nav1_has_glideslope", False))
+        on_station = self._nav1_matches(recipe, state)
+        has_loc = on_station and bool(getattr(state, "nav1_has_localizer", False))
+        has_gs = on_station and bool(getattr(state, "nav1_has_glideslope", False))
 
         # A circle, once it has started, owns the aeroplane until it is
         # back on the landing runway's final.
         if recipe.circling and self._circling(state, recipe):
             return self._fly_circle(state, recipe)
+
+        if (family in ("ils", "loc") and self.session.ifr
+                and self._until_established_floor(state, recipe)):
+            # "Maintain three thousand until established" binds the
+            # vertical even where the needles are awake. Until the final
+            # is genuinely joined the computed path owns the intercept;
+            # APR/LOC mode is armed after that, not instead of the level.
+            self._fly_computed(state, recipe)
+            return True
 
         if family == "ils" and has_loc and has_gs and self.session.ifr:
             d.approach(True)
@@ -213,13 +261,15 @@ class _The_cleared_approach:
         alt = state.altitude_ft or 0.0
         vs = approach_flight.sink_fpm(state.ground_speed_kt or 0.0)
         if alt < desired - 60.0:
-            # Under the path: no descent until it is met. The loop's
-            # proportional answer only shallowed the sink, and its
-            # integrator wound up through the wait and carried the
-            # aeroplane over the top of the path once it arrived.
+            # Under the path: hold what height there is until the path
+            # descends to it. That is how a glideslope is intercepted;
+            # climbing back up to it low on final is a second unstable
+            # manoeuvre invented inside the first. The loop's integrator
+            # is reset so the wait does not carry the aeroplane over the
+            # top when the capture comes.
             if self._use_pids:
                 self._pid("vertical").reset()
-            return 200.0 if alt < desired - 150.0 else 50.0
+            return 0.0
         if self._use_pids:
             # The path error to a sink correction on top of the profile's
             # own figure: above the path the loop deepens the descent,
@@ -231,13 +281,13 @@ class _The_cleared_approach:
             corr = self._pid("vertical").update(alt - desired,
                                                 measurement=alt)
             return max(-900.0, min(250.0, -vs - corr))
-        # Capture: well above the path it comes down harder; below it the
-        # aeroplane climbs back to the path rather than keep sinking
-        # toward the ground under it.
+        # Capture: well above the path it comes down harder. Below it the
+        # aeroplane holds level and lets the descending path come to it --
+        # it does not climb back up to a glidepath low on final.
         if alt > desired + 300.0:
             vs = min(900.0, vs * 1.5)
         elif alt < desired - 150.0:
-            return 200.0
+            return 0.0
         return -vs
 
     def _recipe_vertical(self, state, recipe, steer=None) -> float:
@@ -298,6 +348,40 @@ class _The_cleared_approach:
             vs_fpm=self._recipe_vertical(state, recipe),
             speed_kt=self._approach_speed(state))
 
+    def _established_on_final(self, state, recipe) -> bool:
+        """Close on the final's course and centreline, strictly enough
+        that "maintain ... until established" is genuinely spent."""
+        frame = self._final_frame(state, recipe)
+        if frame is None or not getattr(state, "has_position", False):
+            return False
+        t_lat, t_lon, course, _elev = frame
+        where = auto_nav.align(state.latitude, state.longitude,
+                               t_lat, t_lon, course)
+        out = -where["along_m"] / 1852.0
+        side = where["offset_m"] / 1852.0
+        track = (getattr(state, "track_true", None)
+                 or getattr(state, "heading_true", 0.0) or 0.0)
+        off_course = abs((course - track + 540.0) % 360.0 - 180.0)
+        return out > 0.0 and abs(side) <= 0.3 and off_course <= 20.0
+
+    def _until_established_floor(self, state, recipe) -> float:
+        """The level ATC required to be kept until established, or zero.
+
+        Clearing the approach does not by itself spend "maintain three
+        thousand until established": the final is first joined, then the
+        published/needle descent releases the level. Once established the
+        assignment is spent rather than kept as a false floor all the way
+        to the flare.
+        """
+        floor = float(getattr(self.session, "assigned_altitude_ft", 0.0)
+                      or 0.0)
+        if floor <= 0.0:
+            return 0.0
+        if self._established_on_final(state, recipe):
+            self.session.assigned_altitude_ft = None
+            return 0.0
+        return floor
+
     def _fly_computed(self, state, recipe) -> None:
         """The computed final: path steering for the lateral, the
         three-degree profile for the vertical. What an RNAV, a VOR, an NDB
@@ -319,9 +403,19 @@ class _The_cleared_approach:
         if heading is None:
             heading = recipe.final_course
         heading = self._into_wind(state, heading)
+        floor = self._until_established_floor(state, recipe)
+        vs = self._recipe_vertical(state, recipe, steer)
+        altitude = self._final_alt_bug(recipe.field_elev_ft)
+        if floor:
+            altitude = max(altitude, floor)
+            # The selector is the hard protection; the rate is also
+            # tapered into the floor so VS-only/no-sim autopilots do not
+            # simply sweep through it. No climb is invented below it.
+            height_above = max(0.0, self._flown_altitude_ft(state) - floor)
+            vs = max(vs, -height_above * 2.0)
         self._apply_flight_director(
-            state, altitude=self._final_alt_bug(recipe.field_elev_ft),
-            vs_fpm=self._recipe_vertical(state, recipe, steer),
+            state, altitude=altitude,
+            vs_fpm=vs,
             heading=self._magnetic(heading, state),
             speed_kt=self._approach_speed(state))
 

@@ -11,6 +11,8 @@ class _The_approach_s:
 
     def _find_runway(self, state) -> None:
         """The departure/arrival runway's threshold and heading, once."""
+        if getattr(self, "navdb", None) is None:
+            return
         # The field the leg is bound for: the destination's once the
         # aeroplane is on the way in -- the departure's geometry is no
         # use to an approach, whatever runway the tower named -- and the
@@ -35,8 +37,8 @@ class _The_approach_s:
         # until then -- a departure asking after the destination's
         # runway either finds nothing or, worse, a same-numbered one
         # pointed the wrong way.
-        name = ((self.session.arrival_runway if arrival
-                 else self.session.departure_runway) or "")
+        name = ((getattr(self.session, "arrival_runway", "") if arrival
+                 else getattr(self.session, "departure_runway", "")) or "")
         key = (airport.ident, name, arrival)
         if self.state.runway_heading > 0 and self.state.runway_key == key:
             return
