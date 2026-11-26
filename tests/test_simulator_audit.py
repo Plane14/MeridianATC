@@ -698,3 +698,25 @@ def test_exact_fms_cruise_probe_beats_inferred_constraint_altitudes():
     ])
     assert route.cruise_ft == 17000
     assert route.cruise_exact
+
+
+def test_atis_languages_share_one_information_letter():
+    """The live LEVX log issued English T and English/Spanish U-shaped
+    divergent letters for one aerodrome. The letter is the airport's
+    revision, not a counter inside each language's renderer."""
+    from meridianatc.atc.atis import AtisGenerator
+    from meridianatc.atc.phraseology import Phraseology, Weather
+
+    airport = SimpleNamespace(ident="LECO", spoken="Coruna", dialect="icao")
+    shared = {}
+    first = AtisGenerator(None, airport, Phraseology("icao"),
+                          letter_state=shared)
+    second = AtisGenerator(None, airport, Phraseology("icao"),
+                           letter_state=shared)
+    for generator in (first, second):
+        generator._runway_choice = lambda weather, departing=False: ["03"]
+    weather = Weather()
+
+    assert second.issue(weather).letter == first.issue(weather).letter
+    rolled = first.issue(weather).letter
+    assert second.issue(weather).letter == rolled

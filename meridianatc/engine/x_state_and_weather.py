@@ -207,11 +207,14 @@ class _State_and_weather:
         if generator is None:
             from ..atc.language import phraseology_for
 
+            letter_key = (airport_ident, region)
+            letter_state = self._atis_letters.setdefault(letter_key, {})
             generator = AtisGenerator(
                 self.navdb, airport,
                 phraseology_for(language, airport_ident,
                                 self.config.atc.strict_icao_digits,
                                 region=region),
+                letter_state=letter_state,
             )
             # The approach the controller will give: the pilot's own flight's
             # kept choice when it is landing here, and the field's weather,

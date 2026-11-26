@@ -611,6 +611,7 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         self.station: Station | None = None
 
         self._atis: dict[tuple[str, str], AtisGenerator] = {}
+        self._atis_letters: dict[tuple[str, str], dict] = {}
         # Fields whose ATIS must be re-issued on the next ask, set from the
         # approaches worker.
         self._atis_stale: set[str] = set()

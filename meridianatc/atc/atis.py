@@ -70,6 +70,7 @@ class AtisGenerator:
         *,
         transition_altitude: int = 0,
         start_letter: str | None = None,
+        letter_state: dict | None = None,
     ):
         self.navdb = navdb
         self.airport = airport
@@ -80,11 +81,20 @@ class AtisGenerator:
         # nobody there uses.
         self.transition_altitude = (
             transition_altitude or transition_for(airport.ident))
-        self._letter_index = (
+        first = (
             LETTERS.index(start_letter.upper())
             if start_letter and start_letter.upper() in LETTERS
             else self._letter_from_clock()
         )
+        # The letter belongs to the aerodrome, not to the language a
+        # broadcast was rendered in. Engines serving English and Spanish
+        # ATIS share this mutable state, so a material change advances the
+        # letter once and every language then composes the same one.
+        self._letter_state = letter_state if letter_state is not None else {}
+        self._letter_state.setdefault("index", first)
+        self._letter_state.setdefault("current", "")
+        self._letter_state.setdefault("revision", 0)
+        self._letter_revision = -1
         self.current: AtisReport | None = None
         # Which approach a landing runway has, from the same place the
         # controllers ask (``ControllerBrain.approach_for``), so the broadcast
@@ -186,9 +196,17 @@ class AtisGenerator:
     # ------------------------------------------------------------------
 
     def issue(self, weather: Weather) -> AtisReport:
-        """Force a new ATIS with the next letter."""
-        letter = LETTERS[self._letter_index % 26]
-        self._letter_index += 1
+        """Force a new ATIS with the aerodrome's current letter."""
+        state = self._letter_state
+        if state["current"] and self._letter_revision != state["revision"]:
+            # Another language's generator already rolled this revision.
+            letter = state["current"]
+        else:
+            letter = LETTERS[state["index"] % 26]
+            state["index"] += 1
+            state["current"] = letter
+            state["revision"] += 1
+        self._letter_revision = state["revision"]
 
         runways = list(self._runway_choice(weather))
         # A field with a preferential system lands on one runway and departs
