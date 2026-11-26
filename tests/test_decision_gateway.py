@@ -68,11 +68,39 @@ def test_active_valid_model_choice_is_selected():
 
 def test_shadow_logs_model_choice_but_selects_baseline():
     gateway = DecisionGateway(provider(), mode_for={"traffic.circuit_spacing": "shadow"})
-    result = gateway.select_sync(request())
+    req = request()
+    result = gateway.select_sync(req)
     assert result.source == "shadow"
     assert result.selected_id == "baseline"
-    assert result.model_id == "hold"
     assert result.valid
+
+    completed = None
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline and completed is None:
+        current = gateway.current(req.scope, req.cache_key, req.state_version)
+        if current is not None and current.reason != "shadow pending":
+            completed = current
+        else:
+            time.sleep(0.01)
+    assert completed is not None
+    assert completed.source == "shadow"
+    assert completed.selected_id == "baseline"
+    assert completed.model_id == "hold"
+    gateway.close()
+
+
+def test_shadow_does_not_wait_for_a_slow_provider():
+    def slow_complete(*_args, **_kwargs):
+        time.sleep(0.4)
+        return '{"choice": 2}'
+
+    slow = SimpleNamespace(complete=slow_complete, available=lambda: True)
+    gateway = DecisionGateway(slow, mode_for={"traffic.circuit_spacing": "shadow"})
+    started = time.monotonic()
+    result = gateway.select_sync(request())
+    elapsed = time.monotonic() - started
+    assert result.selected_id == "baseline"
+    assert elapsed < 0.2
     gateway.close()
 
 

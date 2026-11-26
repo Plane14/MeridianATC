@@ -164,6 +164,18 @@ class DecisionGateway:
         if mode == "off":
             self._count(request.scope, "off")
             return self._fallback(request, "off", "scope off", 0.0, valid=True)
+        if mode == "shadow":
+            # Observation must be behaviorally and temporally invisible to
+            # the simulation. Ask on the worker and continue immediately on
+            # the deterministic baseline; the completed comparison is kept
+            # for telemetry and later inspection rather than awaited here.
+            self.submit(request)
+            return DecisionResult(
+                scope=request.scope, selected_id=request.baseline_id,
+                source="shadow", baseline_id=request.baseline_id,
+                confidence=1.0, valid=True, reason="shadow pending",
+                latency_s=0.0, state_version=request.state_version,
+                cache_key=request.cache_key)
         self._count(request.scope, "asked")
         future = self._executor.submit(self._resolve, request, mode)
         started = self._clock()
