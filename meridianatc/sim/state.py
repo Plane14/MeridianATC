@@ -107,6 +107,12 @@ class AircraftState(_ExtraEngines):
     # answered, which is not evidence of a stopped engine.
     engines_running: bool | None = None
     parking_brake: bool = False
+    # X-Plane 12.2 hydraulic-brake metadata. None means the simulator
+    # never answered; a trapped-pressure system reports the valve as
+    # the parking control, while ordinary toe-brake pressure is not a
+    # parking brake at all.
+    parking_brake_valve: bool | None = None
+    parking_brake_trap: bool | None = None
     gear_down: bool = True
     # IS TAIL DRAGGER (SimConnect) / acf_is_taildragger (X-Plane). None
     # means the source never answered, and callers then fall back to the

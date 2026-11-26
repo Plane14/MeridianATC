@@ -507,6 +507,17 @@ class XPlaneControls:
             if "HEADING" in variable:
                 value %= 360
             return self.set_variable(variable, value)
+        if name == "PARKING_BRAKE_SET" and value in (0.0, 1.0):
+            # X-Plane 12.2's brake model is hydraulic on some aircraft:
+            # writing the legacy ratio can fight the pressure-holding
+            # valve. The documented command sequences pressure and the
+            # valve correctly; the legacy write remains only for old
+            # simulators that predate those commands.
+            if source.version is None or source.version >= 120200:
+                return source._command(
+                    "sim/flight_controls/park_brake_set" if value
+                    else "sim/flight_controls/park_brake_release")
+            return source.set_variable("BRAKE PARKING POSITION", value)
         if name in COMMANDS:
             return source._command(COMMANDS[name])
         # -- the hand-flown channels ----------------------------------------

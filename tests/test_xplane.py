@@ -174,6 +174,26 @@ def test_connect_converts_state_and_strings(xp):
     assert link.read_now("not_a_field") is None
 
 
+def test_hydraulic_toe_brake_pressure_is_not_the_parking_brake(xp):
+    """X-Plane 12.2's master-cylinder ratio answers toe braking too: the
+    live Baron's sharp-turn braking left it at a few tenths and the old
+    boolean read called that the parking brake. On a trapped-pressure
+    system the valve is the control being asked about."""
+    server, link = xp
+    ratio = DATAREFS["parking_brake"][0]
+    valve = DATAREFS["parking_brake_valve"][0]
+    trap = DATAREFS["parking_brake_trap"][0]
+    server.values.update({ratio: 0.16, valve: 0, trap: 1})
+    assert link.connect()
+    eventually(lambda: "parking_brake_valve" in link._values)
+    state = link.read()
+    assert not state.parking_brake
+    assert state.parking_brake_trap and not state.parking_brake_valve
+    server.values[valve] = 1
+    eventually(lambda: link.read().parking_brake)
+
+
+
 @pytest.mark.parametrize("xp_mode,expected", [(0, 0), (1, 1), (2, 3), (3, 4),
                                               (4, 1), (5, 4), (6, 4), (7, 4)])
 def test_transponder_modes(xp, xp_mode, expected):

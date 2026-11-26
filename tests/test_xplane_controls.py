@@ -39,7 +39,6 @@ def xp():
     ("FLAPS_SET", 8191.5, FLAPS, .5),
     ("AXIS_FLAPS_SET", -16383, FLAPS, 0),
     ("GEAR_SET", 0, "sim/cockpit2/controls/gear_handle_down", 0),
-    ("PARKING_BRAKE_SET", 1, "sim/cockpit2/controls/parking_brake_ratio", 1),
     ("AP_NAV_SELECT_SET", 2, HSI, 1),
     ("SPOILERS_ARM_ON", 0, "sim/cockpit2/controls/speedbrake_ratio", -.5),
     ("THROTTLE_FULL", 0, THROTTLE + "_all", 1),
@@ -72,6 +71,26 @@ def test_event_commands(xp, event, command):
     peer, source = xp
     assert source._send(event.encode(), 0)
     eventually(lambda: peer.commands == [command])
+
+
+def test_parking_brake_uses_the_xplane_122_commands(xp):
+    """A hydraulic parking brake is pressure plus a valve, not a legacy
+    ratio write: the documented commands sequence the two correctly."""
+    peer, source = xp
+    source.version = 120200
+    assert source._send(b"PARKING_BRAKE_SET", 1)
+    assert source._send(b"PARKING_BRAKE_SET", 0)
+    eventually(lambda: peer.commands == [
+        "sim/flight_controls/park_brake_set",
+        "sim/flight_controls/park_brake_release"])
+
+
+def test_parking_brake_legacy_write_before_xplane_122(xp):
+    peer, source = xp
+    source.version = 120100
+    assert source._send(b"PARKING_BRAKE_SET", 1)
+    eventually(lambda: (
+        "sim/cockpit2/controls/parking_brake_ratio", 1.0) in peer.writes)
 
 
 def test_real_director_heading_altitude_vs_speed_and_engagement(xp):

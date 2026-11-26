@@ -132,6 +132,8 @@ DATAREFS = {
     "aoa_deg": ("sim/flightmodel/position/alpha", 1),
     "stall_aoa_deg": ("sim/aircraft/overflow/acf_stall_warn_alpha", 1),
     "parking_brake": ("sim/cockpit2/controls/parking_brake_ratio", 1),
+    "parking_brake_valve": ("sim/cockpit2/controls/park_brake_valve", 1),
+    "parking_brake_trap": ("sim/aircraft/gear/acf_park_brake_trap", 1),
     "gear_down": ("sim/cockpit2/controls/gear_handle_down", 1),
     "seatbelt_sign": ("sim/cockpit2/switches/fasten_seat_belts", 1),
     "beacon_light": ("sim/cockpit2/switches/beacon_on", 1),
@@ -821,6 +823,20 @@ class XPlaneSource:
             default = getattr(state, key)
             setattr(state, key, bool(raw) if isinstance(default, bool)
                     else int(raw) if isinstance(default, int) else raw)
+        if "alias:parking_brake" not in values:
+            # X-Plane 12.2 replaced the old ratio with the master brake
+            # cylinder's request: toe braking for a sharp turn can leave
+            # it non-zero without any parking brake selected. On a
+            # trapped-pressure system the valve is the parking control;
+            # otherwise the mechanical handle's ratio is, with a point
+            # actuation rather than any residual pressure at all.
+            ratio = values.get("parking_brake")
+            valve = values.get("parking_brake_valve")
+            trap = values.get("parking_brake_trap")
+            state.parking_brake_valve = None if valve is None else bool(valve)
+            state.parking_brake_trap = None if trap is None else bool(trap)
+            if ratio is not None:
+                state.parking_brake = bool(valve) if trap else ratio >= 0.5
         for key, (_path, size) in STRINGS.items():
             raw = bytes(max(0, min(255, int(values.get(f"{key}:{i}", 0)))) for i in range(size))
             setattr(state, key, raw.split(b"\0", 1)[0].decode("utf-8", errors="replace").strip())
