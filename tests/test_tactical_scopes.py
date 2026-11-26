@@ -111,3 +111,60 @@ def test_active_fo_weather_choice_uses_the_validated_opposite_side():
 
     assert weather.session.weather_deviation_side == "right"
     assert weather._urgent_deviation_side == "right"
+
+
+
+def test_ai_runway_choice_is_tracked_as_the_runway_in_use():
+    from types import SimpleNamespace
+
+    from meridianatc.atc.controller.x_helpers import _Helpers
+
+    class Runway:
+        def __init__(self, le, he):
+            self.le_ident = le
+            self.he_ident = he
+
+        def ends(self):
+            return ((self.le_ident, 90.0, 0.0, 0.0),
+                    (self.he_ident, 270.0, 0.0, 0.0))
+
+    class Nav:
+        def runways(self, _ident):
+            return [Runway("09", "27"), Runway("09L", "27L")]
+
+        def best_runway(self, *_args, **_kwargs):
+            return ("09",)
+
+        def runway_within_limits(self, _ident, runway, *_args, **kwargs):
+            return not (runway == "09L" and weather.invalid)
+
+    class Provider:
+        def available(self):
+            return True
+
+        def complete(self, *_args, **_kwargs):
+            return '{"choice": 2}'
+
+    class Brain(_Helpers):
+        pass
+
+    weather = SimpleNamespace(wind_dir=90.0, wind_kt=8.0, gust_kt=0.0,
+                              variable=False, source="test", invalid=False)
+    airport = SimpleNamespace(ident="TEST")
+    brain = Brain()
+    brain.navdb = Nav()
+    brain.realism = SimpleNamespace(runway_change=True)
+    brain.runway_in_use = {}
+    brain.runway_changes = {}
+    brain.decision_gateway = DecisionGateway(
+        Provider(), mode_for={"atc.runway_selection": "active"})
+    brain._planned = lambda *_args, **_kwargs: ""
+    brain._flow_runway = lambda *_args, **_kwargs: ""
+
+    assert brain._departure_runway(airport, weather) == "09L"
+    assert brain.runway_in_use[("TEST", True)] == "09L"
+
+    weather.invalid = True
+    assert brain._departure_runway(airport, weather) == "09"
+    assert brain.runway_changes["TEST"] == ("09L", "09")
+    brain.decision_gateway.close()

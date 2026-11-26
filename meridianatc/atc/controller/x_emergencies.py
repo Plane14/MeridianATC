@@ -76,5 +76,5 @@ class _Emergencies:
         if airport is None:
             return session.arrival_runway or session.departure_runway or "01"
         return (session.arrival_runway
-                or self._arrival_runway(airport, weather))
+                or self._arrival_runway(airport, weather, allow_ai=False))
 

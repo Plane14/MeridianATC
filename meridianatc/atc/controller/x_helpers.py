@@ -169,11 +169,17 @@ class _Helpers:
         flow = self._flow_runway(airport, weather, departing=True)
         if flow:
             return flow
+        key = (airport.ident, True)
+        first_selection = key not in self.runway_in_use
         baseline = self._wind_runway(airport, weather, departing=True)
-        return self._ai_runway_choice(airport, weather, departing=True,
-                                      baseline=baseline)
+        if not first_selection:
+            return baseline
+        picked = self._ai_runway_choice(airport, weather, departing=True,
+                                        baseline=baseline)
+        self.runway_in_use[key] = picked
+        return picked
 
-    def _arrival_runway(self, airport, weather) -> str:
+    def _arrival_runway(self, airport, weather, *, allow_ai: bool = True) -> str:
         if airport is None:
             return "01"
         planned = self._planned(airport, weather, "landing")
@@ -182,9 +188,17 @@ class _Helpers:
         flow = self._flow_runway(airport, weather, departing=False)
         if flow:
             return flow
+        key = (airport.ident, False)
+        first_selection = key not in self.runway_in_use
         baseline = self._wind_runway(airport, weather, departing=False)
-        return self._ai_runway_choice(airport, weather, departing=False,
-                                      baseline=baseline)
+        if not allow_ai:
+            return baseline
+        if not first_selection:
+            return baseline
+        picked = self._ai_runway_choice(airport, weather, departing=False,
+                                        baseline=baseline)
+        self.runway_in_use[key] = picked
+        return picked
 
     def _wind_runway(self, airport, weather, *, departing: bool) -> str:
         """The runway the wind gives, kept until the wind takes it away.
