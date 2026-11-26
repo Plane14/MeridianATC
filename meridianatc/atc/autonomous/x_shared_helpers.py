@@ -885,7 +885,8 @@ class _Shared_helpers:
             elif err < -15.0:
                 lever += min(0.06, 0.02 + (-err) * 0.003)
             elif self._engine_limit_cap(state) >= 1.0 \
-                    and (not descent_cap or lever <= descent_cap):
+                    and (not descent_cap or lever <= descent_cap) \
+                    and (not climb_power_cap or lever <= climb_power_cap):
                 # On target and no gauge over its red line: nothing to
                 # move -- unless a descent owes the lever back, which a
                 # deadband return left riding at climb power forever.

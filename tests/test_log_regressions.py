@@ -4625,6 +4625,12 @@ def test_a_turboprop_initial_climb_uses_climb_power_not_takeoff_power():
                           barber_pole_mach=0.0, airspeed_mach=0.0)
     flight._manage_throttle(state, 130.0)
     assert flight._dir.throttle.call_args.args[0] <= 0.85
+    # On target with the open-loop law, the deadband must not leave the
+    # lever up either: the climb-power ceiling is applied before returning.
+    flight._dir.throttle.reset_mock()
+    state.indicated_airspeed_kt = 130.0
+    flight._manage_throttle(state, 130.0)
+    assert flight._dir.throttle.call_args.args[0] <= 0.85
 
 
 def test_a_turboprop_takeoff_powerup_takes_seconds_not_two():
