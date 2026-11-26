@@ -407,6 +407,15 @@ def test_fms_plan_stored_and_filtered(plugin, link):
     link.on_frame()
     assert link.fms == plan and link.fms_idents() == ("KSEA", "KENT", "PAE")
 
+    # So does one whose constraint altitude is not the number the
+    # plugin contract sends: a bad read must not become a cruise level.
+    bad_alt = [dict(row) for row in plan]
+    bad_alt[1]["alt"] = "8000"
+    plugin.status(fms=bad_alt)
+    threading.Event().wait(.05)
+    link.on_frame()
+    assert link.fms == plan and link.fms_idents() == ("KSEA", "KENT", "PAE")
+
 
 def test_match_query_and_drawn_models(plugin, link):
     """The plugin's own matcher answers what CSL can draw: asked once,

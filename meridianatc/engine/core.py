@@ -891,14 +891,20 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
         if kind == "verify_altitude":
             alt = getattr(self.state, "indicated_altitude_ft", 0.0) \
                 or getattr(self.state, "altitude_ft", 0.0) or 0.0
-            vs = getattr(self.state, "vertical_speed_fpm", 0.0) or 0.0
             assigned = session.assigned_altitude_ft or 0.0
-            if vs >= 300.0 and assigned:
-                body = f"{p.alt(alt)}, " \
-                    + speech.book.climb.format(altitude=p.alt(assigned))
-            elif vs <= -300.0 and assigned:
-                body = f"{p.alt(alt)}, " \
-                    + speech.book.descend.format(altitude=p.alt(assigned))
+            if assigned and alt:
+                # The direction is the clearance's direction from the
+                # needle, never the gust's vertical speed: a Baron
+                # momentarily descending while cleared up to FL170 must
+                # not answer "descend flight level one seven zero".
+                if assigned > alt + 200.0:
+                    body = f"{p.alt(alt)}, " \
+                        + speech.book.climb.format(altitude=p.alt(assigned))
+                elif assigned < alt - 200.0:
+                    body = f"{p.alt(alt)}, " \
+                        + speech.book.descend.format(altitude=p.alt(assigned))
+                else:
+                    body = p.alt(alt)
             elif alt:
                 body = p.alt(alt)
             else:

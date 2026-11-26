@@ -262,6 +262,22 @@ def test_verify_altitude_reports_the_level_flown_and_the_fix():
     assert "three thousand" in text and "four thousand" in text
 
 
+def test_verify_altitude_uses_the_clearances_direction_not_the_gusts():
+    """The live LEVX-LECO scan: momentarily descending while still
+    cleared up to FL170 produced the impossible answer "descend FL170".
+    The report names the clearance's direction from the present level."""
+    eng = _engine_for_reports()
+    eng.session.assigned_altitude_ft = 17000.0
+    eng.state = SimpleNamespace(
+        vertical_speed_fpm=-800.0, indicated_altitude_ft=13500.0,
+        altitude_ft=13400.0)
+    text, why = eng.first_officer_call("verify_altitude")
+    assert why == ""
+    assert "one three thousand five hundred" in text
+    assert "climb" in text and "one seven" in text
+    assert "descend" not in text
+
+
 def test_verify_altitude_level_reports_the_level():
     eng = _engine_for_reports()
     eng.state = SimpleNamespace(

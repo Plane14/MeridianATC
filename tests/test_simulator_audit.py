@@ -565,6 +565,23 @@ def test_wake_categories_cover_the_heavy_types_the_audit_found():
         assert wake_suffix(type_code) == "heavy"
 
 
+def test_first_descent_does_not_countermand_a_vector_step_down():
+    """The live LEVX-LECO scan: the vector step had just cleared the
+    flight to 4,400 when the separate first-descent logic issued 6,000
+    fifty seconds later. While a radar vector owns the arrival, its
+    terrain/intercept step-downs are the only descent clearances."""
+    from types import SimpleNamespace
+
+    from meridianatc.atc.arrival import ArrivalWatch
+
+    watch = ArrivalWatch.__new__(ArrivalWatch)
+    watch.brain = SimpleNamespace(
+        realism=SimpleNamespace(ifr_descent=True))
+    session = SimpleNamespace(ifr=True, advisories=set(), vector_leg="base")
+    assert watch._first_descent(session, None, None, None, 0.0,
+                                None, None) is None
+
+
 def test_msfs_brake_positions_use_percent_and_flap_detents_are_read():
     assert sources.SimConnectSource.BROKEN_UNITS[
         "ControlsData"]["BRAKE_LEFT_POSITION"][2] == b"Percent"

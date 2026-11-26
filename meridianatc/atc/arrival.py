@@ -620,6 +620,12 @@ class ArrivalWatch:
         if FIRST_DESCENT_KEY in session.advisories \
                 or CLEARED_APPROACH_KEY in session.advisories:
             return None
+        if session.vector_leg:
+            # A radar vector owns the descent while it is being flown:
+            # its step-downs already carry the vector's terrain and
+            # intercept floor. A separate top-of-descent clearance over
+            # the top can countermand them within the same minute.
+            return None
         pending = session.pending
         if pending is not None and pending.station_key == station_key(station):
             return None

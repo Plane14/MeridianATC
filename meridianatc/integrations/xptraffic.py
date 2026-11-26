@@ -242,6 +242,12 @@ class XPlaneTraffic:
                                or len(e["id"].encode()) > 64
                                or type(e.get("lat")) not in (int, float)
                                or type(e.get("lon")) not in (int, float)
+                               or type(e.get("alt")) not in (int, float)
+                               or not -2000 <= float(e["alt"]) <= 100000
+                               or ("active" in e
+                                   and type(e["active"]) is not bool)
+                               or ("shown" in e
+                                   and type(e["shown"]) is not bool)
                                for e in fms)):
                     continue
                 models = status.get("models")

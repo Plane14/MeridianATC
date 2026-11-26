@@ -146,9 +146,14 @@ instruments agreeing the wing is flying again hands them back, on either
 simulator.
 
 A route loaded in X-Plane's FMS is adopted as the flight's plan: the
-plugin forwards the entry list on the status channel and the engine
-rebuilds it as origin, enroute fixes and destination, re-adopting it
-whenever the FMS's own list changes. This does not write a MeridianATC
+plugin forwards the active primary plan's entry list on the status channel
+(the pilot-side plan first, the copilot-side plan when the pilot side is
+empty on X-Plane 12.1+) and the engine rebuilds it as origin, enroute
+fixes and destination, re-adopting it whenever the FMS's own list changes.
+Each entry carries that leg's constraint altitude; X-Plane's FMS format has
+no separate global cruise-altitude field. In the entry flags, `active` is
+the destination entry the FMS is flying to, while `shown` is only the page
+the pilot is viewing. This does not write a MeridianATC
 plan *into* the simulator -- load the FMS from SimBrief or by hand first.
 Custom aircraft may intercept or ignore the standard AP commands. COM
 and NAV frequency and squawk writes are confirmed by subscribed RREF

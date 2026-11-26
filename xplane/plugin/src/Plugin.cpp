@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <set>
 #include <vector>
@@ -728,23 +729,78 @@ void Sync(double now) {
         } catch (const std::exception&) { aircraft.erase(id); unmatched.insert(id); }
     }
 }
-Json FmsPlan() {
-    // The user's loaded flight plan, for corroborating the route the
-    // engine thinks it is flying: what is actually in the box beats what
-    // a briefing said should be. Entries arrive in leg order; the
-    // displayed one is where the FMS is steering.
+struct FmsFlightPlanApi {
+    using Count = int (*)(XPLMNavFlightPlan);
+    using Index = int (*)(XPLMNavFlightPlan);
+    using EntryInfo = void (*)(XPLMNavFlightPlan, int, XPLMNavType*, char*,
+                               XPLMNavRef*, int*, float*, float*);
+    Count count = nullptr;
+    Index displayed = nullptr, destination = nullptr;
+    EntryInfo entryInfo = nullptr;
+    bool Ready() const {
+        return count && displayed && destination && entryInfo;
+    }
+};
+
+const FmsFlightPlanApi& FlightPlanApi() {
+    // XPLM410's per-device flight-plan API is resolved rather than linked:
+    // X-Plane 12.0 can still load the plugin, and 12.1+ uses the exact
+    // pilot/copilot plan instead of the legacy first-FMS view.
+    static const FmsFlightPlanApi api = {
+        reinterpret_cast<FmsFlightPlanApi::Count>(
+            XPLMFindSymbol("XPLMCountFMSFlightPlanEntries")),
+        reinterpret_cast<FmsFlightPlanApi::Index>(
+            XPLMFindSymbol("XPLMGetDisplayedFMSFlightPlanEntry")),
+        reinterpret_cast<FmsFlightPlanApi::Index>(
+            XPLMFindSymbol("XPLMGetDestinationFMSFlightPlanEntry")),
+        reinterpret_cast<FmsFlightPlanApi::EntryInfo>(
+            XPLMFindSymbol("XPLMGetFMSFlightPlanEntryInfo")),
+    };
+    return api;
+}
+
+Json FmsEntries(int count, int displayed, int destination,
+                const std::function<void(int, XPLMNavType*, char*, int*,
+                                         float*, float*)>& entryInfo) {
     Json entries = Json::array();
-    const int count = XPLMCountFMSEntries();
-    const int displayed = XPLMGetDisplayedFMSEntry();
     for (int i = 0; i < count && i < 512; ++i) {
         XPLMNavType type = xplm_Nav_Unknown; char id[256]{};
         int altitude = 0; float lat = 0, lon = 0;
-        XPLMGetFMSEntryInfo(i, &type, id, nullptr, &altitude, &lat, &lon);
+        entryInfo(i, &type, id, &altitude, &lat, &lon);
         entries.push_back({{"i", i}, {"t", static_cast<int>(type)},
             {"id", id}, {"alt", altitude}, {"lat", lat}, {"lon", lon},
-            {"active", i == displayed}});
+            {"active", i == destination}, {"shown", i == displayed}});
     }
     return entries;
+}
+
+Json FmsPlan() {
+    // The user's loaded flight plan, for corroborating the route the
+    // engine thinks it is flying: what is actually in the box beats what
+    // a briefing said should be. Entries arrive in leg order. ``active``
+    // is the destination entry the FMS is flying to; ``shown`` is only
+    // the page the pilot is looking at.
+    const auto& modern = FlightPlanApi();
+    if (modern.Ready()) {
+        for (XPLMNavFlightPlan plan : {xplm_Fpl_Pilot_Primary,
+                                       xplm_Fpl_CoPilot_Primary}) {
+            const int count = modern.count(plan);
+            if (count <= 0) continue;
+            return FmsEntries(count, modern.displayed(plan),
+                modern.destination(plan),
+                [&modern, plan](int i, XPLMNavType* type, char* id,
+                                int* altitude, float* lat, float* lon) {
+                    modern.entryInfo(plan, i, type, id, nullptr,
+                                     altitude, lat, lon);
+                });
+        }
+    }
+    return FmsEntries(XPLMCountFMSEntries(), XPLMGetDisplayedFMSEntry(),
+        XPLMGetDestinationFMSEntry(),
+        [](int i, XPLMNavType* type, char* id, int* altitude,
+           float* lat, float* lon) {
+            XPLMGetFMSEntryInfo(i, type, id, nullptr, altitude, lat, lon);
+        });
 }
 Json Status(double now) {
     int xp, sdk; XPLMHostApplicationID host; XPLMGetVersions(&xp, &sdk, &host);
