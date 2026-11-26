@@ -75,8 +75,11 @@ class DecisionGateway:
         self.default_timeout_s = max(0.05, float(default_timeout_s or 0.8))
         self._executor = ThreadPoolExecutor(
             max_workers=max(1, max_workers), thread_name_prefix="ai-decision")
+        self._sync_workers = max(2, max_workers)
         self._sync_executor = ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="ai-active-decision")
+            max_workers=self._sync_workers,
+            thread_name_prefix="ai-active-decision")
+        self._sync_inflight: set[Future] = set()
         self._lock = threading.RLock()
         self._pending: dict[tuple[str, str], Future] = {}
         self._results: dict[tuple[str, str], DecisionResult] = {}
@@ -178,12 +181,26 @@ class DecisionGateway:
                 confidence=1.0, valid=True, reason="shadow pending",
                 latency_s=0.0, state_version=request.state_version,
                 cache_key=request.cache_key)
-        self._count(request.scope, "asked")
-        future = self._sync_executor.submit(self._resolve, request, mode)
+        with self._lock:
+            self._sync_inflight = {
+                running for running in self._sync_inflight if not running.done()}
+            if len(self._sync_inflight) >= self._sync_workers:
+                # Provider threads cannot be killed once a slow call has
+                # started. Queueing behind them would turn one overrun into a
+                # series of late decisions, so saturation is itself a bounded
+                # runtime-assurance fallback rather than a queue position.
+                self._count(request.scope, "busy")
+                return self._fallback(
+                    request, "fallback", "active decision workers busy", 0.0)
+            self._count(request.scope, "asked")
+            future = self._sync_executor.submit(self._resolve, request, mode)
+            self._sync_inflight.add(future)
+            future.add_done_callback(self._sync_done)
         started = self._clock()
         try:
             return future.result(timeout=request.timeout_s)
         except Exception:
+            future.cancel()
             self._count(request.scope, "overtime")
             return self._fallback(
                 request, "fallback", "timeout",
@@ -335,6 +352,10 @@ class DecisionGateway:
             decision("ai_decision", **result.as_log())
         except Exception:
             log.debug("could not write AI decision telemetry", exc_info=True)
+
+    def _sync_done(self, future: Future) -> None:
+        with self._lock:
+            self._sync_inflight.discard(future)
 
     def _count(self, scope: str, key: str) -> None:
         self._scopes.setdefault(scope, Counter())[key] += 1

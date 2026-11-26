@@ -264,3 +264,45 @@ def test_shadow_workers_do_not_starve_an_active_decision():
     assert result.source == "model"
     assert result.selected_id == "hold"
     gateway.close()
+
+
+
+def test_saturated_active_workers_fall_back_without_queueing():
+    entered = []
+    entered_lock = threading.Lock()
+
+    def complete(prompt, *_args, **_kwargs):
+        if "Scope: slow." in prompt:
+            with entered_lock:
+                entered.append(prompt)
+            time.sleep(0.5)
+        return '{"choice": 2}'
+
+    provider = SimpleNamespace(complete=complete, available=lambda: True)
+    modes = {"slow.one": "active", "slow.two": "active",
+             "fast.active": "active"}
+    gateway = DecisionGateway(provider, mode_for=modes, max_workers=2)
+    outcomes = []
+
+    def slow(scope):
+        outcomes.append(gateway.select_sync(
+            request(scope=scope, cache_key=scope, timeout_s=0.7)))
+
+    threads = [threading.Thread(target=slow, args=(scope,))
+               for scope in ("slow.one", "slow.two")]
+    for thread in threads:
+        thread.start()
+    deadline = time.monotonic() + 0.5
+    while time.monotonic() < deadline and len(entered) < 2:
+        time.sleep(0.005)
+
+    started = time.monotonic()
+    result = gateway.select_sync(
+        request(scope="fast.active", cache_key="fast", timeout_s=0.2))
+    elapsed = time.monotonic() - started
+    assert result.selected_id == "baseline"
+    assert result.reason == "active decision workers busy"
+    assert elapsed < 0.1
+    for thread in threads:
+        thread.join()
+    gateway.close()
