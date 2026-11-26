@@ -177,8 +177,12 @@ class _Weather:
             }
             planned_cost = costs.get(plan.side.lower(), 0.0)
             opposite_cost = costs.get(opposite_side, 0.0)
-            opposite_unsafe = opposite_cost > max(planned_cost * 1.2,
-                                                  planned_cost + 0.05)
+            # Any positive cost means body penetration or a clearance
+            # shortfall somewhere on the scan. A different escape heading is
+            # acceptable only when geometry shows it is genuinely clear, not
+            # merely no worse than the heading already unsafe enough to force
+            # this urgent deviation.
+            opposite_unsafe = opposite_cost > 1e-6
         except Exception:
             opposite_unsafe = True
         chosen = select_candidate(
