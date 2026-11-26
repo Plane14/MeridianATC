@@ -5918,3 +5918,26 @@ def test_procedure_altitude_lookup_is_not_logged_every_tick(monkeypatch):
         assert brain._published(airport, "03", "rnav", 0) == 2500.0
     assert len(calls) == 1
     assert calls[0][1]["which"] == "faf"
+
+
+def test_tower_is_the_pushback_authority_where_no_ground_exists():
+    """The complete no-sim ELLX run stalled after Delivery handed the
+    flight to Tower: Delivery was treated as the pushback authority even
+    though the aircraft had already left it, while Tower was explicitly
+    refused. With no Ground or Ramp published, Tower is the surface
+    authority a pilot actually asks."""
+    import types
+    from meridianatc.atc.autonomous.x_shared_helpers import _Shared_helpers
+    from meridianatc.navdata.db import Station
+
+    tower = Station("ELLX", "TWR", 118.1, "Tower")
+    delivery = Station("ELLX", "DEL", 121.855, "Delivery")
+    navdb = SimpleNamespace(stations=lambda ident, pos:
+                            [delivery] if pos == "DEL" else
+                            [tower] if pos == "TWR" else [])
+    fo = object.__new__(_Shared_helpers)
+    fo.brain = SimpleNamespace(ground_control=True, staffed=lambda s: True)
+    fo.session = SimpleNamespace(departure=SimpleNamespace(ident="ELLX"))
+    fo.navdb = navdb
+    fo._get_current_airport = lambda: None
+    assert _Shared_helpers._pushback_by_radio(fo) is True

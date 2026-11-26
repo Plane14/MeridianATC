@@ -1060,14 +1060,15 @@ class _Shared_helpers:
         every frequency by design, so the FO presses for the tug itself;
         at a field with no surface position there is nobody to ask, and
         the same is true. The tower alone does not count: it does not
-        take the pushback call here, and a wait on it is a wait for a
-        voice that never comes -- and nor is a published position
-        nobody is actually working.
+        take the pushback call where Ground or Ramp exists; where neither
+        is published the Tower is the surface authority, and refusing it
+        left the no-sim ELLX flight waiting for a voice that never comes.
+        A published position nobody is actually working still does not count.
         """
         brain = getattr(self, "brain", None)
         if not getattr(brain, "ground_control", False):
             return False
-        station = self._surface_position(("GND", "DEL", "RMP"))
+        station = self._surface_position(("GND", "RMP", "TWR"))
         if station is None:
             return False
         staffed = getattr(brain, "staffed", None)
