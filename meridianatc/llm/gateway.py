@@ -75,6 +75,8 @@ class DecisionGateway:
         self.default_timeout_s = max(0.05, float(default_timeout_s or 0.8))
         self._executor = ThreadPoolExecutor(
             max_workers=max(1, max_workers), thread_name_prefix="ai-decision")
+        self._sync_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="ai-active-decision")
         self._lock = threading.RLock()
         self._pending: dict[tuple[str, str], Future] = {}
         self._results: dict[tuple[str, str], DecisionResult] = {}
@@ -177,7 +179,7 @@ class DecisionGateway:
                 latency_s=0.0, state_version=request.state_version,
                 cache_key=request.cache_key)
         self._count(request.scope, "asked")
-        future = self._executor.submit(self._resolve, request, mode)
+        future = self._sync_executor.submit(self._resolve, request, mode)
         started = self._clock()
         try:
             return future.result(timeout=request.timeout_s)
@@ -343,6 +345,7 @@ class DecisionGateway:
                 return
             self._closed = True
         self._executor.shutdown(wait=False, cancel_futures=True)
+        self._sync_executor.shutdown(wait=False, cancel_futures=True)
         if self._scopes:
             summary = {scope: dict(counts)
                        for scope, counts in sorted(self._scopes.items())}

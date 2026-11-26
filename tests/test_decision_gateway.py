@@ -239,3 +239,28 @@ def test_config_modes_are_mastered_and_shadow_is_a_demotion():
     assert ai.decision_mode("traffic.circuit_spacing") == "shadow"
     ai.decisions = False
     assert ai.decision_mode("traffic.circuit_spacing") == "off"
+
+
+
+def test_shadow_workers_do_not_starve_an_active_decision():
+    def complete(prompt, *_args, **_kwargs):
+        if "active.separation" in prompt:
+            return '{"choice": 2}'
+        time.sleep(0.5)
+        return '{"choice": 2}'
+
+    busy = SimpleNamespace(complete=complete, available=lambda: True)
+    gateway = DecisionGateway(
+        busy,
+        mode_for={"traffic.circuit_spacing": "shadow",
+                  "active.separation": "active"},
+        max_workers=2)
+    gateway.select_sync(request(cache_key="shadow-1"))
+    gateway.select_sync(request(cache_key="shadow-2"))
+
+    active = request(scope="active.separation", cache_key="active-1",
+                     timeout_s=0.2)
+    result = gateway.select_sync(active)
+    assert result.source == "model"
+    assert result.selected_id == "hold"
+    gateway.close()
