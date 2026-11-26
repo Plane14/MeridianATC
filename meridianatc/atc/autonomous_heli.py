@@ -1577,7 +1577,7 @@ class RotorcraftFlight:
                    + _clamp(value, 0, AXIS_MAX) / AXIS_MAX * 32766.0)
         if not self._send(HELI_THROTTLE_SET, axis):
             self._send(THROTTLE_ALL_SET, value)
-        if value >= AXIS_MAX * 0.9:
+        if value >= AXIS_MAX * 0.995:
             self._send(THROTTLE_ALL_FULL, 0)
 
     def _protect(self, state, vs: float, ias: float, agl: float) -> None:

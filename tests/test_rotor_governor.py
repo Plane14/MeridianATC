@@ -65,3 +65,24 @@ def test_output_never_leaves_the_lever_range():
     high = gov.update(0.98, 90.0, 0.25)
     assert 0.0 <= low.throttle <= 1.0
     assert 0.0 <= high.throttle <= 1.0
+
+
+
+def test_reduced_governor_output_does_not_command_full_throttle():
+    from meridianatc.atc.autonomous_heli import AXIS_MAX, RotorcraftFlight
+
+    class Dummy:
+        def __init__(self):
+            self.sent = []
+
+        def _send(self, name, value):
+            self.sent.append((name, value))
+            return True
+
+    reduced = Dummy()
+    RotorcraftFlight._throttle(reduced, int(AXIS_MAX * 0.91))
+    assert len(reduced.sent) == 1
+
+    full = Dummy()
+    RotorcraftFlight._throttle(full, AXIS_MAX)
+    assert len(full.sent) == 2
