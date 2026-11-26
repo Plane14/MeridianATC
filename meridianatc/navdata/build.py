@@ -111,7 +111,7 @@ _UNIVERSAL_NOISE = re.compile(
 _POSITION_NOISE = re.compile(
     r"\b("
     r"twr|tower|turm|toren|gnd|ground|rollkontrolle|rollfeld|vorfeld|"
-    r"clnc|clearance|delivery|cd|pdc|pre[\s-]?taxi|pre[\s-]?flight|pflt|"
+    r"clnc|cld|clearance|delivery|cd|pdc|pre[\s-]?taxi|pre[\s-]?flight|pflt|"
     r"appr|approach|app|departures?|dep|depc|arrivals?|"
     r"cent(?:er|re)|cntr|ctr|acc|"
     r"d-?atis|atis|unicom|unic|ctaf|multicom|atf|"

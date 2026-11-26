@@ -170,7 +170,8 @@ def readback(instruction: Instruction, aircraft: Aircraft,
                 str(values.get("squawk", "")),
                 float(values.get("frequency", 0) or 0),
                 float(values.get("vfr_ceiling_ft", 0) or 0),
-                str(values.get("exit_point", "")))
+                str(values.get("exit_point", "")),
+                pressure=float(values.get("altimeter", 0) or 0))
         if kind == "diversion" and values.get("airport"):
             return speech.cleared_to(aircraft, str(values["airport"]),
                                      float(values.get("altitude_ft", 0) or 0))

@@ -193,6 +193,7 @@ class _The_radios:
         # flag is what the phase's own asks (the clearance, the pushback)
         # defer to as well.
         handed = getattr(session, "handoff_pending", None)
+        handed = self._handoff_claim(session, handed)
         self._comms_settled = self._work_the_frequency(
             state, session, handed, now)
         if not self._comms_settled \
@@ -280,6 +281,46 @@ class _The_radios:
         # In the air with nobody sending the flight anywhere, COM1 is
         # where the last handoff left it -- there is nothing to settle.
         return True
+
+    def _handoff_claim(self, session, handed):
+        """The station the last handoff sends the flight to.
+
+        ``handoff_pending`` is the claim normally. Where that marker has
+        already been discharged but the read-back handoff is still the
+        latest instruction, its frequency is still the frequency the crew
+        was sent to: rebuilding the claim keeps COM1 moving instead of
+        leaving the flight reading the same handoff back on the old
+        frequency forever.
+        """
+        if handed is not None and getattr(handed, "mhz", 0.0):
+            return handed
+        last = getattr(session, "last_instruction", None)
+        if getattr(last, "kind", "") != "handoff":
+            return None
+        pending = getattr(session, "pending", None)
+        if pending is last and getattr(pending, "readback_required", False)                 and not getattr(pending, "read_back", False):
+            return None
+        try:
+            mhz = float((getattr(last, "values", None) or {}).get(
+                "frequency", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return None
+        if not mhz:
+            return None
+        airport = self._field_under(session)
+        if airport is not None:
+            try:
+                rows = self.navdb.stations(airport.ident) or ()
+            except Exception:
+                rows = ()
+            for station in rows:
+                try:
+                    if abs(float(getattr(station, "mhz", 0.0) or 0.0) - mhz)                             <= 0.004:
+                        return station
+                except (TypeError, ValueError):
+                    continue
+        from types import SimpleNamespace
+        return SimpleNamespace(mhz=mhz, position="", ident="", callsign="")
 
     def _ground_handoff(self, state, session, handed, now: float) -> bool:
         """Whether the pending handoff owns COM1 on the ground.

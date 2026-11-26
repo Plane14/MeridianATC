@@ -883,7 +883,7 @@ class PilotSpeech:
 
     def vfr_release(self, aircraft: Aircraft, squawk: str,
                     mhz: float = 0.0, ceiling_ft: float = 0.0,
-                    exit_point: str = "") -> str:
+                    exit_point: str = "", pressure: float = 0.0) -> str:
         """A VFR release read back: the way out where one was named, the
         ceiling, the departure frequency and the code. The frequency and
         the code are what the controller is holding the readback to; the
@@ -901,6 +901,8 @@ class PilotSpeech:
                 frequency=self.p.freq(mhz)))
         if squawk:
             parts.append(self.book.squawk.format(code=self.p.d(squawk)))
+        if pressure:
+            parts.append(self.p.pressure(pressure))
         return self.report(aircraft, _join(*parts))
 
     def clearance(self, aircraft: Aircraft, destination: str, squawk: str,

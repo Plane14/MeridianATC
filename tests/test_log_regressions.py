@@ -282,11 +282,12 @@ def test_a_vfr_release_readback_says_the_frequency():
     instruction = Instruction(
         kind="vfr_release", station_key="LPPT:del",
         values={"squawk": "7366", "frequency": 120.910,
-                "vfr_ceiling_ft": 2500.0})
+                "vfr_ceiling_ft": 2500.0, "altimeter": 1013.0})
     said = readback(instruction, aircraft, Phraseology("icao"))
     heard = IntentParser().parse(said, "en").readback_items
     assert heard.get("frequency") == 120.910
     assert heard.get("squawk") == "7366"
+    assert heard.get("altimeter") == 1013.0
     assert not instruction.mismatches(heard)
 
 
@@ -3293,6 +3294,18 @@ def test_the_airborne_handoff_is_dialled():
     flight, state, dialled, kinds = _radio_flight(
         phase="climb", on_ground=False, com1=118.10,
         handed=_station("APP", 119.10))
+    flight._manage_comms(state, 1000.0)
+    assert dialled == [119.10]
+
+
+def test_a_read_back_handoff_still_moves_the_dial_if_the_marker_is_gone():
+    """The no-sim matrix read each en-route handoff back and stayed on the
+    old frequency: the controller then repeated the handoff forever. The
+    accepted handoff instruction itself is evidence enough to tune."""
+    flight, state, dialled, kinds = _radio_flight(
+        phase="climb", on_ground=False, com1=118.10, handed=None)
+    flight.session.last_instruction = SimpleNamespace(
+        kind="handoff", values={"frequency": 119.10})
     flight._manage_comms(state, 1000.0)
     assert dialled == [119.10]
 

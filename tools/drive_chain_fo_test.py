@@ -9,6 +9,7 @@ runs out of plans and shuts down.
 The descent lines print dist / 3-degree path / vs so the continuous
 descent is visible in the transcript.
 """
+import argparse
 import logging
 import math
 import sys
@@ -164,7 +165,7 @@ class SimAdapter:
         return _log
 
 
-def sync_state(source, p):
+def sync_state(source, p, engines: int = 2):
     st = p.state()
     source.update(
         latitude=st.latitude, longitude=st.longitude,
@@ -177,7 +178,7 @@ def sync_state(source, p):
         vertical_speed_fpm=st.vertical_speed_fpm,
         on_ground=st.on_ground, gear_down=st.gear_down,
         flaps_index=st.flaps_index, autopilot=st.autopilot,
-        engines_running=p.engines_running, engine_count=2,
+        engines_running=p.engines_running, engine_count=engines,
         # Tanks read full so the turnaround's fuel check covers the leg.
         fuel_total_gal=6400.0, fuel_capacity_gal=6400.0,
     )
@@ -193,36 +194,118 @@ def dt_for(phase):
     return 1.5
 
 
+def parse_legs(text: str) -> list[dict]:
+    """origin:destination:cruise-ft[:ifr|vfr], comma-separated."""
+    legs = []
+    for raw in (text or "").split(","):
+        parts = [piece.strip() for piece in raw.split(":") if piece.strip()]
+        if len(parts) < 2:
+            raise ValueError(f"bad leg {raw!r}; want ORIGIN:DEST[:CRUISE][:ifr|vfr]")
+        rules = parts[3].lower() if len(parts) > 3 else "ifr"
+        legs.append({
+            "origin": parts[0].upper(), "destination": parts[1].upper(),
+            "cruise_altitude_ft": float(parts[2]) if len(parts) > 2 else 6000.0,
+            "ifr": rules not in ("vfr", "0", "false"),
+        })
+    if not legs:
+        raise ValueError("at least one leg is required")
+    return legs
+
+
+# Stall/rotation and approach figures good enough for the scripted plant;
+# the ATC code still uses its own type table. Fuel is only a fixture so the
+# turnaround check has enough for the leg.
+TYPE_FIXTURES = {
+    "C152": (42.0, 60.0, 300.0), "C172": (48.0, 65.0, 400.0),
+    "PA28": (50.0, 66.0, 400.0), "SR22": (60.0, 80.0, 700.0),
+    "TBM9": (75.0, 85.0, 1200.0), "PC12": (75.0, 90.0, 1500.0),
+    "C25C": (90.0, 110.0, 2500.0), "C700": (100.0, 125.0, 3500.0),
+    "A320": (115.0, 145.0, 6400.0), "B738": (115.0, 145.0, 6400.0),
+    "V22": (50.0, 70.0, 2000.0), "HAR": (90.0, 135.0, 2500.0),
+}
+
+
+def fixture_for(type_code: str) -> tuple[float, float, float]:
+    return TYPE_FIXTURES.get((type_code or "").upper(),
+                             TYPE_FIXTURES["A320"])
+
+
+def arguments():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--legs", default="ELLX:EBBR:9000:ifr,EBBR:EBCI:6000:vfr",
+        help="comma-separated ORIGIN:DEST[:CRUISE_FT][:ifr|vfr] legs")
+    parser.add_argument("--callsign", default="BEL8KA")
+    parser.add_argument("--aircraft-type", default="A320")
+    parser.add_argument("--timeout", type=float, default=3600.0)
+    parser.add_argument("--label", default="")
+    parser.add_argument("--start-offset-nm", type=float, default=0.25,
+                        help="place the no-sim stand this far northeast of the airport reference")
+    parser.add_argument("--live-traffic", action="store_true",
+                        help="keep online/simulator-observed traffic enabled")
+    return parser.parse_args()
+
+
 def main():
+    args = arguments()
+    legs = parse_legs(args.legs)
+    first = legs[0]
+    type_code = args.aircraft_type.upper()
+    stall_kt, vref_kt, fuel_gal = fixture_for(type_code)
+
     config = Config.load(str(ROOT / "config.test.yaml"))
     # the scripted plant answers explicit bug writes (hdg/vs/alt/spd),
     # not managed AP modes like NAV/FLCH it cannot emulate.
     config.immersion.autonomous_ap_mode = "direct"
     config.immersion.autonomous_chained_flights = True
     config.immersion.autonomous_chain_delay_s = 30.0
-    config.flight.callsign = "BEL8KA"
-    config.flight.aircraft_type = "A320"
-    config.flight.departure = "ELLX"
-    config.flight.destination = "EBBR"
-    config.flight.cruise_altitude_ft = 9000.0
-    engine = Engine(config, NavDB(), sink)
+    if not args.live_traffic:
+        # A no-sim run has no simulator objects, and online ADS-B weather/
+        # traffic makes a deterministic audit depend on whoever happens to
+        # be overhead. The radio path under test is MeridianATC's own.
+        config.traffic.from_simulator = False
+        config.traffic.in_simulator = False
+        config.traffic.live.enabled = False
+    config.flight.callsign = args.callsign
+    config.flight.aircraft_type = type_code
+    config.flight.departure = first["origin"]
+    config.flight.destination = first["destination"]
+    config.flight.cruise_altitude_ft = first["cruise_altitude_ft"]
+    config.flight.ifr = first["ifr"]
+    config.flight.profile = ("airliner" if type_code in ("A320", "B738")
+                             else "general_aviation")
+    navdb = NavDB()
+    engine = Engine(config, navdb, sink)
     engine.warm()
     engine.start(connect_sim=False)
     time.sleep(1.5)
 
-    p = Plant(49.6268, 6.2121, 1234.0, 0.0, 0.0,
-              field_elev_ft=1234.0, stall_kt=115.0, autothrottle=True)
-    p.vref = 145.0
+    airport = navdb.airport(first["origin"])
+    if airport is None:
+        note(f"unknown departure {first['origin']}")
+        return 2
+    start_lat = float(getattr(airport, "lat", 0.0) or 0.0)
+    start_lon = float(getattr(airport, "lon", 0.0) or 0.0)
+    start_elev = float(getattr(airport, "elev_ft", 0.0) or 0.0)
+    if args.start_offset_nm:
+        from meridianatc.navdata.build import project
+        start_lat, start_lon = project(start_lat, start_lon, 45.0,
+                                       args.start_offset_nm)
+    p = Plant(start_lat, start_lon, start_elev, 0.0, 0.0,
+              field_elev_ft=start_elev, stall_kt=stall_kt, autothrottle=True)
+    p.vref = vref_kt
     p.on_ground = True
-    p.type_code = "A320"
+    p.type_code = type_code
     p.pushing = False
     p.parking = True
     p.aileron_cmd = 0.0
     p.engines_running = True
 
+    engine_count = 1 if type_code in ("C152", "C172", "PA28", "SR22",
+                                      "TBM9", "PC12", "HAR") else 2
     engine.source.update(source="simconnect", engines_running=True,
-                         engine_count=2, type_code="A320")
-    sync_state(engine.source, p)
+                         engine_count=engine_count, type_code=type_code)
+    sync_state(engine.source, p, engines=engine_count)
     engine.refresh_state()
     engine.begin_session()
 
@@ -243,22 +326,29 @@ def main():
     if not ok:
         return 2
 
-    # Leg two is planned, not picked: EBBR -> EBCI. After it the chain
-    # runs out -- the picker is stubbed so "no destination" ends the
-    # day rather than launching a random third leg.
-    fo.set_chain_flights([{
-        "origin": "EBBR", "destination": "EBCI",
-        "origin_name": "Brussels Airport",
-        "destination_name": "Brussels South Charleroi Airport",
-        "distance_nm": 26, "cruise_altitude_ft": 6000,
-        "ifr": False, "aircraft_type": "A320",
-    }])
+    # Later legs are planned, not picked. After the supplied list the chain
+    # runs out -- the picker is stubbed so "no destination" ends the day
+    # rather than launching a random extra leg.
+    chain = []
+    for leg in legs[1:]:
+        origin = navdb.airport(leg["origin"])
+        destination = navdb.airport(leg["destination"])
+        chain.append({
+            "origin": leg["origin"], "destination": leg["destination"],
+            "origin_name": getattr(origin, "name", leg["origin"]),
+            "destination_name": getattr(destination, "name", leg["destination"]),
+            "cruise_altitude_ft": leg["cruise_altitude_ft"],
+            "ifr": leg["ifr"], "aircraft_type": type_code,
+        })
+    fo.set_chain_flights(chain)
     fo._select_next_destination = lambda: None
+    note(f"scenario={args.label or 'manual'} aircraft={type_code} "
+         f"legs={args.legs}")
 
     last_phase = None
     last_leg = 0
     t0 = time.monotonic()
-    timeout = 3600.0
+    timeout = args.timeout
     try:
         while time.monotonic() - t0 < timeout:
             phase = fo.state.phase
@@ -342,7 +432,7 @@ def main():
             if phase in (AutonomousPhase.DESCENT, AutonomousPhase.APPROACH,
                          AutonomousPhase.LANDING):
                 dest = getattr(fo.session, "destination", None)
-                ident = getattr(dest, "ident", None) or "EBBR"
+                ident = getattr(dest, "ident", None) or first["destination"]
                 if getattr(p, "elev_dest", None) != ident:
                     p.elev = float(getattr(
                         engine.navdb.airport(ident), "elev_ft", 175.0)
@@ -377,8 +467,8 @@ def main():
                 # brakes and creeps. give it car-like dynamics instead:
                 # lever pulls, drag bites, brakes bite harder.
                 dt = dt_for(phase)
-                accel = p.lever * 10.0 - 0.05 * p.ias - p.brake * 8.0 \
-                    - (2.0 if p.parking else 0.0)
+                accel = 0.0 if p.parking else (
+                    p.lever * 10.0 - 0.05 * p.ias - p.brake * 8.0)
                 p.ias = max(0.0, p.ias + accel * dt)
                 # track the heading the FO's steering law is asking
                 # for -- a synthetic nosewheel servo kept hunting into
@@ -425,7 +515,7 @@ def main():
             p.brake = max(0.0, p.brake - 0.5)   # brakes bleed off
             if not p.pushing and p.parking:
                 p.ias = 0.0
-            sync_state(engine.source, p)
+            sync_state(engine.source, p, engines=engine_count)
             time.sleep(0.12)
     finally:
         engine.disengage_autonomous()
