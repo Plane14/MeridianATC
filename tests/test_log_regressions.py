@@ -4546,6 +4546,28 @@ def test_throttle_servo_survives_an_engine_out():
     flight._lever_position.assert_not_called()
 
 
+def test_underspeed_climb_energy_does_not_cap_existing_climb_power():
+    """A slow aeroplane already at climb power keeps climb power."""
+    from meridianatc.atc.autonomous import AutonomousPhase
+    flight = _taxi_flight()
+    flight.state.phase = AutonomousPhase.CLIMB
+    flight.state.sub = ""
+    flight._lever_position = Mock(return_value=0.97)
+    flight._altitude_target = lambda _state: 5000.0
+    flight._engine_limit_cap = lambda _state: 1.0
+    flight._slew_lever = lambda lever, **_kwargs: lever
+    flight.session.assigned_altitude_ft = 5000.0
+    flight.session.cruise_altitude_ft = 0.0
+    flight.session.initial_altitude_ft = 0.0
+    state = _engine_state(engines_running=True, eng2_combustion=True,
+                          on_ground=False, indicated_airspeed_kt=100.0,
+                          altitude_ft=1000.0, autothrottle=False,
+                          barber_pole_kt=0.0, mach_max_operate=0.0,
+                          barber_pole_mach=0.0, airspeed_mach=0.0)
+    flight._manage_throttle(state, 130.0)
+    assert flight._dir.throttle.call_args.args[0] >= 0.95
+
+
 def test_a_stale_push_dispatch_is_the_tug_that_never_came():
     """PUSHBACK WAIT stuck on a dead spawn is not waited out forever."""
     import time as _time

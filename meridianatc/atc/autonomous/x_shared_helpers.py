@@ -901,7 +901,7 @@ class _Shared_helpers:
                 max_correction_ft=400.0)
             lever += energy.throttle * 0.08
             if energy.priority == "speed":
-                lever = min(0.95, lever + 0.05)
+                lever += 0.05
             lever = max(0.05, min(0.97, lever))
         # The engine watch's ceiling: a gauge past its published red line
         # gets power off, whatever the speed loop wanted.
