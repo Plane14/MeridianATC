@@ -1112,8 +1112,17 @@ class _The_live_ones:
         second. None airborne and just passing -- an overflight is not
         adopted, however near it comes."""
         ident = self.field.ident
+        distance_nm = haversine_nm(self.field.latitude, self.field.longitude,
+                                   one.latitude, one.longitude)
+        past_keeping = (one.altitude_ft
+                        > self.field.elevation_ft + self.OUT_OF_SIGHT_FT
+                        or distance_nm > self.radius_nm)
         if (flight.origin or "").upper() == ident:
-            return False
+            # A filed departure is ours only while there is still something
+            # to work. Already above or beyond the hand-back boundary it is
+            # the feed's: adopting it there produced a strip for a few
+            # seconds and then handed it straight back.
+            return None if past_keeping else False
         if (flight.destination or "").upper() == ident:
             return True
         if flight.destination:
@@ -1131,11 +1140,7 @@ class _The_live_ones:
             return one.hex in self._live_flew
         if self._final_distance(one) is not None:
             return True                     # lined up and closing
-        if (one.altitude_ft
-                > self.field.elevation_ft + self.OUT_OF_SIGHT_FT
-                or haversine_nm(self.field.latitude, self.field.longitude,
-                                one.latitude, one.longitude)
-                > self.radius_nm):
+        if past_keeping:
             # Already past where a worked departure is kept: adopted
             # anyway, it would be handed straight back at its next
             # word -- nobody's to fly it.

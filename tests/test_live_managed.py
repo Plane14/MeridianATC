@@ -717,6 +717,20 @@ def test_a_departure_adopted_already_past_keeping_is_the_feeds():
     assert flight.observed is True
 
 
+def test_a_filed_departure_already_past_keeping_is_not_adopted():
+    """The origin match used to answer before the out-of-sight guard:
+    a real LECO departure already high was adopted and handed back a
+    few seconds later, flown by nobody in between."""
+    injector = _injector()
+    flight = _flight(origin="EBBR", destination="EGLL", arriving=False,
+                     altitude_ft=11500.0)
+    one = _seen(origin="EBBR", destination="EGLL", altitude_ft=11500.0,
+                vertical_speed_fpm=1500.0)
+    assert injector._adopt_live(flight, one, 100.0) is False
+    assert flight.observed is True
+    assert not injector._taken_over
+
+
 def test_a_ground_aeroplane_at_the_next_airport_is_not_ours():
     """SWR20D and BEL8HR were taxiing at Porto and each got a Vigo
     strip sixty miles from its runways -- the feed hears that far,
