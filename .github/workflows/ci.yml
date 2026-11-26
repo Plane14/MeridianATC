@@ -17,7 +17,7 @@ jobs:
       - name: Install (test deps only -- the audio engines are heavy)
         run: |
           python -m pip install --upgrade pip
-          pip install pytest ruff numpy requests PyYAML ruamel.yaml soundfile rich
+          pip install pytest ruff numpy requests PyYAML ruamel.yaml soundfile
       - name: Ruff
         run: ruff check meridianatc tests tools
       - name: Pytest
