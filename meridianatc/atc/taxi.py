@@ -726,7 +726,18 @@ def plan_arrival(layout: GroundLayout, latitude: float, longitude: float,
     """
     x, z = layout.to_xy(latitude, longitude)
     if not _on_layout(layout, x, z):
-        return None, "the aeroplane is not on the simulator's taxiways"
+        # A just-landed aeroplane is legitimately on the runway, often
+        # hundreds of metres from the nearest connector node. That is
+        # exactly the start ``_vacate_leg`` exists for: the graph route
+        # begins at the exit, and the leg along the strip is prepended.
+        # Only a start neither on the taxiway graph nor on the runway
+        # just vacated is outside what the planner can honestly route.
+        line = next((one for one in lines
+                     if normalize_runway(runway) in one.ends), None)
+        on_strip = line is not None and _point_to_segment(
+            (x, z), line.a, line.b) <= line.half_width_m + 10.0
+        if not on_strip:
+            return None, "the aeroplane is not on the simulator's taxiways"
     candidates = layout.free_stands(airliner, list(occupied), set(taken),
                                     min_radius_m=min_radius_m)
     if not candidates:
@@ -750,8 +761,16 @@ def plan_arrival(layout: GroundLayout, latitude: float, longitude: float,
         if taxi is None:
             continue
         nodes = [node for node in taxi.nodes if node is not None]
-        points = _vacate_leg(lines, runway, (x, z), list(taxi.points)) \
-            + list(taxi.points)
+        vacate = _vacate_leg(lines, runway, (x, z), list(taxi.points))
+        if vacate:
+            # ``taxi.points`` already begins where the aeroplane is. The
+            # centreline projection belongs after that start, not before
+            # it: first the roll along the strip to the exit, then the
+            # turn off it. Prepended wholesale it sent the pursuit backwards
+            # to the projection and then back to the aeroplane's own point.
+            points = [taxi.points[0], *vacate, *taxi.points[1:]]
+        else:
+            points = list(taxi.points)
         return _plan(layout, nodes, points, lines, {runway, *reciprocal},
                      inbound=True, stand=stand), ""
     return None, "no taxiway path to any free stand"

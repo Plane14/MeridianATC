@@ -6132,3 +6132,33 @@ def test_a_vector_step_down_is_not_a_departure_climb_step():
     state = SimpleNamespace(on_ground=False, altitude_ft=10292.0,
                             vertical_speed_fpm=-700.0)
     assert watch.look(session, station, state, 100.0) is None
+
+
+def test_taxi_in_never_parks_and_shuts_down_on_the_runway():
+    """LECO live: no usable stand route came after the landing, so the
+    ninety-second fallback called the runway parking and the chained leg
+    shut the aeroplane down there. A runway blockage is still taxi-in --
+    the charted vacate is tried and PARKED is never declared on the strip."""
+    import time
+
+    from meridianatc.atc.autonomous import AutonomousPhase
+    from meridianatc.atc.session import Phase
+
+    flight = _flier()
+    flight.session.phase = Phase.TAXI_IN
+    flight.session.taxi_path = []
+    flight.state.phase = AutonomousPhase.TAXI_IN
+    flight.state.sub = "taxi"
+    flight.state.sub_entered_at = time.monotonic() - 120.0
+    flight.state.vacated_call = True
+    flight._manage_radio = False
+    flight._taxi_along_path = Mock()
+    flight._stop = Mock()
+    flight._centreline_offset_m = lambda state: 18.0
+    flight._self_plan_arrival = Mock(return_value=False)
+    state = SimpleNamespace(flaps_index=0, ground_speed_kt=0.0)
+    flight._phase_taxi_in(state, 10.0)
+    assert not any(call.args == (AutonomousPhase.PARKED,)
+                   for call in flight._transition.call_args_list)
+    flight._self_plan_arrival.assert_called()
+    flight._stop.assert_called()

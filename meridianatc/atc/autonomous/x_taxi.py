@@ -719,8 +719,15 @@ class _Taxi:
                 self.director.throttle_idle()
                 self.director.spoilers(1.0)
             else:
-                # Slow with nowhere to go: stop and wait for the taxi
-                # instruction rather than roll the runway's length.
+                # Slow with nowhere to go: the strip is still vacated.
+                # A missing or unusable stand route is sorted out once the
+                # runway is behind, never by parking the aeroplane on it.
+                off = self._centreline_offset_m(state)
+                if off is not None and abs(off) <= 30.0 \
+                        and self._self_plan_arrival(state):
+                    return
+                # With no layout honest enough to plan on, stop and wait
+                # rather than roll blindly across the field.
                 self._stop(state)
 
     # A failed self-plan is not retried every tick -- the answer is the
@@ -788,6 +795,66 @@ class _Taxi:
         self.session.crossing_granted = ""
         log.info("%s: taxiing on the airport's own taxiways "
                  "(no route issued)", airport.ident)
+        return True
+
+    def _self_plan_arrival(self, state) -> bool:
+        """Plan the way off the runway and to a stand on the airport diagram.
+
+        A taxi instruction whose path could not be built is not a reason to
+        sit shut down on the strip. A crew still vacates at an available
+        exit and sorts the stand out with ground; where the simulator's
+        layout is known, the same plan the controller failed to make can be
+        flown from the chart. Returns True once a path is on the session.
+        """
+        now = time.monotonic()
+        if now - getattr(self, "_self_plan_in_at", float("-inf")) \
+                < self.SELF_PLAN_RETRY_S:
+            return False
+        self._self_plan_in_at = now
+        ask = getattr(getattr(self, "brain", None), "ground_layout", None)
+        airport = getattr(self.session, "destination", None) \
+            or self._get_current_airport()
+        if ask is None or airport is None or self.navdb is None:
+            return False
+        runway = getattr(self.session, "arrival_runway", "") \
+            or getattr(self.session, "touchdown_runway", "") \
+            or (self.state.runway_key[1] if self.state.runway_key else "")
+        if not runway:
+            return False
+        try:
+            layout = ask(airport.ident)
+            if layout is None:
+                return False
+            from .. import aircraft_class
+            from .. import taxi as taxiplan
+            lines = taxiplan.runway_lines(
+                layout, self.navdb.runways(airport.ident))
+            min_radius = aircraft_class.stand_radius_m(
+                aircraft_class.of_state(state).name) \
+                if getattr(state, "type_code", "") else 0.0
+            aircraft = getattr(self.session, "aircraft", None)
+            key = getattr(getattr(aircraft, "callsign", None), "written", "")
+            plan, _why = taxiplan.plan_arrival(
+                layout, state.latitude, state.longitude, lines,
+                airliner=bool(getattr(getattr(self.session, "profile", None),
+                                      "airliner", False)),
+                key=key or "MERIDIAN", runway=runway,
+                min_radius_m=min_radius)
+        except Exception:
+            log.debug("self-planned taxi-in at %s raised", airport.ident,
+                      exc_info=True)
+            return False
+        if plan is None or len(plan.points or ()) < 2:
+            return False
+        self.session.taxi_path = list(plan.points)
+        self.session.taxi_nodes = list(plan.nodes)
+        self.session.taxi_route = list(plan.names)
+        self.session.taxi_crossings = list(plan.crossings)
+        self.session.taxi_stand = getattr(plan.stand, "index", None)
+        self.session.crossing_index = 0
+        self.session.crossing_granted = ""
+        log.info("%s: vacating on the airport's own taxiways "
+                 "(no usable route issued)", airport.ident)
         return True
 
     def _layout_still_coming(self) -> bool:

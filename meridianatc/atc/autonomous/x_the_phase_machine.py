@@ -2354,6 +2354,17 @@ class _The_phase_machine:
                 if getattr(self, "_ground_still_since", 0.0) else 0.0
             has_path = bool(getattr(self.session, "taxi_path", None))
             if self._sub_age() > 90.0 and (not has_path or still > 240.0):
+                off = self._centreline_offset_m(state)
+                if off is not None and abs(off) <= 30.0:
+                    # A runway is never a parking stand. Where the issued
+                    # route could not be followed, the charted layout is
+                    # used to vacate; without one the aeroplane remains a
+                    # runway blockage to be resolved, not a parked aircraft
+                    # to shut down and chain.
+                    if self._self_plan_arrival(state):
+                        return
+                    self._stop(state)
+                    return
                 self.director.parking_brake(True)
                 self._emit("info", "Parked where it stands: the stand "
                            "route never finished" if has_path else

@@ -369,3 +369,29 @@ def test_phase_checklists_queue_rather_than_abandon():
 
     fo._run_checklist_for_phase("taxi")
     assert started == ["taxi"]           # once a flight, not once a pass
+
+
+def test_arrival_route_can_start_mid_runway_far_from_a_connector():
+    """LECO live: the Baron stopped hundreds of metres from a connector,
+    so the layout gate rejected the start before the vacate leg could be
+    built. Ground invented U/P and the chained leg shut down on the runway."""
+    from meridianatc.atc.taxi import plan_arrival
+
+    points = [
+        (0, 0, 1000.0, 300.0),   # 0 first taxi node off the runway
+        (0, 0, 900.0, 300.0),    # 1 toward the stand
+    ]
+    parkings = [(14, 0, "R1", "", 1, 0, 90.0, 20.0, 850.0, 300.0)]
+    paths = [
+        (PATH_TAXI, 0, 0, "A", 0, 1, -1),
+        (PATH_PARKING, 0, 0, "", 1, 0, -1),
+    ]
+    layout = GroundLayout("TEST", 51.0, 0.0, points, parkings, paths, ["A"])
+    lat, lon = layout.to_latlon(600.0, 0.0)
+    plan, why = plan_arrival(layout, lat, lon, [_runway_line()],
+                             airliner=False, key="N123AB", runway="27")
+    assert plan is not None, why
+    xy = [layout.to_xy(lat, lon) for lat, lon in plan.points]
+    assert xy[0] == pytest.approx((600.0, 0.0), abs=0.01)
+    assert xy[1] == pytest.approx((900.0, 0.0), abs=0.01)
+    assert xy[2] == pytest.approx((900.0, 300.0), abs=0.01)
