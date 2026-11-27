@@ -112,3 +112,33 @@ def test_every_autofly_profile_names_a_title():
         data = json.loads(path.read_text(encoding="utf-8"))
         assert data.get("titleMatches"), path.name
         assert all(m.strip() for m in data["titleMatches"]), path.name
+
+
+def test_stock_aircraft_do_not_inherit_unrelated_type_checklists():
+    """The title/type matcher must not mix whole manufacturers or vendors:
+    a stock Caravan is not a Citation, and an H125 is not an Airbus A320."""
+    cases = [
+        ("Cessna 208 Caravan", "C208", "cessna-208-caravan.json",
+         {"citation-x.json", "cessna-152.json", "cessna-172.json",
+          "blacksquare-caravan.json"}),
+        ("Airbus H125", "AS50", "h125.json",
+         {"a320-neo.json", "a330-900neo.json", "king-air-350i.json"}),
+        ("Beechcraft Baron 58", "BE58", "xplane-baron-58.json",
+         {"blacksquare-baron.json"}),
+        ("Cessna Citation X", "C750", "xplane-citation-x.json",
+         {"citation-longitude.json"}),
+    ]
+    for title, code, wanted, unwanted in cases:
+        names = {p.name for p in checklist_files._add_ons(title, code)}
+        assert wanted in names, (title, names)
+        assert not names & unwanted, (title, names & unwanted)
+
+
+def test_vendor_editions_still_match_their_own_titles():
+    names = {p.name for p in checklist_files._add_ons(
+        "Black Square Baron 58", "BE58")}
+    assert "blacksquare-baron.json" in names
+    names = {p.name for p in checklist_files._add_ons(
+        "FlightFX Citation X", "C750")}
+    assert "citation-x.json" in names
+    assert "hawker-800xp.json" not in names

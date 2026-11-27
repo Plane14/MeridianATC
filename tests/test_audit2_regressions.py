@@ -449,3 +449,53 @@ def test_go_around_stops_commanding_climb_at_the_cleared_altitude():
     kwargs = flight._apply_flight_director.call_args.kwargs
     assert kwargs["altitude"] == 3000.0
     assert kwargs["vs_fpm"] == 0.0
+
+
+def test_powered_lift_chain_planning_uses_vertical_aircraft_rules():
+    """BETA's ALIA is not an airliner on the chain planner: it uses small
+    fields and a powered-lift level rather than the FL390 ladder."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+
+    flight = AutonomousFlight.__new__(AutonomousFlight)
+    flight.state = AutonomousState()
+    flight.state.aircraft_type = "ALIA"
+    flight._is_helicopter = False
+    flight._perf = SimpleNamespace(ceiling_ft=0.0)
+    flight.get_state = lambda: SimpleNamespace(engine_type=-1, title="BETA Alia-250")
+    airport = SimpleNamespace(type="small_airport", lat=43.0, lon=-8.0)
+    destination = SimpleNamespace(type="small_airport", lat=44.0, lon=-7.0)
+
+    assert flight._has_ground_services(airport) is True
+    level = flight._cruise_altitude(airport, destination, 120.0, True)
+    assert level <= 10000
+
+
+def test_stock_light_types_missing_from_legacy_lists_can_chain_from_small_fields():
+    """The Aerolite and Stinson are piston singles even though the old
+    hand-maintained light-type list never named them."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+
+    flight = AutonomousFlight.__new__(AutonomousFlight)
+    flight.state = AutonomousState()
+    airport = SimpleNamespace(type="small_airport")
+    flight._is_helicopter = False
+    for code in ("A103", "L5"):
+        flight.state.aircraft_type = code
+        assert flight._has_ground_services(airport) is True
+
+
+def test_an_unpowered_glider_does_not_invent_a_powered_chained_leg():
+    """The ASK 21 cannot refuel and taxi out on its own; without a tow
+    model chaining it would be fiction, so no destination is selected."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+
+    flight = AutonomousFlight.__new__(AutonomousFlight)
+    flight.state = AutonomousState()
+    flight.state.aircraft_type = "AS21"
+    flight.get_state = lambda: SimpleNamespace(
+        engine_type=2, title="Schleicher ASK 21")
+    flight.session = SimpleNamespace(departure=None)
+    flight.navdb = None
+
+    flight._select_next_destination()
+    assert flight.state.chain_flights == []

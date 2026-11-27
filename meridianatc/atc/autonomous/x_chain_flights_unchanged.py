@@ -17,6 +17,20 @@ class _Chain_flights_unchanged:
 
     def _select_next_destination(self) -> None:
         """Select a random destination within aircraft range with ground services."""
+        try:
+            state = self.get_state()
+        except Exception:
+            state = None
+        engine_type = getattr(state, "engine_type", -1) if state else -1
+        title = (getattr(state, "title", "") or "").lower() if state else ""
+        if engine_type == 2 or "glider" in title or "sailplane" in title                 or "ask 21" in title or "ask21" in title:
+            # A sailplane cannot turn itself around for the next leg:
+            # without a tow/towplane model there is no honest chained
+            # flight to invent. Finish this one rather than filing it as
+            # a powered aeroplane.
+            log.info("Chained flight not planned: %s is unpowered",
+                     self.state.aircraft_type or "the aircraft")
+            return
         current = self._get_current_airport() or self.session.departure
         if not current:
             log.warning("Cannot select next destination: no current airport")
@@ -84,8 +98,15 @@ class _Chain_flights_unchanged:
             # the seaplane base's fuel dock is its ground service.
             return airport.type in ("seaplane_base", "small_airport",
                                     "medium_airport", "large_airport")
-        if self.state.aircraft_type in fly._LIGHT_TYPES:
-            return airport.type in ("small_airport", "medium_airport", "large_airport")
+        from .. import aircraft_class as ac
+        cls = ac.classify(self.state.aircraft_type).name
+        if cls in (ac.PISTON_SINGLE, ac.PISTON_TWIN,
+                   ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN,
+                   ac.POWERED_LIFT):
+            # GA types are served at the small fields an airliner is not;
+            # the type-code lists are incomplete, so the class decides.
+            return airport.type in ("small_airport", "medium_airport",
+                                    "large_airport")
         return False
 
     def _pick_destination(self, candidates: list[tuple[Airport, float]]) -> Airport | None:
@@ -134,8 +155,15 @@ class _Chain_flights_unchanged:
             level = 39000
 
         code = self.state.aircraft_type
+        from .. import aircraft_class as ac
         if self._is_helicopter:
             level = min(level, 5000)
+        elif ac.powered_lift_type(code):
+            # Powered lift is heterogeneous, but none of it files the
+            # airliner ladder. BETA's ALIA is the low electric end; the
+            # tiltrotors and STOVL types use the lower class cap unless
+            # the model/table below states a lower ceiling.
+            level = min(level, 10000 if code in ("ALIA", "A250") else 25000)
         elif code in fly._TURBOPROP_TYPES or code in ("C25A", "C25C"):
             # Turboprops and the light jets their owners climb like
             # them: a step ladder the props top out under, the business

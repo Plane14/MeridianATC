@@ -20,6 +20,10 @@ class _Helpers_kept_from:
 
         ranges = {
             "C152": 350, "C172": 550, "C182": 750, "C208": 800,
+            # X-Plane 12's small natives and BETA's electric powered
+            # lift: chain planning figures, not traffic-table rows.
+            "A103": 100, "L5": 250, "ALIA": 250, "A250": 250,
+            "F4": 1200,
             "PA28": 500, "PA34": 700, "DA40": 600, "DA42": 800,
             "SR22": 700, "BE36": 800, "TB20": 700,
             "TBM9": 1500, "PC12": 1300, "AT76": 800, "DH8D": 900,
@@ -71,7 +75,8 @@ class _Helpers_kept_from:
                     cls = ac.of_state(state).name
             except Exception:
                 pass
-            light = cls in (ac.PISTON_SINGLE, ac.PISTON_TWIN, ac.HELICOPTER)
+            light = cls in (ac.PISTON_SINGLE, ac.PISTON_TWIN, ac.HELICOPTER,
+                             ac.POWERED_LIFT)
             range_nm = perftable.range_for(type_code, light=light)
             if cls in (ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN):
                 range_nm = min(range_nm, 1200.0)

@@ -76,6 +76,8 @@ DOC_8643: dict[str, str] = {
     "BL8": "L1P", "A5": "A1P", "CUB": "L1P", "SAVG": "L1P", "VL3": "L1P",
     "C42": "L1P", "DV20": "L1P", "PTS2": "L1P", "EXTR": "L1P", "AT3": "L1P",
     "RV7": "L1P", "RV8": "L1P", "RV10": "L1P", "CRUZ": "L1P",
+    # X-Plane 12's light natives the type table otherwise guesses at.
+    "A103": "L1P", "L5": "L1P",
     # piston twins
     "DA42": "L2P", "DA62": "L2P", "PA34": "L2P", "PA44": "L2P",
     "BE58": "L2P", "BE55": "L2P", "C310": "L2P", "C340": "L2P",
@@ -111,7 +113,7 @@ DOC_8643: dict[str, str] = {
     "SEAB": "S1P",           # Republic RC-3 Seabee -- a seaplane, no wheels
     # the F-14 is a fighter, which the class table has no word for; a
     # twin-jet with no airline lands as a business jet, the closest fit
-    "F14": "L2J",
+    "F14": "L2J", "F4": "L2J",
     # Powered lift. ICAO Doc 8643 uses the T aircraft kind for a
     # tiltrotor; the STOVL jets keep their landplane descriptions, so
     # they are marked explicitly below rather than discovered from the
@@ -194,9 +196,11 @@ def powered_lift_type(type_code: str = "", title: str = "") -> bool:
     the A, B and C, so only the B in the model title is evidence.
     """
     code = (type_code or "").strip().upper()
-    if DOC_8643.get(code, "")[:1] == "T" or code in ("HAR", "AV8B"):
+    if DOC_8643.get(code, "")[:1] == "T" or code in ("HAR", "AV8B", "ALIA", "A250"):
         return True
     said = (title or "").lower().replace("-", "").replace("_", " ")
+    if "beta alia" in said or "alia 250" in said:
+        return True
     return code == "F35" and ("f35b" in said or "stovl" in said)
 
 

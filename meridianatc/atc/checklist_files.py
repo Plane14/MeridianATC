@@ -301,16 +301,89 @@ def _read(path: Path, problems: list[str]) -> dict | None:
     return data
 
 
-def _add_ons(title: str, type_code: str = "") -> list[Path]:
-    """The add-on files whose fragments are in the simulator's title.
+def _compact_key(text: str) -> str:
+    """Aircraft title text with punctuation and spacing removed."""
+    return "".join(ch for ch in (text or "").lower() if ch.isalnum())
 
-    The type designator is a weaker but still useful key: a no-sim or
-    minimally reported aircraft often has no rich title at all, and a
-    POH file matched only by title then silently never applies.
+
+# Fragments too broad to identify one aircraft or add-on. The generated
+# type files carry every token of a package title; manufacturer names and
+# words such as "flight" otherwise make a Citation, a Caravan and a C172
+# all wear the same POH card.
+_GENERIC_MATCHES = frozenset({
+    "a2a", "aerosoft", "air", "airbus", "asobo", "beechcraft", "bell",
+    "black", "boeing", "cessna", "cirrus", "diamond", "douglas", "embraer",
+    "fenix", "flight", "flightsim", "flybywire", "fsreborn", "grumman",
+    "ifly", "inibuilds", "jets", "just", "king", "leonardo", "mcdonnell",
+    "microsoft", "nemeth", "piper", "pmdg", "robinson", "square", "studio",
+    "taog", "toliss", "xplane",
+})
+
+# Vendor names are evidence that a vendor edition is present, never evidence
+# of which aircraft that edition is. Model-family words shared by distinct
+# aircraft are likewise too broad on their own.
+_VENDOR_MATCHES = frozenset({
+    "blacksquare", "flightfx", "pmdg", "fenix", "flybywire", "ifly",
+    "a2a", "fsreborn", "inibuilds", "toliss", "aerosoft", "nemeth",
+    "taog", "justflight", "flightsimstudio",
+})
+_FAMILY_MATCHES = frozenset({"citation"})
+
+
+def _match_fragment(fragment: str, title_key: str, code_key: str) -> bool:
+    """Whether one declared fragment is specific evidence for this aircraft."""
+    key = _compact_key(fragment)
+    if not key or key in _GENERIC_MATCHES \
+            or key in _VENDOR_MATCHES or key in _FAMILY_MATCHES:
+        return False
+    if code_key and key == code_key:
+        # The ICAO type is exact evidence even when it is short -- no
+        # substring matching, so C172 does not pull in every "172" title.
+        return True
+    # Title fragments need enough of the model name to mean one aircraft:
+    # bare numbers such as 172/737/600 and one-letter abbreviations were
+    # matching across whole manufacturers. Four alphanumeric characters
+    # keeps SR22, H125 and C172 while discarding those collisions.
+    return len(key) >= 4 and key in title_key
+
+
+def _vendor_required(matches: list[str]) -> str:
+    """The add-on vendor a file's own match list declares, normalized.
+
+    Vendor editions share the aircraft type and much of the model name with
+    the stock aircraft. A Black Square Baron is still "BE58", so the type
+    code alone can never distinguish it from the X-Plane Baron; applying
+    its preflight card to the stock aeroplane is exactly the wrong POH.
+    Where the file declares a vendor, that vendor must appear in the
+    simulator's title before any of its model fragments count.
     """
-    title = (title or "").lower()
-    code = (type_code or "").strip().lower()
-    compact = code.replace("-", "")
+    keys = {_compact_key(fragment) for fragment in matches}
+    vendors = ("blacksquare", "flightfx", "pmdg", "fenix", "flybywire",
+               "ifly", "a2a", "fsreborn", "inibuilds", "toliss",
+               "aerosoft", "nemeth", "taog")
+    for vendor in vendors:
+        if any(key == vendor or key.startswith(vendor + "-")
+               for key in keys):
+            return vendor
+    if {"just", "flight"} <= keys:
+        return "justflight"
+    if {"flightsim", "studio"} <= keys:
+        return "flightsimstudio"
+    return ""
+
+
+def _add_ons(title: str, type_code: str = "") -> list[Path]:
+    """The add-on files whose specific fragments name this aircraft.
+
+    Matching is deliberately stricter than a raw substring of the title:
+    manufacturer names, package vendors and bare numeric tokens are not a
+    POH. A file must name a model-specific fragment (normalised so
+    ``Cessna 172`` and ``cessna-172`` are the same evidence) or the exact
+    ICAO type code, which is what no-sim aircraft often carry when no rich
+    title is reported.
+    """
+    title_key = _compact_key(title)
+    code_key = _compact_key(type_code)
     if not TYPES.is_dir():
         return []
     found = []
@@ -327,9 +400,10 @@ def _add_ons(title: str, type_code: str = "") -> list[Path]:
         if not isinstance(matches, list) or not all(isinstance(m, str) and m.strip() for m in matches):
             found.append(path)
             continue
-        if any(m.lower() in title
-               or (code and m.lower() in (code, compact))
-               for m in matches):
+        vendor = _vendor_required(matches)
+        if vendor and vendor not in title_key:
+            continue
+        if any(_match_fragment(m, title_key, code_key) for m in matches):
             found.append(path)
     return found
 
