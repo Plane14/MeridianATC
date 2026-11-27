@@ -382,6 +382,12 @@ class ClimbWatch:
             return None
         if state is None or state.on_ground or session.emergency:
             return None
+        if session.vector_leg:
+            # A radar vector owns the vertical path with the horizontal one:
+            # its step-downs can put the assigned level far below the
+            # aeroplane, which is a descent instruction -- never evidence
+            # that the departure climb has reached its last step.
+            return None
         if not session.established_with(station):
             return None
         pending = session.pending

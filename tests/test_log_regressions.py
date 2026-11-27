@@ -6102,3 +6102,33 @@ def test_climb_flaps_wait_for_four_hundred_feet_agl():
     low._dir.flaps.assert_not_called()
     high = flight_at(500.0)
     high._dir.flaps.assert_called_once_with(0.0)
+
+
+def test_a_vector_step_down_is_not_a_departure_climb_step():
+    """LEVX live: the ILS 21 vector step-down assigned 4,400 ft while the
+    Baron was still passing 10,000. The climb watch read 'assigned below
+    cruise' as an unfinished departure climb and countermanded it with
+    'climb FL170' twenty-four seconds later."""
+    from meridianatc.atc.departure import ClimbWatch
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import FlightSession, Phase
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.db import Station
+
+    brain = Mock()
+    brain.realism = SimpleNamespace(climb_steps=True)
+    brain.navdb = SimpleNamespace(airport=lambda ident: None)
+    brain._transition_altitude = lambda airport: 6000
+    brain.for_station = lambda station, language="en": Phraseology("icao")
+    watch = ClimbWatch(brain)
+    station = Station("LESC", "APP", 120.2, "Santiago")
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    session.ifr = True
+    session.phase = Phase.ENROUTE
+    session.cruise_altitude_ft = 17000
+    session.assigned_altitude_ft = 4400
+    session.vector_leg = "join"
+    session.establish(station)
+    state = SimpleNamespace(on_ground=False, altitude_ft=10292.0,
+                            vertical_speed_fpm=-700.0)
+    assert watch.look(session, station, state, 100.0) is None
