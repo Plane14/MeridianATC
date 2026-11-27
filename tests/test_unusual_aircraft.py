@@ -130,3 +130,18 @@ class TestPoweredLift:
         assert ac.min_runway_ft("V22") <= 1500
         assert ac.min_runway_ft("HAR") <= 1500
         assert ac.min_runway_ft("F35") >= 5000
+
+
+def test_powered_lift_checklists_are_not_copied_business_jet_flows():
+    """The powered-lift class is conversion/nacelle centric and must not
+    brief business-jet-only pressurisation/yaw-damper items as a POH."""
+    from meridianatc.atc import checklist_files
+
+    book = checklist_files.load("powered_lift")
+    text = " ".join(
+        str(item.challenge) + " " + str(item.response)
+        for checklist in book.checklists.values()
+        for item in checklist.items).lower()
+    assert "conversion" in text or "nacelle" in text
+    assert "pressurisation" not in text
+    assert "yaw damper" not in text

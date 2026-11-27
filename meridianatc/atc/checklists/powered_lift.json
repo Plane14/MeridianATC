@@ -1,882 +1,758 @@
 {
-  "_comment": "The class flows for a business jet, the items in English as the operators' checklists are.",
-  "source": "Cessna Citation CJ4 and Embraer Phenom 300 normal checklists for the items; airline SOP conventions (a challenge, its response, one checklist per phase) as in the Airbus A320 and Boeing 737 FCOMs; FAA Airplane Flying Handbook (FAA-H-8083-3C) chapter 15 (transition to jet-powered airplanes).",
+  "_comment": "Generic powered-lift normal flows. They are deliberately sparse: a tiltrotor, STOVL jet and eVTOL do not share one exact POH, so type files override the type-specific conversion sequence.",
+  "source": "Class synthesis from FAA powered-lift/rotorcraft operating principles and manufacturer conversion-aircraft operating conventions; not a substitute for the aircraft AFM/POH.",
   "checklists": {
     "before_start": {
       "title": {
         "en": "before start",
-        "fr": "avant mise en route"
+        "fr": "before start"
       },
       "items": [
         {
           "challenge": "Preflight inspection",
           "response": "complete",
           "accept": [
+            "check",
+            "set",
             "complete",
-            "check"
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
           ]
         },
         {
-          "challenge": {
-            "en": "Parking brake",
-            "fr": "Frein de parc"
-          },
-          "response": {
-            "en": "set",
-            "fr": "serré"
-          },
-          "accept": [
-            "set",
-            "on"
-          ],
-          "check": {
-            "var": "parking_brake",
-            "op": "eq",
-            "value": true
-          }
-        },
-        {
-          "challenge": "Battery",
-          "response": "on",
-          "accept": [
-            "on"
-          ],
-          "check": {
-            "var": "battery_master",
-            "op": "eq",
-            "value": true
-          }
-        },
-        {
-          "challenge": "Fuel quantity",
+          "challenge": "Weight, balance and vertical performance",
           "response": "checked",
           "accept": [
             "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
             "value"
           ]
         },
         {
-          "challenge": "Takeoff data",
+          "challenge": "Parking brake or rotor brake",
           "response": "set",
-          "accept": [
-            "set",
-            "check"
-          ],
-          "note": "The speeds are the pilot's, from the AFM: the first officer never says a figure."
-        },
-        {
-          "challenge": {
-            "en": "Altimeter",
-            "fr": "Altimètre"
-          },
-          "response": {
-            "en": "set",
-            "fr": "calé"
-          },
-          "accept": [
-            "set",
-            "value"
-          ],
-          "check": {
-            "var": "kohlsman_hpa",
-            "op": "near",
-            "value": "$qnh",
-            "tolerance": 1.0
-          },
-          "note": "Against the QNH the controller gave, else the field's."
-        },
-        {
-          "challenge": {
-            "en": "Clearance",
-            "fr": "Clairance"
-          },
-          "response": {
-            "en": "received and set",
-            "fr": "reçue et affichée"
-          },
           "accept": [
             "check",
             "set",
-            "complete"
-          ],
-          "rules": "ifr"
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         },
         {
-          "challenge": {
-            "en": "Beacon",
-            "fr": "Feu anticollision"
-          },
-          "response": {
-            "en": "on",
-            "fr": "allumé"
-          },
+          "challenge": "Battery or energy system",
+          "response": "on",
           "accept": [
-            "on"
-          ],
-          "check": {
-            "var": "beacon_light",
-            "op": "eq",
-            "value": true
-          },
-          "note": "Anti-collision lights on before the engines start: 14 CFR 91.209(b), the FAA Airplane Flying Handbook ch. 2."
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Fuel or energy quantity",
+          "response": "checked",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Conversion surfaces and nacelles",
+          "response": "checked",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Beacon",
+          "response": "on",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         }
       ]
     },
     "after_start": {
       "title": {
         "en": "after start",
-        "fr": "après mise en route"
+        "fr": "after start"
       },
       "items": [
         {
-          "challenge": "Generators",
-          "response": "on",
-          "accept": [
-            "on",
-            "check"
-          ],
-          "check": {
-            "var": "generator_on",
-            "op": "eq",
-            "value": true
-          }
-        },
-        {
-          "challenge": "Engine instruments",
+          "challenge": "Engine or motor instruments",
           "response": "checked",
           "accept": [
             "check",
-            "green"
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
           ]
         },
         {
-          "challenge": {
-            "en": "Avionics master",
-            "fr": "Interrupteur avionique"
-          },
-          "response": {
-            "en": "on",
-            "fr": "marche"
-          },
+          "challenge": "Gearbox, transmission and conversion warnings",
+          "response": "clear",
           "accept": [
-            "on"
-          ],
-          "check": {
-            "var": "avionics_master",
-            "op": "eq",
-            "value": true
-          }
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         },
         {
-          "challenge": {
-            "en": "Transponder code",
-            "fr": "Code transpondeur"
-          },
-          "response": {
-            "en": "set",
-            "fr": "affiché"
-          },
+          "challenge": "Avionics master",
+          "response": "on",
           "accept": [
+            "check",
             "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
             "value"
-          ],
-          "rules": "ifr",
-          "check": {
-            "var": "transponder_code",
-            "op": "eq",
-            "value": "$squawk"
-          }
+          ]
         },
         {
-          "challenge": {
-            "en": "Transponder",
-            "fr": "Transpondeur"
-          },
-          "response": {
-            "en": "VFR code set",
-            "fr": "code VFR affiché"
-          },
+          "challenge": "Altimeter",
+          "response": "set",
           "accept": [
+            "check",
             "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
             "value"
-          ],
-          "rules": "vfr",
-          "check": {
-            "var": "transponder_code",
-            "op": "eq",
-            "value": "$squawk"
-          }
+          ]
+        },
+        {
+          "challenge": "Transponder code",
+          "response": "set",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Transponder",
+          "response": "standby",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         }
       ]
     },
     "taxi": {
       "title": {
         "en": "taxi",
-        "fr": "roulage"
+        "fr": "taxi"
       },
       "items": [
         {
-          "challenge": "Brakes",
+          "challenge": "Brakes or hover check",
           "response": "checked",
           "accept": [
-            "check"
-          ],
-          "check": {
-            "var": "brake_left_pct",
-            "op": "min",
-            "value": 10
-          }
-        },
-        {
-          "challenge": "Flight controls",
-          "response": "checked",
-          "accept": [
-            "check"
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
           ]
         },
         {
           "challenge": "Flight instruments",
           "response": "checked",
           "accept": [
-            "check"
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
           ]
         },
         {
-          "challenge": {
-            "en": "Navigation source",
-            "fr": "Source de navigation"
-          },
-          "response": {
-            "en": "set",
-            "fr": "sélectionnée"
-          },
+          "challenge": "Navigation source",
+          "response": "set",
           "accept": [
+            "check",
             "set",
-            "check"
-          ],
-          "rules": "ifr"
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         }
       ]
     },
     "before_takeoff": {
       "title": {
         "en": "before takeoff",
-        "fr": "avant décollage"
+        "fr": "before takeoff"
       },
       "items": [
         {
-          "challenge": "Flaps",
-          "response": "set",
-          "accept": [
-            "set",
-            "up",
-            "value",
-            "check"
-          ],
-          "note": "Up or the takeoff stage on a CJ4: not checked."
-        },
-        {
-          "challenge": "Trims",
-          "response": "set for takeoff",
-          "accept": [
-            "set",
-            "check"
-          ]
-        },
-        {
-          "challenge": "Speed brakes",
-          "response": "retracted",
-          "accept": [
-            "up",
-            "off",
-            "check"
-          ]
-        },
-        {
-          "challenge": "Takeoff speeds",
-          "response": "set",
-          "accept": [
-            "set",
-            "check"
-          ]
-        },
-        {
-          "challenge": "Probe heat",
-          "response": "on",
-          "accept": [
-            "on"
-          ],
-          "check": {
-            "var": "pitot_heat",
-            "op": "eq",
-            "value": true
-          },
-          "note": "UNVERIFIED: on for every takeoff on the CJ4 and most jets; the type's AFM says."
-        },
-        {
-          "challenge": {
-            "en": "Clearance",
-            "fr": "Clairance"
-          },
-          "response": {
-            "en": "confirmed",
-            "fr": "confirmée"
-          },
+          "challenge": "Conversion mode or nacelle position",
+          "response": "takeoff setting",
           "accept": [
             "check",
-            "complete"
-          ],
-          "rules": "ifr"
-        },
-        {
-          "challenge": {
-            "en": "Navigation source",
-            "fr": "Source de navigation"
-          },
-          "response": {
-            "en": "set",
-            "fr": "sélectionnée"
-          },
-          "accept": [
             "set",
-            "check"
-          ],
-          "rules": "ifr"
-        },
-        {
-          "challenge": {
-            "en": "Transponder",
-            "fr": "Transpondeur"
-          },
-          "response": {
-            "en": "VFR code set",
-            "fr": "code VFR affiché"
-          },
-          "accept": [
-            "set",
-            "value"
-          ],
-          "rules": "vfr",
-          "check": {
-            "var": "transponder_code",
-            "op": "eq",
-            "value": "$squawk"
-          }
-        },
-        {
-          "challenge": {
-            "en": "Circuit height",
-            "fr": "Hauteur du tour de piste"
-          },
-          "response": {
-            "en": "set",
-            "fr": "affichée"
-          },
-          "accept": [
-            "set",
-            "value"
-          ],
-          "rules": "vfr",
-          "note": "Set on the altimeter bug; nothing reads the bug."
-        },
-        {
-          "challenge": {
-            "en": "Transponder",
-            "fr": "Transpondeur"
-          },
-          "response": {
-            "en": "ALT",
-            "fr": "ALT"
-          },
-          "accept": [
+            "complete",
             "on",
-            "set"
-          ],
-          "check": {
-            "var": "transponder_state",
-            "op": "in",
-            "value": [
-              3,
-              4
-            ]
-          },
-          "note": "UNVERIFIED: TRANSPONDER STATE is defined by this program and not yet measured on a running 2024; without an answer nothing is checked."
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         },
         {
-          "challenge": {
-            "en": "Strobes",
-            "fr": "Feux à éclats"
-          },
-          "response": {
-            "en": "on",
-            "fr": "allumés"
-          },
+          "challenge": "Flaps and trim",
+          "response": "takeoff setting",
           "accept": [
-            "on"
-          ],
-          "check": {
-            "var": "strobe_light",
-            "op": "eq",
-            "value": true
-          }
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         },
         {
-          "challenge": {
-            "en": "Landing light",
-            "fr": "Phare d'atterrissage"
-          },
-          "response": {
-            "en": "on",
-            "fr": "allumé"
-          },
+          "challenge": "Flight controls",
+          "response": "free and correct",
           "accept": [
-            "on"
-          ],
-          "check": {
-            "var": "landing_light",
-            "op": "eq",
-            "value": true
-          },
-          "note": "FAA Airplane Flying Handbook: lights on in the terminal area ('operation lights on')."
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Engine or motor limits",
+          "response": "checked",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Clearance",
+          "response": "received",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Transponder",
+          "response": "altitude",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Strobes",
+          "response": "on",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Landing light",
+          "response": "on",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         }
       ]
     },
     "after_takeoff": {
       "title": {
         "en": "after takeoff",
-        "fr": "après décollage"
+        "fr": "after takeoff"
       },
       "items": [
         {
-          "challenge": {
-            "en": "Landing gear",
-            "fr": "Train d'atterrissage"
-          },
-          "response": {
-            "en": "up",
-            "fr": "rentré"
-          },
+          "challenge": "Landing gear",
+          "response": "up or confirmed fixed",
           "accept": [
-            "up",
-            "check"
-          ],
-          "check": {
-            "var": "gear_down",
-            "op": "eq",
-            "value": false
-          }
-        },
-        {
-          "challenge": {
-            "en": "Flaps",
-            "fr": "Volets"
-          },
-          "response": {
-            "en": "up",
-            "fr": "rentrés"
-          },
-          "accept": [
-            "up",
-            "check"
-          ],
-          "check": {
-            "var": "flaps_index",
-            "op": "eq",
-            "value": 0
-          }
-        },
-        {
-          "challenge": "Yaw damper",
-          "response": "on",
-          "accept": [
+            "check",
+            "set",
+            "complete",
             "on",
-            "check"
-          ],
-          "check": {
-            "var": "yaw_damper_on",
-            "op": "eq",
-            "value": true
-          }
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         },
         {
-          "challenge": "Pressurisation",
-          "response": "checked",
+          "challenge": "Conversion sequence",
+          "response": "complete",
           "accept": [
-            "check"
-          ],
-          "check": {
-            "var": "cabin_altitude_goal_ft",
-            "op": "min",
-            "value": 100
-          }
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Climb power",
+          "response": "set",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         }
       ]
     },
     "cruise": {
       "title": {
         "en": "cruise",
-        "fr": "croisière"
+        "fr": "cruise"
       },
       "items": [
         {
-          "challenge": "Altimeters",
-          "response": "standard",
-          "accept": [
-            "set",
-            "check"
-          ]
-        },
-        {
-          "challenge": "Fuel",
-          "response": "checked",
+          "challenge": "Cruise configuration",
+          "response": "set",
           "accept": [
             "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
             "value"
           ]
         },
         {
-          "challenge": "Pressurisation",
+          "challenge": "Power",
+          "response": "set",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Fuel or energy",
           "response": "checked",
           "accept": [
-            "check"
-          ],
-          "check": {
-            "var": "cabin_altitude_goal_ft",
-            "op": "min",
-            "value": 100
-          }
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         }
       ]
     },
     "descent": {
       "title": {
         "en": "descent",
-        "fr": "descente"
+        "fr": "descent"
       },
       "items": [
         {
-          "challenge": "Pressurisation",
-          "response": "set",
+          "challenge": "Conversion and landing briefing",
+          "response": "complete",
           "accept": [
+            "check",
             "set",
-            "check"
-          ],
-          "check": {
-            "var": "cabin_altitude_goal_ft",
-            "op": "min",
-            "value": 100
-          }
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Fuel or energy",
+          "response": "checked",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         },
         {
           "challenge": "Landing data",
           "response": "set",
           "accept": [
+            "check",
             "set",
-            "check"
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
           ]
         },
         {
-          "challenge": {
-            "en": "Next frequency",
-            "fr": "Fréquence suivante"
-          },
-          "response": {
-            "en": "set",
-            "fr": "affichée"
-          },
+          "challenge": "Next frequency",
+          "response": "noted",
           "accept": [
+            "check",
             "set",
-            "value"
-          ],
-          "rules": "vfr",
-          "check": {
-            "var": "com1_standby",
-            "op": "eq",
-            "value": "$frequency"
-          },
-          "note": "Against the frequency the controller gave; with none given, nothing is checked."
-        },
-        {
-          "challenge": {
-            "en": "Approach briefing",
-            "fr": "Briefing approche"
-          },
-          "response": {
-            "en": "complete",
-            "fr": "effectué"
-          },
-          "accept": [
             "complete",
-            "check"
-          ],
-          "rules": "ifr"
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         }
       ]
     },
     "approach": {
       "title": {
         "en": "approach",
-        "fr": "approche"
+        "fr": "approach"
       },
       "items": [
         {
-          "challenge": {
-            "en": "Altimeter",
-            "fr": "Altimètre"
-          },
-          "response": {
-            "en": "set",
-            "fr": "calé"
-          },
+          "challenge": "Approach briefing",
+          "response": "complete",
           "accept": [
+            "check",
             "set",
-            "value"
-          ],
-          "check": {
-            "var": "kohlsman_hpa",
-            "op": "near",
-            "value": "$qnh",
-            "tolerance": 1.0
-          },
-          "note": "Against the QNH the controller gave, else the field's."
-        },
-        {
-          "challenge": {
-            "en": "Minimums",
-            "fr": "Minima"
-          },
-          "response": {
-            "en": "set",
-            "fr": "affichés"
-          },
-          "accept": [
-            "set",
-            "value"
-          ],
-          "rules": "ifr",
-          "note": "Not checked: DECISION HEIGHT is the model's design figure on most aeroplanes, not the bug the pilot sets.",
-          "check": {
-            "var": "minimums_ft",
-            "op": "min",
-            "value": 1
-          }
-        },
-        {
-          "challenge": {
-            "en": "Navigation source",
-            "fr": "Source de navigation"
-          },
-          "response": {
-            "en": "set",
-            "fr": "sélectionnée"
-          },
-          "accept": [
-            "set",
-            "check"
-          ],
-          "rules": "ifr"
-        },
-        {
-          "challenge": {
-            "en": "Approach briefing",
-            "fr": "Briefing approche"
-          },
-          "response": {
-            "en": "complete",
-            "fr": "effectué"
-          },
-          "accept": [
             "complete",
-            "check"
-          ],
-          "rules": "ifr"
-        },
-        {
-          "challenge": {
-            "en": "Circuit height",
-            "fr": "Hauteur du tour de piste"
-          },
-          "response": {
-            "en": "set",
-            "fr": "affichée"
-          },
-          "accept": [
-            "set",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
             "value"
-          ],
-          "rules": "vfr",
-          "note": "Set on the altimeter bug; nothing reads the bug."
+          ]
         },
         {
-          "challenge": {
-            "en": "Circuit joining",
-            "fr": "Intégration"
-          },
-          "response": {
-            "en": "briefed",
-            "fr": "briefée"
-          },
+          "challenge": "Minimums",
+          "response": "set",
           "accept": [
+            "check",
+            "set",
             "complete",
-            "check"
-          ],
-          "rules": "vfr"
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Altimeter",
+          "response": "set",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Navigation source",
+          "response": "set",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         }
       ]
     },
     "before_landing": {
       "title": {
         "en": "before landing",
-        "fr": "avant atterrissage"
+        "fr": "before landing"
       },
       "items": [
         {
-          "challenge": {
-            "en": "Landing gear",
-            "fr": "Train d'atterrissage"
-          },
-          "response": {
-            "en": "down, three green",
-            "fr": "sorti, trois vertes"
-          },
+          "challenge": "Conversion mode or nacelle position",
+          "response": "landing setting",
           "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
             "down",
             "green",
-            "check"
-          ],
-          "check": {
-            "var": "gear_down",
-            "op": "eq",
-            "value": true
-          }
+            "value"
+          ]
+        },
+        {
+          "challenge": "Landing gear",
+          "response": "down or confirmed fixed",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         },
         {
           "challenge": "Flaps",
-          "response": "as required",
-          "accept": [
-            "set",
-            "value",
-            "check"
-          ]
-        },
-        {
-          "challenge": "Speed brakes",
-          "response": "retracted",
-          "accept": [
-            "up",
-            "off",
-            "check"
-          ]
-        },
-        {
-          "challenge": {
-            "en": "Landing light",
-            "fr": "Phare d'atterrissage"
-          },
-          "response": {
-            "en": "on",
-            "fr": "allumé"
-          },
-          "accept": [
-            "on"
-          ],
-          "check": {
-            "var": "landing_light",
-            "op": "eq",
-            "value": true
-          },
-          "note": "FAA Airplane Flying Handbook: lights on in the terminal area ('operation lights on')."
-        },
-        {
-          "challenge": {
-            "en": "Autopilot",
-            "fr": "Pilote automatique"
-          },
-          "response": {
-            "en": "off",
-            "fr": "déconnecté"
-          },
-          "accept": [
-            "off",
-            "check"
-          ],
-          "rules": "vfr",
-          "check": {
-            "var": "autopilot",
-            "op": "eq",
-            "value": false
-          }
-        },
-        {
-          "challenge": {
-            "en": "Autopilot",
-            "fr": "Pilote automatique"
-          },
-          "response": {
-            "en": "as required",
-            "fr": "selon besoin"
-          },
+          "response": "landing setting",
           "accept": [
             "check",
+            "set",
+            "complete",
             "on",
             "off",
-            "set"
-          ],
-          "rules": "ifr"
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Landing light",
+          "response": "on",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         }
       ]
     },
     "after_landing": {
       "title": {
         "en": "after landing",
-        "fr": "après atterrissage"
+        "fr": "after landing"
       },
       "items": [
         {
-          "challenge": {
-            "en": "Flaps",
-            "fr": "Volets"
-          },
-          "response": {
-            "en": "up",
-            "fr": "rentrés"
-          },
+          "challenge": "Conversion mode or nacelle position",
+          "response": "normal ground setting",
           "accept": [
-            "up",
-            "check"
-          ],
-          "check": {
-            "var": "flaps_index",
-            "op": "eq",
-            "value": 0
-          }
-        },
-        {
-          "challenge": {
-            "en": "Strobes",
-            "fr": "Feux à éclats"
-          },
-          "response": {
-            "en": "off",
-            "fr": "éteints"
-          },
-          "accept": [
-            "off"
-          ],
-          "check": {
-            "var": "strobe_light",
-            "op": "eq",
-            "value": false
-          },
-          "note": "Off on the ground so as not to dazzle (AIM 4-3-23)."
-        },
-        {
-          "challenge": "Speed brakes",
-          "response": "retracted",
-          "accept": [
-            "up",
+            "check",
+            "set",
+            "complete",
+            "on",
             "off",
-            "check"
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Flaps",
+          "response": "up",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Strobes",
+          "response": "off",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
           ]
         }
       ]
@@ -884,70 +760,68 @@
     "shutdown": {
       "title": {
         "en": "shutdown",
-        "fr": "arrêt moteur"
+        "fr": "shutdown"
       },
       "items": [
         {
-          "challenge": {
-            "en": "Parking brake",
-            "fr": "Frein de parc"
-          },
-          "response": {
-            "en": "set",
-            "fr": "serré"
-          },
+          "challenge": "Parking brake",
+          "response": "set",
           "accept": [
+            "check",
             "set",
-            "on"
-          ],
-          "check": {
-            "var": "parking_brake",
-            "op": "eq",
-            "value": true
-          }
-        },
-        {
-          "challenge": {
-            "en": "Avionics master",
-            "fr": "Interrupteur avionique"
-          },
-          "response": {
-            "en": "off",
-            "fr": "arrêt"
-          },
-          "accept": [
-            "off"
-          ],
-          "check": {
-            "var": "avionics_master",
-            "op": "eq",
-            "value": false
-          }
-        },
-        {
-          "challenge": "Throttles",
-          "response": "cut-off",
-          "accept": [
+            "complete",
+            "on",
             "off",
-            "check"
-          ],
-          "check": {
-            "var": "throttle_pct",
-            "op": "max",
-            "value": 10
-          }
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         },
         {
-          "challenge": "Battery",
+          "challenge": "Power",
+          "response": "idle or off",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Avionics master",
           "response": "off",
           "accept": [
-            "off"
-          ],
-          "check": {
-            "var": "battery_master",
-            "op": "eq",
-            "value": false
-          }
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
+        },
+        {
+          "challenge": "Battery or energy system",
+          "response": "off",
+          "accept": [
+            "check",
+            "set",
+            "complete",
+            "on",
+            "off",
+            "up",
+            "down",
+            "green",
+            "value"
+          ]
         }
       ]
     }
