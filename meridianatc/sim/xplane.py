@@ -1594,6 +1594,14 @@ class XPlaneSource:
 
     def close(self):
         self._stop.set()
+        if (self._thread is not None
+                and self._thread is not threading.current_thread()):
+            # The receiver joins before the teardown burst, not after it:
+            # a receiver still inside a resend pass re-asked subscriptions
+            # the close had already withdrawn, and the late packet landing
+            # behind the unsubscribe left the simulator streaming what the
+            # link meant to switch off.
+            self._thread.join(timeout=.5)
         if self._socket is not None:
             # The overrides first, while there is still a socket to say
             # it on, and whether or not the link is still answering:
@@ -1609,8 +1617,6 @@ class XPlaneSource:
                     self._subscribe(index, path, 0)
             with contextlib.suppress(OSError):
                 self._request_radar(0)
-            if self._thread is not None:
-                self._thread.join(timeout=.5)
             self._socket.close()
             self._socket = None
         self._peer = None
