@@ -61,7 +61,7 @@ from . import holds as hold_rules
 from . import vectors as vec
 from .approaches import VISUAL
 from .controller import ControllerBrain, Reply
-from .final import final_for
+from .final import Final, final_for
 from .phraseology import Weather, language_of
 from .procedures import ON_STAR_NM, along_to, frame, star_join
 from .procedures import written as written_procedure
@@ -428,6 +428,38 @@ class ArrivalWatch:
                                   to_run, p)
         )
 
+    def _vector_final(self, destination, runway: str, choice) -> Final | None:
+        """The final a radar vector is built against.
+
+        Ordinarily that is the runway's extended centreline. A published
+        offset final is different: LECO's RNP 03 ends at CO401 on a
+        course eighty degrees off runway 03, so vectoring toward the
+        runway centreline positions the aeroplane for a straight-in the
+        chart never flies. Where the simulator's procedure feed decodes
+        the legs, the frame is the published final segment ending at its
+        MAPt; where it does not, the runway frame remains the fallback.
+        """
+        flown = getattr(choice.approach, "runway", "") or runway
+        runway_final = final_for(self.navdb, destination.ident, flown)
+        legs = tuple(getattr(choice.approach, "legs", ()) or ())
+        if not legs:
+            return runway_final
+        try:
+            from .procedure_legs import ProcedureTransition, build_path
+            points, _notes = build_path(ProcedureTransition(
+                name=getattr(choice.approach, "name", ""), runway=flown,
+                legs=legs))
+        except Exception:
+            return runway_final
+        if len(points) < 2:
+            return runway_final
+        end = points[-1]
+        before = points[-2]
+        if not (end[0] or end[1]):
+            return runway_final
+        course = bearing_deg(before[0], before[1], end[0], end[1])
+        return Final(flown, end[0], end[1], course)
+
     def _cancel_approach(self, session, station, state, destination,
                          weather_for, p) -> Reply | None:
         """"Cancel approach clearance": radar taking the clearance back.
@@ -449,8 +481,11 @@ class ArrivalWatch:
         if session.phase != Phase.APPROACH or session.going_around:
             return None
         runway = session.arrival_runway
-        final = final_for(self.navdb, destination.ident, runway) if runway \
-            else None
+        choice = self.brain.approach_choice(
+            session, destination, runway,
+            self._weather(weather_for, destination)) if runway else None
+        final = self._vector_final(destination, runway, choice) \
+            if runway and choice is not None else None
         if final is None or final.offset(state) <= APPROACH_CONE_DEG:
             return None
         # A flight still inbound to the STAR's join is approaching the
@@ -847,8 +882,7 @@ class ArrivalWatch:
         runway = self._runway(session, destination, weather_for)
         weather = self._weather(weather_for, destination)
         choice = self.brain.approach_choice(session, destination, runway, weather)
-        final = final_for(self.navdb, destination.ident,
-                          choice.approach.runway or runway)
+        final = self._vector_final(destination, runway, choice)
         if final is None:
             return None
         if self._on_a_star_to_the_final(destination, final, state) is not None:
@@ -1499,7 +1533,7 @@ class ArrivalWatch:
         # A circle is flown off the procedure's own final, not the landing
         # runway's: the aeroplane comes in on 25 to land on 07.
         flown = choice.approach.runway or runway
-        final = final_for(self.navdb, destination.ident, flown)
+        final = self._vector_final(destination, runway, choice)
         on_star = self._on_a_star_to_the_final(destination, final, state)
         if on_star is not None:
             # A STAR that runs onto the final: no vectors, the clearance

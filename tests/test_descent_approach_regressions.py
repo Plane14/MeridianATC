@@ -806,3 +806,46 @@ def test_leco_rnp03_descends_continuously_to_the_map_on_its_offset_final():
                             altitude_ft=1818.0, ground_speed_kt=100.0)
     vs = _vertical_recipe_fo()._recipe_vertical(state, recipe)
     assert -620.0 < vs < -430.0
+
+
+def test_radar_vectors_use_an_offset_published_final_not_the_runway_axis():
+    """The live LECO scan: with simulator CIFP data available the RNAV 03
+    arrival was still vectored for runway 03's extended centreline. That
+    straight-in does not exist -- the published final ends at CO401 on
+    about 111 degrees -- so the vectoring frame must be the procedure's
+    final segment, not the runway's."""
+    from meridianatc.atc.arrival import ArrivalWatch
+    from meridianatc.atc.procedure_legs import ProcedureLeg
+    legs = []
+    rows = (
+        ("IDOTU", 43.00075, -8.67406, 5000.0),
+        ("CO05W", 43.29858, -8.54594, 2500.0),
+        ("CO03W", 43.28672, -8.50328, 2500.0),
+        ("CO401", 43.26800, -8.43608, 1500.0),
+    )
+    for index, (ident, lat, lon, alt) in enumerate(rows):
+        legs.append(ProcedureLeg(
+            index=index, path="TF" if index else "IF", fix_ident=ident,
+            lat=lat, lon=lon, alt_desc=1, alt1_ft=alt,
+            is_faf=ident == "CO03W", is_map=ident == "CO401"))
+    choice = SimpleNamespace(approach=SimpleNamespace(
+        runway="03", name="RNP 03", legs=tuple(legs)))
+    watch = ArrivalWatch.__new__(ArrivalWatch)
+    watch.navdb = SimpleNamespace(runways=lambda ident: [])
+    final = watch._vector_final(
+        SimpleNamespace(ident="LECO"), "03", choice)
+    assert final is not None
+    assert final.lat == pytest.approx(43.268, abs=0.001)
+    assert final.lon == pytest.approx(-8.43608, abs=0.001)
+    assert final.course == pytest.approx(111.0, abs=1.0)
+
+    # The live position east/southeast of the field was given heading
+    # 062 toward the runway's centreline and then simply flew away level.
+    # Against the charted final the same position is re-sequenced back
+    # toward the procedure instead of receiving that impossible close-in
+    # intercept.
+    from meridianatc.atc import vectors as vec
+    leg = vec.vector(final, 43.245, -8.340, speed_kt=130.0,
+                     heading_true=60.0)
+    assert leg.leg in {"join", "downwind", "base"}
+    assert not 30.0 <= leg.heading_true <= 90.0
