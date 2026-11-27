@@ -2185,6 +2185,7 @@ class _The_phase_machine:
                 d.airspeed_hold(False)
                 d.approach(False)
                 d.localizer(False)
+                d.nav(False)
                 d.vs_hold(False)
                 if self._ap_mode == "managed":
                     d.level_change(False)

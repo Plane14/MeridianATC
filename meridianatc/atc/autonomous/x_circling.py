@@ -435,6 +435,11 @@ class _Circling:
         if not capabilities(state.source).flight_axes:
             self._manual_control_required()
             return
+        # This go-around is now the FO's own. The controller repeats the
+        # call by latching ``session.going_around``; treating that echo as
+        # a fresh external go-around sends the aeroplane around again the
+        # moment the first missed approach completes.
+        self._ga_flag_seen = True
         # Three failures mean the fourth missed approach is still flown --
         # power, pitch, flap and positive-rate gear first -- and the
         # diversion is started only once the aeroplane is safely climbing
@@ -493,6 +498,7 @@ class _Circling:
             d.airspeed_hold(False)
             d.vs_hold(False)
             d.localizer(False)
+            d.nav(False)
             self.state.ap_master = False
             self.state.ap_speed_mode = False
             self.state.ap_vs_mode = False

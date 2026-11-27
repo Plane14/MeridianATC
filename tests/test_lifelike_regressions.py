@@ -3085,3 +3085,54 @@ def test_the_pursuit_bound_follows_the_leg_being_joined():
     # Asking along the incoming leg keeps that leg.
     assert _pursuit_leg(90.0, path, 0) != pytest.approx(
         _pursuit_leg(90.0, path, 1), abs=45.0)
+
+
+# -- a missed approach is flown once, on heading mode -------------------------
+
+
+def test_an_fo_initiated_go_around_cannot_echo_back_as_a_new_one():
+    """The controller's latched "going around" is an acknowledgement."""
+    from meridianatc.atc import flying as fly
+    flight = _flight()
+    flight._perf = fly.LIGHT
+    flight.session = SimpleNamespace(
+        assigned_altitude_ft=None, assigned_heading=None)
+    flight._dir = Mock()
+    flight._dir.sim = None
+    flight.sim = None
+    flight._ga_flag_seen = False
+    flight._field_elevation = Mock(return_value=0.0)
+    flight._published_missed_nav = Mock(return_value=None)
+    flight._goto_sub = Mock()
+    flight._prop_levers = Mock()
+    flight._flaps_up_one_detent = Mock()
+    flight._go_around_pull = Mock(return_value=0.3)
+    flight._g_pull_cap = Mock(return_value=0.3)
+    flight._manage_radio = False
+    flight._emit = Mock()
+    flight._manual_control_required = Mock()
+    state = SimpleNamespace(
+        source="xplane", altitude_ft=800.0, gear_down=True,
+        vertical_speed_fpm=0.0)
+
+    flight._start_go_around(state)
+
+    assert flight._ga_flag_seen is True
+    assert flight.state.go_arounds == 1
+
+
+def test_a_vector_hold_positively_leaves_nav_mode():
+    """HDG and NAV cannot both own the roll axis after a missed approach."""
+    flight = _flight()
+    flight._dir = Mock()
+    flight._dir.sim = None
+    flight.sim = None
+    flight.state.ap_nav_mode = True
+    flight._flown_altitude_ft = Mock(return_value=3000.0)
+    flight._apply_flight_director = Mock()
+
+    flight._hold_level(SimpleNamespace(), 3000.0, 292.0, 120.0)
+
+    flight._dir.nav.assert_called_with(False)
+    assert flight.state.ap_nav_mode is False
+    assert flight._apply_flight_director.call_args.kwargs["heading"] == 292.0

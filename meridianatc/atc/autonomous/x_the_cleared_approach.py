@@ -750,6 +750,12 @@ class _The_cleared_approach:
         """A heading, a speed and an altitude held or eased onto."""
         d = self.director
         d.localizer(False)
+        # A heading flown through this hold is a heading-mode leg. NAV
+        # left engaged keeps steering the FMS course while the bug says
+        # otherwise -- exactly what a vector after a missed approach must
+        # not do.
+        d.nav(False)
+        self.state.ap_nav_mode = False
         if self.state.ap_apr_mode:
             d.approach(False)
             self.state.ap_apr_mode = False
