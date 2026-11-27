@@ -2863,8 +2863,16 @@ class CrewDirector:
         book = None
         if found.checklists:
             try:
-                book = checklist_files.load(found.name, type_code,
-                                            title=title)
+                simulator = getattr(state, "source", "")
+                if simulator in ("", "none", "manual", "replay"):
+                    # No-sim/replay aircraft still belong to the simulator
+                    # the pilot configured: their title is an MSFS or X-Plane
+                    # model even though the state source is manual.
+                    simulator = getattr(getattr(self.config, "sim", None),
+                                        "simulator", "")
+                book = checklist_files.load(
+                    found.name, type_code, title=title,
+                    simulator=simulator)
             except Exception as exc:
                 CREW.write("checklist_file", problem=str(exc),
                            aircraft_class=found.name, type=type_code)

@@ -77,11 +77,12 @@ DOC_8643: dict[str, str] = {
     "C42": "L1P", "DV20": "L1P", "PTS2": "L1P", "EXTR": "L1P", "AT3": "L1P",
     "RV7": "L1P", "RV8": "L1P", "RV10": "L1P", "CRUZ": "L1P",
     # X-Plane 12's light natives the type table otherwise guesses at.
-    "A103": "L1P", "L5": "L1P",
+    "A103": "L1P", "L5": "L1P", "CC19": "L1P", "C400": "L1P",
+    "PTS1": "L1P", "DHC2": "L1P", "P51": "L1P", "T6": "L1P",
     # piston twins
     "DA42": "L2P", "DA62": "L2P", "PA34": "L2P", "PA44": "L2P",
     "BE58": "L2P", "BE55": "L2P", "C310": "L2P", "C340": "L2P",
-    "P68": "L2P",
+    "P68": "L2P", "DC3": "L2P",
     # turboprop singles
     "TBM9": "L1T", "TBM8": "L1T", "TBM7": "L1T", "PC12": "L1T",
     "PC6T": "L1T", "C208": "L1T", "KODI": "L1T", "AT8T": "L1T",
@@ -90,7 +91,7 @@ DOC_8643: dict[str, str] = {
     "B350": "L2T", "BE20": "L2T", "BE9L": "L2T", "C441": "L2T",
     "DHC6": "L2T", "AT43": "L2T", "AT45": "L2T", "AT72": "L2T",
     "AT76": "L2T", "DH8A": "L2T", "DH8B": "L2T", "DH8C": "L2T",
-    "DH8D": "L2T", "SF34": "L2T", "JS41": "L2T", "C130": "L4T",
+    "DH8D": "L2T", "SF34": "L2T", "JS41": "L2T", "C130": "L4T", "A400": "L4T",
     "P180": "L2T",
     # jets the business list below does not have
     "SF50": "L1J",
@@ -110,10 +111,12 @@ DOC_8643: dict[str, str] = {
     "PBY": "A2P", "PBYA": "A2P",  # Consolidated PBY Catalina, both spellings
     "G73": "A2P", "G73T": "A2T",  # Grumman G-73 Mallard, piston and turbo
     "LAKE": "A1P",           # Lake LA-4 family; the Icon A5 is above
+    "G21": "A2P",            # Grumman G-21A Goose
     "SEAB": "S1P",           # Republic RC-3 Seabee -- a seaplane, no wheels
     # the F-14 is a fighter, which the class table has no word for; a
     # twin-jet with no airline lands as a business jet, the closest fit
-    "F14": "L2J", "F4": "L2J",
+    "F14": "L2J", "F4": "L2J", "F18S": "L2J", "A10": "L2J",
+    "L39": "L1J",
     # Powered lift. ICAO Doc 8643 uses the T aircraft kind for a
     # tiltrotor; the STOVL jets keep their landplane descriptions, so
     # they are marked explicitly below rather than discovered from the
@@ -122,9 +125,12 @@ DOC_8643: dict[str, str] = {
     "HAR": "L1J", "AV8B": "L1J",
     # helicopters
     "R22": "H1P", "R44": "H1P", "R66": "H1T", "CBRI": "H1P",
+    "B47J": "H1P", "SCOU": "H1T", "WASP": "H1T",
     "AS50": "H1T", "EC30": "H1T", "B06": "H1T", "B407": "H1T",
     "EC35": "H2T", "EC45": "H2T", "H145": "H2T", "H160": "H2T",
-    "S76": "H2T", "A109": "H2T", "A139": "H2T", "B412": "H2T",
+    "S76": "H2T", "S64": "H2T", "EC25": "H2T", "H47": "H2T",
+    "A109": "H2T", "A139": "H2T", "B412": "H2T",
+    "H125": "H1T",
 }
 
 # The airliners' designators begin like this; all of them are jets.
@@ -196,10 +202,16 @@ def powered_lift_type(type_code: str = "", title: str = "") -> bool:
     the A, B and C, so only the B in the model title is evidence.
     """
     code = (type_code or "").strip().upper()
-    if DOC_8643.get(code, "")[:1] == "T" or code in ("HAR", "AV8B", "ALIA", "A250"):
+    if DOC_8643.get(code, "")[:1] == "T" or code in ("HAR", "AV8B", "ALIA", "A250", "MDNT", "JAS4"):
         return True
     said = (title or "").lower().replace("-", "").replace("_", " ")
     if "beta alia" in said or "alia 250" in said:
+        return True
+    # MSFS 2024's eVTOLs do not all have a Doc 8643 designator yet;
+    # the title is still hard evidence that this is not a fixed-wing.
+    if any(fragment in said for fragment in
+           ("archer midnight", "joby s4", "volocity", "volocopter",
+            "jetson one")):
         return True
     return code == "F35" and ("f35b" in said or "stovl" in said)
 

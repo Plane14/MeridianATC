@@ -36,6 +36,7 @@ import dataclasses
 import json
 import logging
 import math
+import re
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -316,7 +317,9 @@ _GENERIC_MATCHES = frozenset({
     "fenix", "flight", "flightsim", "flybywire", "fsreborn", "grumman",
     "ifly", "inibuilds", "jets", "just", "king", "leonardo", "mcdonnell",
     "microsoft", "nemeth", "piper", "pmdg", "robinson", "square", "studio",
-    "taog", "toliss", "xplane", "super",
+    "taog", "toliss", "xplane", "super", "g1000", "nxi",
+    "preflight", "pilatus", "daher", "avro", "piaggio", "honda",
+    "dornier", "eurocopter",
 })
 
 # Vendor names are evidence that a vendor edition is present, never evidence
@@ -325,12 +328,14 @@ _GENERIC_MATCHES = frozenset({
 _VENDOR_MATCHES = frozenset({
     "blacksquare", "flightfx", "pmdg", "fenix", "flybywire", "ifly",
     "a2a", "fsreborn", "inibuilds", "toliss", "aerosoft", "nemeth",
-    "taog", "justflight", "flightsimstudio",
+    "taog", "justflight", "flightsimstudio", "carenado",
+    "synaptic", "devinci", "leonardo",
 })
 _FAMILY_MATCHES = frozenset({"citation"})
 
 
-def _match_fragment(fragment: str, title_key: str, code_key: str) -> bool:
+def _match_fragment(fragment: str, title_key: str, code_key: str,
+                    strict_variants: bool = False) -> bool:
     """Whether one declared fragment is specific evidence for this aircraft."""
     key = _compact_key(fragment)
     if not key or key in _GENERIC_MATCHES \
@@ -353,39 +358,74 @@ def _match_fragment(fragment: str, title_key: str, code_key: str) -> bool:
         # ``a330-900neo`` must not put the A330-300's POH on the -900.
         # Compact text loses the hyphen, so a digit immediately after the
         # fragment is the variant boundary.
-        if end >= len(title_key) or not key[-1].isdigit() \
-                or not title_key[end].isdigit():
+        if end >= len(title_key) or not strict_variants \
+                or not key[-1].isdigit() or not title_key[end].isdigit():
             return True
         at = title_key.find(key, at + 1)
     return False
 
 
-def _vendor_required(matches: list[str]) -> str:
-    """The add-on vendor a file's own match list declares, normalized.
+def _vendors_required(matches: list[str]) -> frozenset[str]:
+    """The add-on vendors a file's own match list declares, normalized.
 
     Vendor editions share the aircraft type and much of the model name with
     the stock aircraft. A Black Square Baron is still "BE58", so the type
     code alone can never distinguish it from the X-Plane Baron; applying
     its preflight card to the stock aeroplane is exactly the wrong POH.
-    Where the file declares a vendor, that vendor must appear in the
-    simulator's title before any of its model fragments count.
+    Where the file declares vendors, one of them must appear in the
+    simulator's title before any of its model fragments count. Several
+    vendors mean the file documents several editions, as the A340-600 card
+    does for Aerosoft and ToLiss.
     """
     keys = {_compact_key(fragment) for fragment in matches}
-    vendors = ("blacksquare", "flightfx", "pmdg", "fenix", "flybywire",
-               "ifly", "a2a", "fsreborn", "inibuilds", "toliss",
-               "aerosoft", "nemeth", "taog")
-    for vendor in vendors:
-        if any(key == vendor or key.startswith(vendor + "-")
-               for key in keys):
-            return vendor
+    names = ("blacksquare", "flightfx", "pmdg", "fenix", "flybywire",
+             "ifly", "a2a", "fsreborn", "inibuilds", "toliss",
+             "aerosoft", "nemeth", "taog", "carenado", "synaptic",
+             "devinci", "leonardo")
+    vendors = {vendor for vendor in names
+               if any(key == vendor or key.startswith(vendor)
+                      for key in keys)}
     if {"just", "flight"} <= keys:
-        return "justflight"
+        vendors.add("justflight")
     if {"flightsim", "studio"} <= keys:
-        return "flightsimstudio"
+        vendors.add("flightsimstudio")
+    return frozenset(vendors)
+
+
+def _vendor_required(matches: list[str]) -> str:
+    """The first vendor a file declares, for narrow callers/tests."""
+    return next(iter(sorted(_vendors_required(matches))), "")
+
+
+def _vendor_from_stem(stem: str) -> str:
+    """The vendor declared by the type file's own filename.
+
+    Several MSFS add-on files name the vendor only there (``nemeth_…``,
+    ``taog_…``); their match fragments name just the helicopter, so the
+    match-list test alone still put the add-on's unchecked-variable card
+    on the simulator's stock aircraft.
+    """
+    key = _compact_key(stem)
+    for vendor in ("nemeth", "taog", "carenado", "synaptic", "devinci",
+                   "leonardo"):
+        if key.startswith(vendor):
+            return vendor
     return ""
 
 
-def _add_ons(title: str, type_code: str = "") -> list[Path]:
+def _simulator_allows(stem: str, simulator: str) -> bool:
+    """Whether an explicitly simulator-specific file belongs to this sim."""
+    sim = (simulator or "").strip().lower()
+    key = _compact_key(stem)
+    msfs = sim in ("msfs", "simconnect", "msfs2024", "msfs2020")
+    xplane = sim in ("xplane", "xp", "xp12")
+    if msfs and key.startswith("xplane"):
+        return False
+    return not (xplane and key.startswith("asobo"))
+
+
+def _add_ons(title: str, type_code: str = "",
+             simulator: str = "") -> list[Path]:
     """The add-on files whose specific fragments name this aircraft.
 
     Matching is deliberately stricter than a raw substring of the title:
@@ -413,19 +453,30 @@ def _add_ons(title: str, type_code: str = "") -> list[Path]:
         if not isinstance(matches, list) or not all(isinstance(m, str) and m.strip() for m in matches):
             found.append(path)
             continue
-        vendor = _vendor_required(matches)
-        if vendor and vendor not in title_key:
+        if not _simulator_allows(path.stem, simulator):
             continue
-        if any(_match_fragment(m, title_key, code_key) for m in matches):
+        vendors = set(_vendors_required(matches))
+        stem_vendor = _vendor_from_stem(path.stem)
+        if stem_vendor:
+            vendors.add(stem_vendor)
+        if vendors and not any(vendor in title_key for vendor in vendors):
+            continue
+        strict_variants = any(
+            len(re.findall(r"\d+", fragment)) >= 2
+            for fragment in matches)
+        if any(_match_fragment(m, title_key, code_key, strict_variants)
+               for m in matches):
             found.append(path)
     return found
 
 
 def _files(aircraft_class: str, type_code: str,
-           own: Path | None = None, title: str = "") -> list[Path]:
+           own: Path | None = None, title: str = "",
+           simulator: str = "") -> list[Path]:
     own = own if own is not None else own_folder()
     files = [SHIPPED / f"{aircraft_class}.json",
-             *_add_ons(title, type_code), own / f"{aircraft_class}.json"]
+             *_add_ons(title, type_code, simulator),
+             own / f"{aircraft_class}.json"]
     code = (type_code or "").strip().upper()
     if code and code.lower() not in CLASSES:
         files.append(own / f"{code}.json")
@@ -493,14 +544,17 @@ _lock = threading.Lock()
 
 
 def load(aircraft_class: str, type_code: str = "",
-         own: Path | None = None, title: str = "") -> Book:
+         own: Path | None = None, title: str = "",
+         simulator: str = "") -> Book:
     """Every checklist for this aeroplane, read again if a file changed.
 
     ``title`` is the simulator's title for the model, which an add-on's
-    file is matched on."""
+    file is matched on. ``simulator`` is the state source (``simconnect``
+    or ``xplane``) where known, so a manual written for one simulator's own
+    model is not applied to the same aircraft in the other simulator."""
     if aircraft_class not in CLASSES:
         raise ValueError(f"{aircraft_class!r} is not a class of aeroplane")
-    files = _files(aircraft_class, type_code, own, title)
+    files = _files(aircraft_class, type_code, own, title, simulator)
     stamp = []
     for path in files:
         try:
@@ -510,7 +564,7 @@ def load(aircraft_class: str, type_code: str = "",
             stamp.append((str(path), None, None))
     stamp = tuple(stamp)
     key = (aircraft_class, (type_code or "").upper(), str(own),
-           tuple(str(p) for p in files))
+           simulator, tuple(str(p) for p in files))
     with _lock:
         cached = _cache.get(key)
         if cached is not None and cached[0] == stamp:

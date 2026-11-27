@@ -383,6 +383,32 @@ def _simvar_name(request_name: str) -> str:
 # marketing title ("Boeing 737 MAX 8 Asobo"), not a type code, and the type is
 # needed for the wake-turbulence suffix and the GA manufacturer callsign.
 TITLE_TO_TYPE: tuple[tuple[str, str], ...] = (
+    # MSFS 2024's own fleet first: specific model names before the broad
+    # manufacturer/family fallbacks below. The broad "cub" in particular
+    # must never turn a CubCrafters CC19 or Zlin Savage into a PA-18.
+    ("nxcub", "CC19"), ("nx cub", "CC19"), ("xcub", "CC19"),
+    ("x cub", "CC19"), ("savage cub", "SAVG"), ("zlin savage", "SAVG"),
+    ("a330-743l", "A337"), ("beluga xl", "A337"),
+    ("a330-200", "A332"), ("a330-300", "A333"),
+    ("a321lr", "A21N"), ("a321 lr", "A21N"), ("a310", "A310"),
+    ("a400m", "A400"), ("l-39", "L39"), ("at-802", "AT8T"),
+    ("archer midnight", "MDNT"), ("midnight", "MDNT"),
+    ("joby s4", "JAS4"), ("joby", "JAS4"),
+    ("pitts special s1", "PTS1"), ("pitts special s2", "PTS2"),
+    ("bell 407", "B407"), ("robinson r66", "R66"), ("r66", "R66"),
+    ("s-64", "S64"), ("aircrane", "S64"), ("h225", "EC25"),
+    ("ch47", "H47"), ("ch-47", "H47"), ("chinook", "H47"),
+    ("bell 47j", "B47J"), ("47j ranger", "B47J"),
+    ("westland scout", "SCOU"), ("westland wasp", "WASP"),
+    ("f/a-18e", "F18S"), ("fa-18e", "F18S"), ("super hornet", "F18S"),
+    ("corvalis", "C400"), ("cessna 400", "C400"),
+    ("dhc-2", "DHC2"),("beaver", "DHC2"),
+    ("dhc-6", "DHC6"),("twin otter", "DHC6"),
+    ("dc-3", "DC3"),("douglas dc-3", "DC3"),
+    ("a-10", "A10"),("thunderbolt", "A10"),
+    ("p-51", "P51"),("t-6 texan", "T6"),("t-6", "T6"),
+    ("g-21", "G21"),("goose", "G21"),
+    ("vl-3", "VL3"),("vl3", "VL3"),("dr400", "DR40"),("dr-400", "DR40"),
     ("737 max 8", "B38M"), ("737 max", "B38M"), ("737-800", "B738"),
     ("737-700", "B737"), ("737-900", "B739"), ("737", "B738"),
     ("747-8", "B748"), ("747", "B744"),
@@ -403,7 +429,8 @@ TITLE_TO_TYPE: tuple[tuple[str, str], ...] = (
     ("cirrus sr22", "SR22"), ("sr22", "SR22"), ("sr20", "SR20"),
     ("tbm 930", "TBM9"), ("tbm", "TBM9"),
     ("pilatus pc-12", "PC12"), ("pc-12", "PC12"), ("pc-6", "PC6T"),
-    ("king air", "B350"), ("baron", "BE58"), ("bonanza", "BE36"),
+    ("king air c90", "BE9L"), ("c90 gtx", "BE9L"), ("c90", "BE9L"),
+    ("king air 350", "B350"), ("350i", "B350"), ("king air", "B350"), ("baron", "BE58"), ("bonanza", "BE36"),
     ("da40", "DA40"), ("da62", "DA62"), ("diamond da40", "DA40"),
     ("bonanza g36", "BE36"), ("longitude", "C700"),
     ("cub", "PA18"), ("arrow", "P28R"), ("archer", "P28A"),
