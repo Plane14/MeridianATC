@@ -125,6 +125,10 @@ class ApproachRecipe:
     map_lat: float = 0.0           # the missed-approach point
     map_lon: float = 0.0
     map_course: float = 0.0        # the course the final segment flies
+    glide_angle_deg: float = 0.0  # the published vertical path angle, where known
+    vpa_lat: float = 0.0           # the fix that angle descends to (usually the MAP/threshold)
+    vpa_lon: float = 0.0
+    vpa_alt_ft: float = 0.0
     # The final segment does not run to the runway: an offset final
     # (RNP 03 at LECO is eighty degrees off the runway's axis) ends at
     # the missed-approach point and a visual manoeuvre lands it --
@@ -371,6 +375,27 @@ def resolve(session, brain, navdb, state) -> ApproachRecipe | None:
                                    min(FAF_MAX_NM,
                                        (faf_alt - elev) / FT_PER_NM))
 
+    # The final segment's published vertical path angle. ARINC/CIFP and
+    # MSFS both carry it on the leg that ends at the runway or MAPt;
+    # without it every computed RNAV final is wrongly flown as exactly
+    # three degrees. London City's RNP/steep paths and Paro's 3.5-degree
+    # cloud-break path are the immediate counterexamples.
+    glide_angle = 0.0
+    vpa_lat = vpa_lon = vpa_alt = 0.0
+    vpa_leg = None
+    for leg in reversed(published):
+        if (abs(float(getattr(leg, "vertical_angle", 0.0) or 0.0)) > 0.1
+                and getattr(leg, "has_fix", False)):
+            vpa_leg = leg
+            break
+    if vpa_leg is not None:
+        angle = abs(float(vpa_leg.vertical_angle or 0.0))
+        if 1.0 <= angle <= 10.0:
+            glide_angle = angle
+            vpa_lat, vpa_lon = vpa_leg.lat, vpa_leg.lon
+            vpa_alt = (float(vpa_leg.altitude_constraint or 0.0)
+                       or elev + TCH_FT)
+
     return ApproachRecipe(
         ident=ident, name=name, family=family,
         approach_runway=approach_runway, landing_runway=landing, line=line,
@@ -379,13 +404,15 @@ def resolve(session, brain, navdb, state) -> ApproachRecipe | None:
         final_course=course,
         threshold_lat=t_lat, threshold_lon=t_lon, field_elev_ft=elev,
         faf_lat=faf_lat, faf_lon=faf_lon,
-        faf_alt_ft=elev + faf_dist * FT_PER_NM,
+        faf_alt_ft=faf_ft or elev + faf_dist * FT_PER_NM,
         missed_alt_ft=missed_ft or elev + 2500.0,
         navaid=navaid,
         circling=bool(getattr(choice, "circle_to", "") or offset_final),
         circle_side=getattr(choice, "circle_side", "") or "",
         leg_path=leg_path, map_lat=map_lat, map_lon=map_lon,
-        map_course=map_course, offset_final=offset_final,
+        map_course=map_course, glide_angle_deg=glide_angle,
+        vpa_lat=vpa_lat, vpa_lon=vpa_lon, vpa_alt_ft=vpa_alt,
+        offset_final=offset_final,
         back_course=back_course,
         why=getattr(choice, "why", "") or "")
 
@@ -430,13 +457,25 @@ def legs(recipe: ApproachRecipe) -> list[tuple[float, float]]:
 def profile_alt(recipe: ApproachRecipe, distance_nm: float) -> float:
     """Where the three-degree path is, that far from the threshold."""
     return (recipe.field_elev_ft + TCH_FT
-            + max(0.0, distance_nm) * FT_PER_NM)
+            + max(0.0, distance_nm)
+            * ft_per_nm(recipe.glide_angle_deg or 3.0))
 
 
-def sink_fpm(groundspeed_kt: float) -> float:
-    """The descent rate a three-degree path asks for at this speed."""
-    return max(250.0, min(900.0,
-                          abs(float(groundspeed_kt or 0.0)) * FT_PER_NM / 60.0))
+def ft_per_nm(angle_deg: float = 3.0) -> float:
+    """Feet per nautical mile on a descent path of this angle."""
+    return 6076.12 * math.tan(math.radians(abs(float(angle_deg or 3.0))))
+
+
+def sink_fpm(groundspeed_kt: float, angle_deg: float = 3.0) -> float:
+    """The descent rate this vertical path asks for at this speed.
+
+    Three degrees at 140 kt is about 743 fpm; London City's 5.5-degree
+    steep approach is about 1,350 fpm at the same speed, so the old
+    900-fpm cap made a steep published path unflyable even when the
+    aeroplane itself could fly it.
+    """
+    rate = abs(float(groundspeed_kt or 0.0)) * ft_per_nm(angle_deg) / 60.0
+    return max(250.0, min(1800.0, rate))
 
 
 def frame_point(final_lat: float, final_lon: float, course: float,

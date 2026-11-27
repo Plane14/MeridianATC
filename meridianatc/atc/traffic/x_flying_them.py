@@ -428,14 +428,17 @@ class _Flying_them:
                 # it cannot fly. Under the path it holds rather than
                 # climbs; the constraint itself is never busted, the
                 # path only ever rides above it.
+                glide_ft_per_nm = (float(getattr(
+                    guide, "vpa_ft_per_nm", 0.0) or 0.0)
+                    or GLIDE_FT_PER_NM)
                 needs = (flight.ground_speed_kt
-                         * GLIDE_FT_PER_NM / 60.0)
+                         * glide_ft_per_nm / 60.0)
                 if guide.altitude_distance_nm < 1.5 \
                         or flight.performance.descend_fpm < needs:
                     target.altitude_ft = guide.altitude_ft
                 else:
                     path = guide.altitude_ft \
-                        + guide.altitude_distance_nm * GLIDE_FT_PER_NM
+                        + guide.altitude_distance_nm * glide_ft_per_nm
                     target.altitude_ft = min(path, flight.altitude_ft)
         if guide.speed_kt:
             target.speed_kt = min(guide.speed_kt, flight.performance.cruise_kt)

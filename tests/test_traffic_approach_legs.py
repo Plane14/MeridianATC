@@ -225,3 +225,21 @@ def test_a_leg_block_of_another_size_keeps_the_header():
     assert found is not None
     approach = found.procedures[0]
     assert approach.kind == "ILS" and approach.legs == ()
+
+
+def test_traffic_smoothing_uses_the_approachs_own_vpa_angle():
+    """A steep RNP-AR final is not smoothed on a generic three-degree
+    slope: London City's 5.5-degree path puts three miles at roughly
+    1,820 ft over the threshold, not 1,020 ft."""
+    injector = _injector()
+    nav = SimpleNamespace(
+        procedure=SimpleNamespace(kind="approach"),
+        guidance=lambda f: SimpleNamespace(
+            heading=273.0, altitude_ft=69.0, vs_fpm=-1300.0,
+            speed_kt=0.0, done=False, altitude_distance_nm=3.0,
+            vpa_ft_per_nm=585.0))
+    flight = _arrival(procedure_pair=(Mock(), Mock()),
+                      procedure_nav=nav, ground_speed_kt=140.0)
+    injector._steer_procedure(flight, flight.target)
+    assert flight.target.altitude_ft == pytest.approx(
+        69.0 + 3.0 * 585.0, abs=20.0)

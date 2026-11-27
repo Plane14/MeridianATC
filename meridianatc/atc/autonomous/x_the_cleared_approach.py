@@ -233,10 +233,12 @@ class _The_cleared_approach:
         """The vertical speed the three-degree path asks for here."""
         return self._three_degree_vs(
             state, recipe.threshold_lat, recipe.threshold_lon,
-            recipe.field_elev_ft, recipe.final_course)
+            recipe.field_elev_ft, recipe.final_course,
+            angle_deg=getattr(recipe, "glide_angle_deg", 0.0) or 3.0)
 
     def _three_degree_vs(self, state, thr_lat: float, thr_lon: float,
-                         elev_ft: float, course: float = -1.0) -> float:
+                         elev_ft: float, course: float = -1.0,
+                         angle_deg: float = 3.0) -> float:
         """The vertical speed that holds a three-degree path to a
         threshold: the path's own sink at this groundspeed, corrected by
         where the aeroplane sits against it. Shared by every final that
@@ -257,9 +259,10 @@ class _The_cleared_approach:
                     course)["along_m"] / 1852.0)
         desired = (elev_ft + approach_flight.TCH_FT
                    + max(0.0, distance if distance is not None else 10.0)
-                   * approach_flight.FT_PER_NM)
+                   * approach_flight.ft_per_nm(angle_deg))
         alt = state.altitude_ft or 0.0
-        vs = approach_flight.sink_fpm(state.ground_speed_kt or 0.0)
+        vs = approach_flight.sink_fpm(state.ground_speed_kt or 0.0,
+                                       angle_deg)
         if alt < desired - 60.0:
             # Under the path: hold what height there is until the path
             # descends to it. That is how a glideslope is intercepted;
@@ -280,7 +283,7 @@ class _The_cleared_approach:
             # through.
             corr = self._pid("vertical").update(alt - desired,
                                                 measurement=alt)
-            return max(-900.0, min(250.0, -vs - corr))
+            return max(-1800.0, min(250.0, -vs - corr))
         # Capture: well above the path it comes down harder. Below it the
         # aeroplane holds level and lets the descending path come to it --
         # it does not climb back up to a glidepath low on final.
@@ -289,6 +292,71 @@ class _The_cleared_approach:
         elif alt < desired - 150.0:
             return 0.0
         return -vs
+
+    def _vpa_distance_nm(self, recipe, steer) -> float | None:
+        """Path miles still to run before the vertical path's anchor fix."""
+        if not (getattr(recipe, "vpa_lat", 0.0)
+                or getattr(recipe, "vpa_lon", 0.0)) or steer is None:
+            return None
+        path = approach_flight.legs(recipe)
+        if len(path) < 2:
+            return None
+        anchor = min(
+            range(len(path)),
+            key=lambda i: approach_flight.haversine_nm(
+                path[i][0], path[i][1], recipe.vpa_lat, recipe.vpa_lon))
+        # The anchor should be one of the published fixes. If it is not,
+        # do not invent a profile against a mismatched path.
+        if approach_flight.haversine_nm(
+                path[anchor][0], path[anchor][1],
+                recipe.vpa_lat, recipe.vpa_lon) > 0.25:
+            return None
+        anchor_remaining_m = 0.0
+        for i in range(anchor, len(path) - 1):
+            anchor_remaining_m += approach_flight.haversine_nm(
+                path[i][0], path[i][1], path[i + 1][0],
+                path[i + 1][1]) * 1852.0
+        remaining_m = float(steer.get("remaining_m") or 0.0)
+        return max(0.0, (remaining_m - anchor_remaining_m) / 1852.0)
+
+    def _vpa_vertical(self, state, recipe, steer) -> float | None:
+        """Vertical speed on the published VPA, or None before it starts.
+
+        This is the continuous path a baro-VNAV flies: the angle back
+        upwards from its anchor fix, not a staircase that levels at every
+        RF sample. It is armed only close enough to the anchor for the
+        FAF-to-anchor segment; before the FAF the leg constraints govern.
+        """
+        angle = float(getattr(recipe, "glide_angle_deg", 0.0) or 0.0)
+        anchor_alt = float(getattr(recipe, "vpa_alt_ft", 0.0) or 0.0)
+        if angle <= 0.0 or anchor_alt <= 0.0:
+            return None
+        distance = self._vpa_distance_nm(recipe, steer)
+        if distance is None:
+            return None
+        per_nm = approach_flight.ft_per_nm(angle)
+        faf_alt = float(getattr(recipe, "faf_alt_ft", 0.0) or 0.0)
+        faf_distance = (max(0.0, (faf_alt - anchor_alt) / per_nm)
+                      if faf_alt > anchor_alt else 0.0)
+        if faf_distance and distance > faf_distance + 0.75:
+            return None
+        desired = anchor_alt + distance * per_nm
+        alt = state.altitude_ft or 0.0
+        base = approach_flight.sink_fpm(state.ground_speed_kt or 0.0,
+                                        angle)
+        if alt < desired - 60.0:
+            if self._use_pids:
+                self._pid("vertical").reset()
+            return 0.0
+        if self._use_pids:
+            corr = self._pid("vertical").update(alt - desired,
+                                                measurement=alt)
+            return max(-1800.0, min(250.0, -base - corr))
+        if alt > desired + 300.0:
+            base = min(1800.0, base * 1.5)
+        elif alt < desired - 150.0:
+            return 0.0
+        return -base
 
     def _recipe_vertical(self, state, recipe, steer=None) -> float:
         """The vertical speed the approach's own profile asks for here.
@@ -320,6 +388,9 @@ class _The_cleared_approach:
 
         if steer is None or steer.get("done"):
             return _rollout_vs()
+        vpa = self._vpa_vertical(state, recipe, steer)
+        if vpa is not None:
+            return vpa
         pts = recipe.leg_path
         idx = int(steer.get("nearest", 0))
         if idx >= len(pts) - 1:

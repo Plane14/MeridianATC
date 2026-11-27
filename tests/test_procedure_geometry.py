@@ -8,6 +8,10 @@ bare ProcedureLeg/Transition by hand so no nav database is needed.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import pytest
+
 from meridianatc.atc.procedure_legs import (
     ALT_AT_OR_BELOW,
     ALT_IN_BETWEEN,
@@ -135,3 +139,51 @@ def test_find_is_the_same_name_written_two_ways():
     proc = TerminalProcedure(name="LUN2A", kind="star")
     table = {"LUN2A": proc}
     assert _find(table, "LUN 2A") is proc or _find(table, "LUN2A") is proc
+
+
+def test_an_rf_arc_is_drawn_on_its_own_circle():
+    """A radius-to-fix leg -- the shape that makes VQPR's curved final
+    possible -- is flown as the arc, not as a straight chord across the
+    terrain inside the turn."""
+    from meridianatc.navdata.build import project
+    centre_lat, centre_lon = 27.40, 89.42
+    radius_nm = 4.0
+    start = project(centre_lat, centre_lon, 0.0, radius_nm)
+    end = project(centre_lat, centre_lon, 90.0, radius_nm)
+    first = _leg("IF", fix_ident="PR100", lat=start[0], lon=start[1])
+    arc = _leg("RF", fix_ident="PR101", lat=end[0], lon=end[1],
+               arc_lat=centre_lat, arc_lon=centre_lon,
+               radius_m=radius_nm * M_PER_NM, turn="R")
+    points, notes = _path([first, arc], start=start, kind="approach")
+    assert any("RF arc approximated" in n for n in notes)
+    arc_points = points[1:]
+    assert len(arc_points) >= 6
+    for lat, lon, _alt, _speed in arc_points[:-1]:
+        assert haversine_nm(centre_lat, centre_lon, lat, lon) == \
+            pytest.approx(radius_nm, abs=0.12)
+
+
+def test_an_approach_navigator_carries_the_published_vpa_angle():
+    """Traffic and procedure guidance use the approach's own vertical
+    angle. At London City a 5.5-degree path is 585 ft/nm; treating it
+    as a generic 318 ft/nm descent leaves the aeroplane far high."""
+    from meridianatc.atc.procedure_legs import ProcedureNavigator, TerminalProcedure
+    from meridianatc.navdata.build import project
+    threshold = (51.504894, 0.066026)
+    start = project(*threshold, 93.0, 5.0)
+    legs = [
+        _leg("IF", fix_ident="LC500", lat=start[0], lon=start[1],
+             alt1_ft=3000.0),
+        _leg("TF", fix_ident="RW27", lat=threshold[0], lon=threshold[1],
+             alt_desc=1, alt1_ft=69.0, vertical_angle=-5.5, is_map=True),
+    ]
+    transition = ProcedureTransition(name="RNP 27", legs=tuple(legs))
+    procedure = TerminalProcedure(name="RNP 27", kind="approach",
+                                  transitions={"": transition})
+    nav = ProcedureNavigator(procedure, transition, start=start)
+    on_path = project(*threshold, 93.0, 3.0)
+    guide = nav.guidance(SimpleNamespace(
+        latitude=on_path[0], longitude=on_path[1], altitude_ft=1800.0))
+    assert guide.altitude_ft == pytest.approx(69.0)
+    assert guide.altitude_distance_nm == pytest.approx(3.0, abs=0.15)
+    assert guide.vpa_ft_per_nm == pytest.approx(585.0, rel=0.03)

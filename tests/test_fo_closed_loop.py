@@ -423,3 +423,48 @@ def test_an_ndb_approach_is_tuned_on_adf_not_the_impossible_nav_band():
     fo._maybe_tune_nav(plant.state(), recipe, 1000.0)
     assert source.read().adf1_freq_khz == pytest.approx(350.0)
     assert source.read().nav1_freq == 0.0
+
+
+def _steep_recipe(angle=5.5):
+    """A London-City-like steep RNAV final on the closed-loop runway."""
+    import math
+
+    from meridianatc.atc import approach_flight
+    anchor_alt = 50.0
+    faf_lat, faf_lon = project(RWY_LAT, RWY_LON,
+                               (RWY_HDG + 180.0) % 360.0, 5.0)
+    per_nm = 6076.12 * math.tan(math.radians(angle))
+    faf_alt = anchor_alt + 5.0 * per_nm
+    return approach_flight.ApproachRecipe(
+        ident="EGLC", name="RNP 09", family="rnav", approach_runway="09",
+        landing_runway="09", line="LNAV/VNAV", minima_ft=400.0,
+        circle_minima_ft=0.0, final_course=RWY_HDG,
+        threshold_lat=RWY_LAT, threshold_lon=RWY_LON, field_elev_ft=0.0,
+        faf_lat=faf_lat, faf_lon=faf_lon, faf_alt_ft=faf_alt,
+        missed_alt_ft=3000.0,
+        leg_path=((faf_lat, faf_lon, faf_alt, 0.0),
+                  (RWY_LAT, RWY_LON, anchor_alt, 0.0)),
+        map_lat=RWY_LAT, map_lon=RWY_LON, map_course=RWY_HDG,
+        glide_angle_deg=angle, vpa_lat=RWY_LAT, vpa_lon=RWY_LON,
+        vpa_alt_ft=anchor_alt)
+
+
+def test_a_steep_rnav_final_lands_without_a_level_three_degree_segment(
+        monkeypatch):
+    """No-sim London-City case: begun on a 5.5-degree path, the FO keeps
+    the published steep vertical path and still flares to a survivable
+    landing instead of levelling off on the generic three-degree model."""
+    import math
+    angle = 5.5
+    per_nm = 6076.12 * math.tan(math.radians(angle))
+    plant = _start(3.0, 50.0 + 3.0 * per_nm, ias=90.0)
+    fo = _fo(plant, type_code="C172")
+    fo.state.approach_recipe = _steep_recipe(angle)
+    fo.state.approach_recipe_tried = True
+    fo.state.approach_recipe_key = fo._recipe_key(plant.state())
+    trace = []
+    _fly_final(fo, plant, monkeypatch, trace=trace)
+    _assert_landed_on_the_runway(plant, max_sink_fpm=700.0)
+    # It must actually have descended steeply: a generic three-degree
+    # fallback would never command a thousand-foot-per-minute segment.
+    assert min(row[4] for row in trace if row[1] < 0) < -800.0

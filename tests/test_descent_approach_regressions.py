@@ -708,3 +708,101 @@ def test_the_until_established_level_is_spent_once_established():
     assert kwargs["altitude"] == recipe.field_elev_ft
     assert kwargs["vs_fpm"] == -800.0
     assert fo.session.assigned_altitude_ft is None
+
+
+def _complex_recipe(name, threshold, course, elev, faf_alt, vpa_alt,
+                    angle, offset=False):
+    """A two-fix published final with the charted VPA carried forward."""
+    from meridianatc.atc import approach_flight
+    from meridianatc.navdata.build import project
+    t_lat, t_lon = threshold
+    back = (course + 180.0) % 360.0
+    faf_lat, faf_lon = project(t_lat, t_lon, back, 5.0)
+    return approach_flight.ApproachRecipe(
+        ident="TEST", name=name, family="rnav", approach_runway="27",
+        landing_runway="27", line="LNAV/VNAV", minima_ft=400.0,
+        circle_minima_ft=0.0, final_course=course,
+        threshold_lat=t_lat, threshold_lon=t_lon, field_elev_ft=elev,
+        faf_lat=faf_lat, faf_lon=faf_lon, faf_alt_ft=faf_alt,
+        missed_alt_ft=5000.0,
+        leg_path=((faf_lat, faf_lon, faf_alt, 0.0),
+                  (t_lat, t_lon, vpa_alt, 0.0)),
+        map_lat=t_lat, map_lon=t_lon, map_course=course,
+        glide_angle_deg=angle, vpa_lat=t_lat, vpa_lon=t_lon,
+        vpa_alt_ft=vpa_alt, offset_final=offset)
+
+
+def _vertical_recipe_fo():
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+    fo = AutonomousFlight.__new__(AutonomousFlight)
+    fo.state = AutonomousState()
+    fo.config = SimpleNamespace(
+        immersion=SimpleNamespace(autonomous_pid=False))
+    return fo
+
+
+@pytest.mark.parametrize("angle,expected", [(5.5, 1350.0), (4.49, 1100.0)])
+def test_london_city_steep_vertical_paths_are_not_capped_at_three_degrees(
+        angle, expected):
+    """London City is not a three-degree runway: the published steep
+    ILS/RNP path needs well over a thousand feet a minute at jet speed.
+    The computed fallback must use the procedure's own angle rather than
+    the hard-coded/capped three-degree path."""
+    recipe = _complex_recipe(
+        "EGLC steep", (51.504894, 0.066026), 273.0, 19.0,
+        2500.0, 69.0, angle)
+    from meridianatc.navdata.build import project
+    lat, lon = project(recipe.threshold_lat, recipe.threshold_lon,
+                       (recipe.final_course + 180.0) % 360.0, 3.0)
+    desired = 69.0 + 3.0 * 6076.12 * __import__("math").tan(
+        __import__("math").radians(angle))
+    state = SimpleNamespace(latitude=lat, longitude=lon,
+                            altitude_ft=desired, ground_speed_kt=140.0)
+    vs = _vertical_recipe_fo()._recipe_vertical(state, recipe)
+    assert vs == pytest.approx(-expected, rel=0.08)
+
+
+def test_paros_three_and_a_half_degree_final_is_flown_at_its_own_rate():
+    """VQPR's RNP cloud-break final is steeper than three degrees; at a
+    140-kt ground speed the charted 3.5-degree path is about 870 fpm,
+    not the generic 743 fpm."""
+    recipe = _complex_recipe(
+        "VQPR RNP AR", (27.412162, 89.41906), 151.0, 7361.0,
+        10500.0, 7411.0, 3.5)
+    from meridianatc.navdata.build import project
+    lat, lon = project(recipe.threshold_lat, recipe.threshold_lon,
+                       (recipe.final_course + 180.0) % 360.0, 4.0)
+    desired = 7411.0 + 4.0 * 6076.12 * __import__("math").tan(
+        __import__("math").radians(3.5))
+    state = SimpleNamespace(latitude=lat, longitude=lon,
+                            altitude_ft=desired, ground_speed_kt=140.0)
+    vs = _vertical_recipe_fo()._recipe_vertical(state, recipe)
+    assert vs == pytest.approx(-870.0, rel=0.08)
+
+
+def test_leco_rnp03_descends_continuously_to_the_map_on_its_offset_final():
+    """LECO RNP 03's instrument final ends at CO401, eighty degrees off
+    the runway. Its 2500-to-1500-ft final is a continuous VPA to the
+    MAPt, not a level wait at each published-leg point."""
+    from meridianatc.atc import approach_flight
+    from meridianatc.navdata.build import project
+    map_lat, map_lon = 43.2680, -8.4361          # CO401
+    faf_lat, faf_lon = 43.2867, -8.5033          # CO03W
+    course = 111.0
+    recipe = approach_flight.ApproachRecipe(
+        ident="LECO", name="RNP 03", family="rnav", approach_runway="03",
+        landing_runway="03", line="LNAV", minima_ft=1170.0,
+        circle_minima_ft=1170.0, final_course=32.0,
+        threshold_lat=43.291698, threshold_lon=-8.385761,
+        field_elev_ft=327.0, faf_lat=faf_lat, faf_lon=faf_lon,
+        faf_alt_ft=2500.0, missed_alt_ft=5000.0,
+        leg_path=((faf_lat, faf_lon, 2500.0, 0.0),
+                  (map_lat, map_lon, 1500.0, 0.0)),
+        map_lat=map_lat, map_lon=map_lon, map_course=course,
+        glide_angle_deg=3.0, vpa_lat=map_lat, vpa_lon=map_lon,
+        vpa_alt_ft=1500.0, offset_final=True)
+    lat, lon = project(map_lat, map_lon, (course + 180.0) % 360.0, 1.0)
+    state = SimpleNamespace(latitude=lat, longitude=lon,
+                            altitude_ft=1818.0, ground_speed_kt=100.0)
+    vs = _vertical_recipe_fo()._recipe_vertical(state, recipe)
+    assert -620.0 < vs < -430.0

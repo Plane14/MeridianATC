@@ -587,6 +587,9 @@ class ProcedureGuidance:
     # constrained point is, so a "descend via" can reach the level
     # at the fix on a continuous path rather than miles early.
     altitude_distance_nm: float = 0.0
+    # Feet per nautical mile for a published vertical path; zero means
+    # the caller's generic three-degree value.
+    vpa_ft_per_nm: float = 0.0
 
 
 class ProcedureNavigator:
@@ -614,6 +617,40 @@ class ProcedureNavigator:
         self.fallback_altitude_ft = fallback_altitude_ft
         self.fallback_speed_kt = fallback_speed_kt
         self._bare = [(lat, lon) for lat, lon, _a, _s in self.points]
+
+        # A published vertical path angle, where the final leg carries
+        # one. The generated path does not retain which RF sample came
+        # from which source leg, so the anchor is found by position and
+        # the distance left to it is measured along the path itself.
+        self._vpa_alt_ft = 0.0
+        self._vpa_ft_per_nm = 0.0
+        self._vpa_anchor_remaining_m = 0.0
+        vpa_leg = next((leg for leg in reversed(transition.legs)
+                        if abs(float(getattr(leg, "vertical_angle", 0.0)
+                                   or 0.0)) > 0.1
+                        and getattr(leg, "has_fix", False)), None)
+        if vpa_leg is not None and self.points:
+            angle = abs(float(vpa_leg.vertical_angle or 0.0))
+            if 1.0 <= angle <= 10.0:
+                anchor = min(
+                    range(len(self.points)),
+                    key=lambda i: haversine_nm(
+                        self.points[i][0], self.points[i][1],
+                        vpa_leg.lat, vpa_leg.lon))
+                if haversine_nm(self.points[anchor][0],
+                                self.points[anchor][1],
+                                vpa_leg.lat, vpa_leg.lon) <= 0.25:
+                    self._vpa_alt_ft = float(
+                        vpa_leg.altitude_constraint or 0.0)
+                    self._vpa_ft_per_nm = (6076.12 * math.tan(
+                        math.radians(angle)))
+                    remaining = 0.0
+                    for i in range(anchor, len(self._bare) - 1):
+                        remaining += haversine_nm(
+                            self._bare[i][0], self._bare[i][1],
+                            self._bare[i + 1][0], self._bare[i + 1][1]
+                        ) * 1852.0
+                    self._vpa_anchor_remaining_m = remaining
 
     @property
     def active(self) -> bool:
@@ -658,13 +695,29 @@ class ProcedureNavigator:
         if speed and self.fallback_speed_kt and \
                 self.fallback_speed_kt > speed:
             target_speed = speed
+        altitude_distance_nm = (haversine_nm(lat, lon, _lat, _lon)
+                                if alt else 0.0)
+        vpa_per_nm = 0.0
+        if self.procedure.kind == "approach" and self._vpa_ft_per_nm:
+            distance = max(0.0, (float(steer.get("remaining_m") or 0.0)
+                                 - self._vpa_anchor_remaining_m) / 1852.0)
+            if self._vpa_alt_ft:
+                altitude = self._vpa_alt_ft
+                altitude_distance_nm = distance
+                vpa_per_nm = self._vpa_ft_per_nm
+                if current_alt < altitude - 100.0:
+                    vs = 0.0
+                elif current_alt > altitude + distance * vpa_per_nm + 100.0:
+                    vs = -descend_fpm
+                else:
+                    vs = 0.0
         return ProcedureGuidance(
             heading=steer.get("heading"), altitude_ft=altitude, vs_fpm=vs,
             speed_kt=target_speed,
             done=bool(steer.get("done")), note=self.notes[0]
             if self.notes else "",
-            altitude_distance_nm=(haversine_nm(lat, lon, _lat, _lon)
-                                  if alt else 0.0))
+            altitude_distance_nm=altitude_distance_nm,
+            vpa_ft_per_nm=vpa_per_nm)
 
 
 __all__ = [
