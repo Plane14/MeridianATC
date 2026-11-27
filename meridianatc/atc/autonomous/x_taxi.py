@@ -850,7 +850,7 @@ class _Taxi:
         self.session.taxi_nodes = list(plan.nodes)
         self.session.taxi_route = list(plan.names)
         self.session.taxi_crossings = list(plan.crossings)
-        self.session.taxi_stand = getattr(plan.stand, "index", None)
+        self.session.taxi_stand = getattr(plan.stand, "number", None)
         self.session.crossing_index = 0
         self.session.crossing_granted = ""
         log.info("%s: vacating on the airport's own taxiways "

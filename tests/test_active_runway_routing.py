@@ -395,3 +395,47 @@ def test_arrival_route_can_start_mid_runway_far_from_a_connector():
     assert xy[0] == pytest.approx((600.0, 0.0), abs=0.01)
     assert xy[1] == pytest.approx((900.0, 0.0), abs=0.01)
     assert xy[2] == pytest.approx((900.0, 300.0), abs=0.01)
+
+
+def test_the_crew_can_self_plan_the_same_mid_runway_vacate():
+    """When no usable taxi-in instruction arrives, the crew uses the same
+    airport diagram to vacate instead of waiting on the strip forever."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+
+    points = [
+        (0, 0, 1000.0, 300.0),
+        (0, 0, 900.0, 300.0),
+    ]
+    parkings = [(14, 0, "R1", "", 7, 0, 90.0, 20.0, 850.0, 300.0)]
+    paths = [
+        (PATH_TAXI, 0, 0, "A", 0, 1, -1),
+        (PATH_PARKING, 0, 0, "", 1, 0, -1),
+    ]
+    layout = GroundLayout("TEST", 51.0, 0.0, points, parkings, paths, ["A"])
+    lat, lon = layout.to_latlon(600.0, 0.0)
+    end0 = layout.to_latlon(0.0, 0.0)
+    end1 = layout.to_latlon(1200.0, 0.0)
+    runway = SimpleNamespace(
+        le_ident="09", le_lat=end0[0], le_lon=end0[1],
+        he_ident="27", he_lat=end1[0], he_lon=end1[1], width_ft=150.0)
+    flight = AutonomousFlight.__new__(AutonomousFlight)
+    flight.state = AutonomousState()
+    flight.state.runway_key = ("TEST", "27")
+    airport = SimpleNamespace(ident="TEST")
+    flight.session = SimpleNamespace(
+        destination=airport, arrival_runway="27", touchdown_runway="",
+        profile=SimpleNamespace(airliner=False),
+        aircraft=SimpleNamespace(callsign=SimpleNamespace(written="N123AB")))
+    flight.navdb = SimpleNamespace(runways=lambda ident: [runway])
+    flight.brain = SimpleNamespace(ground_layout=lambda ident: layout)
+    flight.SELF_PLAN_RETRY_S = 10.0
+    flight._self_plan_in_at = -999.0
+    flight._get_current_airport = lambda: airport
+    state = SimpleNamespace(
+        latitude=lat, longitude=lon, type_code="BE58", engine_type=0,
+        engine_count=2, category="", title="", airline="")
+    assert flight._self_plan_arrival(state)
+    assert len(flight.session.taxi_path) == 4
+    assert flight.session.taxi_stand == 7
+    assert layout.to_xy(*flight.session.taxi_path[0]) == \
+        pytest.approx((600.0, 0.0), abs=0.01)
