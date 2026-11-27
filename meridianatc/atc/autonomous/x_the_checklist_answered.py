@@ -807,7 +807,11 @@ class _The_checklist_answered:
         is right for clockwise propellers, left for anticlockwise ones,
         and absent where opposite rotation cancels on a multiengine
         aeroplane; it fades to nothing at rotate, where the wings finally
-        take the load the pedals were carrying.
+        take the load the pedals were carrying. The lead is deliberately
+        small: it only anticipates the yaw, while the centreline servo
+        supplies most of the correction. The original third-scale pedal
+        was itself enough to drag the live Baron toward the right edge
+        before the feedback loop could answer.
         """
         throttle = max(0.0, min(1.0,
                                 (getattr(state, "throttle_pct", 0.0)
@@ -817,7 +821,7 @@ class _The_checklist_answered:
         rotate = ((getattr(self.state, "rotate_speed_kt", 0.0) or 0.0)
                   or 55.0)
         balance = self._prop_rotation_balance(state)
-        return (0.30 * throttle * balance * max(
+        return (0.12 * throttle * balance * max(
             0.0, 1.0 - ias / max(1.0, rotate)))
 
 

@@ -4617,7 +4617,7 @@ def test_the_roll_leads_with_the_right_foot(monkeypatch):
     spool = SimpleNamespace(throttle_pct=100.0,
                             indicated_airspeed_kt=0.0,
                             ground_speed_kt=0.0)
-    assert flight._right_foot(spool) > 0.25
+    assert 0.08 < flight._right_foot(spool) < 0.15
     fast = SimpleNamespace(throttle_pct=100.0,
                            indicated_airspeed_kt=70.0,
                            ground_speed_kt=70.0)
@@ -6060,3 +6060,45 @@ def test_a_non_radar_tower_clears_the_requested_diversion_direct():
     assert session.destination is target
     assert reply.instruction is not None
     assert reply.instruction.kind == "diversion"
+
+
+def test_climb_flaps_wait_for_four_hundred_feet_agl():
+    """LEVX live: the takeoff phase timed into CLIMB at 123 ft and the
+    climb phase immediately retracted flaps on speed alone. The wing lost
+    lift and the Baron sank hundreds of feet before the nose came back
+    up; configuration changes wait for the first safe height."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+    from meridianatc.atc.session import Phase
+
+    def flight_at(agl):
+        flight = AutonomousFlight.__new__(AutonomousFlight)
+        flight.state = AutonomousState()
+        flight.state.windshear_since = 0.0
+        flight.state.phase_entered_at = 0.0
+        flight._dir = Mock()
+        flight.sim = flight._dir.sim
+        flight.session = SimpleNamespace(phase=Phase.ENROUTE,
+                                         assigned_altitude_ft=None,
+                                         assigned_heading=None)
+        flight._perf = SimpleNamespace(climb_fpm=800.0,
+                                             descend_fpm=800.0)
+        flight._altitude_target = lambda state: 5000.0
+        flight._flown_altitude_ft = lambda state: 1000.0
+        flight._flap_up_kt = lambda: 100.0
+        flight._route_level = lambda state: (0.0, "")
+        flight._sid_nav = lambda state: None
+        flight._route_lateral = lambda state, now: 10.0
+        flight._speed_target = lambda state: 120.0
+        flight._apply_flight_director = Mock()
+        flight._phase_overdue = Mock()
+        flight.CLIMB_TIMEOUT = 9999.0
+        state = SimpleNamespace(indicated_airspeed_kt=126.0,
+                                altitude_agl_ft=agl, flaps_index=1,
+                                vertical_speed_fpm=200.0)
+        flight._phase_climb(state, 100.0)
+        return flight
+
+    low = flight_at(123.0)
+    low._dir.flaps.assert_not_called()
+    high = flight_at(500.0)
+    high._dir.flaps.assert_called_once_with(0.0)

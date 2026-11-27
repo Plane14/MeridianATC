@@ -1501,7 +1501,9 @@ class _The_phase_machine:
         ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
         shear = (self.state.windshear_since
                  and now - self.state.windshear_since < 15.0)
-        if state.flaps_index and ias > self._flap_up_kt() and not shear:
+        agl = float(getattr(state, "altitude_agl_ft", 0.0) or 0.0)
+        if state.flaps_index and ias > self._flap_up_kt() and not shear \
+                and agl > 400.0:
             self.director.flaps(0.0)
         if not target:
             # Engaged in the air with no level anywhere: a crew levels
