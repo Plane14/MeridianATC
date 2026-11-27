@@ -207,6 +207,7 @@ class _Shared_helpers:
             # The next status read carries this plan back: marked ours,
             # the adoption pass leaves the live session alone.
             sim._fms_written = True
+            sim._fms_written_until = time.monotonic() + 30.0
 
     def _fms_direct_route(self, state, route):
         """The plan as a direct from here to the leg being flown.
@@ -263,6 +264,7 @@ class _Shared_helpers:
         trimmed = self._fms_direct_route(state, route)
         if trimmed is not None and loader(trimmed):
             sim._fms_written = True
+            sim._fms_written_until = time.monotonic() + 30.0
 
     @staticmethod
     def _altimeter_hpa(value) -> float:

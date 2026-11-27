@@ -91,13 +91,21 @@ class _The_plan_the:
              round(float(e.get("lon", 0) or 0), 5), int(e.get("alt", 0) or 0))
             for e in entries if isinstance(e, dict))
         if getattr(self.source, "_fms_written", False):
-            # The read-back of a plan this engine just wrote to the box
-            # (a vector's present-position direct): its fingerprint is
-            # taken so the echo is seen once, and the session the flight
-            # was built around is left alone.
+            deadline = float(getattr(self.source, "_fms_written_until", 0.0)
+                             or 0.0)
+            if not deadline or time.monotonic() <= deadline:
+                # The read-back of a plan this engine just wrote to the
+                # box. It is not necessarily the first read-back: the FMS
+                # can answer once more with the plan it still held while
+                # the upload is being parsed. The short window keeps both
+                # the stale answer and the real echo from resetting the
+                # session; once it expires a later manual plan is a plan
+                # again. Older one-shot writers only clear the flag here.
+                self._sim_plan_fp = fingerprint
+                if not deadline:
+                    self.source._fms_written = False
+                return
             self.source._fms_written = False
-            self._sim_plan_fp = fingerprint
-            return
         old = getattr(self, "_sim_plan_fp", None)
         if fingerprint == old:
             return
@@ -295,6 +303,13 @@ class _The_plan_the:
         except Exception:
             log.debug("the simulator's FMS load raised", exc_info=True)
             return
+        if loaded:
+            # X-Plane answers through the plugin's rolling FMS snapshot,
+            # so the write has no request/response pairing. For the next
+            # few polls the box may still show either the old plan or the
+            # echo of this one; neither is a new pilot-filed flight.
+            self.source._fms_written = True
+            self.source._fms_written_until = time.monotonic() + 30.0
         decision("route", event="fms_loaded" if loaded else "fms_refused",
                  source=route.source, route=route.described())
 

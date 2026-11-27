@@ -401,3 +401,45 @@ def test_airport_to_airport_progress_still_has_a_leg():
     progress = route.progress(42.0, -6.0, 180.0, hint=1)
     assert progress is not None
     assert progress.to_fix.ident == "LECU"
+
+
+def test_use_route_upload_marks_the_echo_window():
+    """A chained leg's upload goes through the engine, not the vectoring
+    helper. Its read-back has to be recognised as our echo there too."""
+    eng = _engine(_route())
+    source = SimpleNamespace(load_fms_plan=lambda route: True)
+    eng.source = source
+    eng._upload_fms_plan(eng.route)
+    assert source._fms_written
+    assert source._fms_written_until > time.monotonic()
+
+
+def test_the_echo_window_survives_a_stale_first_readback():
+    """LECO chained leg: the rolling FMS snapshot can still hold the old
+    LEVX-PPOS-LECO plan on the first answer after the return-leg upload.
+    Consuming a one-shot echo flag there let the real echo restart the
+    flight seconds later, duplicating the clearance request."""
+    eng = _engine(_route())
+    eng.source = SimpleNamespace(
+        _fms_written=True,
+        _fms_written_until=time.monotonic() + 30.0)
+    stale = [{"id": "OLD", "t": 512, "lat": 42.0, "lon": -8.0, "alt": 0}]
+    echo = [{"id": "LECO", "t": 1, "lat": 43.30, "lon": -8.38, "alt": 0},
+            {"id": "LEVX", "t": 1, "lat": 42.23, "lon": -8.63, "alt": 0}]
+    eng._use_fms_plan(stale)
+    eng._use_fms_plan(echo)
+    assert eng.begun == 0 and eng.used == []
+
+
+def test_a_manual_plan_after_the_echo_window_is_adopted():
+    eng = _engine(_route())
+    eng.source = SimpleNamespace(
+        _fms_written=True,
+        _fms_written_until=time.monotonic() - 1.0)
+    entries = [{"id": "LEMD", "t": 1, "lat": 40.47, "lon": -3.57,
+                "alt": 0},
+               {"id": "EGLL", "t": 1, "lat": 51.47, "lon": -0.46,
+                "alt": 0}]
+    eng._use_fms_plan(entries)
+    assert eng.begun == 1
+    assert [f.ident for f in eng.used[0].fixes] == ["LEMD", "EGLL"]
