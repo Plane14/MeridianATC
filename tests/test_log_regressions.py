@@ -6006,3 +6006,57 @@ def test_crossing_the_threshold_still_high_is_a_goaround():
     state.altitude_agl_ft = 1600.0
     state.track_true = 160.0
     assert flight._should_go_around(state) is False
+
+
+def test_an_airborne_diversion_request_on_tower_is_handed_to_radar():
+    """Real-world diversion procedure: the radar position owns the amended
+    IFR clearance, so a tower with Approach available hands the aircraft
+    there instead of listing the inbound calls it expected."""
+    from meridianatc.atc.intents import Intent
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.db import Station
+
+    brain = _ground_brain()
+    approach = Station("LECO", "APP", 120.2, "A Coruna Approach")
+    brain.controller_at = lambda ident, position: \
+        approach if position in ("DEP", "APP") else None
+    station = Station("LECO", "TWR", 118.1, "A Coruna Tower")
+    session = FlightSession(Aircraft(parse_callsign("N45XS")))
+    parsed = SimpleNamespace(intent=Intent.REQUEST_DIVERSION)
+    reply = brain._tower(parsed, session, station, None,
+                         brain.for_station(station),
+                         SimpleNamespace(on_ground=False, altitude_ft=2400.0))
+    assert "expecting inbound" not in reply.text.lower()
+    assert reply.handoff_to is approach
+
+
+def test_a_non_radar_tower_clears_the_requested_diversion_direct():
+    """Where no Approach/Departure exists the tower is the only controller
+    available; the fallback is the amended direct-to-airport clearance."""
+    from meridianatc.atc.intents import Intent
+    from meridianatc.atc.phraseology import Aircraft
+    from meridianatc.atc.session import FlightSession
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.navdata.db import Station
+
+    brain = _ground_brain()
+    brain.controller_at = lambda ident, position: None
+    target = SimpleNamespace(ident="LEST", lat=43.0, lon=-7.0,
+                             spoken="Santiago military")
+    brain.navdb.airport.side_effect = lambda ident: \
+        target if ident == "LEST" else None
+    station = Station("LECO", "TWR", 118.1, "A Coruna Tower")
+    session = FlightSession(Aircraft(parse_callsign("N45XS")))
+    session.ifr = True
+    session.assigned_altitude_ft = 2400.0
+    parsed = SimpleNamespace(intent=Intent.REQUEST_DIVERSION,
+                             text="request divert to LEST")
+    reply = brain._tower(parsed, session, station, None,
+                         brain.for_station(station),
+                         SimpleNamespace(on_ground=False, altitude_ft=2400.0))
+    assert "expecting inbound" not in reply.text.lower()
+    assert session.destination is target
+    assert reply.instruction is not None
+    assert reply.instruction.kind == "diversion"

@@ -45,6 +45,19 @@ class _Tower:
             # crew on whoever can, rather than listing the calls it expected.
             return self._hand_off_departure(session, station, p)
 
+        if parsed.intent in (Intent.REQUEST_DIVERSION, Intent.REQUEST_RETURN) \
+                and airborne:
+            # A diversion is an amended IFR route/altitude clearance: the
+            # radar position owns it where one exists. With no radar
+            # authority the tower is the only controller the crew can ask,
+            # so it gives the direct clearance itself as the fallback.
+            radar = (self.controller_at(station.ident, "DEP")
+                     or self.controller_at(station.ident, "APP"))
+            if radar is not None:
+                return self._hand_off_departure(session, station, p)
+            return self._divert(parsed, session, station, p, state,
+                                back=parsed.intent is Intent.REQUEST_RETURN)
+
         if parsed.intent is Intent.REQUEST_TAKEOFF:
             if airborne:
                 return Reply(p.already_airborne(aircraft), station)
