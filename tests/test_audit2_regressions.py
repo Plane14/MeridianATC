@@ -499,3 +499,45 @@ def test_an_unpowered_glider_does_not_invent_a_powered_chained_leg():
 
     flight._select_next_destination()
     assert flight.state.chain_flights == []
+
+
+def test_no_sim_chain_ranges_use_the_type_even_without_connected_state():
+    """A no-sim chain plan must not give every unlisted type an airliner's
+    2,500-mile legs: the stock piston, turboprop, rotor and powered-lift
+    types keep their own plausible range."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+
+    expected_max = {
+        "A103": 100, "PA18": 300, "L5": 250, "RV10": 700,
+        "BE9L": 1000, "EVOT": 900, "SF50": 1000,
+        "R22": 300, "S76": 410, "ALIA": 250,
+    }
+    for code, maximum in expected_max.items():
+        flight = AutonomousFlight.__new__(AutonomousFlight)
+        flight.state = AutonomousState()
+        session = SimpleNamespace(
+            aircraft=SimpleNamespace(type_code=code, on_floats=False))
+        flight.get_state = lambda: (_ for _ in ()).throw(RuntimeError("no sim"))
+        flight._compute_aircraft_performance(session)
+        assert 0 < flight.state.aircraft_range_nm <= maximum + 1, (
+            code, flight.state.aircraft_range_nm)
+
+
+def test_stock_light_and_turboprop_chain_levels_are_class_based():
+    """PA-18/RV-10 and the King Air are absent from the legacy light-type
+    list, but their chain leg must still use piston/turboprop altitudes."""
+    from meridianatc.atc.autonomous import AutonomousFlight, AutonomousState
+
+    flight = AutonomousFlight.__new__(AutonomousFlight)
+    flight.state = AutonomousState()
+    flight._is_helicopter = False
+    flight._perf = SimpleNamespace(ceiling_ft=0.0)
+    flight.get_state = lambda: SimpleNamespace()
+    origin = SimpleNamespace(lat=43.0, lon=-8.0)
+    destination = SimpleNamespace(lat=44.0, lon=-7.0)
+
+    for code in ("PA18", "RV10", "A103", "L5"):
+        flight.state.aircraft_type = code
+        assert flight._cruise_altitude(origin, destination, 120.0, True) <= 6000
+    flight.state.aircraft_type = "BE9L"
+    assert flight._cruise_altitude(origin, destination, 450.0, True) <= 25000

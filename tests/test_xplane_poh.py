@@ -142,3 +142,16 @@ def test_vendor_editions_still_match_their_own_titles():
         "FlightFX Citation X", "C750")}
     assert "citation-x.json" in names
     assert "hawker-800xp.json" not in names
+
+
+def test_model_family_fragments_do_not_cross_variants():
+    """A330 is not A330-900 evidence, and the Cub's word "Super" is not a
+    Super Hornet. Model families stop at the variant digit."""
+    names = {p.name for p in checklist_files._add_ons(
+        "Airbus A330-300", "A333")}
+    assert "xplane-airbus-a330.json" in names
+    assert "a330-900neo.json" not in names
+    names = {p.name for p in checklist_files._add_ons(
+        "Piper PA-18 Super Cub", "PA18")}
+    assert "xplane-piper-pa18.json" in names
+    assert "fa-18e-super-hornet.json" not in names

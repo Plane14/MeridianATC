@@ -5,7 +5,6 @@ import dataclasses
 from ._shared import (
     Airport,
     AutonomousState,
-    fly,
     haversine_nm,
     log,
     random,
@@ -164,21 +163,24 @@ class _Chain_flights_unchanged:
             # tiltrotors and STOVL types use the lower class cap unless
             # the model/table below states a lower ceiling.
             level = min(level, 10000 if code in ("ALIA", "A250") else 25000)
-        elif code in fly._TURBOPROP_TYPES or code in ("C25A", "C25C"):
-            # Turboprops and the light jets their owners climb like
-            # them: a step ladder the props top out under, the business
-            # jets chosen beneath their book ceilings the way crews
-            # actually file them.
-            level = min(level, 28000)
-        elif code in fly._LIGHT_TYPES:
-            if distance < 80:
-                level = min(level, 4000)
-            elif distance < 160:
-                level = min(level, 6000)
-            elif distance < 300:
-                level = min(level, 8000)
-            else:
-                level = min(level, 11000)
+        else:
+            cls = ac.classify(code).name
+            if cls in (ac.TURBOPROP_SINGLE, ac.TURBOPROP_TWIN)                     or code in ("C25A", "C25C"):
+                # Turboprops and the light jets their owners climb like
+                # them: a step ladder the props top out under, the business
+                # jets chosen beneath their book ceilings the way crews
+                # actually file them. The class decides because the legacy
+                # type list omits half the simulators' own fleets.
+                level = min(level, 28000)
+            elif cls in (ac.PISTON_SINGLE, ac.PISTON_TWIN):
+                if distance < 80:
+                    level = min(level, 4000)
+                elif distance < 160:
+                    level = min(level, 6000)
+                elif distance < 300:
+                    level = min(level, 8000)
+                else:
+                    level = min(level, 11000)
 
         # The distance ladder is a wish, not a ceiling: the loaded
         # model's own published ceiling first, the performance tables

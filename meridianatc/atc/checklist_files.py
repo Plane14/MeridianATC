@@ -316,7 +316,7 @@ _GENERIC_MATCHES = frozenset({
     "fenix", "flight", "flightsim", "flybywire", "fsreborn", "grumman",
     "ifly", "inibuilds", "jets", "just", "king", "leonardo", "mcdonnell",
     "microsoft", "nemeth", "piper", "pmdg", "robinson", "square", "studio",
-    "taog", "toliss", "xplane",
+    "taog", "toliss", "xplane", "super",
 })
 
 # Vendor names are evidence that a vendor edition is present, never evidence
@@ -344,7 +344,20 @@ def _match_fragment(fragment: str, title_key: str, code_key: str) -> bool:
     # bare numbers such as 172/737/600 and one-letter abbreviations were
     # matching across whole manufacturers. Four alphanumeric characters
     # keeps SR22, H125 and C172 while discarding those collisions.
-    return len(key) >= 4 and key in title_key
+    if len(key) < 4:
+        return False
+    at = title_key.find(key)
+    while at >= 0:
+        end = at + len(key)
+        # A family fragment is not a variant: ``a330`` inside
+        # ``a330-900neo`` must not put the A330-300's POH on the -900.
+        # Compact text loses the hyphen, so a digit immediately after the
+        # fragment is the variant boundary.
+        if end >= len(title_key) or not key[-1].isdigit() \
+                or not title_key[end].isdigit():
+            return True
+        at = title_key.find(key, at + 1)
+    return False
 
 
 def _vendor_required(matches: list[str]) -> str:

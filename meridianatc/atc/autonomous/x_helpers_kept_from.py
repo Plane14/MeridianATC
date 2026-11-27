@@ -23,7 +23,9 @@ class _Helpers_kept_from:
             # X-Plane 12's small natives and BETA's electric powered
             # lift: chain planning figures, not traffic-table rows.
             "A103": 100, "L5": 250, "ALIA": 250, "A250": 250,
-            "F4": 1200,
+            "PA18": 300, "R22": 300, "RV10": 700, "BE9L": 1000,
+            "EVOT": 900, "SF50": 1000, "F4": 1400, "F14": 1600,
+            "MD82": 2000,
             "PA28": 500, "PA34": 700, "DA40": 600, "DA42": 800,
             "SR22": 700, "BE36": 800, "TB20": 700,
             "TBM9": 1500, "PC12": 1300, "AT76": 800, "DH8D": 900,
@@ -75,6 +77,12 @@ class _Helpers_kept_from:
                     cls = ac.of_state(state).name
             except Exception:
                 pass
+            if not cls:
+                # No-sim sessions often have no connected simulator state at
+                # the moment chain planning runs. The type designator is still
+                # hard evidence; without it every unknown type fell through as
+                # a 2,500-mile "airliner", PA-18 and King Air alike.
+                cls = ac.classify(type_code).name
             light = cls in (ac.PISTON_SINGLE, ac.PISTON_TWIN, ac.HELICOPTER,
                              ac.POWERED_LIFT)
             range_nm = perftable.range_for(type_code, light=light)
