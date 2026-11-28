@@ -4,7 +4,6 @@ X-Plane's OpenAir files, the MSFS boundaries the panel feeds back, and
 how both reach ``NavDB.airspace_volumes``.
 """
 
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -254,10 +253,10 @@ def test_navdb_merges_and_attributes(monkeypatch, tmp_path):
 
 def test_parse_real_xplane_file_if_present(tmp_path):
     """The format claims are checked against a slice of the real file."""
-    sample = Path("G:/X-Plane 12/Custom Data/airspaces/airspace.txt")
-    if not sample.exists():
+    samples = simspace.xplane_files()
+    if not samples:
         pytest.skip("no X-Plane install here")
-    text = sample.read_text(encoding="utf-8", errors="replace")[:400_000]
+    text = samples[0].read_text(encoding="utf-8", errors="replace")[:400_000]
     found = simspace.parse_openair(text, "xp0")
     assert len(found) > 10
     assert all(v.shape in ("polygon", "circle") for v in found)
