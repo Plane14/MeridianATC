@@ -1100,3 +1100,21 @@ def test_physiology_cap_uses_filed_type_when_manual_state_has_none():
         cruise_altitude_ft=35000.0)
     fo._cap_cruise_for_physiology(session, AircraftState())
     assert session.cruise_altitude_ft == 35000.0
+
+
+def test_cowl_flaps_stay_open_at_high_power_and_low_airspeed():
+    """2026-11-28 LECO: full power at about ninety knots cooled only
+    because the flaps were open. As soon as the hysteresis let them
+    close, the same CHT warning came back; the cooling demand belongs
+    to power/airflow as well as phase."""
+    pytest.importorskip("scipy")
+    from meridianatc.atc.autonomous import AutonomousPhase
+    fo = _fo()
+    fo.session.aircraft.type_code = "BE58"
+    fo._aircraft_class = "piston_twin"
+    fo.state.phase = AutonomousPhase.DESCENT
+    state = AircraftState(on_ground=False, indicated_airspeed_kt=95.0,
+                          throttle_pct=100.0, eng_cht_c=200.0)
+    assert fo._cowl_flap_wanted(state) == pytest.approx(1.0)
+    state.throttle_pct = 20.0
+    assert fo._cowl_flap_wanted(state) == pytest.approx(0.0)

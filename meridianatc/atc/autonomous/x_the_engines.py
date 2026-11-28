@@ -71,6 +71,13 @@ class _The_engines:
     # does not pump the levers.
     _CHT_OPEN_MARGIN = 15.0
     _CHT_HYSTERESIS = 20.0
+    # High power with little cooling airflow needs the flaps whatever
+    # the phase is. The phase schedule alone closed them again the
+    # moment the heads cooled, while the descent was still being flown
+    # at full power and ninety knots -- which put the same CHT warning
+    # back up every few minutes.
+    _COWL_POWER_HIGH = 0.65
+    _COWL_LOW_AIRSPEED_KT = 120.0
 
     def _engine_limits(self):
         """The type's published figures, resolved once per session."""
@@ -390,6 +397,14 @@ class _The_engines:
         open_now = bool(state.on_ground) or self.state.sub == "go_around" \
             or self.state.phase in (AutonomousPhase.TAKEOFF,
                                     AutonomousPhase.CLIMB)
+        throttles = [float(getattr(state, "throttle_pct", 0.0) or 0.0)]
+        throttles.extend(float(getattr(state, name, 0.0) or 0.0)
+                         for name in engine_vars("eng_throttle_pct"))
+        power = max(throttles) / 100.0
+        ias = float(getattr(state, "indicated_airspeed_kt", 0.0) or 0.0)
+        if power >= self._COWL_POWER_HIGH \
+                and 20.0 < ias < self._COWL_LOW_AIRSPEED_KT:
+            open_now = True
         cht = float(getattr(state, "eng_cht_c", 0.0) or 0.0)
         limit = self._cht_limit(state)
         hot = cht > 0.0 and limit > 0.0 \
