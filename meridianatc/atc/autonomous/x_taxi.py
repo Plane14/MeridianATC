@@ -669,7 +669,8 @@ class _Taxi:
                     return
             rwy_lat = self.state.runway_lat
             rwy_lon = self.state.runway_lon
-            if rwy_lat and rwy_lon:
+            if rwy_lat is not None and rwy_lon is not None \
+                    and (rwy_lat or rwy_lon):
                 # A heading is not a route: the runway's bearing from
                 # where the aeroplane sits is what reaches it, and the
                 # threshold itself is what it holds short of. ``hold_point``

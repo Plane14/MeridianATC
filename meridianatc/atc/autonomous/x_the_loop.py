@@ -339,6 +339,9 @@ class _The_loop:
                     and not self.state.emergency
                     and not self.state.emergency_descent
                     and self.session.assigned_heading is None
+                    and not getattr(self.session, "route_direct", "")
+                    and not getattr(self.state, "direct_fix", "")
+                    and getattr(self.session, "hold", None) is None
                     and not getattr(self.session, "weather_deviation_at", 0.0)
                     and self.state.avoid_heading < 0.0)
 

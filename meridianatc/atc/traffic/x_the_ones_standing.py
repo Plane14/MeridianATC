@@ -193,7 +193,7 @@ class _The_ones_standing:
         course = None
         far = (self.navdb.airport(flight.destination_icao)
                if flight.destination_icao else None)
-        if far is not None and far.lat is not None:
+        if far is not None and (far.lat or far.lon):
             course = bearing_deg(self.field.latitude, self.field.longitude,
                                  far.lat, far.lon)
         flight.runway = self._pick_runway(False, flight.type_code,

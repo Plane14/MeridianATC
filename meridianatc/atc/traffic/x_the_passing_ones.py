@@ -222,7 +222,7 @@ class _The_passing_ones:
         name, icao = self._route_end(
             operator, type_code, perf.range_nm or 0.0)
         far = self.navdb.airport(icao) if icao else None
-        if far is not None and far.lat:
+        if far is not None and (far.lat or far.lon):
             return far.lat, far.lon, far.elev_ft
         reach = (perf.range_nm or 800.0) * 0.4
         lat, lon = project(self.field.latitude, self.field.longitude,
@@ -260,6 +260,7 @@ class _The_passing_ones:
         abeam_nm = 0.0 if cruise_ft - self.field.elevation_ft > 3000.0 \
             else self.random.uniform(3.0, 8.0)
         side = math.degrees(math.asin(min(0.9, abeam_nm / dist)))
+        side *= self.random.choice((-1.0, 1.0))
         lat, lon = project(self.field.latitude, self.field.longitude,
                            (hdg + 180.0 + side) % 360.0, dist)
         return _Transit(
