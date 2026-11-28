@@ -617,9 +617,14 @@ class _Helpers:
             session.weather_deviation_at = time.monotonic()
         current_course = float(
             getattr(state, "track_true", 0.0) or getattr(state, "heading_true", 0.0) or 0.0)
+        # Re-clearing an active deviation continues the manoeuvre relative
+        # to the original course. Resetting the reference to the present
+        # deviation heading every five minutes makes the aircraft spiral:
+        # each "60 right" approval is then sixty degrees farther right of
+        # the last deviation rather than sixty degrees off the route.
         session.weather_deviation_course = (
             float(getattr(session, "weather_deviation_course", -1.0) or -1.0)
-            if active and not heard_degrees else current_course)
+            if active else current_course)
         if session.weather_deviation_course < 0.0:
             session.weather_deviation_course = current_course
         session.weather_deviation_urgent = (
