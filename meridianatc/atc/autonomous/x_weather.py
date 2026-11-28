@@ -599,6 +599,15 @@ class _Weather:
                        "Clear of the weather deviation: resuming the route",
                        "autonomous.weather.deviation_complete")
             return
+        if elapsed >= scan_after and not clear:
+            # A lateral approval is a bounded clearance, not indefinite
+            # permission to disappear off course. If the way back is still
+            # blocked five minutes after the deviation was established, the
+            # crew puts the continuing deviation back on the frequency and
+            # obtains a fresh clearance instead of silently flying it forever.
+            last = float(getattr(self, "_weather_reclearance_at", 0.0) or 0.0)
+            if elapsed >= 300.0 and time.monotonic() - last >= 90.0                     and self._fo_say("weather_deviation"):
+                self._weather_reclearance_at = time.monotonic()
         degrees = int(getattr(session, "weather_deviation_degrees", 0) or 30)
         side = (getattr(session, "weather_deviation_side", "") or "left").lower()
         sign = -1.0 if side.startswith("l") else 1.0

@@ -590,6 +590,12 @@ class _Helpers:
         fix = None
         if state is not None and getattr(state, "has_position", False):
             fix = rejoin_fix(self.route, self.route_progress, state)
+            if fix is None and getattr(self.route, "fixes", None):
+                # A short radar-vectors plan can have no en-route fix far
+                # enough ahead to name. The rejoin instruction still must
+                # exist: when able, direct the destination is the finite
+                # clearance, not an open-ended heading off course.
+                fix = self.route.fixes[-1]
         session.deviating = "approved"
         session.weather_deviation_side = side
         session.weather_deviation_degrees = degrees

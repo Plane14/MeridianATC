@@ -412,3 +412,23 @@ def test_weather_deviation_is_a_heading_mode_manoeuvre_not_nav_tracking():
     fo._dir.nav.assert_called_once_with(False)
     assert not fo.state.ap_nav_mode
     assert fo.state.ap_hdg_mode
+
+
+def test_blocked_rejoin_is_recleared_on_the_frequency_not_flown_forever():
+    fo = _fo_weather_fixture()
+    fo.session.deviating = "approved"
+    fo.session.weather_deviation_at = time.monotonic() - 301.0
+    fo.session.weather_deviation_side = "right"
+    fo.session.weather_deviation_degrees = 60
+    fo.session.weather_deviation_course = 10.0
+    fo._weather_rejoin_clear = Mock(return_value=(False, True))
+    fo._dir = Mock()
+    fo._dir.sim = None
+    fo.sim = None
+    state = AircraftState(on_ground=False, track_true=70.0, heading_true=70.0)
+
+    fo._fly_weather_deviation(state)
+
+    fo._fo_say.assert_called_once_with("weather_deviation")
+    assert fo.session.deviating == "approved"
+    assert fo.session.weather_deviation_at
