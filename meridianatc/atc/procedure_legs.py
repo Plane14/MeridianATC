@@ -427,6 +427,94 @@ def _dme_arc_points(leg: ProcedureLeg, from_lat: float, from_lon: float
 
 
 _COURSE_PATHS = {"CA", "CD", "CI", "CR", "VA", "VD", "VI", "VM", "VR"}
+_TRACK_FROM_FIX_PATHS = {"FA", "FC", "FD", "FM"}
+
+
+def _planar_xy(lat: float, lon: float, origin_lat: float, origin_lon: float
+               ) -> tuple[float, float]:
+    """Local east/north nautical miles about an origin, adequate for a leg."""
+    mean_lat = math.radians((lat + origin_lat) / 2.0)
+    return ((lon - origin_lon) * 60.0 * math.cos(mean_lat),
+            (lat - origin_lat) * 60.0)
+
+
+def _true_course(leg: ProcedureLeg, lat: float, lon: float) -> float:
+    course = leg.course
+    if course > 0 and not leg.true_degree:
+        course = to_true(course, variation(lat, lon))
+    return course
+
+
+def _track_from_fix_points(leg: ProcedureLeg, from_lat: float, from_lon: float,
+                           prev_alt_ft: float) -> list[tuple[float, float]]:
+    """Geometry for FA/FC/FD/FM, whose fix is the *start* of the track.
+
+    Treating that database fix as the terminator reverses the leg back onto
+    its own origin. These terminators instead leave that fix on the coded
+    track: FC for its distance, FA until the altitude is reached (estimated),
+    FD to the DME distance (approximated along track), and FM far enough for
+    the manual/vector termination the procedure expects.
+    """
+    start_lat, start_lon = (leg.lat, leg.lon) if leg.has_fix else (from_lat, from_lon)
+    course = _true_course(leg, start_lat, start_lon)
+    if not (0 < course <= 360.0):
+        return []
+    if leg.path == "FC" and leg.route_distance:
+        distance_nm = (leg.route_distance * 4.0 if leg.distance_minute
+                       else leg.route_distance / M_PER_NM)
+    elif leg.path == "FA" and leg.altitude_constraint:
+        distance_nm = abs(leg.altitude_constraint - prev_alt_ft) / 300.0
+        distance_nm = min(15.0, max(4.0, distance_nm))
+    elif leg.rho_m:
+        distance_nm = leg.rho_m / M_PER_NM
+    elif leg.route_distance:
+        distance_nm = (leg.route_distance * 4.0 if leg.distance_minute
+                       else leg.route_distance / M_PER_NM)
+    else:
+        distance_nm = 8.0
+    end = _offset(start_lat, start_lon, course, distance_nm)
+    points = []
+    if leg.has_fix and haversine_nm(from_lat, from_lon, start_lat,
+                                    start_lon) > 0.05:
+        points.append((start_lat, start_lon))
+    points.append(end)
+    return points
+
+
+def _course_to_fix_points(leg: ProcedureLeg, from_lat: float, from_lon: float
+                          ) -> list[tuple[float, float]]:
+    """A CF's specified course into its fix, rather than a direct shortcut.
+
+    The path terminator requires rolling out on the published course at the
+    fix. When the present position is off that final course line, the path
+    first joins the line at the position's own projection (or five miles
+    behind the fix when the geometry is already abeam/past it), then tracks
+    the course to the fix.
+    """
+    if not leg.has_fix:
+        return []
+    course = _true_course(leg, leg.lat, leg.lon)
+    if not (0 < course <= 360.0):
+        return [(leg.lat, leg.lon)]
+    rx, ry = _planar_xy(from_lat, from_lon, leg.lat, leg.lon)
+    ux, uy = math.sin(math.radians(course)), math.cos(math.radians(course))
+    along = rx * ux + ry * uy          # negative before the fix on course
+    cross = -rx * uy + ry * ux
+    if abs(cross) < 0.25 and along < 0.0:
+        return [(leg.lat, leg.lon)]
+    if along < -0.2:
+        join_x, join_y = ux * along, uy * along
+        join_lat = leg.lat + join_y / 60.0
+        mean_lat = math.radians(leg.lat)
+        join_lon = leg.lon + join_x / (60.0 * max(0.2, math.cos(mean_lat)))
+    else:
+        join_lat, join_lon = _offset(leg.lat, leg.lon,
+                                     (course + 180.0) % 360.0, 5.0)
+    points = []
+    if haversine_nm(from_lat, from_lon, join_lat, join_lon) > 0.15:
+        points.append((join_lat, join_lon))
+    points.append((leg.lat, leg.lon))
+    return points
 
 
 def _course_end(leg: ProcedureLeg, from_lat: float, from_lon: float,
@@ -461,18 +549,23 @@ def _hold_points(leg: ProcedureLeg, from_lat: float, from_lon: float
                  ) -> list[tuple[float, float]]:
     """One circuit of the holding pattern, drawn as a racetrack.
 
-    The published hold is outbound on the leg's course for the leg's
-    time or distance, the standard-rate turn onto the reciprocal, and
-    back to the fix. One circuit is drawn; when the clearance still
-    needs the hold the next pass takes the same pattern again.
+    The published holding course is inbound to the fix. The hold leaves
+    outbound on its reciprocal for the leg's time or distance, makes the
+    standard-rate turn, and returns inbound to the fix. One circuit is
+    drawn; when the clearance still needs the hold the next pass takes
+    the same pattern again.
     """
     fix_lat, fix_lon = (leg.lat, leg.lon) if leg.has_fix \
         else (from_lat, from_lon)
-    course = leg.course if leg.course > 0 else leg.theta
-    if course > 0 and not leg.true_degree:
-        course = to_true(course, variation(fix_lat, fix_lon))
-    if not (0 < course <= 360.0):
-        course = 0.0
+    inbound = leg.course if leg.course > 0 else leg.theta
+    if inbound > 0 and not leg.true_degree:
+        inbound = to_true(inbound, variation(fix_lat, fix_lon))
+    if not (0 < inbound <= 360.0):
+        inbound = 0.0
+    # ARINC/ICAO holding course is the inbound course to the fix; the
+    # racetrack leaves the fix on its reciprocal. Drawing the coded course
+    # outbound puts the whole hold on the wrong side of the fix.
+    course = (inbound + 180.0) % 360.0
     out = leg.route_distance
     out = out * 4.0 if leg.distance_minute else out / M_PER_NM
     out = min(12.0, max(2.0, out or 4.0))
@@ -514,9 +607,10 @@ def build_path(transition: ProcedureTransition,
     level and speed limit.
 
     Returns ``(points, notes)`` where a point is ``(lat, lon, alt_ft,
-    speed_kt)``. Unsupported terminators are noted and flown as a direct
-    leg to the fix the record names, which is what the chart's own text
-    falls back to when the geometry cannot be built.
+    speed_kt)``. Terminators whose conditional geometry cannot be drawn
+    are noted and flown as a direct leg to the fix the record names where
+    that fix really is the terminator; track-from-fix legs are skipped
+    rather than reversed back onto their own origin.
     """
     points: list[tuple[float, float, float, float]] = []
     notes: list[str] = []
@@ -556,13 +650,24 @@ def build_path(transition: ProcedureTransition,
         elif path in ("HA", "HF", "HM"):
             generated = _hold_points(leg, cursor[0], cursor[1])
             notes.append(f"{leg.fix_ident or leg.path}: {path} racetrack")
+        elif path == "CF":
+            generated = _course_to_fix_points(leg, cursor[0], cursor[1])
+            notes.append(f"{leg.fix_ident or leg.path}: CF course line")
+        elif path in _TRACK_FROM_FIX_PATHS:
+            generated = _track_from_fix_points(leg, cursor[0], cursor[1],
+                                               prev_alt)
+            if generated:
+                notes.append(f"{leg.fix_ident or leg.path}: {path} track from fix")
+            else:
+                notes.append(f"{leg.fix_ident or leg.path}: {path} no track")
         elif path in _COURSE_PATHS:
             end = _course_end(leg, cursor[0], cursor[1], prev_alt)
             if end is not None:
                 generated = [end]
             notes.append(f"{leg.fix_ident or leg.path}: {path} flown on course")
         end = _leg_end(leg, cursor[0], cursor[1])
-        if not generated and end is not None:
+        if not generated and end is not None \
+                and path not in _TRACK_FROM_FIX_PATHS:
             generated = [end]
         if not generated:
             notes.append(f"{leg.fix_ident or leg.path}: no geometry")

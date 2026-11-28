@@ -75,8 +75,9 @@ def test_a_hold_draws_a_racetrack_back_to_the_fix():
     # The pattern's last point is the hold's own fix again.
     assert abs(points[-1][0] - 50.0) < 0.001
     assert abs(points[-1][1] - 0.0) < 0.001
-    # And it went somewhere outbound first.
-    assert max(lon for _lat, lon, _a, _s in points) > 0.02
+    # Course 090 is the inbound course, so the outbound leg runs west
+    # of the fix before turning back onto it.
+    assert min(lon for _lat, lon, _a, _s in points) < -0.02
 
 
 def test_an_af_arc_turns_about_the_navaid():
@@ -161,6 +162,39 @@ def test_an_rf_arc_is_drawn_on_its_own_circle():
     for lat, lon, _alt, _speed in arc_points[:-1]:
         assert haversine_nm(centre_lat, centre_lon, lat, lon) == \
             pytest.approx(radius_nm, abs=0.12)
+
+
+def test_track_from_fix_legs_leave_their_fix_instead_of_reversing_to_it():
+    """ARINC FA/FC/FD/FM legs name the fix the track starts at. Treating it
+    as the terminator makes the path turn back to the point it just left."""
+    fc = _leg("FC", fix_ident="SRC", lat=50.0, lon=0.0, course=90.0,
+              true_degree=True, route_distance=6.0 * M_PER_NM)
+    points, notes = _path([fc], start=(49.95, -0.02), kind="sid")
+    assert any("FC track from fix" in n for n in notes)
+    assert points[0][:2] == pytest.approx((50.0, 0.0))
+    assert points[-1][1] > 0.04       # east of the source fix, not back south-west
+
+
+def test_fix_to_altitude_leaves_the_fix_on_the_published_track():
+    fa = _leg("FA", fix_ident="SRC", lat=50.0, lon=0.0, course=90.0,
+              true_degree=True, alt1_ft=3000.0)
+    points, notes = _path([fa], start=(50.0, 0.0), kind="sid")
+    assert any("FA track from fix" in n for n in notes)
+    assert points[-1][1] > 0.04
+
+
+def test_course_to_fix_joins_the_coded_course_line_before_the_fix():
+    """A CF terminates at the fix on the specified course; direct-to-fix
+    geometry shortcuts onto the fix from whatever angle the aircraft is on."""
+    cf = _leg("CF", fix_ident="CFIX", lat=50.0, lon=0.1, course=90.0,
+              true_degree=True)
+    points, notes = _path([cf], start=(49.95, -0.02), kind="approach")
+    assert any("CF course line" in n for n in notes)
+    assert len(points) >= 2
+    join_lat, join_lon = points[-2][:2]
+    assert join_lat == pytest.approx(50.0, abs=0.01)
+    assert join_lon < 0.1
+    assert points[-1][:2] == pytest.approx((50.0, 0.1))
 
 
 def test_an_approach_navigator_carries_the_published_vpa_angle():
