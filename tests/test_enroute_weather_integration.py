@@ -432,3 +432,23 @@ def test_blocked_rejoin_is_recleared_on_the_frequency_not_flown_forever():
     fo._fo_say.assert_called_once_with("weather_deviation")
     assert fo.session.deviating == "approved"
     assert fo.session.weather_deviation_at
+
+
+def test_close_weather_waits_out_a_busy_frequency_before_emergency_deviation():
+    """2026-11-28 LECO: the readback to a vector had just unkeyed when the
+    scan ran. That one busy second was treated as lost ATC contact and the
+    FO deviated right through the vector it had just acknowledged."""
+    fo = _fo_weather_fixture()
+    plan = SimpleNamespace(threatening=True, nearest_nm=5.0, side="right",
+                           degrees=60, miles_nm=30, source="xplane-radar")
+    fo._enroute_weather_plan = lambda state: plan
+    fo._fo_say = Mock(return_value=False)
+    fo._comms_ready = Mock(return_value=True)
+    fo._unkeyed = Mock(return_value=False)
+    state = AircraftState(on_ground=False, track_true=292.0,
+                          heading_true=292.0)
+
+    fo._watch_enroute_convection(state, time.monotonic())
+
+    assert not fo.session.deviating
+    assert not fo.session.weather_deviation_at

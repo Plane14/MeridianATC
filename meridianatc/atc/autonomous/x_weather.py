@@ -130,6 +130,10 @@ class _Weather:
         transmission_failed = False
         if not asked:
             self._weather_deviation_plan = plan
+            # A frequency still unkeying after the readback is not "no ATC
+            # answer": the crew waits the beat and keys the request rather
+            # than treating one congested second as lost communications.
+            frequency_busy = self._comms_ready() and not self._unkeyed()
             transmitted = self._fo_say("weather_deviation")
             # Start the clock even when nobody can take the call. Otherwise a
             # CTAF, a dead frequency, or a congested one would leave the crew
@@ -143,6 +147,8 @@ class _Weather:
                            "autonomous.weather.deviation_request")
                 return
             transmission_failed = True
+            if frequency_busy:
+                return
         # A quiet frequency is acceptable when the weather is still far away;
         # it is not acceptable with the cell at the windshield. Maneuver and
         # inform ATC, as the pilot-in-command ultimately must. When the call
