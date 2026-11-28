@@ -439,7 +439,8 @@ class _Radar_positions_departure:
                 step = departure_step(station.callsign, callsign, assigned,
                                       here, cruise)
                 why = "the next step"
-            if session.runway_heading and self.route:
+            if session.runway_heading and self.route \
+                    and not getattr(session, "weather_deviation_at", 0.0):
                 direct = on_course_fix(self.route, state.latitude,
                                        state.longitude)
         else:

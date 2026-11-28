@@ -570,13 +570,16 @@ class _Weather:
                        "Weather deviation ended: approach guidance has priority",
                        "autonomous.weather.deviation_ended_for_approach")
             return
-        miles = float(getattr(session, "weather_deviation_miles_nm", 0.0) or 15.0)
-        gs = max(80.0, float(getattr(state, "ground_speed_kt", 0.0) or 80.0))
         elapsed = time.monotonic() - float(session.weather_deviation_at)
-        needed = miles / gs * 3600.0 + 60.0
+        # The mileage is a corridor the crew may manoeuvre within, not a
+        # distance it must fly before coming back. Once the deviation is
+        # established, keep scanning the rejoin leg; otherwise an approved
+        # twenty-five-mile corridor becomes fifteen minutes flying away
+        # from the route long after the cell is abeam.
+        scan_after = 60.0
         clear = True
         rejoin_valid = False
-        if elapsed >= needed:
+        if elapsed >= scan_after:
             try:
                 clear, rejoin_valid = self._weather_rejoin_clear(state, session)
             except Exception:
@@ -584,9 +587,9 @@ class _Weather:
                           exc_info=True)
                 clear = False
         # "When able" means when the rejoin leg ahead is clear, not merely
-        # when a timer ran out. External evidence expires by itself; a clock
+        # when a clock ran out. External evidence expires by itself; a clock
         # is not permission to turn back through a cell still in evidence.
-        if elapsed >= needed and clear:
+        if elapsed >= scan_after and clear:
             rejoin = getattr(session, "weather_deviation_rejoin", "") or ""
             if rejoin and rejoin_valid:
                 session.route_direct = rejoin
@@ -604,6 +607,10 @@ class _Weather:
             course = float(getattr(state, "track_true", 0.0)
                            or getattr(state, "heading_true", 0.0) or 0.0)
         target = (course + sign * degrees + 360.0) % 360.0
+        # A weather deviation is flown in heading mode. NAV left engaged
+        # keeps steering the flight-plan leg while the bug says otherwise.
+        self.director.nav(False)
+        self.state.ap_nav_mode = False
         self.director.heading(self._magnetic(target, state))
         self.state.ap_hdg_mode = True
 

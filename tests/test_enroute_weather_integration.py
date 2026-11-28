@@ -340,3 +340,75 @@ def test_stale_rejoin_after_diversion_scans_new_route_and_is_not_directed():
     clear, rejoin_valid = fo._weather_rejoin_clear(state, fo.session)
     assert not clear
     assert not rejoin_valid
+
+
+def test_generic_deviation_report_preserves_the_active_manoeuvre():
+    from meridianatc.atc.controller.x_helpers import _Helpers
+
+    controller = SimpleNamespace(route=None, route_progress=None)
+    session = FlightSession(aircraft=Mock())
+    session.deviating = "approved"
+    session.weather_deviation_at = time.monotonic()
+    session.weather_deviation_side = "right"
+    session.weather_deviation_degrees = 60
+    session.weather_deviation_miles_nm = 30
+    session.weather_deviation_course = 10.0
+    session.weather_deviation_urgent = True
+    parsed = SimpleNamespace(
+        normalized="santiago approach baron three alpha bravo deviating right of course for weather",
+        language="en")
+    station = SimpleNamespace(callsign="Santiago Approach", ident="LEST",
+                              position="APP", mhz=120.0)
+    p = Mock()
+    p.deviation_approved.return_value = "approved"
+    state = AircraftState(track_true=70.0, heading_true=70.0)
+
+    _Helpers._approve_deviation(controller, parsed, session, station, p, state)
+
+    assert session.weather_deviation_side == "right"
+    assert session.weather_deviation_degrees == 60
+    assert session.weather_deviation_course == 10.0
+    assert session.weather_deviation_miles_nm == 30
+    assert session.weather_deviation_urgent
+
+
+def test_weather_deviation_rejoin_is_scanned_once_established_not_after_full_corridor():
+    fo = _fo_weather_fixture()
+    fo.session.deviating = "approved"
+    fo.session.weather_deviation_at = time.monotonic() - 61.0
+    fo.session.weather_deviation_side = "right"
+    fo.session.weather_deviation_degrees = 60
+    fo.session.weather_deviation_miles_nm = 30
+    fo.session.weather_deviation_course = 10.0
+    fo._weather_rejoin_clear = Mock(return_value=(True, False))
+    fo._dir = Mock()
+    fo._dir.sim = None
+    fo.sim = None
+    state = AircraftState(on_ground=False, ground_speed_kt=450.0,
+                          track_true=70.0, heading_true=70.0)
+
+    fo._fly_weather_deviation(state)
+
+    assert not fo.session.deviating
+    assert not fo.session.weather_deviation_at
+    fo._weather_rejoin_clear.assert_called_once_with(state, fo.session)
+
+
+def test_weather_deviation_is_a_heading_mode_manoeuvre_not_nav_tracking():
+    fo = _fo_weather_fixture()
+    fo.session.deviating = "approved"
+    fo.session.weather_deviation_at = time.monotonic()
+    fo.session.weather_deviation_side = "right"
+    fo.session.weather_deviation_degrees = 30
+    fo.session.weather_deviation_course = 10.0
+    fo._dir = Mock()
+    fo._dir.sim = None
+    fo.sim = None
+    fo.state.ap_nav_mode = True
+    state = AircraftState(on_ground=False, track_true=10.0, heading_true=10.0)
+
+    fo._fly_weather_deviation(state)
+
+    fo._dir.nav.assert_called_once_with(False)
+    assert not fo.state.ap_nav_mode
+    assert fo.state.ap_hdg_mode

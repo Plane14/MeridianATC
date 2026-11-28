@@ -573,25 +573,53 @@ class _Helpers:
         from ..routing import rejoin_fix
 
         text_heard = parsed.normalized or ""
-        side = _side_said(text_heard)
-        degrees = _degrees_said(text_heard, getattr(parsed, "language", "en"))
+        heard_side = _side_said(text_heard)
+        heard_degrees = _degrees_said(text_heard, getattr(parsed, "language", "en"))
+        active = bool(getattr(session, "weather_deviation_at", 0.0)
+                      and getattr(session, "deviating", ""))
+        # A report such as "deviating right of course" carries no angle.
+        # Zero is not an approval to fly the original course: preserve the
+        # manoeuvre already being flown, or use the standard thirty-degree
+        # deviation where the report is the first one heard.
+        side = heard_side or getattr(session, "weather_deviation_side", "") \
+            if active else heard_side
+        degrees = int(heard_degrees or (
+            getattr(session, "weather_deviation_degrees", 0) if active else 0)
+            or 30)
+        side = side or "left"
         fix = None
         if state is not None and getattr(state, "has_position", False):
             fix = rejoin_fix(self.route, self.route_progress, state)
         session.deviating = "approved"
-        session.weather_deviation_side = side or ""
-        session.weather_deviation_degrees = int(degrees or 0)
+        session.weather_deviation_side = side
+        session.weather_deviation_degrees = degrees
         # The miles figure is not reliably spoken in the existing phraseology,
         # so the executable approval uses the angle as the control and a
         # conservative default corridor. A pilot may manoeuvre inside it, not
         # roam at will.
-        session.weather_deviation_miles_nm = max(
-            15, int(math.ceil(abs(float(degrees or 30)) * 0.75 / 5.0) * 5))
-        session.weather_deviation_rejoin = getattr(fix, "ident", "") or ""
-        session.weather_deviation_at = time.monotonic()
-        session.weather_deviation_course = float(
+        miles = max(
+            15, int(math.ceil(abs(float(degrees)) * 0.75 / 5.0) * 5))
+        if active and not heard_degrees:
+            miles = int(getattr(session, "weather_deviation_miles_nm", 0)
+                        or miles)
+        session.weather_deviation_miles_nm = miles
+        session.weather_deviation_rejoin = (
+            getattr(session, "weather_deviation_rejoin", "")
+            if active and not heard_degrees else "") \
+            or getattr(fix, "ident", "") or ""
+        if not (active and not heard_degrees):
+            session.weather_deviation_at = time.monotonic()
+        current_course = float(
             getattr(state, "track_true", 0.0) or getattr(state, "heading_true", 0.0) or 0.0)
-        session.weather_deviation_urgent = "immediately" in text_heard.lower() \
+        session.weather_deviation_course = (
+            float(getattr(session, "weather_deviation_course", -1.0) or -1.0)
+            if active and not heard_degrees else current_course)
+        if session.weather_deviation_course < 0.0:
+            session.weather_deviation_course = current_course
+        session.weather_deviation_urgent = (
+            bool(getattr(session, "weather_deviation_urgent", False))
+            if active and not heard_degrees else False) \
+            or "immediately" in text_heard.lower() \
             or "urgent" in text_heard.lower()
         session.establish(station)
         decision("route", event="deviation", station=station.callsign,
