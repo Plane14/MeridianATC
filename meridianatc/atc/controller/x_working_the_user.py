@@ -359,14 +359,13 @@ class _Working_the_user:
                     and not self.navdb.at_the_runway(
                         airport.ident, runway,
                         state.latitude, state.longitude)):
+                text = p.taxi_to_runway(
+                    session.aircraft, self._station_name(station, p),
+                    runway, (), abbreviated=True)
                 instruction = session.remember(
-                    Instruction("taxi", station_key(station), "",
+                    Instruction("taxi", station_key(station), text,
                                 {"runway": runway}))
-                return Reply(
-                    p.taxi_to_runway(
-                        session.aircraft, self._station_name(station, p),
-                        runway, (), abbreviated=True),
-                    station, instruction=instruction)
+                return Reply(text, station, instruction=instruction)
 
         # Below VFR minima nothing VFR takes off without Special VFR, and
         # circuits are not flown in it at all.

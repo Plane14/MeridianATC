@@ -263,7 +263,13 @@ class _Radar_positions_departure:
             return self._issue_visual_approach(session, station, weather, p)
 
         if parsed.intent is Intent.REPORT_TRAFFIC_IN_SIGHT:
-            return Reply(p.maintain_visual_separation(aircraft), station)
+            # Visual separation is an instruction attached to a traffic
+            # advisory. A spontaneous "traffic in sight" with none called
+            # is acknowledged, not turned into a separation instruction
+            # against traffic the controller never identified.
+            if session.traffic_called:
+                return Reply(p.maintain_visual_separation(aircraft), station)
+            return Reply(p.roger(aircraft), station)
 
         if parsed.intent is Intent.REPORT_ESTABLISHED:
             tower = self._destination_tower(session, station)
