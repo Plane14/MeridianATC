@@ -635,6 +635,31 @@ class _The_circuit:
         airport = self.navdb.airport(station.ident)
         runway = session.arrival_runway or self._arrival_runway(airport, weather)
         session.arrival_runway = runway
+        # A check-in is not proof the aeroplane is on final. The radar
+        # position may hand one over high and close after a bad vector or a
+        # weather deviation; answered as though it were established, it is
+        # cleared to land from ten thousand feet over the field. A tower can
+        # see that approach cannot be flown and sends it round instead.
+        if state is not None and getattr(state, "has_position", False)                 and airport is not None:
+            from ..flying import glide_altitude
+            distance = self._distance_to(state, airport)
+            final = final_for(self.navdb, airport.ident, runway)
+            final_distance = (final.distance(state) if final is not None
+                              else distance)
+            elevation = float(getattr(airport, "elev_ft", 0.0) or 0.0)
+            altitude = float(getattr(state, "altitude_ft", 0.0) or 0.0)
+            # Six hundred feet a mile is already a steep five-plus-degree
+            # path; another fifteen hundred above it is not an approach a
+            # landing clearance can save.
+            impossible = altitude > glide_altitude(
+                elevation, final_distance, ft_per_nm=600.0) + 1500.0
+            if distance <= self.LANDING_CLEARANCE_NM and impossible:
+                decision("tower", event="high_checkin_go_around",
+                         runway=runway, airport=getattr(airport, "ident", ""),
+                         altitude_ft=round(altitude),
+                         threshold_nm=round(final_distance, 1))
+                return self.go_around(session, station, weather, p, airport,
+                                      told=True)
         ahead = self.arrivals_ahead(airport, runway, state)
         if ahead and not session.cleared_landing:
             # Somebody ahead on the same final: the clearance waits for them
