@@ -19,8 +19,13 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from meridianatc.msfs_panel import (NAME, community_folders, files_in,  # noqa: E402
-                                    install, layout_for)
+from meridianatc.msfs_panel import (  # noqa: E402
+    NAME,
+    community_folders,
+    files_in,
+    install,
+    layout_for,
+)
 
 PACKAGE = HERE / "package"
 __all__ = ["NAME", "PACKAGE", "community_folders", "files_in", "install", "layout_for"]

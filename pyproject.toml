@@ -12,6 +12,8 @@ addopts = "-q"
 [tool.ruff]
 target-version = "py311"
 line-length = 88
+# XPMP2 is vendored third-party code, including its documentation scripts.
+exclude = ["xplane/plugin/lib"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C90", "SIM", "RET"]

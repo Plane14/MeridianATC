@@ -24,11 +24,16 @@ import sys
 def _replace_missing_streams() -> None:
     """Give stdout, stderr and stdin somewhere to be when Windows gives none."""
     if sys.stdout is None:
-        sys.stdout = open(os.devnull, "w", encoding="utf-8", errors="replace")
+        # These replacement streams intentionally stay open for the life of
+        # the frozen process; a context manager would close them immediately.
+        sys.stdout = open(os.devnull, "w", encoding="utf-8",  # noqa: SIM115
+                          errors="replace")
     if sys.stderr is None:
-        sys.stderr = open(os.devnull, "w", encoding="utf-8", errors="replace")
+        sys.stderr = open(os.devnull, "w", encoding="utf-8",  # noqa: SIM115
+                          errors="replace")
     if sys.stdin is None:
-        sys.stdin = open(os.devnull, "r", encoding="utf-8", errors="replace")
+        sys.stdin = open(os.devnull, encoding="utf-8",  # noqa: SIM115
+                         errors="replace")
 
 
 def _unblock_bundle() -> None:
