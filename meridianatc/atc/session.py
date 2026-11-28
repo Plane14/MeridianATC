@@ -851,6 +851,19 @@ class FlightSession:
         self.hold_short_of = self.pending_crossing()
         return crossed
 
+    def abort_crossing(self) -> str:
+        """The aircraft came back off the side it entered from.
+
+        That runway is still ahead on the route, so it remains the pending
+        crossing; only the permission to be on it ends. Spending the crossing
+        here silently deleted the very runway the aircraft still had to cross.
+        """
+        crossing = self.pending_crossing()
+        self.crossing_granted = ""
+        self.allow_runway("")
+        self.hold_short_of = crossing
+        return crossing
+
     def tell_to_wait(self, hold: bool = False) -> None:
         """The controller's answer was to wait -- "standby", or a
         literal "hold position". A crew told either one waits for the

@@ -267,8 +267,11 @@ class CrossingWatch:
     def __init__(self, navdb: NavDB, brain: ControllerBrain):
         self.navdb = navdb
         self.brain = brain
-        # When a hold was last said for a crossing, by runway strip.
+        # When a hold was last said for a crossing, by runway strip; and
+        # which side of the strip the aircraft approached it from, so a
+        # return to the same side is not mistaken for a crossing.
         self._held: dict[str, float] = {}
+        self._approach_side: dict[str, int] = {}
 
     def look(self, session: FlightSession, station: Station | None, state,
              previous, language: str = "en") -> Reply | None:
@@ -301,18 +304,34 @@ class CrossingWatch:
         p = self.brain.for_station(station, language)
         session.aircraft.language = language_of(p)
 
-        # Off the far side, or back to the hold side: the crossing is done
-        # either way and the next runway on the route is the new limit.
+        # Off the strip again. Only the far side spends the crossing: an
+        # aircraft that comes back off the side it entered from still has
+        # that runway ahead and must hold short of it again.
         if was_pending and not on_pending:
-            crossed = session.spend_crossing()
-            decision("runway_crossing", airport=ident, event="vacated",
-                     runway=crossed)
+            approached = self._approach_side.get(strip, 0)
+            now_side = self._side_of_runway(ident, strip, state)
+            if approached and now_side and approached != now_side:
+                crossed = session.spend_crossing()
+                self._approach_side.pop(strip, None)
+                decision("runway_crossing", airport=ident, event="vacated",
+                         runway=crossed)
+            else:
+                returned = session.abort_crossing()
+                if now_side:
+                    self._approach_side[strip] = now_side
+                decision("runway_crossing", airport=ident, event="returned",
+                         runway=returned)
             pending = session.pending_crossing()
             if not pending:
                 return None
             strip = self.navdb.runway_strip(ident, pending)
             on_pending = bool(under) and \
                 self.navdb.runway_strip(ident, under) == strip
+
+        if not on_pending:
+            side = self._side_of_runway(ident, strip, state)
+            if side:
+                self._approach_side[strip] = side
 
         # On the runway without a crossing clearance, granted or spent --
         # the same call the surface watch makes for a line-up, with the
@@ -352,6 +371,36 @@ class CrossingWatch:
         except Exception:
             log.debug("runway lookup failed at %s", ident, exc_info=True)
             return ""
+
+    def _side_of_runway(self, ident: str, strip: str, state) -> int:
+        """Which side of the runway centreline the position is on.
+
+        The sign itself is arbitrary; consistency is what matters. Zero means
+        the position is on the line or the runway geometry is unknown, in
+        which case no crossing direction can be inferred.
+        """
+        try:
+            runways = self.navdb.runways(ident)
+        except Exception:
+            return 0
+        for runway in runways:
+            ends = (runway.le_ident or "", runway.he_ident or "")
+            if self.navdb.runway_strip(ident, ends[0]) != strip:
+                continue
+            if None in (runway.le_lat, runway.le_lon,
+                        runway.he_lat, runway.he_lon):
+                return 0
+            lat0 = math.radians(float(runway.le_lat))
+            rx = (float(runway.he_lon) - float(runway.le_lon)) * math.cos(lat0)
+            ry = float(runway.he_lat) - float(runway.le_lat)
+            px = (float(state.longitude) - float(runway.le_lon)) * math.cos(lat0)
+            py = float(state.latitude) - float(runway.le_lat)
+            cross = rx * py - ry * px
+            scale = math.hypot(rx, ry) or 1.0
+            if abs(cross) / scale < 1e-7:
+                return 0
+            return 1 if cross > 0.0 else -1
+        return 0
 
 
 class TransponderWatch:
@@ -1216,6 +1265,12 @@ class RestrictionWatch:
         session.aircraft.language = language_of(p)
         if not session.restriction_asked_at:
             session.restriction_asked_at = now
+            # A question put on the frequency needs the crew's ear as well
+            # as the controller's memory of asking it. The deviation-answer
+            # stamp is that ear: without it the automated first officer let
+            # "say altitude" pass unanswered until the descent instruction.
+            session.deviation_query = "altitude"
+            session.deviation_query_at = now
             decision("vfr_restriction", station=station.callsign,
                      said="say_altitude", altitude_ft=round(altitude),
                      ceiling_ft=round(ceiling))

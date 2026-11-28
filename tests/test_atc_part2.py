@@ -347,6 +347,34 @@ def test_transponder_watch_ignores_non_code_observations():
         assert w.look(s, st, state) is None
 
 
+def test_restriction_say_altitude_is_stamped_for_the_crew_to_answer():
+    from unittest.mock import Mock
+
+    from meridianatc.atc.controller import ControllerBrain
+    from meridianatc.atc.phraseology import Aircraft, Phraseology
+    from meridianatc.atc.session import FlightSession, station_key
+    from meridianatc.atc.speech import parse_callsign
+    from meridianatc.atc.watch import RestrictionWatch
+    from meridianatc.navdata.db import Station
+    from meridianatc.sim.state import AircraftState
+
+    brain = ControllerBrain(Mock(), Phraseology())
+    brain.staffed = lambda station: True
+    watch = RestrictionWatch(Mock(), brain)
+    session = FlightSession(Aircraft(parse_callsign("N123")))
+    station = Station("TEST", "APP", 124.5, "Approach")
+    session.ifr = False
+    session.radar_service = station_key(station)
+    session.vfr_ceiling_ft = 7500.0
+    state = AircraftState(altitude_ft=8300.0, on_ground=False,
+                          latitude=50.0, longitude=3.0)
+    reply = watch.look(session, station, state, 100.0)
+    assert reply is not None
+    assert "altitude" in reply.text.lower()
+    assert session.deviation_query == "altitude"
+    assert session.deviation_query_at == 100.0
+
+
 # ------------------------------------------------------------------
 # asking for the pressure setting
 # ------------------------------------------------------------------

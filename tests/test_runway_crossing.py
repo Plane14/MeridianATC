@@ -73,8 +73,8 @@ HOLD = AircraftState(latitude=50.10, longitude=3.010, on_ground=True)
 AWAY = AircraftState(latitude=50.50, longitude=3.010, on_ground=True)
 # On the strip itself.
 ON = AircraftState(latitude=50.001, longitude=3.010, on_ground=True)
-# Just off the end of it, on the field.
-OFF = AircraftState(latitude=50.001, longitude=3.030, on_ground=True)
+# Just off the far side of it, on the field.
+OFF = AircraftState(latitude=49.90, longitude=3.010, on_ground=True)
 
 
 def test_cross_runway_intent():
@@ -217,6 +217,27 @@ def test_crossing_watch_lifecycle():
     session.occupying_runway = ""
     assert watch.look(session, GROUND, OFF, ON) is None
     assert session.pending_crossing() == ""
+    assert session.cleared_runway == ""
+
+
+def test_crossing_watch_does_not_spend_a_crossing_when_the_aircraft_turns_back():
+    from meridianatc.atc.watch import CrossingWatch
+
+    navdb, layout = _navdb(), _layout()
+    brain = _brain(navdb, layout, occupied=True)
+    watch = CrossingWatch(navdb, brain)
+    session = _session()
+    # The approach side is seen before the crossing, then traffic reopens.
+    assert watch.look(session, GROUND, HOLD, AWAY) is not None
+    session.grant_crossing("09")
+    session.occupying_runway = "09"
+    assert watch.look(session, GROUND, ON, HOLD) is None
+    session.occupying_runway = ""
+
+    # Back off the hold side: the runway is still ahead, not behind.
+    assert watch.look(session, GROUND, HOLD, ON) is None
+    assert session.pending_crossing() == "09"
+    assert session.crossing_granted == ""
     assert session.cleared_runway == ""
 
 
