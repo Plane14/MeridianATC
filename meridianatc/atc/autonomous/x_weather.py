@@ -615,6 +615,31 @@ class _Weather:
         if course < 0.0:
             course = float(getattr(state, "track_true", 0.0)
                            or getattr(state, "heading_true", 0.0) or 0.0)
+        if elapsed >= scan_after and not clear:
+            # Do not parallel the weather forever. Probe progressively
+            # smaller offsets back toward the rejoin leg and fly the tightest
+            # one still clear of the cells; the deviation therefore works
+            # back toward the destination instead of becoming a holding
+            # heading to nowhere.
+            try:
+                from ...weather.enroute import scan_route
+                rejoin_course, ahead_nm = self._weather_route_scan_course(
+                    state, session)
+                cells = self._enroute_weather_cells(state)
+                for fraction in (0.25, 0.5, 0.75, 1.0):
+                    candidate = int(round(degrees * fraction))
+                    probe = (rejoin_course + sign * candidate + 360.0) % 360.0
+                    hits, _coverage = scan_route(
+                        cells, state.latitude, state.longitude, probe,
+                        getattr(state, "altitude_ft", 0.0),
+                        ahead_nm=ahead_nm, width_nm=10.0)
+                    if not hits:
+                        degrees = candidate
+                        course = rejoin_course
+                        break
+            except Exception:
+                log.debug("weather-deviation progressive rejoin scan failed",
+                          exc_info=True)
         target = (course + sign * degrees + 360.0) % 360.0
         # A weather deviation is flown in heading mode. NAV left engaged
         # keeps steering the flight-plan leg while the bug says otherwise.
