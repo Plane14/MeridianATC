@@ -401,6 +401,24 @@ class ChecklistRunner:
             self._paused_at = None
             if self._run is not None:
                 self._run.since += gap
+            # Every checklist clock is aeroplane time, not wall-clock time:
+            # an offer answered after a ten-minute menu pause has not been
+            # standing unanswered for ten minutes, nor has the cruise been
+            # level while nothing was flying.
+            for attr in ("_last_offer", "_talked_at", "_begun_at",
+                         "_level_since"):
+                value = getattr(self, attr, None)
+                # ``_level_since`` uses 0 as its empty sentinel; the others
+                # use None, where 0 is still a legitimate test/manual clock.
+                should_shift = bool(value) if attr == "_level_since" \
+                    else value is not None
+                if should_shift:
+                    setattr(self, attr, value + gap)
+            if self._offer is not None:
+                self._offer = (self._offer[0], self._offer[1] + gap)
+            if self._checklist_pick is not None:
+                signature, picked, picked_at = self._checklist_pick
+                self._checklist_pick = (signature, picked, picked_at + gap)
         with self._lock:
             inbox, self._inbox = self._inbox, []
         for kind, what in inbox:
@@ -893,6 +911,12 @@ class ChecklistRunner:
             return names[0]
         if picked < 0:
             return ""
+        if picked >= len(names):
+            # A model index outside the options is no answer at all; it must
+            # not crash the checklist offer pass or invent a checklist.
+            self._note("advisor_invalid", picked=picked,
+                       options=list(names))
+            return names[0]
         return names[picked]
 
     def _withhold(self, name: str, why: str) -> None:

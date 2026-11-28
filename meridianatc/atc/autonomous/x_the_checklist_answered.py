@@ -411,7 +411,9 @@ class _The_checklist_answered:
         """The flap detent a checklist item names, behind the same
         direction-aware speed gate the flying uses: coming in is always
         allowed, going out never past the flap speed."""
-        want = min(1.0, float(expected) / 4.0)
+        detents = int(getattr(state, "flaps_detents", 0) or 0)
+        top_index = max(1, detents - 1) if detents > 1 else 4
+        want = min(1.0, float(expected) / top_index)
         if want > getattr(self, "_flaps_asked", 0.0) \
                 and not self._flaps_allowed(state):
             return False

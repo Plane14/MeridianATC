@@ -529,6 +529,12 @@ class TestChecklistPick:
         assert runner._advised_checklist(
             self._names, Phase.ENROUTE, 8000.0, 0.0) == "cruise"
 
+    def test_an_out_of_range_pick_is_no_answer_not_a_crash(self):
+        runner = self._runner(SimpleNamespace(pick=lambda *a, **k: 99))
+        runner._note = lambda *a, **k: None
+        assert runner._advised_checklist(
+            self._names, Phase.ENROUTE, 8000.0, 0.0) == "cruise"
+
     def test_the_same_set_is_asked_once_per_reask_window(self):
         asked = []
         advisor = SimpleNamespace(
