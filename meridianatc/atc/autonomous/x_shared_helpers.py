@@ -807,9 +807,16 @@ class _Shared_helpers:
         # call that the thing on the levers is not an autothrottle: the
         # disconnect goes once, the flag is distrusted while it stays
         # up, and the levers come back to this servo.
+        lever = self._lever_position(state)
+        descent_power_wrong = False
+        if self.state.phase == AutonomousPhase.DESCENT:
+            target_alt = self._altitude_target(state)
+            descent_power_wrong = bool(
+                target_alt and self._flown_altitude_ft(state)
+                > target_alt + 250.0 and lever > 0.30)
         if getattr(state, "autothrottle", False) \
                 and not getattr(self, "_at_distrusted", False):
-            if ias > target_kt + self._AT_ERR_KT:
+            if ias > target_kt + self._AT_ERR_KT or descent_power_wrong:
                 now = time.monotonic()
                 since = getattr(self, "_at_bad_since", 0.0) or now
                 self._at_bad_since = since
@@ -818,11 +825,13 @@ class _Shared_helpers:
                 self._at_distrusted = True
                 self._at_bad_since = 0.0
                 self.director.autothrottle_disconnect()
+                why = ("holding climb power in the descent"
+                       if descent_power_wrong else
+                       f"not holding the speed ({ias:.0f} kt on a "
+                       f"{target_kt:.0f} bug)")
                 self._emit(
                     "info",
-                    "Autothrottle not holding the speed "
-                    f"({ias:.0f} kt on a {target_kt:.0f} bug): "
-                    "taking the levers",
+                    f"Autothrottle {why}: taking the levers",
                     "autonomous.at")
             else:
                 self._at_bad_since = 0.0
@@ -830,7 +839,6 @@ class _Shared_helpers:
         elif not getattr(state, "autothrottle", False):
             self._at_distrusted = False
             self._at_bad_since = 0.0
-        lever = self._lever_position(state)
         # The lever the sim reports is the only position a slew can
         # start from: seeded anywhere else, the first write of a pass
         # is the jump the rate limit exists to prevent.

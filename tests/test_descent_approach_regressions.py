@@ -871,3 +871,25 @@ def test_intentions_direction_comes_from_the_clearance_not_the_gust():
     assert why == ""
     assert "descend" in text.lower()
     assert "climb" not in text.lower()
+
+
+def test_autothrottle_holding_climb_power_in_descent_is_distrusted():
+    """2026-11-28 LECO: X-Plane reported an autothrottle in the Baron and
+    it held full power through the descent because the speed was below the
+    bug. The high-power shallow descent put the aeroplane miles above the
+    approach path. Climb power while height is owed is proof the thing on
+    the levers is not flying the descent."""
+    import time as _time
+    fo = _fo_descent()
+    fo._at_bad_since = _time.monotonic() - 16.0
+    fo._emit = Mock()
+    fo._dir.autothrottle_disconnect = Mock()
+    state = _airspeed_state(
+        autothrottle=True, indicated_airspeed_kt=100.0,
+        throttle_pct=100.0, altitude_ft=15000.0,
+        indicated_altitude_ft=15000.0)
+
+    fo._manage_throttle(state, 140.0)
+
+    fo._dir.autothrottle_disconnect.assert_called_once()
+    assert fo._at_distrusted
