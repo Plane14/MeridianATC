@@ -214,6 +214,7 @@ class _Weather:
             state_version=int(plan.nearest_nm * 10), timeout_s=0.5)
         deviation_side = opposite_side if chosen == opposite else plan.side
         session.deviating = "approved"
+        session.assigned_heading = None
         session.weather_deviation_side = deviation_side
         session.weather_deviation_degrees = plan.degrees
         session.weather_deviation_miles_nm = plan.miles_nm
@@ -480,8 +481,10 @@ class _Weather:
 
     def _weather_route_scan_course(self, state, session) -> tuple[float, float]:
         """The course and distance normal navigation is about to fly."""
-        course = float(getattr(state, "track_true", 0.0)
-                       or getattr(state, "heading_true", 0.0) or 0.0)
+        course = float(getattr(session, "assigned_heading", None)
+                       if getattr(session, "assigned_heading", None) is not None
+                       else (getattr(state, "track_true", 0.0)
+                             or getattr(state, "heading_true", 0.0) or 0.0))
         ahead_nm = 80.0
         route = getattr(getattr(self, "brain", None), "route", None)
         if route is None or not getattr(state, "has_position", False):
@@ -563,6 +566,15 @@ class _Weather:
             self._clear_weather_deviation(session)
             return
         if getattr(state, "on_ground", True):
+            return
+        if getattr(session, "assigned_heading", None) is not None:
+            # A vector issued after the deviation approval is an amended
+            # lateral clearance. The aeroplane may not keep steering the old
+            # weather offset while reading the new heading back to ATC.
+            self._clear_weather_deviation(session)
+            self._emit("info",
+                       "Weather deviation ended: ATC assigned a new heading",
+                       "autonomous.weather.deviation_amended")
             return
         if self.state.phase not in (AutonomousPhase.CLIMB,
                                     AutonomousPhase.CRUISE,

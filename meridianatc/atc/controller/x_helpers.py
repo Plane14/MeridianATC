@@ -597,6 +597,10 @@ class _Helpers:
                 # clearance, not an open-ended heading off course.
                 fix = self.route.fixes[-1]
         session.deviating = "approved"
+        # The deviation approval is itself the lateral clearance now; an
+        # older vector must not keep verifying against a heading the pilot
+        # has been approved to leave.
+        session.assigned_heading = None
         session.weather_deviation_side = side
         session.weather_deviation_degrees = degrees
         # The miles figure is not reliably spoken in the existing phraseology,
