@@ -517,8 +517,62 @@ def _course_to_fix_points(leg: ProcedureLeg, from_lat: float, from_lon: float
     return points
 
 
+def _has_origin_position(leg: ProcedureLeg) -> bool:
+    return bool(leg.origin_ident or leg.origin_lat or leg.origin_lon)
+
+
+def _cross(ax: float, ay: float, bx: float, by: float) -> float:
+    return ax * by - ay * bx
+
+
+def _ray_circle_nm(from_lat: float, from_lon: float, course: float,
+                   centre_lat: float, centre_lon: float, radius_nm: float
+                   ) -> float | None:
+    """Distance along a course ray to a DME circle, in local planar miles."""
+    sx, sy = _planar_xy(from_lat, from_lon, centre_lat, centre_lon)
+    ux, uy = math.sin(math.radians(course)), math.cos(math.radians(course))
+    b = sx * ux + sy * uy
+    c = sx * sx + sy * sy - radius_nm * radius_nm
+    disc = b * b - c
+    if disc < 0.0:
+        return None
+    root = math.sqrt(disc)
+    hits = [t for t in (-b - root, -b + root) if t > 0.1]
+    return min(hits) if hits else None
+
+
+def _ray_radial_nm(from_lat: float, from_lon: float, course: float,
+                   centre_lat: float, centre_lon: float, radial: float
+                   ) -> float | None:
+    """Distance along a course ray to a navaid radial's line."""
+    sx, sy = _planar_xy(from_lat, from_lon, centre_lat, centre_lon)
+    ux, uy = math.sin(math.radians(course)), math.cos(math.radians(course))
+    rx, ry = math.sin(math.radians(radial)), math.cos(math.radians(radial))
+    den = _cross(ux, uy, rx, ry)
+    if abs(den) < 1e-6:
+        return None
+    t = _cross(-sx, -sy, rx, ry) / den
+    q = _cross(-sx, -sy, ux, uy) / den
+    return t if t > 0.1 and q > 0.0 else None
+
+
+def _ray_course_line_nm(from_lat: float, from_lon: float, course: float,
+                        fix_lat: float, fix_lon: float, line_course: float
+                        ) -> float | None:
+    """Distance along a course ray to another course line through a fix."""
+    qx, qy = _planar_xy(fix_lat, fix_lon, from_lat, from_lon)
+    ux, uy = math.sin(math.radians(course)), math.cos(math.radians(course))
+    vx, vy = math.sin(math.radians(line_course)), math.cos(math.radians(line_course))
+    den = _cross(ux, uy, vx, vy)
+    if abs(den) < 1e-6:
+        return None
+    t = _cross(qx, qy, vx, vy) / den
+    return t if t > 0.1 else None
+
+
 def _course_end(leg: ProcedureLeg, from_lat: float, from_lon: float,
-                prev_alt_ft: float) -> tuple[float, float] | None:
+                prev_alt_ft: float,
+                next_leg: ProcedureLeg | None = None) -> tuple[float, float] | None:
     """A point far enough along the leg's course to fly it by.
 
     Course-to-altitude and heading legs end on a condition, not a fix --
@@ -532,6 +586,29 @@ def _course_end(leg: ProcedureLeg, from_lat: float, from_lon: float,
         course = to_true(course, variation(from_lat, from_lon))
     if not (0 < course <= 360.0):
         return None
+    conditional: float | None = None
+    if leg.path in ("CD", "VD") and _has_origin_position(leg) \
+            and leg.rho_m:
+        conditional = _ray_circle_nm(
+            from_lat, from_lon, course, leg.origin_lat, leg.origin_lon,
+            leg.rho_m / M_PER_NM)
+    elif leg.path in ("CR", "VR") and _has_origin_position(leg) \
+            and leg.theta:
+        radial = leg.theta
+        if not leg.true_degree:
+            radial = to_true(radial, variation(leg.origin_lat, leg.origin_lon))
+        conditional = _ray_radial_nm(
+            from_lat, from_lon, course, leg.origin_lat, leg.origin_lon,
+            radial)
+    elif leg.path in ("CI", "VI") and next_leg is not None \
+            and next_leg.has_fix and next_leg.course:
+        intercept_course = _true_course(next_leg, next_leg.lat, next_leg.lon)
+        conditional = _ray_course_line_nm(
+            from_lat, from_lon, course, next_leg.lat, next_leg.lon,
+            intercept_course)
+    if conditional is not None:
+        return _offset(from_lat, from_lon, course,
+                       min(30.0, max(0.5, conditional)))
     if leg.route_distance:
         distance_nm = (leg.route_distance * 4.0 if leg.distance_minute
                        else leg.route_distance / M_PER_NM)
@@ -579,7 +656,16 @@ def _hold_points(leg: ProcedureLeg, from_lat: float, from_lon: float
 
 def _turn_points(leg: ProcedureLeg, from_lat: float, from_lon: float
                  ) -> list[tuple[float, float]]:
-    """A procedure turn or racetrack, approximated as outbound then back."""
+    """A 45/180 course reversal, drawn on the published turn side.
+
+    ARINC's PI does not encode every individual procedure-turn segment;
+    the navigation database expects the FMS to construct the standard
+    reversal. The path is outbound on the coded course, forty-five degrees
+    to the published side, the short cross leg, and the one-eighty back
+    toward the fix/inbound course. That is deliberately approximate in
+    turn radius, but no longer the impossible direct out-and-back reversal
+    the previous polyline drew.
+    """
     course = leg.course
     if course > 0 and not leg.true_degree:
         course = to_true(course, variation(from_lat, from_lon))
@@ -588,14 +674,21 @@ def _turn_points(leg: ProcedureLeg, from_lat: float, from_lon: float
         outbound *= 4.0  # ~4 NM a minute, a jet's guess
     else:
         outbound /= M_PER_NM
-    if course > 0 and outbound > 0:
-        mid_lat, mid_lon = _offset(from_lat, from_lon, course, outbound)
+    outbound = min(12.0, max(2.0, outbound or 4.0))
+    if not (0 < course <= 360.0):
+        end = _leg_end(leg, from_lat, from_lon)
+        return [end] if end is not None else []
+    sign = -1.0 if leg.turn == "L" else 1.0
+    end_out = _offset(from_lat, from_lon, course, outbound)
+    cross_course = (course + 45.0 * sign + 360.0) % 360.0
+    cross_nm = min(6.0, max(2.0, outbound * 0.6))
+    end_cross = _offset(*end_out, cross_course, cross_nm)
+    points = [end_out, end_cross]
+    if leg.has_fix:
+        points.append((leg.lat, leg.lon))
     else:
-        mid_lat, mid_lon = from_lat, from_lon
-    end = _leg_end(leg, mid_lat, mid_lon)
-    points = [(mid_lat, mid_lon)]
-    if end is not None:
-        points.append(end)
+        inbound = (course + 180.0) % 360.0
+        points.append(_offset(*end_cross, inbound, max(2.0, outbound * 0.8)))
     return points
 
 
@@ -612,12 +705,14 @@ def build_path(transition: ProcedureTransition,
     that fix really is the terminator; track-from-fix legs are skipped
     rather than reversed back onto their own origin.
     """
-    points: list[tuple[float, float, float, float]] = []
+    points = auto_nav.SteeringPath()
     notes: list[str] = []
     if not transition.legs:
         return points, ["the procedure has no legs"]
     cursor = start or (transition.legs[0].lat, transition.legs[0].lon)
-    for leg in transition.legs:
+    for leg_index, leg in enumerate(transition.legs):
+        next_leg = (transition.legs[leg_index + 1]
+                    if leg_index + 1 < len(transition.legs) else None)
         prev_alt = points[-1][2] if points else 0.0
         # The constraint only: a fix's own elevation is not a level to
         # fly, and on MSFS that is what FIX_ALTITUDE carries.
@@ -661,7 +756,8 @@ def build_path(transition: ProcedureTransition,
             else:
                 notes.append(f"{leg.fix_ident or leg.path}: {path} no track")
         elif path in _COURSE_PATHS:
-            end = _course_end(leg, cursor[0], cursor[1], prev_alt)
+            end = _course_end(leg, cursor[0], cursor[1], prev_alt,
+                              next_leg)
             if end is not None:
                 generated = [end]
             notes.append(f"{leg.fix_ident or leg.path}: {path} flown on course")
@@ -674,6 +770,8 @@ def build_path(transition: ProcedureTransition,
             continue
         for lat, lon in generated:
             points.append((lat, lon, alt, speed))
+        if leg.fly_over:
+            points.barriers.add(len(points) - 1)
         cursor = generated[-1]
     return points, notes
 
@@ -713,15 +811,19 @@ class ProcedureNavigator:
         # the runway end for a SID, the position it was picked up on for a
         # STAR. Without that first point the steering can aim past the
         # first fix while the constraints still say the second leg's.
+        barriers = set(getattr(leg_points, "barriers", ()) or ())
         if start is not None and leg_points:
             first = leg_points[0]
             self.points = [(start[0], start[1], first[2], first[3]),
                            *leg_points]
+            barriers = {i + 1 for i in barriers}
         else:
             self.points = leg_points
         self.fallback_altitude_ft = fallback_altitude_ft
         self.fallback_speed_kt = fallback_speed_kt
-        self._bare = [(lat, lon) for lat, lon, _a, _s in self.points]
+        self._bare = auto_nav.SteeringPath(
+            [(lat, lon) for lat, lon, _a, _s in self.points],
+            barriers=barriers)
 
         # A published vertical path angle, where the final leg carries
         # one. The generated path does not retain which RF sample came

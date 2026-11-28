@@ -197,6 +197,56 @@ def test_course_to_fix_joins_the_coded_course_line_before_the_fix():
     assert points[-1][:2] == pytest.approx((50.0, 0.1))
 
 
+def test_fly_over_vertices_are_not_turn_anticipated():
+    """Fly-by fixes may be anticipated; a fly-over fix is a hard gate that
+    the lookahead may not round before the aircraft passes overhead."""
+    from meridianatc.atc import auto_nav
+    path = auto_nav.SteeringPath(
+        [(50.0, 0.0), (50.0, 0.1), (50.03, 0.1)], barriers={1})
+    steer = auto_nav.path_steering(50.0, 0.04, path, lookahead_m=9000.0)
+    assert steer["heading"] == pytest.approx(90.0, abs=8.0)
+    plain = auto_nav.path_steering(
+        50.0, 0.04, [(50.0, 0.0), (50.0, 0.1), (50.03, 0.1)],
+        lookahead_m=9000.0)
+    assert plain["heading"] < steer["heading"] - 10.0
+
+
+def test_course_to_dme_distance_ends_on_the_dme_circle():
+    """CD/VD terminate where the coded course meets the navaid's DME
+    distance, not after a guessed fixed-length course leg."""
+    cd = _leg("CD", course=360.0, true_degree=True,
+              origin_lat=50.0, origin_lon=0.0, rho_m=5.0 * M_PER_NM)
+    start = (50.0 - 10.0 / 60.0, 0.0)
+    points, notes = _path([cd], start=start, kind="approach")
+    assert any("CD flown on course" in n for n in notes)
+    end_lat, end_lon = points[-1][:2]
+    assert haversine_nm(50.0, 0.0, end_lat, end_lon) == \
+        pytest.approx(5.0, abs=0.15)
+
+
+def test_course_to_radial_ends_on_the_coded_radial():
+    """CR/VR terminate at the intersection with the reference navaid's
+    radial, which is a different point for every inbound course."""
+    cr = _leg("CR", course=90.0, true_degree=True,
+              origin_lat=50.0, origin_lon=0.0, theta=360.0)
+    points, _notes = _path([cr], start=(50.1, -0.1), kind="star")
+    end_lat, end_lon = points[-1][:2]
+    assert end_lat == pytest.approx(50.1, abs=0.01)
+    assert end_lon == pytest.approx(0.0, abs=0.01)
+
+
+def test_course_to_intercept_meets_the_next_course_line():
+    """CI/VI end where the coded course intercepts the following leg's
+    course line, so the transition is continuous instead of fixed-length."""
+    ci = _leg("CI", course=90.0, true_degree=True)
+    cf = _leg("CF", fix_ident="NXT", lat=51.0, lon=0.1, course=360.0,
+              true_degree=True, index=1)
+    points, _notes = _path([ci, cf], start=(50.0, 0.0), kind="approach")
+    intercept_lat, intercept_lon = points[0][:2]
+    assert intercept_lat == pytest.approx(50.0, abs=0.01)
+    assert intercept_lon == pytest.approx(0.1, abs=0.01)
+
+
 def test_an_approach_navigator_carries_the_published_vpa_angle():
     """Traffic and procedure guidance use the approach's own vertical
     angle. At London City a 5.5-degree path is 585 ft/nm; treating it

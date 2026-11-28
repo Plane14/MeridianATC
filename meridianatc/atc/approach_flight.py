@@ -34,6 +34,7 @@ from dataclasses import dataclass
 
 from ..navdata.build import haversine_nm, project
 from ..navdata.db import normalize_runway
+from . import auto_nav
 from .approaches import (
     AIRLINER_LINES,
     CIRCLING,
@@ -122,6 +123,7 @@ class ApproachRecipe:
     # legs are not known -- a straight-in that does not exist wherever
     # the chart draws something else, like LECO's RNP 03 offset final.
     leg_path: tuple = ()
+    leg_barriers: tuple = ()       # fly-over point indices in leg_path
     map_lat: float = 0.0           # the missed-approach point
     map_lon: float = 0.0
     map_course: float = 0.0        # the course the final segment flies
@@ -346,6 +348,7 @@ def resolve(session, brain, navdb, state) -> ApproachRecipe | None:
     # leg's fix is the missed-approach point and its course is the final
     # segment's, which for an offset final is not the runway's at all.
     leg_path: tuple = ()
+    leg_barriers: tuple = ()
     map_lat = map_lon = map_course = 0.0
     offset_final = False
     published = tuple(getattr(approach, "legs", ()) or ())
@@ -359,6 +362,7 @@ def resolve(session, brain, navdb, state) -> ApproachRecipe | None:
             points = []
         if len(points) >= 2:
             leg_path = tuple(points)
+            leg_barriers = tuple(sorted(getattr(points, "barriers", ()) or ()))
             map_lat, map_lon = points[-1][0], points[-1][1]
             map_course = _segment_course(points)
             offset = abs((map_course - course + 540.0) % 360.0 - 180.0) \
@@ -409,7 +413,8 @@ def resolve(session, brain, navdb, state) -> ApproachRecipe | None:
         navaid=navaid,
         circling=bool(getattr(choice, "circle_to", "") or offset_final),
         circle_side=getattr(choice, "circle_side", "") or "",
-        leg_path=leg_path, map_lat=map_lat, map_lon=map_lon,
+        leg_path=leg_path, leg_barriers=leg_barriers,
+        map_lat=map_lat, map_lon=map_lon,
         map_course=map_course, glide_angle_deg=glide_angle,
         vpa_lat=vpa_lat, vpa_lon=vpa_lon, vpa_alt_ft=vpa_alt,
         offset_final=offset_final,
@@ -430,7 +435,9 @@ def legs(recipe: ApproachRecipe) -> list[tuple[float, float]]:
     """The final as a polyline: the published legs where they are known,
     else the computed gate, FAF and past the threshold."""
     if recipe.leg_path:
-        path = [(lat, lon) for lat, lon, _alt, _speed in recipe.leg_path]
+        path = auto_nav.SteeringPath(
+            [(lat, lon) for lat, lon, _alt, _speed in recipe.leg_path],
+            barriers=recipe.leg_barriers)
         # The legs end at the missed-approach point; the flight does not.
         # The threshold and a stretch past it keep the steering forward
         # -- without them a path that ends short of the runway pulls the

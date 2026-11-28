@@ -38,6 +38,20 @@ PATH_REACHED_M = 25.0
 STOPPED_KT = 1.0
 
 
+class SteeringPath(list):
+    """A polyline plus vertices that may not be turn-anticipated.
+
+    ``barriers`` are point indices the follower must actually reach before
+    the lookahead may continue onto the next segment -- ARINC fly-over
+    fixes. Ordinary fly-by vertices are absent, so the lookahead keeps its
+    normal anticipation there.
+    """
+
+    def __init__(self, iterable=(), barriers=()):
+        super().__init__(iterable)
+        self.barriers = set(barriers)
+
+
 def _point_segment_distance(lat: float, lon: float,
                             a: tuple[float, float],
                             b: tuple[float, float]) -> tuple[float, float]:
@@ -121,6 +135,24 @@ def path_steering(lat: float, lon: float, path: list[tuple[float, float]],
         return {"heading": None, "cross_track_m": 0.0, "remaining_m": 0.0,
                 "nearest": 0, "done": True}
     index, along_m, side_m, seg_len_m = found
+    barriers = set(getattr(path, "barriers", ()) or ())
+
+    # If the nearest pick has already jumped onto the segment after a
+    # fly-over vertex while the aeroplane is still geometrically short of
+    # it, steer back to the vertex. Once progress along the outgoing
+    # segment exists, the fix has genuinely been overflown.
+    if index in barriers and along_m < PATH_REACHED_M * 2.0:
+        target = path[index]
+        frac = min(1.0, along_m / max(seg_len_m, 1e-6))
+        remaining = seg_len_m * (1.0 - frac)
+        for j in range(index + 1, len(path) - 1):
+            remaining += haversine_nm(path[j][0], path[j][1],
+                                      path[j + 1][0], path[j + 1][1]) * 1852.0
+        return {"heading": bearing_deg(lat, lon, target[0], target[1]),
+                "cross_track_m": side_m,
+                "remaining_m": remaining,
+                "nearest": index,
+                "done": False}
 
     # Walk forward from the closest point until the lookahead is reached.
     target = None
@@ -140,6 +172,12 @@ def path_steering(lat: float, lon: float, path: list[tuple[float, float]],
             delta_lon = (b[1] - a[1] + 180.0) % 360.0 - 180.0
             target = (a[0] + (b[0] - a[0]) * t,
                       (a[1] + delta_lon * t + 180.0) % 360.0 - 180.0)
+            break
+        if i + 1 in barriers:
+            # A fly-over fix is a hard gate: anticipation stops exactly
+            # at it instead of rounding the corner before the aircraft
+            # has passed overhead.
+            target = b
             break
         walked -= available
         i += 1
