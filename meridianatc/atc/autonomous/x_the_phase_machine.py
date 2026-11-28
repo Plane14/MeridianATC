@@ -1456,6 +1456,20 @@ class _The_phase_machine:
             floor = self.state.v2_kt or self.state.vr_kt or 0.0
             if floor and ias < floor - 5.0 or vs_now < -100.0:
                 pull = -0.10
+            elif self._use_pids:
+                # The rotation loop stays on the yoke through the first
+                # climb: a fixed residual pull relaxes the elevator just
+                # as the aeroplane comes unstuck, which is the near-level
+                # balloon seen before the AP takes over. Ask instead for
+                # a useful initial rate, still bounded by the attitude.
+                want_vs = max(400.0, min(
+                    800.0, 0.6 * float(getattr(self.performance,
+                                                "climb_fpm", 700.0)
+                                       or 700.0)))
+                pull = self._pid("rotation").update(
+                    want_vs - vs_now, measurement=vs_now)
+                if pitch >= self._pitch_target_deg():
+                    pull = min(pull, 0.05)
             elif pitch >= self._pitch_target_deg():
                 pull = 0.05
             elif vs_now < 400.0:

@@ -257,7 +257,18 @@ class _Helpers_kept_from:
                 d.autothrottle_arm()
             if target:
                 d.altitude(target)
-            d.level_change(True)
+            if getattr(self.sim, "flc_pitch_only", False) is True:
+                # X-Plane's level-change is a pitch-for-speed mode, not a
+                # vertical path hold. Leaving the first seconds after
+                # engagement to it hands the aeroplane a mode probe while
+                # the stick has already been centred -- the shallow or
+                # negative climb seen at liftoff. VS owns the pitch here,
+                # exactly as the following climb ticks already fly it.
+                d.vertical_speed(self.performance.climb_fpm)
+                d.vs_hold(True)
+                self.state.ap_vs_mode = True
+            else:
+                d.level_change(True)
             self._manage_throttle(state, speed)
         else:
             self._apply_flight_director(

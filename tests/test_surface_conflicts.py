@@ -1501,3 +1501,24 @@ def test_fo_lines_up_with_the_light_on():
     fo.state.sub_entered_at = time.monotonic()
     fo._phase_line_up(_state(51.15, -0.19), 100.0)
     fo._dir.taxi_light.assert_called_once_with(True)
+
+
+def test_fo_initial_climb_pid_chases_a_positive_rate_before_the_ap():
+    """2026-11-28 LEVX: a fixed residual pull let the Baron sag to
+    almost zero fpm through the first four hundred feet."""
+    fo, state = _fo_in_initial_climb(
+        indicated_airspeed_kt=105.0, vertical_speed_fpm=150.0,
+        pitch_deg=5.0)
+    fo.config = SimpleNamespace(
+        immersion=SimpleNamespace(autonomous_pid=True))
+    fo._perf.climb_fpm = 1000.0
+    pid = Mock()
+    pid.update.return_value = 0.45
+    fo._pid = Mock(return_value=pid)
+
+    fo._phase_takeoff(state, time.monotonic())
+
+    pid.update.assert_called_once()
+    assert pid.update.call_args.args[0] == pytest.approx(450.0)
+    assert pid.update.call_args.kwargs["measurement"] == pytest.approx(150.0)
+    assert fo._dir.elevator.call_args.args[0] == pytest.approx(0.45)

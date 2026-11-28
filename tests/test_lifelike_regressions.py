@@ -3136,3 +3136,27 @@ def test_a_vector_hold_positively_leaves_nav_mode():
     flight._dir.nav.assert_called_with(False)
     assert flight.state.ap_nav_mode is False
     assert flight._apply_flight_director.call_args.kwargs["heading"] == 292.0
+
+
+def test_xplane_managed_climb_engagement_has_a_vertical_mode_at_once():
+    """The first AP tick must not centre the stick with no pitch mode."""
+    flight = _flight()
+    flight._ap_mode = "managed"
+    flight._perf = SimpleNamespace(climb_fpm=1000.0)
+    flight.session = SimpleNamespace(
+        assigned_heading=None, assigned_altitude_ft=5000.0)
+    flight.brain = SimpleNamespace(route=None)
+    flight.sim = SimpleNamespace(flc_pitch_only=True)
+    flight._dir = Mock()
+    flight._dir.sim = flight.sim
+    flight._speed_target = Mock(return_value=120.0)
+    flight._route_lateral = Mock(return_value=90.0)
+    flight._manage_throttle = Mock()
+    state = SimpleNamespace(autothrottle=False)
+
+    flight._engage_climb(state)
+
+    flight._dir.vertical_speed.assert_called_with(1000.0)
+    flight._dir.vs_hold.assert_called_with(True)
+    flight._dir.level_change.assert_not_called()
+    assert flight.state.ap_vs_mode is True
