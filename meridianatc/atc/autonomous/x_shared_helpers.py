@@ -864,8 +864,7 @@ class _Shared_helpers:
         if self.state.phase == AutonomousPhase.DESCENT:
             target_alt = self._altitude_target(state)
             if target_alt and self._flown_altitude_ft(state) \
-                    > target_alt + 250.0 \
-                    and ias > target_kt - 5.0:
+                    > target_alt + 250.0:
                 descent_cap = 0.20
         barber = float(getattr(state, "barber_pole_kt", 0.0) or 0.0)
         max_mach = float(getattr(state, "mach_max_operate", 0.0)

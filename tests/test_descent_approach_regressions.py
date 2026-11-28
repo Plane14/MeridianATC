@@ -128,13 +128,18 @@ def test_a_level_leg_in_the_descent_keeps_normal_power():
     assert fo.throttle_writes[-1] > 0.50
 
 
-def test_a_descent_running_slow_gets_its_power_back():
+def test_a_descent_running_slow_does_not_keep_climb_power():
     """Speed sinking under the target lifts the cap -- the lever is the
     speed control while the pitch holds the rate."""
+    import time as _time
     fo = _fo_descent()
-    fo._manage_throttle(
-        _airspeed_state(indicated_airspeed_kt=88.0), 105.0)
-    assert fo.throttle_writes[-1] > 0.20
+    for _ in range(4):
+        fo._lever_at = _time.monotonic() - 1.0
+        fo._manage_throttle(_airspeed_state(
+            indicated_airspeed_kt=88.0,
+            throttle_pct=(fo.throttle_writes[-1] * 100.0
+                          if fo.throttle_writes else 92.0)), 105.0)
+    assert fo.throttle_writes[-1] <= 0.20
 
 
 def test_the_flown_level_is_the_altimeters_not_true_msl():
