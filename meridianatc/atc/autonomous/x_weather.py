@@ -92,8 +92,13 @@ class _Weather:
 
         if not getattr(state, "has_position", False):
             return None
-        course = float(getattr(state, "track_true", 0.0)
-                       or getattr(state, "heading_true", 0.0) or 0.0)
+        # Scan the leg navigation is about to fly, not the instantaneous
+        # track. Immediately after a deviation ends the aircraft is still
+        # physically on the deviation heading while turning back; scanning
+        # that transient heading re-detects the same cell and restarts the
+        # deviation one second after "clear of weather".
+        course, _ahead_nm = self._weather_route_scan_course(
+            state, getattr(self, "session", None))
         return avoidance_plan(
             self._enroute_weather_cells(state), state.latitude,
             state.longitude, course, getattr(state, "altitude_ft", 0.0))
