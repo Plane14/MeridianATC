@@ -950,11 +950,18 @@ class Engine(_Setup, _The_simulator_link, _The_real_aeroplanes, _Session, _The_p
                 parts.append(speech.book.heading.format(
                     heading=p.hdg(session.assigned_heading)))
             if session.assigned_altitude_ft:
-                vs = getattr(self.state, "vertical_speed_fpm", 0.0) or 0.0
-                frame = speech.book.climb if vs >= 0.0 \
+                alt = getattr(self.state, "indicated_altitude_ft", 0.0) \
+                    or getattr(self.state, "altitude_ft", 0.0) or 0.0
+                assigned = session.assigned_altitude_ft
+                # The direction belongs to the clearance measured from the
+                # altimeter, not to the gust's vertical speed: a powered
+                # aeroplane still climbing through its descend-to level
+                # intends to descend, and saying "climb" to it is the
+                # contradiction the controller just challenged.
+                frame = speech.book.climb if assigned >= alt - 200.0 \
                     else speech.book.descend
                 parts.append(frame.format(
-                    altitude=p.alt(session.assigned_altitude_ft)))
+                    altitude=p.alt(assigned)))
             if not parts and runway:
                 parts.append(speech.book.continuing_approach.format(
                     runway=p.rwy(runway)))

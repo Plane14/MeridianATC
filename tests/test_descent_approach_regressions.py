@@ -854,3 +854,20 @@ def test_radar_vectors_use_an_offset_published_final_not_the_runway_axis():
                      heading_true=60.0)
     assert leg.leg in {"join", "downwind", "base"}
     assert not 30.0 <= leg.heading_true <= 90.0
+
+
+def test_intentions_direction_comes_from_the_clearance_not_the_gust():
+    """2026-11-28 LEVX: still powered upward through FL150, the Baron
+    answered "climb flight level seven zero" to a descend-to-FL070
+    clearance. Intentions are the clearance's direction from the
+    altimeter, never the current vertical speed's."""
+    eng = _engine_for_reports()
+    eng.session.assigned_heading = None
+    eng.session.assigned_altitude_ft = 7000.0
+    eng.state = SimpleNamespace(
+        vertical_speed_fpm=500.0, indicated_altitude_ft=15000.0,
+        altitude_ft=14900.0)
+    text, why = eng.first_officer_call("intentions")
+    assert why == ""
+    assert "descend" in text.lower()
+    assert "climb" not in text.lower()
